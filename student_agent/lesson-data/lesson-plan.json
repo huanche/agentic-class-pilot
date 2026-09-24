@@ -1,0 +1,64 @@
+{
+  "lesson_id": "ch3-process-scheduling",
+  "lesson_title": "第3章 处理机调度",
+  "total_minutes": 45,
+  "stages": [
+    {
+      "id": "guided_learning",
+      "enabled": true,
+      "delivery": "video",
+      "minutes": 22,
+      "advance_when": "either"
+    },
+    {
+      "id": "recap_discussion",
+      "enabled": true,
+      "minutes": 9,
+      "advance_when": "either"
+    },
+    {
+      "id": "deep_inquiry",
+      "enabled": true,
+      "minutes": 7,
+      "advance_when": "either"
+    },
+    {
+      "id": "class_discussion",
+      "enabled": false,
+      "minutes": 7,
+      "advance_when": "budget"
+    }
+  ],
+  "segments": [
+    {
+      "id": "seg-001",
+      "minutes": 3
+    },
+    {
+      "id": "seg-002",
+      "minutes": 5
+    },
+    {
+      "id": "seg-003",
+      "minutes": 4
+    },
+    {
+      "id": "seg-004",
+      "minutes": 4
+    },
+    {
+      "id": "seg-005",
+      "minutes": 3
+    },
+    {
+      "id": "seg-006",
+      "minutes": 3
+    }
+  ],
+  "advance_policy": {
+    "on_budget_exhausted": "wrap_up",
+    "on_evidence_reached": "advance",
+    "min_stage_minutes": 2,
+    "max_stage_overrun_minutes": 3
+  }
+}

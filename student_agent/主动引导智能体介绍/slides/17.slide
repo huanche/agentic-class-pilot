@@ -1,0 +1,72 @@
+<Slide style={{ width: '1280px', height: '720px', padding: 0, background: '#FFFFFF' }}>
+  <Box style={{ position: 'absolute', top: 36, left: 64, right: 64, flexDirection: 'row', gap: 16 }}>
+    <Box style={{ width: 8, height: 40, background: '#1B4F9C', borderRadius: 2, marginTop: 4 }} />
+    <Box>
+      <Text style={{ fontSize: 34, fontWeight: 'bold', color: '#0F2E5C' }}>上下文分层装配与数据落盘</Text>
+      <Text style={{ fontSize: 15, color: '#64748B', marginTop: 6 }}>不把整门课塞进一轮上下文 —— 按 host_phase 取用，45 分钟的课上下文永远「刚好够用」</Text>
+    </Box>
+  </Box>
+  <Box style={{ position: 'absolute', top: 128, left: 64, right: 64, bottom: 56, gap: 14 }}>
+    <Table
+      style={{ width: '100%', height: 340 }}
+      defaultTextStyle={{ fontSize: 13, textAlign: 'left', color: '#0F2E5C' }}
+      defaultCellStyle={{ border: { bottom: { width: 1, color: '#D7E4F6' } }, padding: 7 }}
+      cells={[
+        [
+          { text: '层', textStyle: { bold: true, color: '#FFFFFF' }, cellStyle: { background: { color: '#1B4F9C' } } },
+          { text: '内容（文件）', textStyle: { bold: true, color: '#FFFFFF' }, cellStyle: { background: { color: '#1B4F9C' } } },
+          { text: '何时加载', textStyle: { bold: true, color: '#FFFFFF' }, cellStyle: { background: { color: '#1B4F9C' } } },
+        ],
+        [
+          { text: '规则层', textStyle: { bold: true, color: '#1B4F9C' } },
+          'rules/KNOWLEDGE-BASE.md · interaction/MASTERY-STAR-RULES.md',
+          '每轮',
+        ],
+        [
+          { text: '计划层', textStyle: { bold: true, color: '#1B4F9C' }, cellStyle: { background: { color: '#E8F0FB' } } },
+          { text: 'lesson-data/lesson-plan.json（仅当前阶段的配置）', cellStyle: { background: { color: '#E8F0FB' } } },
+          { text: '每轮', cellStyle: { background: { color: '#E8F0FB' } } },
+        ],
+        [
+          { text: '课堂层', textStyle: { bold: true, color: '#1B4F9C' } },
+          'runtime/DIALOGUE-LOG.md · segments/seg-XXX.json · 该段绑定的 KP 全文',
+          '每轮',
+        ],
+        [
+          { text: '阶段层', textStyle: { bold: true, color: '#1B4F9C' }, cellStyle: { background: { color: '#E8F0FB' } } },
+          { text: 'stages/<当前阶段>/questions.md · prompt.md · rubric.md', cellStyle: { background: { color: '#E8F0FB' } } },
+          { text: '仅当前阶段（复述/探究/讨论三幕才有）', textStyle: { color: '#B87700', bold: true }, cellStyle: { background: { color: '#E8F0FB' } } },
+        ],
+        [
+          { text: '历史层', textStyle: { bold: true, color: '#1B4F9C' } },
+          'runtime/data/dialogue-log.json 相关片段',
+          '按需召回',
+        ],
+        [
+          { text: '档案层', textStyle: { bold: true, color: '#1B4F9C' }, cellStyle: { background: { color: '#E8F0FB' } } },
+          { text: 'runtime/data/mastery-state.json · mastery-history.json', cellStyle: { background: { color: '#E8F0FB' } } },
+          { text: '仅判星级时', textStyle: { color: '#B87700', bold: true }, cellStyle: { background: { color: '#E8F0FB' } } },
+        ],
+      ]}
+    />
+    <Box style={{ flex: 1, flexDirection: 'row', gap: 20 }}>
+      <Box style={{ flex: 1.4, background: '#E8F0FB', borderRadius: 10, padding: '13px 18px' }}>
+        <Text style={{ fontSize: 13.5, color: '#0F2E5C', lineHeight: 1.65 }}>
+          <span style={{ fontWeight: 'bold', color: '#1B4F9C' }}>落盘映射（write_state）：</span>host_phase / 耗时 / current_target → DIALOGUE-LOG.md；mastery_updates → mastery-state.json + mastery-history.json；stage_snapshots → mastery-history.json（带 stage 字段，追加不覆盖）。
+        </Text>
+      </Box>
+      <Box style={{ flex: 1, border: '1px solid #D7E4F6', borderRadius: 10, padding: '13px 18px' }}>
+        <Text style={{ fontSize: 13.5, color: '#0F2E5C', lineHeight: 1.65 }}>
+          <span style={{ fontWeight: 'bold', color: '#1B4F9C' }}>空壳处理：</span>stages/&lt;id&gt;/ 文件为空或缺失 → 不报错，注入占位提示「本阶段内容未配置」，按默认行为运行。
+        </Text>
+      </Box>
+    </Box>
+  </Box>
+  <Box style={{ position: 'absolute', left: 64, right: 64, bottom: 20, flexDirection: 'row', justifyContent: 'space-between' }}>
+    <Box style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+      <Box style={{ width: 10, height: 10, background: '#1B4F9C', borderRadius: 2 }} />
+      <Text style={{ fontSize: 13, color: '#64748B' }}>主动引导智能体 · 项目介绍</Text>
+    </Box>
+    <Text style={{ fontSize: 13, color: '#64748B' }}>17 / 18</Text>
+  </Box>
+</Slide>

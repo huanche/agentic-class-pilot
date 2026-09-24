@@ -1,0 +1,23 @@
+{
+  "version": "1.0",
+  "strategy": "incremental-compatible-split",
+  "deliveryUnits": {
+    "teacherWorkspace": {
+      "entry": "/teacher-workspace?workspace={courseId}",
+      "legacyEntry": "/course-space?workspace={courseId}",
+      "embed": true
+    },
+    "classroomPlayer": {
+      "entry": "/classroom-player/{classroomId}",
+      "legacyEntry": "/classroom/{classroomId}",
+      "embed": true
+    },
+    "teacherAgentApi": {
+      "capabilities": "/api/teacher-agent/capabilities",
+      "plan": "/api/teacher-agent/plan",
+      "execute": "/api/teacher-agent/execute",
+      "openapi": "packages/integration-contract/openapi.yaml"
+    }
+  },
+  "legacyRoutesPreserved": true
+}

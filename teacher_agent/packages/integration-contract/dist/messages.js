@@ -1,0 +1,1 @@
+export const INTEGRATION_PROTOCOL_VERSION = '1.0';

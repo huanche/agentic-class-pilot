@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>课堂 · 主动引导智能体</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: #f5f5f2; color: #2c2c2a;
+    font: 15px/1.6 -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 20px 16px 100px; }
+
+  header {
+    background: #fff; border: 1px solid rgba(0,0,0,.08); border-radius: 12px;
+    padding: 14px 18px; margin-bottom: 14px;
+  }
+  .top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+  h1 { margin: 0; font-size: 16px; font-weight: 500; }
+  .phase { font-size: 13px; color: #534ab7; background: #eeedfe;
+           padding: 3px 10px; border-radius: 20px; white-space: nowrap; }
+  .bars { margin-top: 12px; display: flex; flex-direction: column; gap: 7px; }
+  .bar-row { display: flex; align-items: center; gap: 10px; font-size: 12px; color: #5f5e5a; }
+  .bar-row span:first-child { width: 56px; flex: none; }
+  .bar-row span:last-child { width: 84px; text-align: right; flex: none; }
+  .track { flex: 1; height: 6px; background: #eceae4; border-radius: 3px; overflow: hidden; }
+  .fill { height: 100%; width: 0; background: #7f77dd; transition: width .6s linear; }
+
+  #chat { background: #fff; border: 1px solid rgba(0,0,0,.08); border-radius: 12px;
+          padding: 18px; min-height: 340px; }
+  .msg { margin-bottom: 14px; }
+  .msg .who { font-size: 12px; color: #888780; margin-bottom: 4px; }
+  .msg .bubble { padding: 10px 14px; border-radius: 12px; white-space: pre-wrap; }
+  .teacher .bubble { background: #f1efe8; border-top-left-radius: 3px; }
+  .student { text-align: right; }
+  .student .bubble { background: #e6f1fb; display: inline-block; text-align: left;
+                     border-top-right-radius: 3px; }
+  .note { font-size: 12px; color: #b4b2a9; padding: 6px 0; border-top: 1px dashed #eceae4;
+          margin-top: 4px; }
+
+  form { position: fixed; bottom: 0; left: 0; right: 0; background: #f5f5f2;
+         border-top: 1px solid rgba(0,0,0,.08); padding: 10px 16px 12px; }
+  .controls { max-width: 860px; margin: 0 auto 8px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .controls button { padding: 8px 14px; font-size: 13px; }
+  .controls .primary { background: #d84315; }
+  .inner { max-width: 860px; margin: 0 auto; display: flex; gap: 8px; }
+  input[type=text] { flex: 1; padding: 11px 14px; border: 1px solid rgba(0,0,0,.15);
+                     border-radius: 10px; font-size: 15px; background: #fff; }
+  input[type=text]:focus { outline: 2px solid #7f77dd; outline-offset: -1px; }
+  button { padding: 11px 20px; border: 0; border-radius: 10px; background: #534ab7;
+           color: #fff; font-size: 15px; cursor: pointer; }
+  button:disabled { background: #b4b2a9; cursor: default; }
+  .ghost { background: transparent; color: #5f5e5a; border: 1px solid rgba(0,0,0,.15); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="top">
+      <h1 id="title">课堂</h1>
+      <div class="phase" id="phase">准备中</div>
+    </div>
+    <div class="bars">
+      <div class="bar-row"><span>本环节</span>
+        <div class="track"><div class="fill" id="stageFill"></div></div>
+        <span id="stageTxt">—</span></div>
+      <div class="bar-row"><span>全课</span>
+        <div class="track"><div class="fill" id="lessonFill" style="background:#1d9e75"></div></div>
+        <span id="lessonTxt">—</span></div>
+    </div>
+  </header>
+
+  <div id="chat"><div class="note">已进入教室，等老师点「开始上课」……</div></div>
+</div>
+
+<form id="form">
+  <div class="controls">
+    <button type="button" class="primary" id="begin" disabled>开始上课</button>
+    <button type="button" id="video" disabled>视频播完</button>
+    <button type="button" id="next" disabled>下一环节</button>
+  </div>
+  <div class="inner">
+    <input type="text" id="input" placeholder="说点什么……" autocomplete="off" disabled>
+    <button type="submit" id="send" disabled>发送</button>
+    <button type="button" class="ghost" id="export">学情</button>
+  </div>
+</form>
+
+<script>
+const qs = new URLSearchParams(location.search);
+const sid = qs.get('session') || localStorage.getItem('session_id')
+         || 'cls-' + Math.random().toString(16).slice(2, 10);
+const scale = parseFloat(qs.get('scale') || '1');
+let cursor = 0, ended = false;
+
+const $ = id => document.getElementById(id);
+const chat = $('chat');
+
+function addMsg(m) {
+  const d = document.createElement('div');
+  d.className = 'msg ' + (m.role === 'student' ? 'student' : 'teacher');
+  const who = m.role === 'student' ? '你' : ('老师' + (m.llm ? '' : '（离线模板）'));
+  d.innerHTML = '<div class="who">' + who + '</div><div class="bubble"></div>';
+  d.querySelector('.bubble').textContent = m.text;
+  chat.appendChild(d);
+  window.scrollTo(0, document.body.scrollHeight);
+}
+
+async function start() {
+  const r = await fetch('/api/session/start', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({session_id: sid, time_scale: scale})
+  });
+  const d = await r.json();
+  localStorage.setItem('session_id', d.session_id);
+  chat.querySelector('.note')?.remove();
+}
+
+// 老师按钮 → 三个接口。available_actions 由后端说了算，前端不猜。
+async function post(path, body) {
+  const d = await (await fetch('/api/session/' + sid + path, {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: body === undefined ? undefined : JSON.stringify(body)
+  })).json();
+  if (d.reply_text) addMsg({role: 'teacher', text: d.reply_text, llm: true});
+  poll();
+}
+$('begin').addEventListener('click', () => {
+  chat.querySelector('.note')?.remove();
+  post('/begin');
+});
+$('video').addEventListener('click', () => post('/media/done'));
+$('next').addEventListener('click', () => post('/stage/next'));
+
+async function poll() {
+  try {
+    const s = await (await fetch('/api/session/' + sid + '/state')).json();
+    $('phase').textContent = (s.phase_name || s.phase) +
+      (s.status === 'idle' ? ' · 等待上课' : s.status === 'ended' ? ' · 已下课' : '');
+    if (s.stage_budget_minutes > 0) {
+      const p = Math.min(100, s.stage_elapsed_minutes / s.stage_budget_minutes * 100);
+      $('stageFill').style.width = p + '%';
+      $('stageTxt').textContent = s.stage_elapsed_minutes + ' / ' + s.stage_budget_minutes + ' 分';
+    } else {
+      $('stageFill').style.width = '100%';
+      $('stageTxt').textContent = '—';
+    }
+    if (s.total_minutes) {
+      const p = Math.min(100, s.lesson_elapsed_minutes / s.total_minutes * 100);
+      $('lessonFill').style.width = p + '%';
+      $('lessonTxt').textContent = s.lesson_elapsed_minutes + ' / ' + s.total_minutes + ' 分';
+    }
+    // 按钮可用性：照后端给的 available_actions 渲染
+    const acts = s.available_actions || [];
+    $('begin').disabled = !acts.includes('begin');
+    $('video').disabled = !acts.includes('media_done') || s.phase !== 'guided_learning';
+    $('next').disabled = !acts.includes('next_stage');
+    $('input').disabled = !acts.includes('message');
+    $('send').disabled = !acts.includes('message');
+    $('input').placeholder = s.status === 'ended' ? '已下课'
+                          : s.status === 'idle' ? '等老师开始上课'
+                          : '说点什么……';
+    if (s.status === 'ended') ended = true;
+    const m = await (await fetch('/api/session/' + sid + '/messages?since=' + cursor)).json();
+    m.messages.forEach(addMsg);
+    cursor = m.total;
+  } catch (e) { /* 轮询失败静默重试 */ }
+}
+
+$('form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const t = $('input').value.trim();
+  if (!t || ended) return;
+  $('input').value = '';
+  addMsg({role: 'student', text: t});
+  const d = await (await fetch('/api/session/' + sid + '/message', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({text: t})
+  })).json();
+  if (d.reply_text) addMsg({role: 'teacher', text: d.reply_text, llm: true});
+  poll();
+});
+
+$('export').addEventListener('click', () => {
+  location.href = '/api/session/' + sid + '/export?fmt=md';
+});
+
+(async () => { await start(); await poll(); setInterval(poll, 2000); })();
+</script>
+</body>
+</html>

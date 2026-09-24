@@ -1,0 +1,53 @@
+<Slide style={{ width: '1280px', height: '720px', padding: 0, background: '#FFFFFF' }}>
+  <Box style={{ position: 'absolute', top: 36, left: 64, right: 64, flexDirection: 'row', gap: 16 }}>
+    <Box style={{ width: 8, height: 40, background: '#1B4F9C', borderRadius: 2, marginTop: 4 }} />
+    <Box>
+      <Text style={{ fontSize: 34, fontWeight: 'bold', color: '#0F2E5C' }}>真实时钟 tick 与切幕判定 judge_advance</Text>
+      <Text style={{ fontSize: 15, color: '#64748B', marginTop: 6 }}>时钟只算已花时长 —— 编排器绝不判断学生是否缺席，那是在场性归老师管</Text>
+    </Box>
+  </Box>
+  <Box style={{ position: 'absolute', top: 128, left: 64, right: 64, bottom: 56, flexDirection: 'row', gap: 26 }}>
+    <Box style={{ width: '44%', gap: 14 }}>
+      <Text style={{ fontSize: 17, fontWeight: 'bold', color: '#0F2E5C' }}>tick：全图唯一读时间的地方</Text>
+      <CodeBlock
+        language='python'
+        theme='github-light'
+        fontSize={12.5}
+        width={490}
+        code={`def tick(state):
+    now = fromisoformat(state["now"])  # 外部注入
+    return {
+      # 本幕已花 = now - 本幕开始
+      "stage_elapsed_minutes": ...,
+      # 本课已花 = now - 开课时刻
+      "lesson_elapsed_minutes": ...,
+    }`}
+      />
+      <Box style={{ background: '#E8F0FB', borderRadius: 10, padding: '13px 16px', marginTop: 'auto' }}>
+        <Text style={{ fontSize: 13.5, color: '#0F2E5C', lineHeight: 1.6 }}>时间做成<span style={{ fontWeight: 'bold' }}>输入</span>而非节点自取 → 图是纯函数：<span style={{ fontWeight: 'bold', color: '#1B4F9C' }}>可单测、可回放</span>。tick 同时是每轮复位点，清掉上轮证据与判决，防止跨轮渗漏。</Text>
+      </Box>
+    </Box>
+    <Box style={{ flex: 1, gap: 10 }}>
+      <Text style={{ fontSize: 17, fontWeight: 'bold', color: '#0F2E5C' }}>judge_advance：短路判定，命中即停（每轮执行）</Text>
+      {[
+        ['1', '本幕演够 min_stage_minutes（2 分钟）了吗？没够 → 留幕（防秒切）', false],
+        ['2', '「学透才走」模式且还有目标没关闭？→ 留幕（证据优先于时间）', true],
+        ['3', '证据齐了、目标全关闭？→ 切幕（学得快就提前走）', false],
+        ['4', '到时间预算了？看策略：立即切 / 收尾后切 / 允许延长 ≤3 分钟', true],
+        ['5', '以上都没命中 → 留幕，等下一轮再判。判决理由写 advance_reason 落盘，老师可复盘「为什么在 22 分钟切了」', false],
+      ].map((s, i) => (
+        <Box key={i} style={{ flexDirection: 'row', gap: 14, alignItems: 'flex-start', background: s[2] ? '#FFFFFF' : '#E8F0FB', border: s[2] ? '1px solid #D7E4F6' : 'none', borderRadius: 10, padding: '11px 16px', flex: 1 }}>
+          <Text style={{ fontSize: 22, fontWeight: 'bold', color: '#1B4F9C', width: 28 }}>{s[0]}</Text>
+          <Text style={{ fontSize: 13.5, color: '#0F2E5C', lineHeight: 1.55, flex: 1 }}>{s[1]}</Text>
+        </Box>
+      ))}
+    </Box>
+  </Box>
+  <Box style={{ position: 'absolute', left: 64, right: 64, bottom: 20, flexDirection: 'row', justifyContent: 'space-between' }}>
+    <Box style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+      <Box style={{ width: 10, height: 10, background: '#1B4F9C', borderRadius: 2 }} />
+      <Text style={{ fontSize: 13, color: '#64748B' }}>主动引导智能体 · 项目介绍</Text>
+    </Box>
+    <Text style={{ fontSize: 13, color: '#64748B' }}>14 / 18</Text>
+  </Box>
+</Slide>

@@ -1,0 +1,8 @@
+<Slide style={{ width: '1280px', height: '720px', padding: 0, background: 'linear-gradient(135deg, #1B4F9C 0%, #0F2E5C 100%)' }}>
+  <Box style={{ padding: '110px 96px', gap: 8 }}>
+    <Text style={{ fontSize: 150, fontWeight: 'bold', color: 'rgba(255,255,255,0.18)', lineHeight: 1 }}>03</Text>
+    <Text style={{ fontSize: 46, fontWeight: 'bold', color: '#FFFFFF', marginTop: 4 }}>编排器 · 代码实现</Text>
+    <Text style={{ fontSize: 19, color: '#BFD4F2', lineHeight: 1.7, marginTop: 18, maxWidth: 780 }}>一个由 host_phase 驱动的课堂状态机：每轮对话读计划 → 算耗时 → 判证据 → 决定换不换幕。orchestrator/agent.py 已实现并可运行。</Text>
+    <Box style={{ width: 64, height: 6, background: '#F59E0B', marginTop: 28 }} />
+  </Box>
+</Slide>

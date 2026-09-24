@@ -1,0 +1,63 @@
+<Slide style={{ width: '1280px', height: '720px', padding: 0, background: '#FFFFFF' }}>
+  <Box style={{ position: 'absolute', top: 36, left: 64, right: 64, flexDirection: 'row', gap: 16 }}>
+    <Box style={{ width: 8, height: 40, background: '#1B4F9C', borderRadius: 2, marginTop: 4 }} />
+    <Box>
+      <Text style={{ fontSize: 34, fontWeight: 'bold', color: '#0F2E5C' }}>teach 两层铁律：模型只管措辞，不管编排</Text>
+      <Text style={{ fontSize: 15, color: '#64748B', marginTop: 6 }}>实测踩出来的架构铁律 —— 最初「有 LLM 就调模型」导致段落不推进、编排被架空</Text>
+    </Box>
+  </Box>
+  <Box style={{ position: 'absolute', top: 126, left: 64, right: 64, bottom: 56, gap: 16 }}>
+    <svg width={1152} height={176} viewBox="0 0 1152 176">
+      <defs><marker id="a4" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L8,3 z" fill="#1B4F9C" /></marker></defs>
+      <rect x={20} y={14} width={500} height={148} rx={12} fill="#1B4F9C" />
+      <text x={44} y={50} fontSize={18} fill="#FFFFFF" fontWeight="bold">第一层 · 确定性骨架（永远执行）</text>
+      <text x={44} y={82} fontSize={14} fill="#D6E4F8">决定「本轮干什么」：讲哪一段 / 问哪一题 / 给什么反馈</text>
+      <text x={44} y={108} fontSize={14} fill="#D6E4F8">产出 directive（给模型的指令，带内容锚点）</text>
+      <text x={44} y={136} fontSize={13} fill="#9FB9E0">模型挂了 → 直接用骨架朴素文案，编排状态一字不差</text>
+      <path d="M520 88 L580 88" stroke="#1B4F9C" strokeWidth={3} markerEnd="url(#a4)" />
+      <rect x={580} y={14} width={500} height={148} rx={12} fill="#E8F0FB" stroke="#3D7BE0" strokeWidth={2} />
+      <text x={604} y={50} fontSize={18} fill="#0F2E5C" fontWeight="bold">第二层 · LLM 润色（可选）</text>
+      <text x={604} y={82} fontSize={14} fill="#334155">只决定「这话怎么说」：把 directive 变成自然语言</text>
+      <text x={604} y={108} fontSize={14} fill="#334155">接任意 OpenAI 兼容端点（AGENT_LLM_* 环境变量）</text>
+      <text x={604} y={136} fontSize={13.5} fill="#B87700" fontWeight="bold">铁律：模型不决定讲什么、问什么，只决定怎么措辞</text>
+    </svg>
+    <Box style={{ flex: 1, flexDirection: 'row', gap: 20 }}>
+      <Box style={{ flex: 1.35 }}>
+        <Table
+          style={{ width: '100%', height: '100%' }}
+          defaultTextStyle={{ fontSize: 13, textAlign: 'left', color: '#0F2E5C' }}
+          defaultCellStyle={{ border: { bottom: { width: 1, color: '#D7E4F6' } }, padding: 7 }}
+          cells={[
+            [
+              { text: '三条约束（每条都是踩坑踩出来的）', textStyle: { bold: true, color: '#FFFFFF' }, cellStyle: { background: { color: '#1B4F9C' } } },
+              { text: '原因', textStyle: { bold: true, color: '#FFFFFF' }, cellStyle: { background: { color: '#1B4F9C' } } },
+            ],
+            [
+              { text: 'directive 必须带内容锚点', textStyle: { bold: true, color: '#1B4F9C' } },
+              '只写「往深讲一层」→ 模型编出本课没有的「马尔可夫性质」（幻觉）',
+            ],
+            [
+              { text: '给模型的文案不能含 KP 编号', textStyle: { bold: true, color: '#1B4F9C' }, cellStyle: { background: { color: '#E8F0FB' } } },
+              { text: '模型会照着念「KP-004」→ 用 kp_title() 转中文标题', cellStyle: { background: { color: '#E8F0FB' } } },
+            ],
+            [
+              { text: '收尾轮 directive 显式禁止新内容', textStyle: { bold: true, color: '#1B4F9C' } },
+              '否则模型在「总结一下」里继续往外扩',
+            ],
+          ]}
+        />
+      </Box>
+      <Box style={{ flex: 1, background: '#E8F0FB', borderRadius: 12, padding: '18px 24px', justifyContent: 'center', gap: 10 }}>
+        <Text style={{ fontSize: 44, fontWeight: 'bold', color: '#F59E0B', lineHeight: 1 }}>51 / 51</Text>
+        <Text style={{ fontSize: 14.5, color: '#0F2E5C', lineHeight: 1.65 }}>有 / 无 LLM 跑同一串时间戳，剔除回复文本后，<span style={{ fontWeight: 'bold' }}>编排结果逐行相同</span> —— 切幕、星级、推进不受模型影响，已被验证。</Text>
+      </Box>
+    </Box>
+  </Box>
+  <Box style={{ position: 'absolute', left: 64, right: 64, bottom: 20, flexDirection: 'row', justifyContent: 'space-between' }}>
+    <Box style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+      <Box style={{ width: 10, height: 10, background: '#1B4F9C', borderRadius: 2 }} />
+      <Text style={{ fontSize: 13, color: '#64748B' }}>主动引导智能体 · 项目介绍</Text>
+    </Box>
+    <Text style={{ fontSize: 13, color: '#64748B' }}>13 / 18</Text>
+  </Box>
+</Slide>

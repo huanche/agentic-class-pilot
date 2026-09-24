@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 360 360" role="img" aria-labelledby="title desc">
+  <title id="title">MENTRA icon</title>
+  <desc id="desc">A stylized M formed by an open book and three connected nodes.</desc>
+  <defs><linearGradient id="szuRed" x1="40" y1="40" x2="320" y2="320" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#B0004B"/><stop offset="1" stop-color="#940040"/></linearGradient></defs>
+  <rect x="40" y="40" width="280" height="280" rx="76" fill="url(#szuRed)"/>
+  <path d="M92 230V125c0-18 18-29 34-21l74 39v120l-83-43c-11-6-25 2-25 10Z" fill="none" stroke="#FFF" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M308 230V125c0-18-18-29-34-21l-74 39v120l83-43c11-6 25 2 25 10Z" fill="none" stroke="#FFF" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M125 104 200 190l75-86" fill="none" stroke="#FFF" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M130 94 200 72l70 22M200 72v38" fill="none" stroke="#FFF" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" opacity=".94"/>
+  <circle cx="130" cy="94" r="13" fill="#FFF"/><circle cx="200" cy="72" r="13" fill="#FFF"/><circle cx="270" cy="94" r="13" fill="#FFF"/><circle cx="200" cy="190" r="16" fill="#FFF"/>
+</svg>

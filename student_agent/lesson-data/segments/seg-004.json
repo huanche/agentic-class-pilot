@@ -1,0 +1,16 @@
+{
+  "segment_id": "seg-004",
+  "lesson_id": "ch3-process-scheduling",
+  "title": "FCFS 与 SJF",
+  "order": 4,
+  "knowledge_point_ids": ["KP-004"],
+  "knowledge_points": ["FCFS", "SJF", "平均等待时间", "饥饿"],
+  "summary": "FCFS 按到达顺序执行，对短作业不利；SJF 按运行时间短的先执行，平均等待更短但长作业可能饥饿。",
+  "content": "FCFS 是先来先服务，谁先到谁先运行，公平但可能让短作业等长作业。SJF 是短作业优先，运行时间越短越先执行，通常平均等待时间更短；但如果不断有短作业到达，长作业可能一直等不到 CPU，也就是饥饿。",
+  "source": {
+    "course": "计算机操作系统",
+    "chapter": "第3章 处理机调度",
+    "slide": "3.2 调度算法",
+    "position": "视频进度占位 00:32:15"
+  }
+}

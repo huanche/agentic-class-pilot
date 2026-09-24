@@ -1,0 +1,8 @@
+<Slide style={{ width: '1280px', height: '720px', padding: 0, background: 'linear-gradient(135deg, #1B4F9C 0%, #0F2E5C 100%)' }}>
+  <Box style={{ padding: '110px 96px', gap: 8 }}>
+    <Text style={{ fontSize: 150, fontWeight: 'bold', color: 'rgba(255,255,255,0.18)', lineHeight: 1 }}>02</Text>
+    <Text style={{ fontSize: 46, fontWeight: 'bold', color: '#FFFFFF', marginTop: 4 }}>老师端 · 课前配置</Text>
+    <Text style={{ fontSize: 19, color: '#BFD4F2', lineHeight: 1.7, marginTop: 18, maxWidth: 780 }}>老师不用写提示词、不用懂状态机。开课前只做两件事：定阶段与时长，填课程内容文件。规则与配置就是燃料。</Text>
+    <Box style={{ width: 64, height: 6, background: '#F59E0B', marginTop: 28 }} />
+  </Box>
+</Slide>

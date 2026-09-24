@@ -1,0 +1,26 @@
+<Slide style={{ width: '1280px', height: '720px', padding: 0, background: '#FFFFFF', flexDirection: 'row' }}>
+  <Box style={{ width: 400, height: '100%', background: '#0F2E5C', padding: '72px 48px', justifyContent: 'space-between' }}>
+    <Box style={{ gap: 14 }}>
+      <Box style={{ width: 44, height: 5, background: '#F59E0B' }} />
+      <Text style={{ fontSize: 40, fontWeight: 'bold', color: '#FFFFFF', lineHeight: 1.25, marginTop: 8 }}>四个视角<br />看懂这套系统</Text>
+    </Box>
+    <Text style={{ fontSize: 15, color: '#9FB9E0', lineHeight: 1.7 }}>从坐在教室里的学生，<br />到课前配置的老师，<br />再到跑在代码里的编排器。</Text>
+  </Box>
+  <Box style={{ flex: 1, height: '100%', padding: '72px 64px', flexDirection: 'column', gap: 22, justifyContent: 'center' }}>
+    {[
+      { no: '01', t: '学生端 · 一节课的完整旅程', d: '六幕时间轴、逐幕体验、星级如何从 0 长到 4', pg: 'P03–P05' },
+      { no: '02', t: '老师端 · 课前配置', d: 'lesson-plan.json 定阶段时长，内容文件写在哪、谁在读', pg: 'P06–P09' },
+      { no: '03', t: '编排器 · 代码实现', d: 'LangGraph 11 节点、teach 两层铁律、真实时钟与切幕判定', pg: 'P10–P14' },
+      { no: '04', t: '功能板块 · 文件地图', d: '五大目录分工、每个文件的用途与被调用时机', pg: 'P15–P17' },
+    ].map((c, i) => (
+      <Box key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 22, background: i % 2 === 0 ? '#E8F0FB' : '#FFFFFF', border: '1px solid #D7E4F6', borderRadius: 10, padding: '18px 24px' }}>
+        <Text style={{ fontSize: 34, fontWeight: 'bold', color: '#1B4F9C', width: 64 }}>{c.no}</Text>
+        <Box style={{ flex: 1, gap: 4 }}>
+          <Text style={{ fontSize: 20, fontWeight: 'bold', color: '#0F2E5C' }}>{c.t}</Text>
+          <Text style={{ fontSize: 14, color: '#64748B' }}>{c.d}</Text>
+        </Box>
+        <Text style={{ fontSize: 14, color: '#F59E0B', fontWeight: 'bold' }}>{c.pg}</Text>
+      </Box>
+    ))}
+  </Box>
+</Slide>

@@ -1,0 +1,90 @@
+<Slide style={{ width: '1280px', height: '720px', padding: 0, background: '#FFFFFF' }}>
+  <Box style={{ position: 'absolute', top: 36, left: 64, right: 64, flexDirection: 'row', gap: 16 }}>
+    <Box style={{ width: 8, height: 40, background: '#1B4F9C', borderRadius: 2, marginTop: 4 }} />
+    <Box>
+      <Text style={{ fontSize: 34, fontWeight: 'bold', color: '#0F2E5C' }}>LangGraph 图：11 个节点，一条环</Text>
+      <Text style={{ fontSize: 15, color: '#64748B', marginTop: 6 }}>自动推进的本质 = 图里有一个环：学生每说一句话就走一圈，judge_advance 每轮重新判一次</Text>
+    </Box>
+  </Box>
+  <Box style={{ position: 'absolute', top: 124, left: 64, right: 64, bottom: 52 }}>
+    <svg width={1152} height={508} viewBox="0 0 1152 508">
+      <defs>
+        <marker id="a2" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L8,3 z" fill="#1B4F9C" /></marker>
+        <marker id="a3" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L8,3 z" fill="#F59E0B" /></marker>
+      </defs>
+      <g fontSize="14" textAnchor="middle">
+        <rect x={20} y={24} width={120} height={52} rx={10} fill="#64748B" />
+        <text x={80} y={56} fill="#FFFFFF" fontWeight="bold">START</text>
+        <rect x={180} y={24} width={140} height={52} rx={10} fill="#1B4F9C" />
+        <text x={250} y={48} fill="#FFFFFF" fontWeight="bold">load_plan</text>
+        <text x={250} y={66} fill="#BFD4F2" fontSize={11.5}>读计划+8项校验</text>
+        <rect x={360} y={24} width={120} height={52} rx={10} fill="#1B4F9C" />
+        <text x={420} y={48} fill="#FFFFFF" fontWeight="bold">tick</text>
+        <text x={420} y={66} fill="#BFD4F2" fontSize={11.5}>真实时钟+复位</text>
+        <rect x={520} y={24} width={150} height={52} rx={10} fill="#1B4F9C" />
+        <text x={595} y={48} fill="#FFFFFF" fontWeight="bold">load_context</text>
+        <text x={595} y={66} fill="#BFD4F2" fontSize={11.5}>按幕分层装配</text>
+        <rect x={710} y={24} width={150} height={52} rx={10} fill="#1B4F9C" />
+        <text x={785} y={48} fill="#FFFFFF" fontWeight="bold">classify_turn</text>
+        <text x={785} y={66} fill="#BFD4F2" fontSize={11.5}>谁在说话</text>
+        <rect x={900} y={24} width={130} height={52} rx={10} fill="#3D7BE0" />
+        <text x={965} y={48} fill="#FFFFFF" fontWeight="bold">host_event</text>
+        <text x={965} y={66} fill="#D6E4F8" fontSize={11.5}>开场/收尾</text>
+        <path d="M140 50 L180 50" stroke="#1B4F9C" strokeWidth={2.5} markerEnd="url(#a2)" />
+        <path d="M320 50 L360 50" stroke="#1B4F9C" strokeWidth={2.5} markerEnd="url(#a2)" />
+        <path d="M480 50 L520 50" stroke="#1B4F9C" strokeWidth={2.5} markerEnd="url(#a2)" />
+        <path d="M670 50 L710 50" stroke="#1B4F9C" strokeWidth={2.5} markerEnd="url(#a2)" />
+        <path d="M860 50 L900 50" stroke="#1B4F9C" strokeWidth={2.5} markerEnd="url(#a2)" />
+        <path d="M785 76 L785 128 L250 128 L250 152" stroke="#1B4F9C" strokeWidth={2.5} fill="none" markerEnd="url(#a2)" />
+        <text x={520} y={120} fontSize={12.5} fill="#64748B">学生轮 ↓ 走教学主线</text>
+        <rect x={180} y={152} width={140} height={52} rx={10} fill="#1B4F9C" />
+        <text x={250} y={176} fill="#FFFFFF" fontWeight="bold">teach</text>
+        <text x={250} y={194} fill="#BFD4F2" fontSize={11.5}>两层：骨架+LLM润色</text>
+        <rect x={370} y={152} width={160} height={52} rx={10} fill="#1B4F9C" />
+        <text x={450} y={176} fill="#FFFFFF" fontWeight="bold">judge_mastery</text>
+        <text x={450} y={194} fill="#BFD4F2" fontSize={11.5}>按 rubric 判星级</text>
+        <rect x={580} y={152} width={170} height={52} rx={10} fill="#F59E0B" />
+        <text x={665} y={176} fill="#FFFFFF" fontWeight="bold">judge_advance ★</text>
+        <text x={665} y={194} fill="#FFF3DC" fontSize={11.5}>切幕判定（编排核心）</text>
+        <path d="M320 178 L370 178" stroke="#1B4F9C" strokeWidth={2.5} markerEnd="url(#a2)" />
+        <path d="M530 178 L580 178" stroke="#1B4F9C" strokeWidth={2.5} markerEnd="url(#a2)" />
+        <path d="M965 76 L965 240 L750 240 L750 192" stroke="#3D7BE0" strokeWidth={2} fill="none" markerEnd="url(#a2)" strokeDasharray="6 5" />
+        <rect x={830} y={296} width={160} height={52} rx={10} fill="#1B4F9C" />
+        <text x={910} y={320} fill="#FFFFFF" fontWeight="bold">advance_stage</text>
+        <text x={910} y={338} fill="#BFD4F2" fontSize={11.5}>快照+切到下一幕</text>
+        <rect x={580} y={296} width={150} height={52} rx={10} fill="#1B4F9C" />
+        <text x={655} y={320} fill="#FFFFFF" fontWeight="bold">write_state</text>
+        <text x={655} y={338} fill="#BFD4F2" fontSize={11.5}>落盘 runtime/**</text>
+        <rect x={370} y={296} width={160} height={52} rx={10} fill="#1B4F9C" />
+        <text x={450} y={320} fill="#FFFFFF" fontWeight="bold">format_reply</text>
+        <text x={450} y={338} fill="#BFD4F2" fontSize={11.5}>组装回复+播报</text>
+        <rect x={180} y={296} width={120} height={52} rx={10} fill="#64748B" />
+        <text x={240} y={328} fill="#FFFFFF" fontWeight="bold">END</text>
+        <path d="M700 204 L880 204 L880 296" stroke="#F59E0B" strokeWidth={3} fill="none" markerEnd="url(#a3)" />
+        <text x={795} y={196} fontSize={13} fill="#F59E0B" fontWeight="bold">换幕</text>
+        <path d="M630 204 L630 296" stroke="#1B4F9C" strokeWidth={2.5} fill="none" markerEnd="url(#a2)" />
+        <text x={606} y={254} fontSize={13} fill="#64748B">留幕</text>
+        <path d="M830 322 L730 322" stroke="#1B4F9C" strokeWidth={2.5} markerEnd="url(#a2)" />
+        <path d="M580 322 L530 322" stroke="#1B4F9C" strokeWidth={2.5} markerEnd="url(#a2)" />
+        <path d="M370 322 L300 322" stroke="#1B4F9C" strokeWidth={2.5} markerEnd="url(#a2)" />
+        <rect x={830} y={384} width={300} height={104} rx={10} fill="#E8F0FB" />
+        <text x={850} y={412} fontSize={13.5} fill="#0F2E5C" fontWeight="bold" textAnchor="start">「环」在哪？</text>
+        <text x={850} y={436} fontSize={12.5} fill="#334155" textAnchor="start">学生说下一句 → 同一 thread_id</text>
+        <text x={850} y={456} fontSize={12.5} fill="#334155" textAnchor="start">再进图，所有判定用 checkpoint</text>
+        <text x={850} y={476} fontSize={12.5} fill="#334155" textAnchor="start">里的最新状态重跑一遍</text>
+        <rect x={20} y={384} width={760} height={104} rx={10} fill="#FFFFFF" stroke="#D7E4F6" />
+        <text x={40} y={412} fontSize={13.5} fill="#0F2E5C" fontWeight="bold" textAnchor="start">两个关键约定</text>
+        <text x={40} y={438} fontSize={12.5} fill="#334155" textAnchor="start">① 判断写进 state、路由只读不判（route_after_judge 只看 target_phase）</text>
+        <text x={40} y={462} fontSize={12.5} fill="#334155" textAnchor="start">② now 由会话层注入，节点一律不许自己读钟 → 图是纯函数，</text>
+        <text x={40} y={482} fontSize={12.5} fill="#334155" textAnchor="start">　 喂一串时间戳即可重放整节课（可单测、可回放）</text>
+      </g>
+    </svg>
+  </Box>
+  <Box style={{ position: 'absolute', left: 64, right: 64, bottom: 20, flexDirection: 'row', justifyContent: 'space-between' }}>
+    <Box style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+      <Box style={{ width: 10, height: 10, background: '#1B4F9C', borderRadius: 2 }} />
+      <Text style={{ fontSize: 13, color: '#64748B' }}>主动引导智能体 · 项目介绍</Text>
+    </Box>
+    <Text style={{ fontSize: 13, color: '#64748B' }}>11 / 18</Text>
+  </Box>
+</Slide>

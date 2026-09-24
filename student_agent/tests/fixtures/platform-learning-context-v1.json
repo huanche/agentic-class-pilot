@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "userId": "00000000-0000-0000-0000-0000000000aa",
+  "courseId": "8215ad2e-6d1f-411e-9290-eb288cfdbde0",
+  "courseTitle": "心理健康课",
+  "publication": { "id": "zFwXtfolpgG_9U", "version": 2 },
+  "knowledgePackage": {
+    "title": "心理沙盘游戏初识",
+    "summary": "认识心理沙盘游戏的组成、作用与体验准备。",
+    "entries": [
+      {
+        "id": "4DBnQ-1-a54hHV",
+        "title": "心理沙盘游戏初识",
+        "content": "复用历史生成的心理沙盘互动课件。第一环节认识沙盘；第二环节了解作用；第三环节体验准备。",
+        "citations": [ { "page": 1, "materialId": "yTDr7xwQCnjLIA", "sourceName": "《心理沙盘游戏》.txt" } ]
+      }
+    ]
+  },
+  "classroom": {
+    "id": "sandplay-e2e-v1",
+    "playerUrl": "http://localhost:3200/classroom-player/sandplay-e2e-v1",
+    "scenes": [
+      {
+        "id": "jOc_Iof1owSSm4bFQEcCD",
+        "type": "slide",
+        "order": 1,
+        "title": "课程导入与今日目标",
+        "actions": [
+          { "id": "action_e82ZMkVJ", "type": "speech", "text": "同学们好！欢迎来到心理沙盘游戏课堂。" },
+          { "id": "action_ytcao1VC", "type": "spotlight", "elementId": "text_qh0VpEEE" }
+        ]
+      }
+    ]
+  }
+}

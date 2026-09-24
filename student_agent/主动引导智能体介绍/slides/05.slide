@@ -1,0 +1,72 @@
+<Slide style={{ width: '1280px', height: '720px', padding: 0, background: '#FFFFFF' }}>
+  <Box style={{ position: 'absolute', top: 36, left: 64, right: 64, flexDirection: 'row', gap: 16 }}>
+    <Box style={{ width: 8, height: 40, background: '#1B4F9C', borderRadius: 2, marginTop: 4 }} />
+    <Box>
+      <Text style={{ fontSize: 34, fontWeight: 'bold', color: '#0F2E5C' }}>逐幕体验：学生做什么、AI 做什么、星级怎么变</Text>
+      <Text style={{ fontSize: 15, color: '#64748B', marginTop: 6 }}>星级只升不降 · 5 星只能由正式考核给出 · 学生说「我懂了」不是证据</Text>
+    </Box>
+  </Box>
+  <Box style={{ position: 'absolute', top: 128, left: 64, right: 64, bottom: 56, gap: 14 }}>
+    <Table
+      style={{ width: '100%', height: 350 }}
+      defaultTextStyle={{ fontSize: 14, textAlign: 'left', color: '#0F2E5C' }}
+      defaultCellStyle={{ border: { bottom: { width: 1, color: '#D7E4F6' } }, padding: 8 }}
+      cells={[
+        [
+          { text: '幕', textStyle: { bold: true, color: '#FFFFFF', fontSize: 14 }, cellStyle: { background: { color: '#1B4F9C' } } },
+          { text: '学生经历什么', textStyle: { bold: true, color: '#FFFFFF', fontSize: 14 }, cellStyle: { background: { color: '#1B4F9C' } } },
+          { text: 'AI 在做什么', textStyle: { bold: true, color: '#FFFFFF', fontSize: 14 }, cellStyle: { background: { color: '#1B4F9C' } } },
+          { text: '掌握星级变化', textStyle: { bold: true, color: '#FFFFFF', fontSize: 14 }, cellStyle: { background: { color: '#1B4F9C' } } },
+        ],
+        [
+          { text: '开场 intro', textStyle: { bold: true, color: '#1B4F9C' } },
+          '收到本课目标与互动方式说明',
+          '系统幕：交代规则，一轮后立即切幕',
+          '—',
+        ],
+        [
+          { text: '引导学习', textStyle: { bold: true, color: '#1B4F9C' }, cellStyle: { background: { color: '#E8F0FB' } } },
+          { text: '听讲解、被主动提问，按片段逐段推进', cellStyle: { background: { color: '#E8F0FB' } } },
+          { text: '按 segments/seg-XXX.json 逐段讲解，讲完即记「已接触」', cellStyle: { background: { color: '#E8F0FB' } } },
+          { text: '0 → 1 星（AI 讲过即记，不讲不记）', textStyle: { color: '#B87700', bold: true }, cellStyle: { background: { color: '#E8F0FB' } } },
+        ],
+        [
+          { text: '复述与讨论', textStyle: { bold: true, color: '#1B4F9C' } },
+          '用自己的话把刚讲的内容讲回来',
+          '从题库抽检验问题追问 1–2 轮，按完整度判星、补缺口',
+          { text: '1 → 2 星（零散要点）→ 3 星（完整讲回）', textStyle: { color: '#B87700', bold: true } },
+        ],
+        [
+          { text: '深层探究', textStyle: { bold: true, color: '#1B4F9C' }, cellStyle: { background: { color: '#E8F0FB' } } },
+          { text: '回答「为什么 / 如何实现 / 用在哪 / 关联学科」', cellStyle: { background: { color: '#E8F0FB' } } },
+          { text: '拿 KNOWLEDGE-BASE 的 4 个探究字段追问；没答透的旧目标优先补问', cellStyle: { background: { color: '#E8F0FB' } } },
+          { text: '3 → 4 星（说出机制原因）', textStyle: { color: '#B87700', bold: true }, cellStyle: { background: { color: '#E8F0FB' } } },
+        ],
+        [
+          { text: '全班讨论', textStyle: { bold: true, color: '#1B4F9C' } },
+          '转入老师主导的课堂讨论',
+          '退居协助：提示「请老师主导」+ 计时，到点切幕',
+          '星级不变，只记综合表现快照',
+        ],
+        [
+          { text: '收尾 ending', textStyle: { bold: true, color: '#1B4F9C' }, cellStyle: { background: { color: '#E8F0FB' } } },
+          { text: '收到总结与遗留问题清单', cellStyle: { background: { color: '#E8F0FB' } } },
+          { text: '系统幕：汇总本课，列出未关闭目标', cellStyle: { background: { color: '#E8F0FB' } } },
+          { text: '—（考核入口独立给 5 星）', cellStyle: { background: { color: '#E8F0FB' } } },
+        ],
+      ]}
+    />
+    <Box style={{ background: '#E8F0FB', borderRadius: 10, padding: '14px 18px' }}>
+      <Text style={{ fontSize: 14.5, color: '#0F2E5C', lineHeight: 1.6 }}>
+        <span style={{ fontWeight: 'bold', color: '#1B4F9C' }}>每幕结束拍一张快照</span>（stage_snapshot 写入 mastery-history.json）：记本幕耗时、关闭了哪些目标、还剩哪些 —— 老师看到的是学生「一步步怎么变的」，不只是一个最终分数。
+      </Text>
+    </Box>
+  </Box>
+  <Box style={{ position: 'absolute', left: 64, right: 64, bottom: 20, flexDirection: 'row', justifyContent: 'space-between' }}>
+    <Box style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+      <Box style={{ width: 10, height: 10, background: '#1B4F9C', borderRadius: 2 }} />
+      <Text style={{ fontSize: 13, color: '#64748B' }}>主动引导智能体 · 项目介绍</Text>
+    </Box>
+    <Text style={{ fontSize: 13, color: '#64748B' }}>05 / 18</Text>
+  </Box>
+</Slide>

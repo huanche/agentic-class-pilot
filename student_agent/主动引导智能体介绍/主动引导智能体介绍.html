@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>主动引导智能体 · 项目介绍</title>
+<style>
+  :root{
+    --primary:#1B4F9C; --secondary:#3D7BE0; --light:#E8F0FB;
+    --dark:#0F2E5C; --accent:#F59E0B; --gray:#64748B; --line:#D7E4F6;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  html,body{height:100%;background:#22314e;font-family:"Source Han Sans SC","思源黑体","Microsoft YaHei",sans-serif;}
+  body{overflow:hidden;}
+  #stage{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;}
+  .slide{
+    width:1280px;height:720px;background:#fff;flex-shrink:0;position:relative;
+    transform-origin:center center;overflow:hidden;display:none;
+  }
+  .slide.active{display:block;}
+  /* 母版 */
+  .titlebar{position:absolute;top:36px;left:64px;right:64px;display:flex;align-items:flex-start;gap:16px;}
+  .titlebar .bar{width:8px;height:40px;background:var(--primary);border-radius:2px;margin-top:4px;}
+  .titlebar h2{font-size:34px;color:var(--dark);line-height:1.25;}
+  .titlebar .sub{font-size:15px;color:var(--gray);margin-top:6px;}
+  .footer{position:absolute;left:64px;right:64px;bottom:20px;display:flex;justify-content:space-between;font-size:13px;color:var(--gray);}
+  .footer .brand{display:flex;align-items:center;gap:8px;}
+  .footer .brand i{width:10px;height:10px;background:var(--primary);display:inline-block;border-radius:2px;}
+  .body{position:absolute;top:132px;left:64px;right:64px;bottom:56px;}
+  /* 通用 */
+  table{border-collapse:collapse;width:100%;font-size:15px;color:var(--dark);}
+  th{background:var(--primary);color:#fff;font-weight:bold;padding:10px 12px;text-align:left;font-size:14.5px;}
+  td{padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top;line-height:1.5;}
+  tr:nth-child(even) td{background:var(--light);}
+  code,.mono{font-family:"JetBrains Mono","Consolas",monospace;}
+  .code{background:#0F2E5C;color:#D6E4F8;border-radius:10px;padding:18px 22px;font-size:14px;line-height:1.65;white-space:pre;font-family:"JetBrains Mono","Consolas",monospace;overflow:hidden;}
+  .code .c{color:#7FA6DC;} .code .k{color:#F59E0B;} .code .s{color:#9FE1CB;}
+  .chip{display:inline-block;padding:3px 12px;border-radius:99px;font-size:13px;font-weight:bold;}
+  .chip.on{background:#DFF3E4;color:#1E7A34;} .chip.off{background:#FBE9E7;color:#B4482E;}
+  .acc{color:var(--accent);font-weight:bold;} .pri{color:var(--primary);font-weight:bold;}
+  /* 章节扉页 */
+  .section-slide{background:linear-gradient(135deg,#1B4F9C 0%,#0F2E5C 100%);color:#fff;}
+  .section-slide .num{font-size:140px;font-weight:bold;color:rgba(255,255,255,.16);line-height:1;}
+  .section-slide .st{font-size:46px;font-weight:bold;margin-top:8px;}
+  .section-slide .sd{font-size:19px;color:#BFD4F2;margin-top:18px;line-height:1.7;max-width:760px;}
+  .section-slide .rule{width:64px;height:6px;background:var(--accent);margin-top:26px;}
+  /* 导航 */
+  #nav{position:fixed;right:24px;bottom:20px;display:flex;gap:10px;align-items:center;z-index:9;font-family:inherit;}
+  #nav button{width:44px;height:44px;border-radius:50%;border:none;background:rgba(255,255,255,.14);color:#fff;font-size:20px;cursor:pointer;}
+  #nav button:hover{background:rgba(255,255,255,.3);}
+  #counter{color:#fff;font-size:14px;background:rgba(255,255,255,.14);padding:8px 14px;border-radius:99px;}
+  #hint{position:fixed;left:24px;bottom:32px;color:rgba(255,255,255,.55);font-size:13px;z-index:9;}
+</style>
+</head>
+<body>
+<div id="stage">
+
+<!-- 01 封面 -->
+<section class="slide" style="display:block;">
+  <div style="position:absolute;left:0;top:0;bottom:0;width:470px;background:linear-gradient(135deg,#1B4F9C 0%,#0F2E5C 100%);padding:64px 48px;display:flex;flex-direction:column;justify-content:space-between;">
+    <div>
+      <div style="width:44px;height:5px;background:var(--accent);"></div>
+      <div style="font-size:15px;color:#BFD4F2;letter-spacing:3px;margin-top:14px;">课堂智能体 · 项目介绍</div>
+    </div>
+    <div>
+      <div style="font-size:62px;font-weight:bold;color:#fff;line-height:1.15;">主动引导<br>智能体</div>
+      <div style="font-size:19px;color:#D6E4F8;line-height:1.6;margin-top:20px;">课程计划驱动、AI 自动推进的课堂<br>提示词管「怎么教」，数据管「教什么、教多久」</div>
+    </div>
+    <div style="font-size:14px;color:#9FB9E0;line-height:1.8;">重构自 Dify-Classroom-Interactive-Agent<br>LangGraph 编排 · 2026.09</div>
+  </div>
+  <div style="position:absolute;left:470px;right:0;top:0;bottom:0;display:flex;align-items:center;justify-content:center;">
+    <svg width="640" height="460" viewBox="0 0 640 460">
+      <defs>
+        <marker id="arr" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L9,3 z" fill="#1B4F9C"/></marker>
+        <marker id="arrA" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L9,3 z" fill="#F59E0B"/></marker>
+      </defs>
+      <rect x="30" y="30" width="580" height="400" rx="16" fill="#E8F0FB" opacity="0.55"/>
+      <circle cx="150" cy="120" r="34" fill="#1B4F9C"/><text x="150" y="126" font-size="15" fill="#fff" text-anchor="middle" font-weight="bold">计划</text>
+      <circle cx="330" cy="80" r="34" fill="#3D7BE0"/><text x="330" y="86" font-size="15" fill="#fff" text-anchor="middle" font-weight="bold">时钟</text>
+      <circle cx="500" cy="140" r="34" fill="#3D7BE0"/><text x="500" y="146" font-size="15" fill="#fff" text-anchor="middle" font-weight="bold">教学</text>
+      <circle cx="490" cy="310" r="34" fill="#1B4F9C"/><text x="490" y="316" font-size="15" fill="#fff" text-anchor="middle" font-weight="bold">判星</text>
+      <circle cx="310" cy="370" r="38" fill="#F59E0B"/><text x="310" y="376" font-size="15" fill="#fff" text-anchor="middle" font-weight="bold">切幕</text>
+      <circle cx="140" cy="300" r="34" fill="#1B4F9C"/><text x="140" y="306" font-size="15" fill="#fff" text-anchor="middle" font-weight="bold">落盘</text>
+      <path d="M184 116 L296 84" stroke="#1B4F9C" stroke-width="2.5" fill="none" marker-end="url(#arr)"/>
+      <path d="M364 92 L470 128" stroke="#3D7BE0" stroke-width="2.5" fill="none" marker-end="url(#arr)"/>
+      <path d="M498 174 L492 276" stroke="#3D7BE0" stroke-width="2.5" fill="none" marker-end="url(#arr)"/>
+      <path d="M456 326 L348 358" stroke="#1B4F9C" stroke-width="2.5" fill="none" marker-end="url(#arr)"/>
+      <path d="M272 362 L176 316" stroke="#F59E0B" stroke-width="3" fill="none" marker-end="url(#arrA)"/>
+      <path d="M144 266 L148 154" stroke="#1B4F9C" stroke-width="2.5" fill="none" marker-end="url(#arr)"/>
+      <text x="320" y="446" font-size="14" fill="#64748B" text-anchor="middle">学生每说一句话，状态机就走一圈</text>
+    </svg>
+  </div>
+</section>
+
+<!-- 02 目录 -->
+<section class="slide">
+  <div style="position:absolute;left:0;top:0;bottom:0;width:400px;background:#0F2E5C;padding:72px 48px;display:flex;flex-direction:column;justify-content:space-between;">
+    <div>
+      <div style="width:44px;height:5px;background:var(--accent);"></div>
+      <div style="font-size:40px;font-weight:bold;color:#fff;line-height:1.25;margin-top:16px;">四个视角<br>看懂这套系统</div>
+    </div>
+    <div style="font-size:15px;color:#9FB9E0;line-height:1.7;">从坐在教室里的学生，<br>到课前配置的老师，<br>再到跑在代码里的编排器。</div>
+  </div>
+  <div style="position:absolute;left:400px;right:0;top:0;bottom:0;padding:64px;display:flex;flex-direction:column;gap:22px;justify-content:center;">
+    <div style="display:flex;align-items:center;gap:22px;background:var(--light);border:1px solid var(--line);border-radius:10px;padding:20px 24px;">
+      <span style="font-size:34px;font-weight:bold;color:var(--primary);width:64px;">01</span>
+      <div style="flex:1;"><div style="font-size:20px;font-weight:bold;color:var(--dark);">学生端 · 一节课的完整旅程</div><div style="font-size:14px;color:var(--gray);margin-top:4px;">六幕时间轴、逐幕体验、星级如何从 0 长到 4</div></div>
+      <span class="acc">P03–P05</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:22px;border:1px solid var(--line);border-radius:10px;padding:20px 24px;">
+      <span style="font-size:34px;font-weight:bold;color:var(--primary);width:64px;">02</span>
+      <div style="flex:1;"><div style="font-size:20px;font-weight:bold;color:var(--dark);">老师端 · 课前配置</div><div style="font-size:14px;color:var(--gray);margin-top:4px;">lesson-plan.json 定阶段时长，内容文件写在哪、谁在读</div></div>
+      <span class="acc">P06–P09</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:22px;background:var(--light);border:1px solid var(--line);border-radius:10px;padding:20px 24px;">
+      <span style="font-size:34px;font-weight:bold;color:var(--primary);width:64px;">03</span>
+      <div style="flex:1;"><div style="font-size:20px;font-weight:bold;color:var(--dark);">编排器 · 代码实现</div><div style="font-size:14px;color:var(--gray);margin-top:4px;">LangGraph 11 节点、teach 两层铁律、真实时钟与切幕判定</div></div>
+      <span class="acc">P10–P14</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:22px;border:1px solid var(--line);border-radius:10px;padding:20px 24px;">
+      <span style="font-size:34px;font-weight:bold;color:var(--primary);width:64px;">04</span>
+      <div style="flex:1;"><div style="font-size:20px;font-weight:bold;color:var(--dark);">功能板块 · 文件地图</div><div style="font-size:14px;color:var(--gray);margin-top:4px;">五大目录分工、每个文件的用途与被调用时机</div></div>
+      <span class="acc">P15–P17</span>
+    </div>
+  </div>
+</section>
+
+<!-- 03 章节 01 -->
+<section class="slide section-slide">
+  <div style="padding:120px 96px;">
+    <div class="num">01</div>
+    <div class="st">学生端 · 一节课的完整旅程</div>
+    <div class="sd">学生面对的不是「你问我答」的聊天机器人，而是一堂有剧本的课：AI 按老师排好的课程计划自动推进，把一门课在规定时间内上完。</div>
+    <div class="rule"></div>
+  </div>
+</section>
+
+<!-- 04 六幕时间轴 -->
+<section class="slide">
+  <div class="titlebar"><div class="bar"></div><div><h2>一节课的六幕：时间表就是剧本</h2><div class="sub">以 45 分钟示例课《第3章 处理机调度》为例 —— 时长占比来自 lesson-plan.json 真实配置</div></div></div>
+  <div class="body">
+    <svg width="1152" height="300" viewBox="0 0 1152 300">
+      <!-- 时间刻度 -->
+      <text x="80" y="36" font-size="13" fill="#64748B">0%</text>
+      <text x="320" y="36" font-size="13" fill="#64748B">50%</text>
+      <text x="535" y="36" font-size="13" fill="#64748B">70%</text>
+      <text x="700" y="36" font-size="13" fill="#64748B">85%</text>
+      <text x="880" y="36" font-size="13" fill="#64748B">100%</text>
+      <!-- 主条：intro 40 + guided 489 + recap 200 + inquiry 156 + discussion 156 + ending 40 -->
+      <rect x="40" y="56" width="44" height="88" rx="8" fill="#64748B"/>
+      <text x="62" y="104" font-size="13" fill="#fff" text-anchor="middle" font-weight="bold">开场</text>
+      <rect x="88" y="56" width="488" height="88" rx="8" fill="#1B4F9C"/>
+      <text x="332" y="96" font-size="17" fill="#fff" text-anchor="middle" font-weight="bold">引导学习 · 讲解 + 主动提问</text>
+      <text x="332" y="122" font-size="14" fill="#BFD4F2" text-anchor="middle">22 分钟</text>
+      <rect x="580" y="56" width="200" height="88" rx="8" fill="#3D7BE0"/>
+      <text x="680" y="96" font-size="16" fill="#fff" text-anchor="middle" font-weight="bold">复述与讨论</text>
+      <text x="680" y="122" font-size="14" fill="#D6E4F8" text-anchor="middle">9 分钟</text>
+      <rect x="784" y="56" width="155" height="88" rx="8" fill="#1B4F9C"/>
+      <text x="861" y="96" font-size="16" fill="#fff" text-anchor="middle" font-weight="bold">深层探究</text>
+      <text x="861" y="122" font-size="14" fill="#BFD4F2" text-anchor="middle">7 分钟</text>
+      <rect x="943" y="56" width="155" height="88" rx="8" fill="#E8F0FB" stroke="#1B4F9C" stroke-width="2" stroke-dasharray="8 6"/>
+      <text x="1020" y="96" font-size="15" fill="#1B4F9C" text-anchor="middle" font-weight="bold">全班讨论</text>
+      <text x="1020" y="122" font-size="13" fill="#64748B" text-anchor="middle">7′ 本课已停用</text>
+      <rect x="1102" y="56" width="44" height="88" rx="8" fill="#64748B"/>
+      <text x="1124" y="104" font-size="13" fill="#fff" text-anchor="middle" font-weight="bold">收尾</text>
+      <!-- 星级标注 -->
+      <path d="M332 150 L332 172" stroke="#F59E0B" stroke-width="2"/>
+      <text x="332" y="192" font-size="14" fill="#F59E0B" text-anchor="middle" font-weight="bold">1 星「已接触」</text>
+      <path d="M680 150 L680 172" stroke="#F59E0B" stroke-width="2"/>
+      <text x="680" y="192" font-size="14" fill="#F59E0B" text-anchor="middle" font-weight="bold">2–3 星</text>
+      <path d="M861 150 L861 172" stroke="#F59E0B" stroke-width="2"/>
+      <text x="861" y="192" font-size="14" fill="#F59E0B" text-anchor="middle" font-weight="bold">4 星</text>
+      <text x="1020" y="192" font-size="13" fill="#64748B" text-anchor="middle">只记快照</text>
+      <!-- 底部结论 -->
+      <rect x="40" y="224" width="1106" height="64" rx="10" fill="#E8F0FB"/>
+      <text x="64" y="252" font-size="16" fill="#0F2E5C">幕可自由启停：lesson-plan.json 里 <tspan font-weight="bold">enabled: false</tspan> 即整段跳过（本课关掉了全班讨论）</text>
+      <text x="64" y="276" font-size="14" fill="#64748B">intro / ending 是系统幕，不占老师的时间预算；中间四幕的分钟数之和 ≤ 总时长，开课前由 8 项校验把关</text>
+    </svg>
+  </div>
+  <div class="footer"><span class="brand"><i></i>主动引导智能体 · 项目介绍</span><span>04 / 18</span></div>
+</section>
+
+<!-- 05 逐幕体验与星级 -->
+<section class="slide">
+  <div class="titlebar"><div class="bar"></div><div><h2>逐幕体验：学生做什么、AI 做什么、星级怎么变</h2><div class="sub">星级只升不降 · 5 星只能由正式考核给出 · 学生说「我懂了」不是证据</div></div></div>
+  <div class="body">
+    <table>
+      <tr><th style="width:13%;">幕</th><th style="width:26%;">学生经历什么</th><th style="width:33%;">AI 在做什么</th><th style="width:28%;">掌握星级变化</th></tr>
+      <tr><td class="pri">开场 intro</td><td>收到本课目标与互动方式说明</td><td>系统幕：交代规则，一轮后立即切幕</td><td>—</td></tr>
+      <tr><td class="pri">引导学习</td><td>听讲解、被主动提问，按片段（segment）逐段推进</td><td>按 segments/seg-XXX.json 逐段讲解，讲完即记「已接触」</td><td>0 → <span class="acc">1 星</span>（AI 讲过即记，不讲不记）</td></tr>
+      <tr><td class="pri">复述与讨论</td><td>用自己的话把刚讲的内容讲回来</td><td>从题库抽检验问题追问 1–2 轮，按完整度判星、补缺口</td><td>1 → <span class="acc">2 星</span>（零散要点）→ <span class="acc">3 星</span>（完整讲回）</td></tr>
+      <tr><td class="pri">深层探究</td><td>回答「为什么 / 如何实现 / 用在哪 / 关联学科」</td><td>拿 KNOWLEDGE-BASE 的 4 个探究字段追问；没答透的旧目标优先补问</td><td>3 → <span class="acc">4 星</span>（说出机制原因；只说结论维持 3 星）</td></tr>
+      <tr><td class="pri">全班讨论</td><td>转入老师主导的课堂讨论</td><td>退居协助：提示「请老师主导」+ 计时，到点切幕</td><td>星级不变，只记综合表现快照</td></tr>
+      <tr><td class="pri">收尾 ending</td><td>收到总结与遗留问题清单</td><td>系统幕：汇总本课，列出未关闭目标</td><td>—（考核入口独立给 5 星）</td></tr>
+    </table>
+    <div style="margin-top:14px;background:var(--light);border-radius:10px;padding:12px 18px;font-size:14.5px;color:var(--dark);">
+      <span class="pri">每幕结束拍一张快照</span>（stage_snapshot 写入 mastery-history.json）：记本幕耗时、关闭了哪些目标、还剩哪些 —— 老师看到的是学生「一步步怎么变的」，不只是一个最终分数。
+    </div>
+  </div>
+  <div class="footer"><span class="brand"><i></i>主动引导智能体 · 项目介绍</span><span>05 / 18</span></div>
+</section>
+
+<!-- 06 章节 02 -->
+<section class="slide section-slide">
+  <div style="padding:120px 96px;">
+    <div class="num">02</div>
+    <div class="st">老师端 · 课前配置</div>
+    <div class="sd">老师不用写提示词、不用懂状态机。开课前只做两件事：定阶段与时长，填课程内容文件。规则与配置就是燃料。</div>
+    <div class="rule"></div>
+  </div>
+</section>
+
+<!-- 07 lesson-plan.json -->
+<section class="slide">
+  <div class="titlebar"><div class="bar"></div><div><h2>第一步：lesson-plan.json 定阶段与时长</h2><div class="sub">lesson-data/lesson-plan.json —— 编排入口，load_plan 节点开课时读取并校验</div></div></div>
+  <div class="body" style="display:flex;gap:28px;">
+    <div style="width:54%;">
+      <div class="code" style="height:100%;">{
+  <span class="s">"lesson_id"</span>: <span class="s">"ch3-process-scheduling"</span>,
+  <span class="s">"total_minutes"</span>: <span class="k">45</span>,
+  <span class="s">"stages"</span>: [
+    { <span class="s">"id"</span>: <span class="s">"guided_learning"</span>,  <span class="s">"enabled"</span>: <span class="k">true</span>,
+      <span class="s">"minutes"</span>: <span class="k">22</span>, <span class="s">"advance_when"</span>: <span class="s">"either"</span> },
+    { <span class="s">"id"</span>: <span class="s">"recap_discussion"</span>, <span class="s">"enabled"</span>: <span class="k">true</span>,
+      <span class="s">"minutes"</span>: <span class="k">9</span>,  <span class="s">"advance_when"</span>: <span class="s">"either"</span> },
+    { <span class="s">"id"</span>: <span class="s">"deep_inquiry"</span>,     <span class="s">"enabled"</span>: <span class="k">true</span>,
+      <span class="s">"minutes"</span>: <span class="k">7</span>,  <span class="s">"advance_when"</span>: <span class="s">"either"</span> },
+    { <span class="s">"id"</span>: <span class="s">"class_discussion"</span>, <span class="s">"enabled"</span>: <span class="k">false</span>,
+      <span class="s">"minutes"</span>: <span class="k">7</span>,  <span class="s">"advance_when"</span>: <span class="s">"budget"</span> }
+  ],
+  <span class="s">"advance_policy"</span>: {
+    <span class="s">"on_budget_exhausted"</span>: <span class="s">"wrap_up"</span>,   <span class="c">// 到点:收尾后切</span>
+    <span class="s">"on_evidence_reached"</span>: <span class="s">"advance"</span>,     <span class="c">// 证据达标:切幕</span>
+    <span class="s">"min_stage_minutes"</span>: <span class="k">2</span>,            <span class="c">// 防秒切</span>
+    <span class="s">"max_stage_overrun_minutes"</span>: <span class="k">3</span>       <span class="c">// 延长上限</span>
+  }
+}</div>
+    </div>
+    <div style="flex:1;display:flex;flex-direction:column;gap:14px;">
+      <table>
+        <tr><th style="width:34%;">字段</th><th>含义</th></tr>
+        <tr><td class="mono" style="font-size:13.5px;">enabled</td><td><span class="chip off">false</span> 整段跳过，这门课可以不要讨论</td></tr>
+        <tr><td class="mono" style="font-size:13.5px;">minutes</td><td>这一幕的<span class="pri">时长预算</span>，真实时钟到点切幕</td></tr>
+        <tr><td class="mono" style="font-size:13.5px;">advance_when</td><td><b>either</b> 证据或时间先到先切 · <b>evidence</b> 学透才走 · <b>budget</b> 只看时间</td></tr>
+      </table>
+      <div style="background:var(--light);border-radius:10px;padding:14px 18px;font-size:14.5px;color:var(--dark);line-height:1.65;margin-top:auto;">
+        <span class="pri">改 JSON 就是改课。</span>加一幕、砍一幕、调整分钟数，都不用碰任何代码与提示词 —— 状态机每轮读这张表。
+      </div>
+    </div>
+  </div>
+  <div class="footer"><span class="brand"><i></i>主动引导智能体 · 项目介绍</span><span>07 / 18</span></div>
+</section>
+
+<!-- 08 内容文件地图 -->
+<section class="slide">
+  <div class="titlebar"><div class="bar"></div><div><h2>第二步：填课程内容 —— 写在哪、谁在读</h2><div class="sub">五类内容文件，各自的用途与被编排器读取的时机</div></div></div>
+  <div class="body">
+    <table>
+      <tr><th style="width:26%;">文件</th><th style="width:30%;">老师写什么</th><th style="width:44%;">编排器何时 / 被谁读取</th></tr>
+      <tr><td class="mono" style="font-size:13.5px;">rules/KNOWLEDGE-BASE.md</td><td>知识点目录：定义、检测问题、掌握表现 + 4 个探究字段（为什么/如何/用在哪/关联学科）</td><td>每轮由 load_context 装配；探究字段是深层探究阶段的<span class="pri">唯一燃料</span>；检测问题是复述题库的最后一级兜底</td></tr>
+      <tr><td class="mono" style="font-size:13.5px;">runtime/TMISSION.md</td><td>老师目标、核心难点（含检验问题）、易混淆点名称</td><td>讲解与复述阶段读取；检验问题是复述题库的<span class="pri">第 2 级</span>来源</td></tr>
+      <tr><td class="mono" style="font-size:13.5px;">runtime/LESSON-CONTENT.md</td><td>本课先修 / 新内容 / 任务 / 成功证据</td><td>讲解阶段装配，决定「这一段要讲到什么程度」</td></tr>
+      <tr><td class="mono" style="font-size:13.5px;">lesson-data/segments/seg-XXX.json</td><td>每个片段讲什么，order 定顺序，绑定 KP 编号</td><td>引导学习阶段逐段驱动：active_segment_id 指向哪段就讲哪段</td></tr>
+      <tr><td class="mono" style="font-size:13.5px;">stages/&lt;阶段&gt;/questions.md · rubric.md · prompt.md</td><td>各阶段的题目、评判标准、AI 提示词（<span class="pri">可留空</span>）</td><td>仅演到对应幕时加载：teach 读 prompt/questions，judge_mastery 读 rubric</td></tr>
+    </table>
+    <div style="margin-top:14px;background:var(--light);border-radius:10px;padding:12px 18px;font-size:14.5px;color:var(--dark);">
+      <span class="pri">提问三级兜底链：</span>stages/*/questions.md（老师出题）→ 空则用 TMISSION.md 检验问题 → 再空则用 KNOWLEDGE-BASE.md 检测问题。空壳也保证有题可问。
+    </div>
+  </div>
+  <div class="footer"><span class="brand"><i></i>主动引导智能体 · 项目介绍</span><span>08 / 18</span></div>
+</section>
+
+<!-- 09 空壳也能跑 -->
+<section class="slide">
+  <div class="titlebar"><div class="bar"></div><div><h2>空壳也能跑：降级链与启动校验</h2><div class="sub">「目前能不能上课」是确定性判断，不依赖模型</div></div></div>
+  <div class="body" style="display:flex;flex-direction:column;gap:18px;">
+    <div style="background:linear-gradient(135deg,#1B4F9C,#0F2E5C);border-radius:12px;padding:22px 28px;color:#fff;display:flex;align-items:center;gap:28px;">
+      <div style="font-size:56px;font-weight:bold;color:var(--accent);line-height:1;">0</div>
+      <div style="font-size:18px;line-height:1.6;">阶段内容文件<b>一个都不填</b>也能开课 —— 缺失即有降级行为兜底；<br>把 stages/ 填上后质量自然提升，<b>不需要改任何代码</b>。</div>
+    </div>
+    <div style="display:flex;gap:22px;flex:1;">
+      <div style="flex:1;background:var(--light);border-radius:12px;padding:18px 22px;">
+        <div style="font-size:18px;font-weight:bold;color:var(--dark);margin-bottom:10px;">缺什么 → 怎么降级</div>
+        <table style="font-size:14px;">
+          <tr><td class="mono" style="font-size:13px;">questions.md 空</td><td>改用 TMISSION 检验问题 → KNOWLEDGE-BASE 检测问题</td></tr>
+          <tr><td class="mono" style="font-size:13px;">rubric.md 空</td><td>只用 MASTERY-STAR-RULES.md 通用判星标准</td></tr>
+          <tr><td class="mono" style="font-size:13px;">prompt.md 空</td><td>用内置默认提示词（复述：「用自己的话讲回来」）</td></tr>
+          <tr><td class="mono" style="font-size:13px;">讨论阶段无内容</td><td>提示「请老师主导」+ 按 minutes 计时，到点切幕</td></tr>
+        </table>
+      </div>
+      <div style="flex:1;border:1px solid var(--line);border-radius:12px;padding:18px 22px;">
+        <div style="font-size:18px;font-weight:bold;color:var(--dark);margin-bottom:10px;">开课前 8 项校验（load_plan 执行）</div>
+        <div style="font-size:13.5px;color:var(--dark);line-height:1.9;">
+          ① lesson-plan.json 存在且 JSON 合法　② total_minutes &gt; 0<br>
+          ③ 启用阶段 minutes 之和 ≤ 总时长　④ segments 文件都能找到<br>
+          ⑤ 需要阶段目录的幕其 stages/&lt;id&gt;/ 目录存在<br>
+          ⑥ runtime/ 模板齐全（缺失自动生成空白模板）<br>
+          ⑦ KNOWLEDGE-BASE.md 存在（缺失仅警告，可开课但不能提问）<br>
+          ⑧ advance_policy 字段齐全、取值合法
+        </div>
+        <div style="margin-top:10px;font-size:13.5px;color:var(--gray);">校验只到「目录/文件存在」—— <span class="pri">文件是空的也算通过</span>，空壳是合法状态。任一硬项失败则拒绝开课并写入 DIALOGUE-LOG。</div>
+      </div>
+    </div>
+  </div>
+  <div class="footer"><span class="brand"><i></i>主动引导智能体 · 项目介绍</span><span>09 / 18</span></div>
+</section>
+
+<!-- 10 章节 03 -->
+<section class="slide section-slide">
+  <div style="padding:120px 96px;">
+    <div class="num">03</div>
+    <div class="st">编排器 · 代码实现</div>
+    <div class="sd">一个由 host_phase 驱动的课堂状态机：每轮对话读计划 → 算耗时 → 判证据 → 决定换不换幕。orchestrator/agent.py 已实现并可运行。</div>
+    <div class="rule"></div>
+  </div>
+</section>
+
+<!-- 11 LangGraph 图 -->
+<section class="slide">
+  <div class="titlebar"><div class="bar"></div><div><h2>LangGraph 图：11 个节点，一条环</h2><div class="sub">自动推进的本质 = 图里有一个环：学生每说一句话就走一圈，judge_advance 每轮重新判一次</div></div></div>
+  <div class="body">
+    <svg width="1152" height="470" viewBox="0 0 1152 470">
+      <defs>
+        <marker id="a2" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L8,3 z" fill="#1B4F9C"/></marker>
+        <marker id="a3" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L8,3 z" fill="#F59E0B"/></marker>
+      </defs>
+      <!-- 第一行 -->
+      <g font-size="14" text-anchor="middle">
+        <rect x="20" y="30" width="120" height="52" rx="10" fill="#64748B"/><text x="80" y="62" fill="#fff" font-weight="bold">START</text>
+        <rect x="180" y="30" width="140" height="52" rx="10" fill="#1B4F9C"/><text x="250" y="54" fill="#fff" font-weight="bold">load_plan</text><text x="250" y="72" fill="#BFD4F2" font-size="11.5">读计划+8项校验</text>
+        <rect x="360" y="30" width="120" height="52" rx="10" fill="#1B4F9C"/><text x="420" y="54" fill="#fff" font-weight="bold">tick</text><text x="420" y="72" fill="#BFD4F2" font-size="11.5">真实时钟+复位</text>
+        <rect x="520" y="30" width="150" height="52" rx="10" fill="#1B4F9C"/><text x="595" y="54" fill="#fff" font-weight="bold">load_context</text><text x="595" y="72" fill="#BFD4F2" font-size="11.5">按幕分层装配</text>
+        <rect x="710" y="30" width="150" height="52" rx="10" fill="#1B4F9C"/><text x="785" y="54" fill="#fff" font-weight="bold">classify_turn</text><text x="785" y="72" fill="#BFD4F2" font-size="11.5">谁在说话</text>
+        <rect x="900" y="30" width="130" height="52" rx="10" fill="#3D7BE0"/><text x="965" y="54" fill="#fff" font-weight="bold">host_event</text><text x="965" y="72" fill="#D6E4F8" font-size="11.5">开场/收尾</text>
+        <!-- 连线第一行 -->
+        <path d="M140 56 L180 56" stroke="#1B4F9C" stroke-width="2.5" marker-end="url(#a2)"/>
+        <path d="M320 56 L360 56" stroke="#1B4F9C" stroke-width="2.5" marker-end="url(#a2)"/>
+        <path d="M480 56 L520 56" stroke="#1B4F9C" stroke-width="2.5" marker-end="url(#a2)"/>
+        <path d="M670 56 L710 56" stroke="#1B4F9C" stroke-width="2.5" marker-end="url(#a2)"/>
+        <path d="M860 56 L900 56" stroke="#1B4F9C" stroke-width="2.5" marker-end="url(#a2)"/>
+        <!-- classify → teach -->
+        <path d="M785 82 L785 130 L250 130 L250 158" stroke="#1B4F9C" stroke-width="2.5" fill="none" marker-end="url(#a2)"/>
+        <text x="520" y="122" font-size="12.5" fill="#64748B" text-anchor="middle">学生轮 ↓ 走教学主线</text>
+        <!-- 第二行 -->
+        <rect x="180" y="158" width="140" height="52" rx="10" fill="#1B4F9C"/><text x="250" y="182" fill="#fff" font-weight="bold">teach</text><text x="250" y="200" fill="#BFD4F2" font-size="11.5">两层：骨架+LLM润色</text>
+        <rect x="370" y="158" width="160" height="52" rx="10" fill="#1B4F9C"/><text x="450" y="182" fill="#fff" font-weight="bold">judge_mastery</text><text x="450" y="200" fill="#BFD4F2" font-size="11.5">按 rubric 判星级</text>
+        <rect x="580" y="158" width="170" height="52" rx="10" fill="#F59E0B"/><text x="665" y="182" fill="#fff" font-weight="bold">judge_advance ★</text><text x="665" y="200" fill="#FFF3DC" font-size="11.5">切幕判定（编排核心）</text>
+        <path d="M320 184 L370 184" stroke="#1B4F9C" stroke-width="2.5" marker-end="url(#a2)"/>
+        <path d="M530 184 L580 184" stroke="#1B4F9C" stroke-width="2.5" marker-end="url(#a2)"/>
+        <!-- host_event → judge_advance -->
+        <path d="M965 82 L965 240 L750 240 L750 196" stroke="#3D7BE0" stroke-width="2" fill="none" marker-end="url(#a2)" stroke-dasharray="6 5"/>
+        <!-- 分支 -->
+        <rect x="830" y="300" width="160" height="52" rx="10" fill="#1B4F9C"/><text x="910" y="324" fill="#fff" font-weight="bold">advance_stage</text><text x="910" y="342" fill="#BFD4F2" font-size="11.5">快照+切到下一幕</text>
+        <rect x="580" y="300" width="150" height="52" rx="10" fill="#1B4F9C"/><text x="655" y="324" fill="#fff" font-weight="bold">write_state</text><text x="655" y="342" fill="#BFD4F2" font-size="11.5">落盘 runtime/**</text>
+        <rect x="370" y="300" width="160" height="52" rx="10" fill="#1B4F9C"/><text x="450" y="324" fill="#fff" font-weight="bold">format_reply</text><text x="450" y="342" fill="#BFD4F2" font-size="11.5">组装回复+播报</text>
+        <rect x="180" y="300" width="120" height="52" rx="10" fill="#64748B"/><text x="240" y="332" fill="#fff" font-weight="bold">END</text>
+        <path d="M700 210 L880 210 L880 300" stroke="#F59E0B" stroke-width="3" fill="none" marker-end="url(#a3)"/>
+        <text x="795" y="202" font-size="13" fill="#F59E0B" font-weight="bold" text-anchor="middle">换幕</text>
+        <path d="M630 210 L630 300" stroke="#1B4F9C" stroke-width="2.5" fill="none" marker-end="url(#a2)"/>
+        <text x="600" y="258" font-size="13" fill="#64748B" text-anchor="middle">留幕</text>
+        <path d="M830 326 L730 326" stroke="#1B4F9C" stroke-width="2.5" marker-end="url(#a2)"/>
+        <path d="M580 326 L530 326" stroke="#1B4F9C" stroke-width="2.5" marker-end="url(#a2)"/>
+        <path d="M370 326 L300 326" stroke="#1B4F9C" stroke-width="2.5" marker-end="url(#a2)"/>
+        <!-- 环说明 -->
+        <rect x="830" y="388" width="300" height="66" rx="10" fill="#E8F0FB"/>
+        <text x="850" y="414" font-size="13.5" fill="#0F2E5C" font-weight="bold">「环」在哪？</text>
+        <text x="850" y="436" font-size="12.5" fill="#334155">学生说下一句 → 同一 thread_id 再进图，<tspan x="850" dy="16">所有判定用 checkpoint 里的最新状态重跑一遍</tspan></text>
+        <rect x="20" y="388" width="760" height="66" rx="10" fill="#fff" stroke="#D7E4F6"/>
+        <text x="40" y="414" font-size="13.5" fill="#0F2E5C" font-weight="bold">两个关键约定：</text>
+        <text x="40" y="436" font-size="12.5" fill="#334155">① 判断写进 state、路由只读不判（route_after_judge 只看 target_phase）　② now 由会话层注入，图内节点一律不许自己读钟 → 图是纯函数，喂一串时间戳可重放整节课</text>
+      </g>
+    </svg>
+  </div>
+  <div class="footer"><span class="brand"><i></i>主动引导智能体 · 项目介绍</span><span>11 / 18</span></div>
+</section>
+
+<!-- 12 节点×文件对照 -->
+<section class="slide">
+  <div class="titlebar"><div class="bar"></div><div><h2>11 个节点：各自读什么文件、写什么</h2><div class="sub">全部已在 orchestrator/agent.py 实现；judge_mastery 始终确定性，不依赖模型</div></div></div>
+  <div class="body">
+    <table style="font-size:13.5px;">
+      <tr><th style="width:15%;">节点</th><th style="width:24%;">职责</th><th style="width:33%;">读什么（文件）</th><th style="width:28%;">写什么</th></tr>
+      <tr><td class="mono">load_plan</td><td>载入并校验课程计划</td><td class="mono" style="font-size:12.5px;">lesson-data/lesson-plan.json</td><td>remaining_stages、时长预算</td></tr>
+      <tr><td class="mono">tick</td><td>真实时钟结算 + 每轮复位</td><td class="mono" style="font-size:12.5px;">state.now（会话层注入）</td><td>本幕/本课已花分钟；清上轮判决</td></tr>
+      <tr><td class="mono">load_context</td><td>按 host_phase 分层装配</td><td class="mono" style="font-size:12.5px;">六层文件（见 P17）</td><td>组装 prompt（不改 state）</td></tr>
+      <tr><td class="mono">classify_turn</td><td>判断本轮输入类型</td><td>学生消息 + host_phase</td><td>speaker、路由标记</td></tr>
+      <tr><td class="mono">host_event</td><td>处理开场/收尾事件</td><td>主持人指令</td><td>目标 host_phase</td></tr>
+      <tr><td class="mono">teach</td><td>两层教学：骨架定内容、LLM 润色</td><td class="mono" style="font-size:12.5px;">stages/&lt;id&gt;/prompt.md · questions.md · KNOWLEDGE-BASE.md</td><td>reply_text、turn_evidence、current_question</td></tr>
+      <tr><td class="mono">judge_mastery</td><td>按 rubric 判星级（确定性）</td><td class="mono" style="font-size:12.5px;">stages/&lt;id&gt;/rubric.md · MASTERY-STAR-RULES.md</td><td>mastery_updates</td></tr>
+      <tr><td class="mono acc">judge_advance</td><td>判定是否切幕（编排核心）</td><td>state 全部进度字段</td><td>target_phase、advance_reason</td></tr>
+      <tr><td class="mono">advance_stage</td><td>快照 + 切到下一幕</td><td>remaining_stages</td><td>stage_snapshots、新 host_phase、重置计时</td></tr>
+      <tr><td class="mono">write_state</td><td>落盘所有状态（追加不覆盖）</td><td>state</td><td class="mono" style="font-size:12.5px;">runtime/DIALOGUE-LOG.md · data/*.json</td></tr>
+      <tr><td class="mono">format_reply</td><td>组装回复与播报标记</td><td>state</td><td>reply_text、speech_kind</td></tr>
+    </table>
+  </div>
+  <div class="footer"><span class="brand"><i></i>主动引导智能体 · 项目介绍</span><span>12 / 18</span></div>
+</section>
+
+<!-- 13 teach 两层 -->
+<section class="slide">
+  <div class="titlebar"><div class="bar"></div><div><h2>teach 两层铁律：模型只管措辞，不管编排</h2><div class="sub">实测踩出来的架构铁律 —— 最初「有 LLM 就调模型」导致段落不推进、编排被架空</div></div></div>
+  <div class="body" style="display:flex;flex-direction:column;gap:16px;">
+    <svg width="1152" height="180" viewBox="0 0 1152 180">
+      <defs><marker id="a4" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L8,3 z" fill="#1B4F9C"/></marker></defs>
+      <rect x="20" y="20" width="500" height="140" rx="12" fill="#1B4F9C"/>
+      <text x="44" y="56" font-size="18" fill="#fff" font-weight="bold">第一层 · 确定性骨架（永远执行）</text>
+      <text x="44" y="88" font-size="14" fill="#D6E4F8">决定「本轮干什么」：讲哪一段 / 问哪一题 / 给什么反馈</text>
+      <text x="44" y="114" font-size="14" fill="#D6E4F8">产出 directive（给模型的指令，带内容锚点）</text>
+      <text x="44" y="140" font-size="13" fill="#9FB9E0">模型挂了 → 直接用骨架的朴素文案，编排状态一字不差</text>
+      <path d="M520 90 L580 90" stroke="#1B4F9C" stroke-width="3" marker-end="url(#a4)"/>
+      <rect x="580" y="20" width="500" height="140" rx="12" fill="#E8F0FB" stroke="#3D7BE0" stroke-width="2"/>
+      <text x="604" y="56" font-size="18" fill="#0F2E5C" font-weight="bold">第二层 · LLM 润色（可选）</text>
+      <text x="604" y="88" font-size="14" fill="#334155">只决定「这话怎么说」：把 directive 变成自然语言</text>
+      <text x="604" y="114" font-size="14" fill="#334155">接任意 OpenAI 兼容端点（AGENT_LLM_* 环境变量）</text>
+      <text x="604" y="140" font-size="13" fill="#F59E0B" font-weight="bold">铁律：模型不决定讲什么、问什么，只决定怎么措辞</text>
+    </svg>
+    <div style="display:flex;gap:20px;flex:1;">
+      <table style="flex:1.35;font-size:13.5px;">
+        <tr><th style="width:44%;">三条约束（每条都是踩坑踩出来的）</th><th>原因</th></tr>
+        <tr><td>directive 必须带内容锚点</td><td>只写「往深讲一层」→ 模型编出本课没有的「马尔可夫性质」（幻觉）</td></tr>
+        <tr><td>给模型的文案不能含 KP 编号</td><td>模型会照着念「KP-004」→ 用 kp_title() 转中文标题</td></tr>
+        <tr><td>收尾轮 directive 显式禁止新内容</td><td>否则模型在「总结一下」里继续往外扩</td></tr>
+      </table>
+      <div style="flex:1;background:var(--light);border-radius:12px;padding:18px 22px;display:flex;flex-direction:column;justify-content:center;gap:8px;">
+        <div style="font-size:40px;font-weight:bold;color:var(--accent);">51 / 51</div>
+        <div style="font-size:14.5px;color:var(--dark);line-height:1.6;">有 / 无 LLM 跑同一串时间戳，剔除回复文本后，<b>编排结果逐行相同</b> —— 切幕、星级、推进不受模型影响，已被验证。</div>
+      </div>
+    </div>
+  </div>
+  <div class="footer"><span class="brand"><i></i>主动引导智能体 · 项目介绍</span><span>13 / 18</span></div>
+</section>
+
+<!-- 14 tick 与切幕判定 -->
+<section class="slide">
+  <div class="titlebar"><div class="bar"></div><div><h2>真实时钟 tick 与切幕判定 judge_advance</h2><div class="sub">时钟只算已花时长 —— 编排器绝不判断学生是否缺席，那是在场性归老师管</div></div></div>
+  <div class="body" style="display:flex;gap:26px;">
+    <div style="width:44%;display:flex;flex-direction:column;gap:14px;">
+      <div style="font-size:17px;font-weight:bold;color:var(--dark);">tick：全图唯一读时间的地方</div>
+      <div class="code" style="font-size:13px;">def tick(state):
+    now = fromisoformat(state[<span class="s">"now"</span>])  <span class="c"># 外部注入</span>
+    return {
+      <span class="c"># 本幕已花 = now - 本幕开始</span>
+      <span class="s">"stage_elapsed_minutes"</span>: ...,
+      <span class="c"># 本课已花 = now - 开课时刻</span>
+      <span class="s">"lesson_elapsed_minutes"</span>: ...,
+    }</div>
+      <div style="background:var(--light);border-radius:10px;padding:12px 16px;font-size:13.5px;color:var(--dark);line-height:1.6;margin-top:auto;">
+        时间做成<b>输入</b>而非节点自取 → 图是纯函数：<span class="pri">可单测、可回放</span>。tick 同时是每轮复位点，清掉上轮证据与判决，防止跨轮渗漏。
+      </div>
+    </div>
+    <div style="flex:1;">
+      <div style="font-size:17px;font-weight:bold;color:var(--dark);margin-bottom:10px;">judge_advance：短路判定，命中即停（每轮执行）</div>
+      <div style="display:flex;flex-direction:column;gap:9px;">
+        <div style="display:flex;gap:14px;align-items:flex-start;background:var(--light);border-radius:10px;padding:10px 16px;"><span style="font-size:22px;font-weight:bold;color:var(--primary);width:30px;">1</span><div style="font-size:14px;color:var(--dark);line-height:1.55;">本幕演够 <b>min_stage_minutes</b>（2 分钟）了吗？没够 → <b>留幕</b>（防秒切）</div></div>
+        <div style="display:flex;gap:14px;align-items:flex-start;background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px 16px;"><span style="font-size:22px;font-weight:bold;color:var(--primary);width:30px;">2</span><div style="font-size:14px;color:var(--dark);line-height:1.55;">「学透才走」模式且还有目标没关闭？→ <b>留幕</b>（证据优先于时间）</div></div>
+        <div style="display:flex;gap:14px;align-items:flex-start;background:var(--light);border-radius:10px;padding:10px 16px;"><span style="font-size:22px;font-weight:bold;color:var(--primary);width:30px;">3</span><div style="font-size:14px;color:var(--dark);line-height:1.55;">证据齐了、目标全关闭？→ <b class="acc">切幕</b>（学得快就提前走）</div></div>
+        <div style="display:flex;gap:14px;align-items:flex-start;background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px 16px;"><span style="font-size:22px;font-weight:bold;color:var(--primary);width:30px;">4</span><div style="font-size:14px;color:var(--dark);line-height:1.55;">到时间预算了？看策略：force_advance 立即切 / wrap_up 收尾后切 / extend 允许延长 ≤3 分钟 → <b class="acc">多数切幕</b></div></div>
+        <div style="display:flex;gap:14px;align-items:flex-start;background:var(--light);border-radius:10px;padding:10px 16px;"><span style="font-size:22px;font-weight:bold;color:var(--primary);width:30px;">5</span><div style="font-size:14px;color:var(--dark);line-height:1.55;">以上都没命中 → <b>留幕</b>，等下一轮再判。判决理由写 advance_reason 落盘，老师可复盘「为什么在 22 分钟切了」</div></div>
+      </div>
+    </div>
+  </div>
+  <div class="footer"><span class="brand"><i></i>主动引导智能体 · 项目介绍</span><span>14 / 18</span></div>
+</section>
+
+<!-- 15 章节 04 -->
+<section class="slide section-slide">
+  <div style="padding:120px 96px;">
+    <div class="num">04</div>
+    <div class="st">功能板块 · 文件地图</div>
+    <div class="sd">五个目录五种角色：规则、课程数据、阶段内容、运行时状态、编排器。每个文件放什么、谁写、谁读、何时读，一目了然。</div>
+    <div class="rule"></div>
+  </div>
+</section>
+
+<!-- 16 五大板块 -->
+<section class="slide">
+  <div class="titlebar"><div class="bar"></div><div><h2>五大板块：每个文件归谁管</h2><div class="sub">仓库 = Markdown 规则 + JSON 配置 + 编排器代码，不含前端、不含 n8n</div></div></div>
+  <div class="body" style="display:flex;gap:26px;">
+    <div style="width:37%;background:#0F2E5C;border-radius:12px;padding:18px 22px;color:#D6E4F8;font-family:'JetBrains Mono',Consolas,monospace;font-size:12.8px;line-height:1.75;white-space:pre;">主动引导智能体/
+├─ <span style="color:#F59E0B;">rules/</span>            规则层
+│  ├─ KNOWLEDGE-BASE.md
+│  └─ interaction/  星规则+格式模板
+├─ <span style="color:#F59E0B;">lesson-data/</span>     课程数据层
+│  ├─ lesson-plan.json  ★编排入口
+│  └─ segments/seg-*.json
+├─ <span style="color:#F59E0B;">stages/</span>          阶段内容层
+│  ├─ recap_discussion/
+│  ├─ deep_inquiry/
+│  └─ class_discussion/
+├─ <span style="color:#F59E0B;">runtime/</span>         运行时状态
+│  ├─ DIALOGUE-LOG.md ★会话控制
+│  ├─ TMISSION · LESSON-CONTENT …
+│  └─ data/mastery-*.json
+└─ <span style="color:#F59E0B;">orchestrator/</span>    编排器
+   ├─ ORCHESTRATOR.md  权威规范
+   ├─ agent.py        ★真实实现
+   ├─ run_demo.py · llm_probe.py
+   └─ clock_reference.py 回归测试</div>
+    <div style="flex:1;">
+      <table style="font-size:13.5px;">
+        <tr><th style="width:20%;">板块</th><th style="width:26%;">谁写</th><th style="width:27%;">谁读</th><th style="width:27%;">何时读 / 写</th></tr>
+        <tr><td class="pri">rules/</td><td>老师（一学期维护一次）</td><td>load_context · judge_mastery</td><td>每轮装配；判星时取星规则</td></tr>
+        <tr><td class="pri">lesson-data/</td><td>老师（课前配置）</td><td>load_plan · teach</td><td>开课校验读计划；讲解逐段读 segment</td></tr>
+        <tr><td class="pri">stages/</td><td>老师 + 设计者（可空壳）</td><td>teach · judge_mastery</td><td>仅演到对应幕时加载该幕三件套</td></tr>
+        <tr><td class="pri">runtime/</td><td>编排器每轮读写</td><td>write_state 写 · load_context 读</td><td>DIALOGUE-LOG 每轮回写；mastery-* 判星与快照时更新</td></tr>
+        <tr><td class="pri">orchestrator/</td><td>开发者</td><td>会话层调用 graph.invoke</td><td>每轮对话触发一次；checkpointer 按 session_id 续状态</td></tr>
+      </table>
+      <div style="margin-top:12px;background:var(--light);border-radius:10px;padding:12px 18px;font-size:13.5px;color:var(--dark);line-height:1.6;">
+        <span class="pri">职责一句话：</span>提示词负责「怎么教」（rules/ + stages/），数据负责「教什么、按什么顺序、多久教完」（lesson-data/），runtime/ 记「现在教到哪」，orchestrator/ 管「什么时候换下一幕」。
+      </div>
+    </div>
+  </div>
+  <div class="footer"><span class="brand"><i></i>主动引导智能体 · 项目介绍</span><span>16 / 18</span></div>
+</section>
+
+<!-- 17 分层装配与落盘 -->
+<section class="slide">
+  <div class="titlebar"><div class="bar"></div><div><h2>上下文分层装配与数据落盘</h2><div class="sub">不把整门课塞进一轮上下文 —— 按 host_phase 取用，45 分钟的课上下文永远「刚好够用」</div></div></div>
+  <div class="body" style="display:flex;flex-direction:column;gap:14px;">
+    <table style="font-size:13.5px;">
+      <tr><th style="width:12%;">层</th><th style="width:48%;">内容（文件）</th><th style="width:40%;">何时加载</th></tr>
+      <tr><td class="pri">规则层</td><td class="mono" style="font-size:12.5px;">rules/KNOWLEDGE-BASE.md · interaction/MASTERY-STAR-RULES.md</td><td>每轮</td></tr>
+      <tr><td class="pri">计划层</td><td class="mono" style="font-size:12.5px;">lesson-data/lesson-plan.json（仅当前阶段的配置）</td><td>每轮</td></tr>
+      <tr><td class="pri">课堂层</td><td class="mono" style="font-size:12.5px;">runtime/DIALOGUE-LOG.md · segments/seg-XXX.json · 该段绑定的 KP 全文</td><td>每轮</td></tr>
+      <tr><td class="pri">阶段层</td><td class="mono" style="font-size:12.5px;">stages/&lt;当前阶段&gt;/questions.md · prompt.md · rubric.md</td><td><span class="acc">仅当前阶段</span>（复述/探究/讨论三幕才有）</td></tr>
+      <tr><td class="pri">历史层</td><td class="mono" style="font-size:12.5px;">runtime/data/dialogue-log.json 相关片段</td><td>按需召回</td></tr>
+      <tr><td class="pri">档案层</td><td class="mono" style="font-size:12.5px;">runtime/data/mastery-state.json · mastery-history.json</td><td><span class="acc">仅判星级时</span></td></tr>
+    </table>
+    <div style="display:flex;gap:20px;">
+      <div style="flex:1.4;background:var(--light);border-radius:10px;padding:12px 18px;font-size:13.5px;color:var(--dark);line-height:1.65;">
+        <span class="pri">落盘映射（write_state）：</span>host_phase / 耗时 / current_target → <span class="mono" style="font-size:12.5px;">DIALOGUE-LOG.md</span>；mastery_updates → <span class="mono" style="font-size:12.5px;">mastery-state.json + mastery-history.json</span>；stage_snapshots → <span class="mono" style="font-size:12.5px;">mastery-history.json</span>（带 stage 字段，追加不覆盖）。
+      </div>
+      <div style="flex:1;border:1px solid var(--line);border-radius:10px;padding:12px 18px;font-size:13.5px;color:var(--dark);line-height:1.65;">
+        <span class="pri">空壳处理：</span>stages/&lt;id&gt;/ 文件为空或缺失 → 不报错，注入占位提示「本阶段内容未配置」，按默认行为运行。
+      </div>
+    </div>
+  </div>
+  <div class="footer"><span class="brand"><i></i>主动引导智能体 · 项目介绍</span><span>17 / 18</span></div>
+</section>
+
+<!-- 18 结束页 -->
+<section class="slide" style="background:linear-gradient(135deg,#1B4F9C 0%,#0F2E5C 100%);">
+  <div style="padding:80px 110px;display:flex;flex-direction:column;height:100%;">
+    <div style="width:56px;height:6px;background:var(--accent);"></div>
+    <div style="font-size:44px;font-weight:bold;color:#fff;margin-top:26px;line-height:1.3;">现在就能跑：<br>模型挂了，课也照常上完</div>
+    <div style="display:flex;gap:28px;margin-top:36px;">
+      <div class="code" style="flex:1.2;font-size:14.5px;background:rgba(255,255,255,.08);color:#E8F0FB;">
+<span class="c"># 跑一节课（降级模式，无需任何 Key）</span>
+pip install langgraph
+python orchestrator/run_demo.py
+
+<span class="c"># 接真实大模型（可选，先探针验证）</span>
+export AGENT_LLM_BASE_URL=https://api.deepseek.com/v1
+export AGENT_LLM_API_KEY=sk-xxx
+export AGENT_LLM_MODEL=deepseek-chat
+python orchestrator/llm_probe.py   <span class="c"># 先验证端点</span>
+python orchestrator/run_demo.py    <span class="c"># 再跑整节课</span></div>
+      <div style="flex:1;background:rgba(255,255,255,.08);border-radius:10px;padding:20px 24px;">
+        <div style="font-size:16px;font-weight:bold;color:#fff;margin-bottom:10px;">已知缺口（诚实清单）</div>
+        <div style="font-size:13.5px;color:#BFD4F2;line-height:2;">
+          · 无定时器：学生不说话时不自动切幕<br>
+          · 对话记忆窗口有限，长课可能丢上下文<br>
+          · 视频位置接口未打通（占位符）<br>
+          · 判星粒度细则待明确<br>
+          · 全班讨论内容刻意留空（设计如此）
+        </div>
+      </div>
+    </div>
+    <div style="margin-top:auto;display:flex;justify-content:space-between;align-items:flex-end;">
+      <div style="font-size:15px;color:#9FB9E0;">orchestrator/ORCHESTRATOR.md · agent.py · demo-run.md（真实运行实录）</div>
+      <div style="font-size:15px;color:#9FB9E0;">主动引导智能体 · 2026.09</div>
+    </div>
+  </div>
+</section>
+
+</div>
+
+<div id="hint">← → 翻页 · 点击两侧按钮</div>
+<div id="nav">
+  <span id="counter">01 / 18</span>
+  <button id="prev" aria-label="上一页">‹</button>
+  <button id="next" aria-label="下一页">›</button>
+</div>
+
+<script>
+(function(){
+  var slides = document.querySelectorAll('.slide');
+  var total = slides.length, cur = 0;
+  var stage = document.getElementById('stage');
+  var counter = document.getElementById('counter');
+  function fit(){
+    var s = Math.min(window.innerWidth/1280, window.innerHeight/720);
+    slides.forEach(function(sl){ sl.style.transform = 'scale('+s+')'; });
+  }
+  function show(i){
+    cur = Math.max(0, Math.min(total-1, i));
+    slides.forEach(function(sl,idx){ sl.classList.toggle('active', idx===cur); });
+    counter.textContent = String(cur+1).padStart(2,'0') + ' / ' + total;
+  }
+  document.getElementById('prev').onclick = function(){ show(cur-1); };
+  document.getElementById('next').onclick = function(){ show(cur+1); };
+  document.addEventListener('keydown', function(e){
+    if(e.key==='ArrowRight'||e.key==='PageDown'||e.key===' ') show(cur+1);
+    if(e.key==='ArrowLeft'||e.key==='PageUp') show(cur-1);
+    if(e.key==='Home') show(0);
+    if(e.key==='End') show(total-1);
+  });
+  window.addEventListener('resize', fit);
+  fit(); show(0);
+})();
+</script>
+</body>
+</html>

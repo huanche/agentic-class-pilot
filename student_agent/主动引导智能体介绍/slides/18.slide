@@ -1,0 +1,40 @@
+<Slide style={{ width: '1280px', height: '720px', padding: '72px 110px', background: 'linear-gradient(135deg, #1B4F9C 0%, #0F2E5C 100%)', gap: 30 }}>
+  <Box style={{ gap: 22 }}>
+    <Box style={{ width: 56, height: 6, background: '#F59E0B' }} />
+    <Text style={{ fontSize: 42, fontWeight: 'bold', color: '#FFFFFF', lineHeight: 1.3 }}>现在就能跑：<br />模型挂了，课也照常上完</Text>
+  </Box>
+  <Box style={{ flexDirection: 'row', gap: 26 }}>
+    <Box style={{ flex: 1.2 }}>
+      <CodeBlock
+        language='bash'
+        theme='github-dark'
+        fontSize={13}
+        width={620}
+        code={`# 跑一节课（降级模式，无需任何 Key）
+pip install langgraph
+python orchestrator/run_demo.py
+
+# 接真实大模型（可选，先探针验证）
+export AGENT_LLM_BASE_URL=https://api.deepseek.com/v1
+export AGENT_LLM_API_KEY=sk-xxx
+export AGENT_LLM_MODEL=deepseek-chat
+python orchestrator/llm_probe.py   # 先验证端点
+python orchestrator/run_demo.py    # 再跑整节课`}
+      />
+    </Box>
+    <Box style={{ flex: 1, background: 'rgba(255,255,255,0.08)', borderRadius: 10, padding: '20px 24px', gap: 10 }}>
+      <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#FFFFFF' }}>已知缺口（诚实清单）</Text>
+      <Text style={{ fontSize: 13.5, color: '#BFD4F2', lineHeight: 2 }}>
+        · 无定时器：学生不说话时不自动切幕<br />
+        · 对话记忆窗口有限，长课可能丢上下文<br />
+        · 视频位置接口未打通（占位符）<br />
+        · 判星粒度细则待明确<br />
+        · 全班讨论内容刻意留空（设计如此）
+      </Text>
+    </Box>
+  </Box>
+  <Box style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 'auto' }}>
+    <Text style={{ fontSize: 14, color: '#9FB9E0' }}>orchestrator/ORCHESTRATOR.md · agent.py · demo-run.md（真实运行实录）</Text>
+    <Text style={{ fontSize: 14, color: '#9FB9E0' }}>主动引导智能体 · 2026.09</Text>
+  </Box>
+</Slide>

@@ -1,0 +1,4 @@
+fastapi
+uvicorn
+langgraph
+psycopg[binary]>=3.2,<4

@@ -1,0 +1,16 @@
+{
+  "segment_id": "seg-001",
+  "lesson_id": "ch3-process-scheduling",
+  "title": "调度是什么、为什么需要调度",
+  "order": 1,
+  "knowledge_point_ids": ["KP-001"],
+  "knowledge_points": ["处理机调度", "CPU 时间分配"],
+  "summary": "CPU 一次只能服务一个进程，系统需要决定多个就绪进程先服务谁，这个决策规则就是调度。",
+  "content": "一台 CPU 一次只能运行一个进程，但系统里常常同时有很多进程想运行。系统必须决定：先让谁用 CPU、让多久、什么时候打断、什么时候切换。处理机调度就是管理这一套规则的机制。",
+  "source": {
+    "course": "计算机操作系统",
+    "chapter": "第3章 处理机调度",
+    "slide": "3.1 处理机调度概述",
+    "position": "视频进度占位 00:12:30"
+  }
+}

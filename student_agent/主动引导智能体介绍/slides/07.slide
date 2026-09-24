@@ -1,0 +1,76 @@
+<Slide style={{ width: '1280px', height: '720px', padding: 0, background: '#FFFFFF' }}>
+  <Box style={{ position: 'absolute', top: 36, left: 64, right: 64, flexDirection: 'row', gap: 16 }}>
+    <Box style={{ width: 8, height: 40, background: '#1B4F9C', borderRadius: 2, marginTop: 4 }} />
+    <Box>
+      <Text style={{ fontSize: 34, fontWeight: 'bold', color: '#0F2E5C' }}>第一步：lesson-plan.json 定阶段与时长</Text>
+      <Text style={{ fontSize: 15, color: '#64748B', marginTop: 6 }}>lesson-data/lesson-plan.json —— 编排入口，load_plan 节点开课时读取并校验</Text>
+    </Box>
+  </Box>
+  <Box style={{ position: 'absolute', top: 128, left: 64, right: 64, bottom: 56, flexDirection: 'row', gap: 28 }}>
+    <Box style={{ width: '54%' }}>
+      <CodeBlock
+        language='json'
+        theme='github-light'
+        fontSize={12.5}
+        width={610}
+        code={`{
+  "lesson_id": "ch3-process-scheduling",
+  "total_minutes": 45,
+  "stages": [
+    { "id": "guided_learning",  "enabled": true,
+      "minutes": 22, "advance_when": "either" },
+    { "id": "recap_discussion", "enabled": true,
+      "minutes": 9,  "advance_when": "either" },
+    { "id": "deep_inquiry",     "enabled": true,
+      "minutes": 7,  "advance_when": "either" },
+    { "id": "class_discussion", "enabled": false,
+      "minutes": 7,  "advance_when": "budget" }
+  ],
+  "advance_policy": {
+    "on_budget_exhausted": "wrap_up",  // 到点:收尾后切
+    "on_evidence_reached": "advance",  // 证据达标:切幕
+    "min_stage_minutes": 2,            // 防秒切
+    "max_stage_overrun_minutes": 3     // 延长上限
+  }
+}`}
+      />
+    </Box>
+    <Box style={{ flex: 1, gap: 14 }}>
+      <Table
+        style={{ width: '100%', height: 230 }}
+        defaultTextStyle={{ fontSize: 13.5, textAlign: 'left', color: '#0F2E5C' }}
+        defaultCellStyle={{ border: { bottom: { width: 1, color: '#D7E4F6' } }, padding: 7 }}
+        cells={[
+          [
+            { text: '字段', textStyle: { bold: true, color: '#FFFFFF' }, cellStyle: { background: { color: '#1B4F9C' } } },
+            { text: '含义', textStyle: { bold: true, color: '#FFFFFF' }, cellStyle: { background: { color: '#1B4F9C' } } },
+          ],
+          [
+            { text: 'enabled', textStyle: { bold: true, color: '#1B4F9C' } },
+            'false → 整段跳过（这门课可以不要讨论）',
+          ],
+          [
+            { text: 'minutes', textStyle: { bold: true, color: '#1B4F9C' }, cellStyle: { background: { color: '#E8F0FB' } } },
+            { text: '这一幕的时长预算，真实时钟到点切幕', cellStyle: { background: { color: '#E8F0FB' } } },
+          ],
+          [
+            { text: 'advance_when', textStyle: { bold: true, color: '#1B4F9C' } },
+            'either 证据或时间 / evidence 学透才走 / budget 只看时间',
+          ],
+        ]}
+      />
+      <Box style={{ background: '#E8F0FB', borderRadius: 10, padding: '14px 18px', marginTop: 'auto' }}>
+        <Text style={{ fontSize: 14.5, color: '#0F2E5C', lineHeight: 1.65 }}>
+          <span style={{ fontWeight: 'bold', color: '#1B4F9C' }}>改 JSON 就是改课。</span>加一幕、砍一幕、调整分钟数，都不用碰任何代码与提示词 —— 状态机每轮读这张表。
+        </Text>
+      </Box>
+    </Box>
+  </Box>
+  <Box style={{ position: 'absolute', left: 64, right: 64, bottom: 20, flexDirection: 'row', justifyContent: 'space-between' }}>
+    <Box style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+      <Box style={{ width: 10, height: 10, background: '#1B4F9C', borderRadius: 2 }} />
+      <Text style={{ fontSize: 13, color: '#64748B' }}>主动引导智能体 · 项目介绍</Text>
+    </Box>
+    <Text style={{ fontSize: 13, color: '#64748B' }}>07 / 18</Text>
+  </Box>
+</Slide>

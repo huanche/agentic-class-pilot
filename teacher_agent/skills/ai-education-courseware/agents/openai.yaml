@@ -1,0 +1,4 @@
+interface:
+  display_name: "AI Education Courseware"
+  short_description: "Generate and validate HTML teaching courses from PPT materials"
+  default_prompt: "Use the AI education courseware workflow to turn a teaching PPT into a traceable, reviewable HTML lesson."

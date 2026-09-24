@@ -1,0 +1,90 @@
+<Slide style={{ width: '1280px', height: '720px', padding: 0, background: '#FFFFFF' }}>
+  <Box style={{ position: 'absolute', top: 36, left: 64, right: 64, flexDirection: 'row', gap: 16 }}>
+    <Box style={{ width: 8, height: 40, background: '#1B4F9C', borderRadius: 2, marginTop: 4 }} />
+    <Box>
+      <Text style={{ fontSize: 34, fontWeight: 'bold', color: '#0F2E5C' }}>五大板块：每个文件归谁管</Text>
+      <Text style={{ fontSize: 15, color: '#64748B', marginTop: 6 }}>仓库 = Markdown 规则 + JSON 配置 + 编排器代码，不含前端、不含 n8n</Text>
+    </Box>
+  </Box>
+  <Box style={{ position: 'absolute', top: 128, left: 64, right: 64, bottom: 56, flexDirection: 'row', gap: 24 }}>
+    <Box style={{ width: '36%', background: '#0F2E5C', borderRadius: 12, padding: '18px 22px' }}>
+      <Text style={{ fontSize: 12.5, color: '#D6E4F8', lineHeight: 1.8 }}>
+        <span style={{ color: '#FFFFFF', fontWeight: 'bold' }}>主动引导智能体/</span><br />
+        ├─ <span style={{ color: '#F59E0B', fontWeight: 'bold' }}>rules/</span> 规则层<br />
+        │  ├─ KNOWLEDGE-BASE.md<br />
+        │  └─ interaction/ 星规则+模板<br />
+        ├─ <span style={{ color: '#F59E0B', fontWeight: 'bold' }}>lesson-data/</span> 课程数据层<br />
+        │  ├─ lesson-plan.json ★编排入口<br />
+        │  └─ segments/seg-*.json<br />
+        ├─ <span style={{ color: '#F59E0B', fontWeight: 'bold' }}>stages/</span> 阶段内容层<br />
+        │  ├─ recap_discussion/ · deep_inquiry/<br />
+        │  └─ class_discussion/（各三件文件）<br />
+        ├─ <span style={{ color: '#F59E0B', fontWeight: 'bold' }}>runtime/</span> 运行时状态<br />
+        │  ├─ DIALOGUE-LOG.md ★会话控制<br />
+        │  ├─ TMISSION · LESSON-CONTENT …<br />
+        │  └─ data/mastery-*.json<br />
+        └─ <span style={{ color: '#F59E0B', fontWeight: 'bold' }}>orchestrator/</span> 编排器<br />
+        　 ├─ ORCHESTRATOR.md 权威规范<br />
+        　 ├─ agent.py ★真实实现<br />
+        　 └─ run_demo · llm_probe · 回归测试
+      </Text>
+    </Box>
+    <Box style={{ flex: 1, gap: 12 }}>
+      <Table
+        style={{ width: '100%', height: 360 }}
+        defaultTextStyle={{ fontSize: 12.5, textAlign: 'left', color: '#0F2E5C' }}
+        defaultCellStyle={{ border: { bottom: { width: 1, color: '#D7E4F6' } }, padding: 6 }}
+        cells={[
+          [
+            { text: '板块', textStyle: { bold: true, color: '#FFFFFF' }, cellStyle: { background: { color: '#1B4F9C' } } },
+            { text: '谁写', textStyle: { bold: true, color: '#FFFFFF' }, cellStyle: { background: { color: '#1B4F9C' } } },
+            { text: '谁读', textStyle: { bold: true, color: '#FFFFFF' }, cellStyle: { background: { color: '#1B4F9C' } } },
+            { text: '何时读 / 写', textStyle: { bold: true, color: '#FFFFFF' }, cellStyle: { background: { color: '#1B4F9C' } } },
+          ],
+          [
+            { text: 'rules/', textStyle: { bold: true, color: '#1B4F9C' } },
+            '老师（一学期维护一次）',
+            'load_context · judge_mastery',
+            '每轮装配；判星时取星规则',
+          ],
+          [
+            { text: 'lesson-data/', textStyle: { bold: true, color: '#1B4F9C' }, cellStyle: { background: { color: '#E8F0FB' } } },
+            { text: '老师（课前配置）', cellStyle: { background: { color: '#E8F0FB' } } },
+            { text: 'load_plan · teach', cellStyle: { background: { color: '#E8F0FB' } } },
+            { text: '开课校验读计划；讲解逐段读 segment', cellStyle: { background: { color: '#E8F0FB' } } },
+          ],
+          [
+            { text: 'stages/', textStyle: { bold: true, color: '#1B4F9C' } },
+            '老师 + 设计者（可空壳）',
+            'teach · judge_mastery',
+            '仅演到对应幕时加载该幕三件套',
+          ],
+          [
+            { text: 'runtime/', textStyle: { bold: true, color: '#1B4F9C' }, cellStyle: { background: { color: '#E8F0FB' } } },
+            { text: '编排器（每轮读写）', cellStyle: { background: { color: '#E8F0FB' } } },
+            { text: 'write_state 写 · load_context 读', cellStyle: { background: { color: '#E8F0FB' } } },
+            { text: 'DIALOGUE-LOG 每轮回写；mastery-* 判星/快照时更新', cellStyle: { background: { color: '#E8F0FB' } } },
+          ],
+          [
+            { text: 'orchestrator/', textStyle: { bold: true, color: '#1B4F9C' } },
+            '开发者',
+            '会话层调用 graph.invoke',
+            '每轮对话触发一次；checkpoint 按 session_id 续状态',
+          ],
+        ]}
+      />
+      <Box style={{ background: '#E8F0FB', borderRadius: 10, padding: '13px 18px', marginTop: 'auto' }}>
+        <Text style={{ fontSize: 13.5, color: '#0F2E5C', lineHeight: 1.6 }}>
+          <span style={{ fontWeight: 'bold', color: '#1B4F9C' }}>职责一句话：</span>提示词负责「怎么教」（rules/ + stages/），数据负责「教什么、按什么顺序、多久教完」（lesson-data/），runtime/ 记「现在教到哪」，orchestrator/ 管「什么时候换下一幕」。
+        </Text>
+      </Box>
+    </Box>
+  </Box>
+  <Box style={{ position: 'absolute', left: 64, right: 64, bottom: 20, flexDirection: 'row', justifyContent: 'space-between' }}>
+    <Box style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+      <Box style={{ width: 10, height: 10, background: '#1B4F9C', borderRadius: 2 }} />
+      <Text style={{ fontSize: 13, color: '#64748B' }}>主动引导智能体 · 项目介绍</Text>
+    </Box>
+    <Text style={{ fontSize: 13, color: '#64748B' }}>16 / 18</Text>
+  </Box>
+</Slide>

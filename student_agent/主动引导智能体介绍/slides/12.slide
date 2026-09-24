@@ -1,0 +1,97 @@
+<Slide style={{ width: '1280px', height: '720px', padding: 0, background: '#FFFFFF' }}>
+  <Box style={{ position: 'absolute', top: 36, left: 64, right: 64, flexDirection: 'row', gap: 16 }}>
+    <Box style={{ width: 8, height: 40, background: '#1B4F9C', borderRadius: 2, marginTop: 4 }} />
+    <Box>
+      <Text style={{ fontSize: 34, fontWeight: 'bold', color: '#0F2E5C' }}>11 个节点：各自读什么文件、写什么</Text>
+      <Text style={{ fontSize: 15, color: '#64748B', marginTop: 6 }}>全部已在 orchestrator/agent.py 实现；judge_mastery 始终确定性（证据组关键词匹配），不依赖模型</Text>
+    </Box>
+  </Box>
+  <Box style={{ position: 'absolute', top: 128, left: 64, right: 64, bottom: 56 }}>
+    <Table
+      style={{ width: '100%', height: '100%' }}
+      defaultTextStyle={{ fontSize: 12.5, textAlign: 'left', color: '#0F2E5C' }}
+      defaultCellStyle={{ border: { bottom: { width: 1, color: '#D7E4F6' } }, padding: 5 }}
+      cells={[
+        [
+          { text: '节点', textStyle: { bold: true, color: '#FFFFFF' }, cellStyle: { background: { color: '#1B4F9C' } } },
+          { text: '职责', textStyle: { bold: true, color: '#FFFFFF' }, cellStyle: { background: { color: '#1B4F9C' } } },
+          { text: '读什么（文件）', textStyle: { bold: true, color: '#FFFFFF' }, cellStyle: { background: { color: '#1B4F9C' } } },
+          { text: '写什么', textStyle: { bold: true, color: '#FFFFFF' }, cellStyle: { background: { color: '#1B4F9C' } } },
+        ],
+        [
+          { text: 'load_plan', textStyle: { bold: true, color: '#1B4F9C' } },
+          '载入并校验课程计划',
+          'lesson-data/lesson-plan.json',
+          'remaining_stages、时长预算',
+        ],
+        [
+          { text: 'tick', textStyle: { bold: true, color: '#1B4F9C' }, cellStyle: { background: { color: '#E8F0FB' } } },
+          { text: '真实时钟结算 + 每轮复位', cellStyle: { background: { color: '#E8F0FB' } } },
+          { text: 'state.now（会话层注入）', cellStyle: { background: { color: '#E8F0FB' } } },
+          { text: '本幕/本课已花分钟；清上轮判决', cellStyle: { background: { color: '#E8F0FB' } } },
+        ],
+        [
+          { text: 'load_context', textStyle: { bold: true, color: '#1B4F9C' } },
+          '按 host_phase 分层装配',
+          '六层文件（详见 P17）',
+          '组装 prompt（不改 state）',
+        ],
+        [
+          { text: 'classify_turn', textStyle: { bold: true, color: '#1B4F9C' }, cellStyle: { background: { color: '#E8F0FB' } } },
+          { text: '判断本轮输入类型', cellStyle: { background: { color: '#E8F0FB' } } },
+          { text: '学生消息 + host_phase', cellStyle: { background: { color: '#E8F0FB' } } },
+          { text: 'speaker、路由标记', cellStyle: { background: { color: '#E8F0FB' } } },
+        ],
+        [
+          { text: 'host_event', textStyle: { bold: true, color: '#1B4F9C' } },
+          '处理开场 / 收尾事件',
+          '主持人指令',
+          '目标 host_phase',
+        ],
+        [
+          { text: 'teach', textStyle: { bold: true, color: '#B87700' }, cellStyle: { background: { color: '#E8F0FB' } } },
+          { text: '两层教学：骨架定内容、LLM 润色', cellStyle: { background: { color: '#E8F0FB' } } },
+          { text: 'stages/<id>/prompt.md · questions.md · KNOWLEDGE-BASE.md', cellStyle: { background: { color: '#E8F0FB' } } },
+          { text: 'reply_text、turn_evidence、current_question', cellStyle: { background: { color: '#E8F0FB' } } },
+        ],
+        [
+          { text: 'judge_mastery', textStyle: { bold: true, color: '#1B4F9C' } },
+          '按 rubric 判星级（确定性）',
+          'stages/<id>/rubric.md · MASTERY-STAR-RULES.md',
+          'mastery_updates',
+        ],
+        [
+          { text: 'judge_advance ★', textStyle: { bold: true, color: '#B87700' }, cellStyle: { background: { color: '#E8F0FB' } } },
+          { text: '判定是否切幕（编排核心）', cellStyle: { background: { color: '#E8F0FB' } } },
+          { text: 'state 全部进度字段', cellStyle: { background: { color: '#E8F0FB' } } },
+          { text: 'target_phase、advance_reason', cellStyle: { background: { color: '#E8F0FB' } } },
+        ],
+        [
+          { text: 'advance_stage', textStyle: { bold: true, color: '#1B4F9C' } },
+          '写阶段快照 + 切到下一幕',
+          'remaining_stages',
+          'stage_snapshots、新 host_phase、重置计时',
+        ],
+        [
+          { text: 'write_state', textStyle: { bold: true, color: '#1B4F9C' }, cellStyle: { background: { color: '#E8F0FB' } } },
+          { text: '落盘所有状态（追加不覆盖）', cellStyle: { background: { color: '#E8F0FB' } } },
+          { text: 'state', cellStyle: { background: { color: '#E8F0FB' } } },
+          { text: 'runtime/DIALOGUE-LOG.md · data/*.json', cellStyle: { background: { color: '#E8F0FB' } } },
+        ],
+        [
+          { text: 'format_reply', textStyle: { bold: true, color: '#1B4F9C' } },
+          '组装回复与播报标记',
+          'state',
+          'reply_text、speech_kind',
+        ],
+      ]}
+    />
+  </Box>
+  <Box style={{ position: 'absolute', left: 64, right: 64, bottom: 20, flexDirection: 'row', justifyContent: 'space-between' }}>
+    <Box style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+      <Box style={{ width: 10, height: 10, background: '#1B4F9C', borderRadius: 2 }} />
+      <Text style={{ fontSize: 13, color: '#64748B' }}>主动引导智能体 · 项目介绍</Text>
+    </Box>
+    <Text style={{ fontSize: 13, color: '#64748B' }}>12 / 18</Text>
+  </Box>
+</Slide>

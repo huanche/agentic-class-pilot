@@ -1,0 +1,16 @@
+{
+  "segment_id": "seg-006",
+  "lesson_id": "ch3-process-scheduling",
+  "title": "时间片轮转与多级反馈队列",
+  "order": 6,
+  "knowledge_point_ids": ["KP-006"],
+  "knowledge_points": ["RR", "多级队列", "多级反馈队列"],
+  "summary": "RR 用时间片轮流服务进程，响应更快；多级反馈队列允许进程在不同队列间移动。",
+  "content": "RR 时间片轮转把 CPU 按时间片轮流给就绪进程，响应时间短，但平均周转时间通常不一定比 SJF 好。多级队列按性质把进程分到不同队列，进程不移动。多级反馈队列允许进程根据运行表现降级或升级队列，不需要预先知道进程长度。",
+  "source": {
+    "course": "计算机操作系统",
+    "chapter": "第3章 处理机调度",
+    "slide": "3.2 调度算法",
+    "position": "视频进度占位 00:44:20"
+  }
+}

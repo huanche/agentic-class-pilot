@@ -1,0 +1,8 @@
+<Slide style={{ width: '1280px', height: '720px', padding: 0, background: 'linear-gradient(135deg, #1B4F9C 0%, #0F2E5C 100%)' }}>
+  <Box style={{ padding: '110px 96px', gap: 8 }}>
+    <Text style={{ fontSize: 150, fontWeight: 'bold', color: 'rgba(255,255,255,0.18)', lineHeight: 1 }}>04</Text>
+    <Text style={{ fontSize: 46, fontWeight: 'bold', color: '#FFFFFF', marginTop: 4 }}>功能板块 · 文件地图</Text>
+    <Text style={{ fontSize: 19, color: '#BFD4F2', lineHeight: 1.7, marginTop: 18, maxWidth: 780 }}>五个目录五种角色：规则、课程数据、阶段内容、运行时状态、编排器。每个文件放什么、谁写、谁读、何时读，一目了然。</Text>
+    <Box style={{ width: 64, height: 6, background: '#F59E0B', marginTop: 28 }} />
+  </Box>
+</Slide>

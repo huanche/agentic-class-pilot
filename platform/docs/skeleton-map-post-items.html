@@ -1,0 +1,1134 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>POST /items 全链路</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&display=swap">
+<style>
+  :root {
+    --bg: #F4F6F4;
+    --surface: #FFFFFF;
+    --surface-2: #EDF1EF;
+    --ink: #1F2C33;
+    --muted: #5A6B72;
+    --line: #D8DFDB;
+    --accent: #0B7264;
+    --accent-soft: #E2EFEA;
+    --fe: #33587A;
+    --fe-soft: #E7EEF5;
+    --rust: #A64B3C;
+    --rust-soft: #F6E8E4;
+    --amber: #8A6414;
+    --amber-soft: #F4ECD8;
+    --ok: #2E7D4F;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0F171B;
+      --surface: #16222A;
+      --surface-2: #1B2A33;
+      --ink: #E3EAE6;
+      --muted: #93A5AC;
+      --line: #263841;
+      --accent: #58C7B4;
+      --accent-soft: #1C3A34;
+      --fe: #8FB4DA;
+      --fe-soft: #1D2B3A;
+      --rust: #E0937F;
+      --rust-soft: #3A2620;
+      --amber: #D5AC55;
+      --amber-soft: #383018;
+      --ok: #6FBF8B;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0F171B;
+    --surface: #16222A;
+    --surface-2: #1B2A33;
+    --ink: #E3EAE6;
+    --muted: #93A5AC;
+    --line: #263841;
+    --accent: #58C7B4;
+    --accent-soft: #1C3A34;
+    --fe: #8FB4DA;
+    --fe-soft: #1D2B3A;
+    --rust: #E0937F;
+    --rust-soft: #3A2620;
+    --amber: #D5AC55;
+    --amber-soft: #383018;
+    --ok: #6FBF8B;
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 400 15px/1.8 "IBM Plex Sans", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  code, pre, .mono {
+    font-family: "IBM Plex Mono", "Noto Sans Mono", Consolas, monospace;
+  }
+  p { margin: 0 0 1em; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+
+  .page {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 0 28px 96px;
+    display: grid;
+    grid-template-columns: 232px minmax(0, 1fr);
+    gap: 48px;
+  }
+
+  /* ---------- TOC rail ---------- */
+  .toc {
+    position: sticky;
+    top: 0;
+    align-self: start;
+    height: 100vh;
+    overflow-y: auto;
+    padding: 40px 0 24px;
+    font-size: 13px;
+  }
+  .toc-label {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    letter-spacing: .14em;
+    color: var(--muted);
+    text-transform: uppercase;
+    margin: 0 0 12px;
+    padding-left: 14px;
+  }
+  .toc ol { list-style: none; margin: 0; padding: 0; }
+  .toc li { margin: 0; }
+  .toc a {
+    display: block;
+    padding: 5px 14px;
+    border-left: 2px solid transparent;
+    color: var(--muted);
+    line-height: 1.5;
+  }
+  .toc a:hover { color: var(--ink); text-decoration: none; }
+  .toc a.active {
+    color: var(--accent);
+    border-left-color: var(--accent);
+    background: linear-gradient(90deg, var(--accent-soft), transparent 80%);
+  }
+  .toc .n { font-family: "IBM Plex Mono", monospace; font-size: 11px; margin-right: 7px; color: var(--muted); }
+  .toc a.active .n { color: var(--accent); }
+
+  /* ---------- Doc head ---------- */
+  main { min-width: 0; padding-top: 40px; }
+  .eyebrow {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11.5px;
+    letter-spacing: .16em;
+    color: var(--accent);
+    margin: 0 0 14px;
+  }
+  h1 {
+    font-size: clamp(28px, 4vw, 38px);
+    line-height: 1.25;
+    font-weight: 700;
+    margin: 0 0 14px;
+    text-wrap: balance;
+    letter-spacing: -0.01em;
+  }
+  h1 .req { color: var(--accent); }
+  .deck {
+    font-size: 16px;
+    color: var(--muted);
+    max-width: 62ch;
+    margin: 0 0 22px;
+  }
+  .doc-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 22px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px;
+    color: var(--muted);
+    border-top: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+    padding: 10px 0;
+    margin-bottom: 40px;
+  }
+
+  /* ---------- Sections ---------- */
+  section { scroll-margin-top: 20px; margin-bottom: 64px; }
+  h2 {
+    font-size: 21px;
+    font-weight: 700;
+    margin: 0 0 6px;
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    text-wrap: balance;
+  }
+  h2 .idx {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--accent);
+    letter-spacing: .06em;
+  }
+  .sub {
+    color: var(--muted);
+    font-size: 14px;
+    margin: 0 0 20px;
+    max-width: 70ch;
+  }
+  h3 {
+    font-size: 15.5px;
+    font-weight: 600;
+    margin: 28px 0 10px;
+  }
+
+  /* ---------- Inline code & paths ---------- */
+  code {
+    font-size: .88em;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 1px 6px;
+    white-space: nowrap;
+  }
+  code.path {
+    color: var(--accent);
+    white-space: normal;
+    overflow-wrap: anywhere;
+    font-size: .85em;
+  }
+  pre {
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 16px 18px;
+    overflow-x: auto;
+    font-size: 12.5px;
+    line-height: 1.7;
+    margin: 0 0 16px;
+  }
+  pre code { background: none; border: none; padding: 0; white-space: pre; }
+
+  /* ---------- Callouts ---------- */
+  .callout {
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--accent);
+    background: var(--surface);
+    border-radius: 0 8px 8px 0;
+    padding: 14px 18px;
+    margin: 0 0 16px;
+    font-size: 14px;
+  }
+  .callout .tag {
+    display: inline-block;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    letter-spacing: .12em;
+    color: var(--accent);
+    margin-bottom: 4px;
+  }
+  .callout.warn { border-left-color: var(--amber); }
+  .callout.warn .tag { color: var(--amber); }
+  .callout.rust { border-left-color: var(--rust); }
+  .callout.rust .tag { color: var(--rust); }
+  .callout p:last-child { margin-bottom: 0; }
+
+  /* ---------- Chips & badges ---------- */
+  .chip {
+    display: inline-block;
+    font-size: 11.5px;
+    font-weight: 600;
+    line-height: 1;
+    padding: 4px 9px;
+    border-radius: 999px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    white-space: nowrap;
+  }
+  .chip.fe { background: var(--fe-soft); color: var(--fe); }
+  .chip.plain { background: var(--surface-2); color: var(--muted); border: 1px solid var(--line); }
+  .method {
+    display: inline-block;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 3px 8px;
+    border-radius: 4px;
+    background: var(--accent);
+    color: var(--bg);
+    letter-spacing: .05em;
+  }
+  .status {
+    font-family: "IBM Plex Mono", monospace;
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--rust);
+  }
+
+  /* ---------- Trace diagram ---------- */
+  .trace {
+    border: 1px solid var(--line);
+    background: var(--surface);
+    border-radius: 10px;
+    padding: 22px 24px 10px;
+    margin: 0 0 16px;
+  }
+  .zone {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 14px 0 10px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11.5px;
+    letter-spacing: .12em;
+    color: var(--muted);
+  }
+  .zone::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+  .zone .zchip {
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 3px 8px;
+    color: var(--muted);
+  }
+  .station {
+    display: grid;
+    grid-template-columns: 30px minmax(0, 1fr);
+    gap: 0 14px;
+    position: relative;
+    padding-bottom: 14px;
+  }
+  .station::before {
+    content: "";
+    position: absolute;
+    left: 14px;
+    top: 26px;
+    bottom: -4px;
+    width: 2px;
+    background: var(--line);
+  }
+  .station:last-child::before { display: none; }
+  .st-num {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    border: 2px solid var(--accent);
+    color: var(--accent);
+    background: var(--surface);
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    z-index: 1;
+  }
+  .station.ret .st-num {
+    border-style: dashed;
+    font-size: 14px;
+  }
+  .st-body { min-width: 0; padding-top: 3px; }
+  .st-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 10px;
+    margin-bottom: 3px;
+  }
+  .st-title { font-weight: 600; font-size: 14.5px; }
+  .st-desc {
+    font-size: 13.5px;
+    color: var(--muted);
+    line-height: 1.7;
+  }
+  .st-desc code { font-size: .9em; }
+
+  .http-card {
+    grid-column: 1 / -1;
+    margin: 4px 0 18px 44px;
+    border: 1px solid var(--accent);
+    border-radius: 8px;
+    background: var(--accent-soft);
+    padding: 14px 18px;
+    font-size: 13.5px;
+  }
+  .http-card .url {
+    font-family: "IBM Plex Mono", monospace;
+    font-weight: 600;
+    font-size: 13.5px;
+    margin-left: 8px;
+  }
+  .http-card ul { margin: 8px 0 0; padding: 0; list-style: none; color: var(--muted); font-size: 12.5px; }
+  .http-card li { margin: 2px 0; }
+  .http-card li code { background: var(--surface); }
+
+  /* ---------- Layer QA blocks ---------- */
+  .layer {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--surface);
+    margin-bottom: 14px;
+    overflow: hidden;
+  }
+  .layer-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 12px;
+    padding: 12px 18px;
+    border-bottom: 1px solid var(--line);
+    background: var(--surface-2);
+  }
+  .layer-head .name { font-weight: 700; font-size: 14.5px; }
+  .layer-head code { background: var(--surface); }
+  .qa {
+    display: grid;
+    grid-template-columns: 118px minmax(0, 1fr);
+    margin: 0;
+    padding: 0;
+  }
+  .qa dt {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--muted);
+    padding: 10px 18px;
+    border-top: 1px solid var(--line);
+    border-right: 1px solid var(--line);
+    margin: 0;
+  }
+  .qa dd {
+    padding: 10px 18px;
+    border-top: 1px solid var(--line);
+    margin: 0;
+    font-size: 13.5px;
+    line-height: 1.75;
+  }
+  .qa dt:first-of-type, .qa dd:first-of-type { border-top: none; }
+  .qa .no { color: var(--rust); font-weight: 600; }
+  .qa .yes { color: var(--ok); font-weight: 600; }
+
+  /* ---------- Tables ---------- */
+  .tw {
+    overflow-x: auto;
+    margin: 0 0 16px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--surface);
+  }
+  table { border-collapse: collapse; width: 100%; font-size: 13.5px; line-height: 1.7; }
+  th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  thead th {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11.5px;
+    letter-spacing: .1em;
+    color: var(--muted);
+    font-weight: 600;
+    background: var(--surface-2);
+    white-space: nowrap;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  .tw .ok-mark { color: var(--ok); font-weight: 700; }
+  .tw .gap-mark { color: var(--amber); font-weight: 700; }
+
+  /* ---------- Class tree ---------- */
+  .tree, .tree ul { list-style: none; margin: 0; padding: 0; }
+  .tree ul { margin-left: 22px; border-left: 1px solid var(--line); padding-left: 18px; }
+  .tree li { position: relative; margin: 8px 0; }
+  .tree li::before {
+    content: "";
+    position: absolute;
+    left: -18px;
+    top: 13px;
+    width: 14px;
+    height: 1px;
+    background: var(--line);
+  }
+  .tnode {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 10px;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-size: 13.5px;
+  }
+  .tnode .cls { font-family: "IBM Plex Mono", monospace; font-weight: 600; font-size: 13px; }
+  .tnode.root { border-color: var(--accent); background: var(--accent-soft); }
+  .tnode .role { font-size: 12px; color: var(--muted); }
+
+  /* ---------- Steps ---------- */
+  ol.steps { padding-left: 0; list-style: none; counter-reset: step; margin: 0 0 16px; }
+  ol.steps li {
+    counter-increment: step;
+    position: relative;
+    padding: 0 0 14px 44px;
+    font-size: 14px;
+    border-left: 2px solid var(--line);
+    margin-left: 14px;
+  }
+  ol.steps li::before {
+    content: counter(step);
+    position: absolute;
+    left: -15px;
+    top: 0;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: var(--surface);
+    border: 2px solid var(--accent);
+    color: var(--accent);
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  ol.steps li:last-child { border-left-color: transparent; }
+
+  ul.plain { margin: 0 0 16px; padding-left: 22px; }
+  ul.plain li { margin: 6px 0; font-size: 14px; }
+
+  .verdict {
+    border: 1px solid var(--accent);
+    background: var(--accent-soft);
+    border-radius: 10px;
+    padding: 18px 22px;
+    font-size: 14.5px;
+    margin-top: 8px;
+  }
+  .verdict .tag {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    letter-spacing: .12em;
+    color: var(--accent);
+    display: block;
+    margin-bottom: 6px;
+  }
+  .verdict p:last-child { margin: 0; }
+
+  footer.doc-foot {
+    border-top: 1px solid var(--line);
+    padding-top: 20px;
+    font-size: 12.5px;
+    color: var(--muted);
+    font-family: "IBM Plex Mono", monospace;
+    line-height: 1.9;
+  }
+
+  @media (max-width: 900px) {
+    .page { grid-template-columns: 1fr; gap: 0; }
+    .toc { position: static; height: auto; padding-top: 24px; border-bottom: 1px solid var(--line); margin-bottom: 8px; }
+    .toc ol { display: flex; flex-wrap: wrap; gap: 2px 14px; }
+    .toc a { border-left: none; padding: 4px 8px; }
+    .toc a.active { background: var(--accent-soft); border-radius: 4px; }
+    .http-card { margin-left: 0; }
+    .qa { grid-template-columns: 1fr; }
+    .qa dt { border-right: none; padding-bottom: 0; }
+    .qa dd { padding-top: 2px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+<aside class="toc" aria-label="目录">
+  <p class="toc-label">Contents</p>
+  <ol>
+    <li><a href="#s0"><span class="n">00</span>两个前提发现</a></li>
+    <li><a href="#s1"><span class="n">01</span>调用链总图</a></li>
+    <li><a href="#s2"><span class="n">02</span>逐层四问</a></li>
+    <li><a href="#s3"><span class="n">03</span>Dependency</a></li>
+    <li><a href="#s4"><span class="n">04</span>Schema / Model</a></li>
+    <li><a href="#s5"><span class="n">05</span>业务逻辑在哪</a></li>
+    <li><a href="#s6"><span class="n">06</span>Session 生命周期</a></li>
+    <li><a href="#s7"><span class="n">07</span>Generated Client</a></li>
+    <li><a href="#s8"><span class="n">08</span>错误路径</a></li>
+    <li><a href="#s9"><span class="n">09</span>骨架能力表</a></li>
+    <li><a href="#s10"><span class="n">10</span>Service 接入测试</a></li>
+  </ol>
+</aside>
+
+<main>
+
+<header>
+  <p class="eyebrow">LEARNING_HELPER · FASTAPI FULL-STACK TEMPLATE</p>
+  <h1><span class="req">POST /items</span> 全链路骨架地图</h1>
+  <p class="deck">沿着一次真实的「创建 Item」请求，从 React 表单一路追踪到 PostgreSQL，再原路返回。每一站都基于仓库当前代码核对，不做模板套话。</p>
+  <div class="doc-meta">
+    <span>branch: main @ 6e75a7a</span>
+    <span>核对日期 2026-09-07</span>
+    <span>文件路径均相对仓库根目录</span>
+  </div>
+</header>
+
+<!-- ================= 00 ================= -->
+<section id="s0">
+  <h2><span class="idx">00</span>两个前提发现</h2>
+  <p class="sub">读真实代码后，先修正两个容易被「模板默认认知」误导的地方——后文所有结论都建立在这两点上。</p>
+  <div class="callout">
+    <span class="tag">FINDING 1</span>
+    <p>这个版本<strong>没有</strong> <code>backend/app/schemas.py</code>、<code>backend/app/core/auth.py</code>、<code>backend/app/core/exceptions.py</code>。请求/响应类与表模型全部合并在 <code class="path">backend/app/models.py</code>；JWT 解码直接写在 <code class="path">backend/app/api/deps.py</code>；异常用 FastAPI 原生 <code>HTTPException</code>，没有自定义异常类。</p>
+  </div>
+  <div class="callout rust">
+    <span class="tag">FINDING 2</span>
+    <p><code class="path">backend/app/crud.py</code> 里的 <code>create_item</code> 在<strong>生产路径上无人调用</strong>——只有测试 <code class="path">backend/tests/utils/item.py:16</code> 用它。真实的创建逻辑内联在 Router 里（详见第 05 节）。只看目录结构会以为有 CRUD 层，实际链路没经过它。</p>
+  </div>
+</section>
+
+<!-- ================= 01 ================= -->
+<section id="s1">
+  <h2><span class="idx">01</span>调用链总图</h2>
+  <p class="sub">编号即真实执行顺序；虚线圆圈是返回路径。实心线为去程。</p>
+
+  <div class="trace">
+    <div class="zone"><span class="zchip">浏览器 · React</span></div>
+
+    <div class="station">
+      <div class="st-num">1</div>
+      <div class="st-body">
+        <div class="st-head"><span class="chip fe">组件</span><span class="st-title">表单提交</span><code class="path">frontend/src/components/Items/AddItem.tsx:88</code></div>
+        <div class="st-desc">/items 页面（<code class="path">frontend/src/routes/_layout/items.tsx</code>）点 Add Item，react-hook-form 的 <code>handleSubmit(onSubmit)</code> 触发。</div>
+      </div>
+    </div>
+    <div class="station">
+      <div class="st-num">2</div>
+      <div class="st-body">
+        <div class="st-head"><span class="chip fe">前端校验</span><span class="st-title">zod schema</span><code class="path">frontend/src/components/Items/AddItem.tsx:33-36</code></div>
+        <div class="st-desc">title 非空在浏览器侧先挡一道；通过后 <code>mutation.mutate(data)</code>（:68）。</div>
+      </div>
+    </div>
+    <div class="station">
+      <div class="st-num">3</div>
+      <div class="st-body">
+        <div class="st-head"><span class="chip fe">生成客户端</span><span class="st-title">ItemsService.createItem</span><code class="path">frontend/src/client/sdk.gen.ts:325-336</code></div>
+        <div class="st-desc">axios 实例由 <code class="path">frontend/src/client/client.gen.ts:16</code> 创建；<code class="path">frontend/src/main.tsx:17-20</code> 注入 baseURL（<code>VITE_API_URL</code>）与 <code>auth()</code> = localStorage["access_token"]。</div>
+      </div>
+    </div>
+
+    <div class="http-card">
+      <span class="method">POST</span><span class="url">{VITE_API_URL}/api/v1/items/</span>
+      <ul>
+        <li><code>Content-Type: application/json</code> · body <code>{"title", "description"}</code></li>
+        <li><code>Authorization: Bearer &lt;token&gt;</code> · token 由 <code>login/access-token</code> 签发、存于 localStorage</li>
+      </ul>
+    </div>
+
+    <div class="zone"><span class="zchip">服务端 · FastAPI</span></div>
+
+    <div class="station">
+      <div class="st-num">4</div>
+      <div class="st-body">
+        <div class="st-head"><span class="chip">应用</span><span class="st-title">路由挂载</span><code class="path">backend/app/main.py:21,35</code></div>
+        <div class="st-desc">app 创建 + CORS（:27-33）；<code>include_router(api_router, prefix="/api/v1")</code>；<code class="path">backend/app/api/main.py:10</code> 挂 <code>items.router</code>（prefix="/items"）。</div>
+      </div>
+    </div>
+    <div class="station">
+      <div class="st-num">5</div>
+      <div class="st-body">
+        <div class="st-head"><span class="chip plain">依赖</span><span class="st-title">Session 装配</span><code class="path">backend/app/api/deps.py:21-26</code></div>
+        <div class="st-desc"><code>get_db()</code> 生成器 <code>with Session(engine)</code> yield 会话；engine 是进程级单例（<code class="path">backend/app/core/db.py:7</code>，连接池 pool_pre_ping）。</div>
+      </div>
+    </div>
+    <div class="station">
+      <div class="st-num">6</div>
+      <div class="st-body">
+        <div class="st-head"><span class="chip plain">依赖</span><span class="st-title">CurrentUser 装配</span><code class="path">backend/app/api/deps.py:30-46</code></div>
+        <div class="st-desc">OAuth2PasswordBearer（:16-18）从请求头抽 token → <code>jwt.decode</code>（HS256, SECRET_KEY）→ <code>TokenPayload.sub</code> → <code>session.get(User)</code> → 校验 is_active。</div>
+      </div>
+    </div>
+    <div class="station">
+      <div class="st-num">7</div>
+      <div class="st-body">
+        <div class="st-head"><span class="chip">入参</span><span class="st-title">JSON → ItemCreate</span><code class="path">backend/app/models.py:121</code></div>
+        <div class="st-desc">FastAPI 在调 endpoint 前完成解析与校验，失败直接 422。</div>
+      </div>
+    </div>
+    <div class="station">
+      <div class="st-num">8</div>
+      <div class="st-body">
+        <div class="st-head"><span class="chip">endpoint</span><span class="st-title">create_item</span><code class="path">backend/app/api/routes/items.py:61-72</code></div>
+        <div class="st-desc">业务逻辑就在这里：<code>Item.model_validate(item_in, update={"owner_id": current_user.id})</code>（:68）——owner_id 由服务器单方面写入，前端传了也会被覆盖。</div>
+      </div>
+    </div>
+    <div class="station">
+      <div class="st-num">9</div>
+      <div class="st-body">
+        <div class="st-head"><span class="chip plain">持久化</span><span class="st-title">add → commit → refresh</span><code class="path">backend/app/api/routes/items.py:69-71</code></div>
+        <div class="st-desc">add 只登记不发 SQL；commit 才发 <code>INSERT ... RETURNING</code>（经 psycopg）；refresh 重新 SELECT 同步对象。</div>
+      </div>
+    </div>
+
+    <div class="zone"><span class="zchip">数据库 · PostgreSQL</span></div>
+
+    <div class="station">
+      <div class="st-num">10</div>
+      <div class="st-body">
+        <div class="st-head"><span class="chip plain">存储</span><span class="st-title">postgres:18</span><code class="path">compose.yml:20-32</code></div>
+        <div class="st-desc">compose 的 db 服务，库 app；表结构由 alembic 迁移创建（<code class="path">backend/scripts/prestart.sh</code>）。item.owner_id 外键 → user.id，ondelete CASCADE。</div>
+      </div>
+    </div>
+
+    <div class="zone"><span class="zchip">返回路径</span></div>
+
+    <div class="station ret">
+      <div class="st-num">↑</div>
+      <div class="st-body">
+        <div class="st-head"><span class="chip">响应</span><span class="st-title">response_model 过滤</span><code class="path">backend/app/api/routes/items.py:61,72</code></div>
+        <div class="st-desc">return item 后按 <code>ItemPublic</code>（<code class="path">backend/app/models.py:145</code>）白名单序列化为 JSON，Item 上的 owner 关系等不出门。</div>
+      </div>
+    </div>
+    <div class="station ret">
+      <div class="st-num">↑</div>
+      <div class="st-body">
+        <div class="st-head"><span class="chip fe">客户端</span><span class="st-title">{ data, ... } 或 AxiosError</span><code class="path">frontend/src/client/sdk.gen.ts</code></div>
+        <div class="st-desc">throwOnError: true，非 2xx 直接抛 <code>AxiosError</code> 给 mutation.onError。</div>
+      </div>
+    </div>
+    <div class="station ret">
+      <div class="st-num">↑</div>
+      <div class="st-body">
+        <div class="st-head"><span class="chip fe">反馈</span><span class="st-title">onSuccess → toast</span><code class="path">frontend/src/components/Items/AddItem.tsx:57-61</code></div>
+        <div class="st-desc">成功提示、关闭 Dialog、清空表单。</div>
+      </div>
+    </div>
+    <div class="station ret">
+      <div class="st-num">↑</div>
+      <div class="st-body">
+        <div class="st-head"><span class="chip fe">刷新</span><span class="st-title">invalidateQueries(["items"])</span><code class="path">frontend/src/components/Items/AddItem.tsx:63-65</code></div>
+        <div class="st-desc">列表 query 失效 → <code class="path">frontend/src/routes/_layout/items.tsx:12-18</code> 的 useSuspenseQuery 重新 <code>GET /api/v1/items/</code> → DataTable 重渲染。链路闭环。</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 02 ================= -->
+<section id="s2">
+  <h2><span class="idx">02</span>逐层四问</h2>
+  <p class="sub">链路上十个关键节点，每个只回答四个问题：职责、上层输入、下层输出、接入新 Service 时要不要动它。</p>
+
+  <div class="layer">
+    <div class="layer-head"><span class="chip fe">L1</span><span class="name">React 表单组件</span><code class="path">frontend/src/components/Items/AddItem.tsx</code></div>
+    <dl class="qa">
+      <dt>负责什么</dt><dd>收集输入、zod 前端校验（:33-36，title 非空）、触发 mutation、成功/失败反馈。</dd>
+      <dt>上层给什么</dt><dd>用户的键盘输入。</dd>
+      <dt>给下层什么</dt><dd><code>{ title: string, description?: string }</code> → <code>ItemsService.createItem({ body })</code>。</dd>
+      <dt>接新 Service</dt><dd><span class="no">要改</span>——新页面复用此模式，或在此表单挂新 mutation。</dd>
+    </dl>
+  </div>
+
+  <div class="layer">
+    <div class="layer-head"><span class="chip fe">L2</span><span class="name">Generated Client</span><code class="path">frontend/src/client/sdk.gen.ts:325</code></div>
+    <dl class="qa">
+      <dt>负责什么</dt><dd>把类型化调用变成一次 axios post：自动加 URL、JSON 头、Bearer scheme。</dd>
+      <dt>上层给什么</dt><dd><code>options.body: ItemCreate</code>（TS 类型来自 <code class="path">frontend/src/client/types.gen.ts:394</code>）。</dd>
+      <dt>给下层什么</dt><dd>HTTP 请求本身；返回 <code>{ data, error, response }</code>，throwOnError 下失败直接抛。</dd>
+      <dt>接新 Service</dt><dd><span class="yes">不用手改</span>——重新生成即含新 API（见第 07 节）。</dd>
+    </dl>
+  </div>
+
+  <div class="layer">
+    <div class="layer-head"><span class="chip">L3</span><span class="name">Router endpoint</span><code class="path">backend/app/api/routes/items.py:61</code></div>
+    <dl class="qa">
+      <dt>负责什么</dt><dd>声明「URL + 方法 + 参数签名」，并<strong>亲自执行</strong>业务三行（validate / add / commit）。</dd>
+      <dt>上层给什么</dt><dd>FastAPI 已解析好的 Session、User、ItemCreate。</dd>
+      <dt>给下层什么</dt><dd>一个 Item 实例交给 session。</dd>
+      <dt>接新 Service</dt><dd><span class="no">必改这里</span>（或新增 endpoint）——它是 Service 的唯一合法调用点。</dd>
+    </dl>
+  </div>
+
+  <div class="layer">
+    <div class="layer-head"><span class="chip plain">L4</span><span class="name">Dependency</span><code class="path">backend/app/api/deps.py</code></div>
+    <dl class="qa">
+      <dt>负责什么</dt><dd>每个请求进来时「造好」endpoint 需要的环境对象：数据库会话、当前用户。</dd>
+      <dt>上层给什么</dt><dd>原始请求（header 里的 token、配置里的连接串）。</dd>
+      <dt>给下层什么</dt><dd>Session 实例、User 实例。</dd>
+      <dt>接新 Service</dt><dd><span class="yes">完全不用改</span>（见第 03 节）。</dd>
+    </dl>
+  </div>
+
+  <div class="layer">
+    <div class="layer-head"><span class="chip">L5</span><span class="name">Request Schema</span><code class="path">backend/app/models.py:121</code></div>
+    <dl class="qa">
+      <dt>负责什么</dt><dd>定义前端允许传什么：继承 ItemBase——title 1-255 必填、description ≤255 可选。</dd>
+      <dt>上层给什么</dt><dd>原始 JSON body。</dd>
+      <dt>给下层什么</dt><dd>ItemCreate Python 对象。</dd>
+      <dt>接新 Service</dt><dd>加一个 <code>XxxCreate</code> 类即可，机制不变。</dd>
+    </dl>
+  </div>
+
+  <div class="layer">
+    <div class="layer-head"><span class="chip">L6</span><span class="name">业务逻辑（真实位置：Router 内联）</span><code class="path">backend/app/api/routes/items.py:68</code></div>
+    <dl class="qa">
+      <dt>负责什么</dt><dd><code>Item.model_validate(item_in, update={"owner_id": ...})</code>——请求对象转表对象，并强制归属当前用户。</dd>
+      <dt>上层给什么</dt><dd>ItemCreate + current_user.id。</dd>
+      <dt>给下层什么</dt><dd>待持久化的 Item。</dd>
+      <dt>接新 Service</dt><dd>这段就是被替换 / 下沉的对象。</dd>
+    </dl>
+  </div>
+
+  <div class="layer">
+    <div class="layer-head"><span class="chip plain">L7</span><span class="name">Session / SQLAlchemy</span><code class="path">backend/app/core/db.py:7</code></div>
+    <dl class="qa">
+      <dt>负责什么</dt><dd>连接池（pool_pre_ping）、把对象操作翻译成 SQL。</dd>
+      <dt>上层给什么</dt><dd>add / commit / refresh 调用。</dd>
+      <dt>给下层什么</dt><dd>psycopg 协议的 SQL。</dd>
+      <dt>接新 Service</dt><dd>不用改（除非换数据库 / 加只读副本）。</dd>
+    </dl>
+  </div>
+
+  <div class="layer">
+    <div class="layer-head"><span class="chip plain">L8</span><span class="name">表模型 + PostgreSQL</span><code class="path">backend/app/models.py:132-141</code></div>
+    <dl class="qa">
+      <dt>负责什么</dt><dd><code>Item(table=True)</code> 定义 item 表（id / created_at 由 Python 侧 default_factory 生成，owner_id 外键 + CASCADE）；PG 18 跑在 compose 的 db 服务。</dd>
+      <dt>上层给什么</dt><dd>INSERT 语句。</dd>
+      <dt>给下层什么</dt><dd>磁盘上的行。</dd>
+      <dt>接新 Service</dt><dd>新表照抄写法 + 一条 alembic 迁移。</dd>
+    </dl>
+  </div>
+
+  <div class="layer">
+    <div class="layer-head"><span class="chip">L9</span><span class="name">Response Model</span><code class="path">backend/app/models.py:145</code></div>
+    <dl class="qa">
+      <dt>负责什么</dt><dd>回给前端的字段白名单（id / owner_id / created_at / title / description）；owner 关系等一律不出门。</dd>
+      <dt>上层给什么</dt><dd>endpoint return 的 Item 实例。</dd>
+      <dt>给下层什么</dt><dd>JSON body。</dd>
+      <dt>接新 Service</dt><dd>为 Service 返回加一个 <code>XxxPublic</code> 类。</dd>
+    </dl>
+  </div>
+
+  <div class="layer">
+    <div class="layer-head"><span class="chip fe">L10</span><span class="name">前端刷新</span><code class="path">frontend/src/routes/_layout/items.tsx:12-18</code></div>
+    <dl class="qa">
+      <dt>负责什么</dt><dd>invalidateQueries(["items"]) 让列表 query 重新拉取，UI 自动重渲染。</dd>
+      <dt>上层给什么</dt><dd>mutation 的 onSettled 事件。</dd>
+      <dt>给下层什么</dt><dd>一次新的 GET /api/v1/items/。</dd>
+      <dt>接新 Service</dt><dd>照抄「mutation + invalidate + toast」三件套。</dd>
+    </dl>
+  </div>
+</section>
+
+<!-- ================= 03 ================= -->
+<section id="s3">
+  <h2><span class="idx">03</span>Dependency：每请求一次的环境装配器</h2>
+  <p class="sub">不需要理解 FastAPI 依赖注入的底层实现，只需要知道它在当前骨架里扮演的角色和生命周期。</p>
+
+  <div class="tw">
+    <table>
+      <thead><tr><th>问题</th><th>真实答案</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><code>SessionDep</code> 从哪来</td>
+          <td><code class="path">backend/app/api/deps.py:21-26</code>：<code>get_db()</code> 是生成器，<code>with Session(engine)</code> 打开会话后 <code>yield session</code>。<code>SessionDep = Annotated[Session, Depends(get_db)]</code> 只是类型别名——endpoint 签名写 <code>session: SessionDep</code> 就等于声明「我要一个会话」。</td>
+        </tr>
+        <tr>
+          <td><code>CurrentUser</code> 从哪来</td>
+          <td><code class="path">backend/app/api/deps.py:30-49</code>：OAuth2PasswordBearer（:16-18）从 Authorization 头抽 token → <code>jwt.decode</code>（SECRET_KEY + HS256）验签 → 取 sub（= user.id）→ <code>session.get(User)</code> 查库 → 校验 is_active → 返回 User。注意依赖可以叠依赖：<code>get_current_user</code> 自己签名里就有 <code>SessionDep</code> 和 <code>TokenDep</code>。</td>
+        </tr>
+        <tr>
+          <td>谁创建 Session</td>
+          <td><code>get_db</code> 里的 <code>with Session(engine)</code>，<strong>每请求一次</strong>；engine 是进程级单例（<code class="path">backend/app/core/db.py:7</code>），负责真正的连接池。</td>
+        </tr>
+        <tr>
+          <td>谁解析 JWT</td>
+          <td><code>get_current_user</code>（没有独立的 auth 模块）。token 的<strong>签发</strong>在另一端：<code class="path">backend/app/api/routes/login.py:24-43</code> 调 <code class="path">backend/app/core/security.py:22-26</code>，默认有效期 8 天；前端存 localStorage（<code class="path">frontend/src/hooks/useAuth.ts:46</code>），每次请求由 <code class="path">frontend/src/main.tsx:19</code> 取出。</td>
+        </tr>
+        <tr>
+          <td>endpoint 为什么不用自己建</td>
+          <td>FastAPI 调用函数前看签名：遇到 Depends 就先执行依赖函数，把结果当参数传入。写 <code>session: SessionDep, current_user: CurrentUser</code>，进函数体时两个对象已就位。</td>
+        </tr>
+        <tr>
+          <td>请求结束后 Session 怎么处理</td>
+          <td>endpoint 返回、响应序列化完后，FastAPI 恢复 get_db 生成器，with 块退出 → <code>session.close()</code> → 连接还回池。<strong>没有全局事务包装、没有自动 commit、也没有显式 rollback</strong>——commit 完全是业务代码的责任，不 commit 的改动随 close 丢弃。</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="callout">
+    <span class="tag">一句话</span>
+    <p>Dependency 在这个骨架里就是「每请求一次的环境装配器」。业务代码拿到 session 不是因为有魔法，只是签名声明了 <code>SessionDep</code>，FastAPI 调你之前先替你跑了 <code>get_db()</code>。</p>
+  </div>
+</section>
+
+<!-- ================= 04 ================= -->
+<section id="s4">
+  <h2><span class="idx">04</span>Schema / Model 的真实关系</h2>
+  <p class="sub">本版本没有独立 schemas.py——Item 家族全部在 <code class="path">backend/app/models.py</code>，靠 SQLModel 继承分出三个角色。下树中的行号均指该文件。</p>
+
+  <ul class="tree">
+    <li>
+      <div class="tnode root"><span class="cls">SQLModel</span></div>
+      <ul>
+        <li>
+          <div class="tnode"><span class="cls">ItemBase</span><span class="role">:115 · title(1..255) / description(≤255) · 字段共享基类</span></div>
+          <ul>
+            <li><div class="tnode"><span class="cls">ItemCreate</span><span class="role">:121 · 空壳 — ① 创建请求体</span></div></li>
+            <li><div class="tnode"><span class="cls">Item (table=True)</span><span class="role">:132 · +id / created_at / owner_id(FK→user.id, CASCADE) / owner — ② 数据库表</span></div></li>
+            <li><div class="tnode"><span class="cls">ItemPublic</span><span class="role">:145 · +id / owner_id / created_at — ③ 返回形状</span></div></li>
+          </ul>
+        </li>
+        <li><div class="tnode"><span class="cls">ItemUpdate</span><span class="role">:126 · 独立基类，全字段可选 — PUT 请求体</span></div></li>
+        <li><div class="tnode"><span class="cls">ItemsPublic</span><span class="role">:151 · {"data": list[ItemPublic], "count"} — 列表响应</span></div></li>
+      </ul>
+    </li>
+  </ul>
+
+  <h3>为什么表模型和 API 模型不是同一个类</h3>
+  <p>三个角色约束不同：入参不能让前端指定 <code>owner_id</code>（归属由服务器定）；表模型带 owner 关系等内部字段；响应要控制暴露面。本项目的 <code>GenerationJob.requirement</code> 在 <code>GenerationJobPublic</code>（<code class="path">backend/app/models.py:357</code>）里对学生置 None——就是靠分开才能做得到的脱敏。合成一个类，任何改动都会同时冲击三个方向。</p>
+
+  <h3>数据形态的两次变化</h3>
+  <ul class="plain">
+    <li><strong>JSON → Python</strong>：<code>ItemCreate</code> 在 FastAPI 调 endpoint <strong>之前</strong>由请求体构造（失败 422）；<code>ItemCreate → Item</code> 在 <code class="path">backend/app/api/routes/items.py:68</code> 的 <code>model_validate</code>。</li>
+    <li><strong>Python → JSON</strong>：endpoint <code>return item</code> <strong>之后</strong>，FastAPI 按 <code>response_model=ItemPublic</code> 校验+序列化。列表路由 <code class="path">backend/app/api/routes/items.py:44</code> 还有显式写法 <code>ItemPublic.model_validate(item)</code>——两种风格并存，效果一致。</li>
+  </ul>
+</section>
+
+<!-- ================= 05 ================= -->
+<section id="s5">
+  <h2><span class="idx">05</span>业务逻辑到底在哪（诚实版）</h2>
+  <p class="sub">不预设存在 Service Layer——真实答案是：就在 Router 文件里。</p>
+
+  <p><strong>create Item 的真正业务逻辑是 <code class="path">backend/app/api/routes/items.py:68-71</code> 这四行</strong>（validate / add / commit / refresh）。没有 Service，也没有走 crud。</p>
+
+  <div class="callout rust">
+    <span class="tag">容易被骗的点</span>
+    <p><code class="path">backend/app/crud.py:63-68</code> 存在一个几乎逐行相同的 <code>create_item</code>，但只被测试工具 <code class="path">backend/tests/utils/item.py:16</code> 调用——生产代码不用它。CRUD 层是「半残」的：User 相关（注册、认证、改密）确实走 <code class="path">backend/app/crud.py</code>；Item 的五个 endpoint 全部 Router 内联。</p>
+  </div>
+
+  <h3>HTTP 层与业务逻辑的真实边界</h3>
+  <ul class="plain">
+    <li><strong>HTTP 层该做的（确实做了）</strong>：URL/方法声明、依赖装配、入参/出参 schema、状态码与异常（404/403）。</li>
+    <li><strong>业务逻辑（但混在 Router 里）</strong>：owner_id 赋值规则、model_validate 转换、持久化三步、读列表时「superuser 看全部 / 普通用户看自己的」分支（<code class="path">backend/app/api/routes/items.py:21-42</code>）。</li>
+  </ul>
+
+  <p>对本模板这样是<strong>合理的</strong>：CRUD 密度极低时，多一层转发只是仪式。边界在「业务逻辑超过一屏、或需要被多个 endpoint 复用」时到达——本项目的 <code class="path">backend/app/api/routes/ask.py</code> 已经越过这条线（一个 endpoint 里 130 行编排逻辑），说明项目实际已经长出了对 Service 层的需求（<code class="path">backend/app/services/</code> 目录就是证据，见第 10 节）。</p>
+</section>
+
+<!-- ================= 06 ================= -->
+<section id="s6">
+  <h2><span class="idx">06</span>数据库 Session 全程追踪</h2>
+  <p class="sub">六个阶段、各自的真实位置。「业务代码为什么能直接拿到 session」的答案在表格下方。</p>
+
+  <div class="tw">
+    <table>
+      <thead><tr><th>阶段</th><th>位置</th><th>发生什么</th></tr></thead>
+      <tbody>
+        <tr><td>Session 创建</td><td><code class="path">backend/app/api/deps.py:22</code></td><td>请求进入、FastAPI 解析签名时执行 <code>with Session(engine)</code>。</td></tr>
+        <tr><td>注入</td><td>调 <code class="path">backend/app/api/routes/items.py:62</code> 前</td><td>yield 出的 session 作为参数传入 endpoint。</td></tr>
+        <tr><td><code>session.add(item)</code></td><td><code class="path">backend/app/api/routes/items.py:69</code></td><td>登记「待写入」，<strong>还没发 SQL</strong>；id / created_at 已由 Python 侧 default_factory 生成。</td></tr>
+        <tr><td><code>session.commit()</code></td><td><code class="path">backend/app/api/routes/items.py:70</code></td><td>真正发 INSERT ... RETURNING（经 psycopg）。</td></tr>
+        <tr><td><code>session.refresh(item)</code></td><td><code class="path">backend/app/api/routes/items.py:71</code></td><td>commit 后对象标记过期，refresh 重新 SELECT，保证字段与库中最终值一致。</td></tr>
+        <tr><td>请求结束</td><td>响应序列化完成后</td><td>回到 get_db，with 退出 → close() → 连接归还 engine 的池。</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="callout">
+    <span class="tag">为什么直接拿得到</span>
+    <p>因为签名里写了 <code>SessionDep</code>。这也意味着 <strong>Service 完全不需要自己建 session</strong>——当参数传进去就行，生命周期由外层请求框架管理。要警惕的是：这个骨架<strong>没有事务边界约定</strong>——一个 endpoint 里调多个写操作时各自 commit，没有「全成或全败」的机制。</p>
+  </div>
+</section>
+
+<!-- ================= 07 ================= -->
+<section id="s7">
+  <h2><span class="idx">07</span>前端 Generated API Client</h2>
+  <p class="sub">代码在哪、怎么来的、新 API 如何长出前端方法。</p>
+
+  <div class="tw">
+    <table>
+      <thead><tr><th>问题</th><th>答案</th></tr></thead>
+      <tbody>
+        <tr><td>代码在哪</td><td><code class="path">frontend/src/client/</code>——<code class="path">frontend/src/client/client.gen.ts</code>（axios 实例工厂）、<code class="path">frontend/src/client/sdk.gen.ts</code>（各 XxxService 类）、<code class="path">frontend/src/client/types.gen.ts</code>（全部 TS 类型）。文件头第一行：auto-generated by @hey-api/openapi-ts。</td></tr>
+        <tr><td>手写还是生成</td><td>生成。配置在 <code class="path">frontend/openapi-ts.config.ts</code>：input 是 <code class="path">frontend/openapi.json</code>（后端 OpenAPI 文档快照），按 tag 分组生成 XxxService 静态类，<code>@hey-api/client-axios</code> 插件，throwOnError: true。</td></tr>
+        <tr><td>创建 Item 调哪个方法</td><td><code>ItemsService.createItem({ body })</code>（<code class="path">frontend/src/components/Items/AddItem.tsx:56</code> → 实现 <code class="path">frontend/src/client/sdk.gen.ts:325-336</code>）。</td></tr>
+        <tr><td>发什么请求</td><td><code>POST</code> + <code>/api/v1/items/</code> + JSON 头 + bearer security；baseURL 由 <code class="path">frontend/src/main.tsx:18</code> 的 VITE_API_URL 提供，token 由 :19 的 auth() 回调从 localStorage 取。</td></tr>
+        <tr><td>Request 类型</td><td><code>ItemCreate</code>（<code class="path">frontend/src/client/types.gen.ts:394</code>）——源头是后端 <code class="path">backend/app/models.py:121</code>。<strong>请求类型的源头始终在后端。</strong></td></tr>
+        <tr><td>Response 类型</td><td><code>ItemPublic</code>（<code class="path">frontend/src/client/types.gen.ts:408</code>），源头是 response_model=ItemPublic。</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>新增后端 API 后，前端用上它的流程</h3>
+  <ol class="steps">
+    <li>后端加好 endpoint（带 tag、request / response 模型），启动后端。</li>
+    <li>把 <code>/api/v1/openapi.json</code> 的内容更新到 <code class="path">frontend/openapi.json</code>。<strong>仓库里没发现自动做这一步的脚本</strong>（<code class="path">backend/scripts/</code> 只有迁移/测试类脚本），更新方式无法从当前代码确认，应是手动或文档约定的流程。</li>
+    <li><code>cd frontend && npm run generate-client</code>（<code class="path">frontend/package.json:11</code> → openapi-ts）重新生成 <code class="path">frontend/src/client/</code>。</li>
+    <li>前端代码 import 新生成的 Service 方法使用。</li>
+  </ol>
+</section>
+
+<!-- ================= 08 ================= -->
+<section id="s8">
+  <h2><span class="idx">08</span>错误是怎么走的</h2>
+  <p class="sub">五类错误各自产生在哪一层、最后如何回到前端。</p>
+
+  <div class="tw">
+    <table>
+      <thead><tr><th>错误</th><th>产生层</th><th>真实位置</th><th>到前端的路径</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>请求字段错误</td>
+          <td>前端 zod 先挡（<code class="path">frontend/src/components/Items/AddItem.tsx:33-36</code>）；漏网的到后端 pydantic 校验</td>
+          <td><span class="status">422</span> 自动，<code>{detail: [{loc, msg, type}]}</code></td>
+          <td><code class="path">frontend/src/utils.ts:5-7</code> 取 detail[0].msg → sonner toast</td>
+        </tr>
+        <tr>
+          <td>用户未登录</td>
+          <td>框架层：无 Authorization 头 → OAuth2PasswordBearer 自动 <span class="status">401</span>；有头但无效/过期 → <code class="path">backend/app/api/deps.py:36-40</code> 抛 <span class="status">403</span></td>
+          <td><code class="path">backend/app/api/deps.py</code></td>
+          <td><code class="path">frontend/src/main.tsx:22-30</code> 全局 onError：清 token → 跳 /login</td>
+        </tr>
+        <tr>
+          <td>用户无权限</td>
+          <td>Router 手写：普通用户读/改/删别人的 item</td>
+          <td><span class="status">403</span>，<code class="path">backend/app/api/routes/items.py:57/89/110</code></td>
+          <td>同上——但业务 403 也会被当成登录失效踢出（见下方提示）</td>
+        </tr>
+        <tr>
+          <td>Item 不存在</td>
+          <td>Router 手写</td>
+          <td><span class="status">404</span>，<code class="path">backend/app/api/routes/items.py:55</code></td>
+          <td>mutation onError → handleError → toast 显示 detail</td>
+        </tr>
+        <tr>
+          <td>数据库操作失败</td>
+          <td><strong>没有任何层处理</strong>：无注册的 exception_handler，无 backend/app/core/exceptions.py</td>
+          <td><span class="status">500</span>，Starlette 默认，body 无 detail</td>
+          <td>extractErrorMessage 退回 err.message（如 "Request failed with status code 500"）；配了 SENTRY_DSN（<code class="path">backend/app/main.py:18</code>）会上报</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="callout warn">
+    <span class="tag">边界提示</span>
+    <p>POST /items 这条链本身<strong>没有权限检查站</strong>——任何登录用户都能创建 item，归属由服务器强制写入；权限检查只出现在读/改/删邻居站。另外 <code class="path">frontend/src/main.tsx:24</code> 把所有 403 当登录失效处理（清 token + 跳登录页），对「已登录但没权限」是误伤——当前骨架一个真实的前端行为边界。</p>
+  </div>
+</section>
+
+<!-- ================= 09 ================= -->
+<section id="s9">
+  <h2><span class="idx">09</span>骨架能力表</h2>
+  <p class="sub">十一项能力 × 当前实现 × 关键文件 × 未来 Service 能否复用。<span class="ok-mark" style="font-family:'IBM Plex Mono',monospace">✓</span> 可直接复用，<span class="gap-mark" style="font-family:'IBM Plex Mono',monospace">!</span> 存在缺口。</p>
+
+  <div class="tw">
+    <table>
+      <thead><tr><th>能力</th><th>当前骨架如何实现</th><th>关键文件</th><th>Service 复用</th></tr></thead>
+      <tbody>
+        <tr><td>API Routing</td><td>每域一个 APIRouter(prefix, tags)，<code class="path">backend/app/api/main.py</code> 汇总，<code class="path">backend/app/main.py:35</code> 挂 /api/v1</td><td><code class="path">backend/app/api/routes/items.py:10</code></td><td><span class="ok-mark">✓</span> 加一行注册</td></tr>
+        <tr><td>Request Validation</td><td>SQLModel Field 约束（后端权威）+ zod（前端先挡）</td><td><code class="path">backend/app/models.py:115-117</code> · <code class="path">frontend/src/components/Items/AddItem.tsx:33</code></td><td><span class="ok-mark">✓</span> 新输入照抄加类</td></tr>
+        <tr><td>Authentication</td><td>OAuth2 Bearer + JWT HS256；/login/access-token 签发，默认 8 天</td><td><code class="path">backend/app/api/deps.py:16-18</code> · <code class="path">backend/app/core/security.py:22-26</code> · <code class="path">backend/app/api/routes/login.py:24</code></td><td><span class="ok-mark">✓</span> 免费获得</td></tr>
+        <tr><td>Current User</td><td>CurrentUser 别名 + get_current_user（解码→查库→活性检查）</td><td><code class="path">backend/app/api/deps.py:30-49</code></td><td><span class="ok-mark">✓</span> 免费获得</td></tr>
+        <tr><td>DB Session</td><td>SessionDep + get_db 生成器，请求级生命周期；engine 进程单例</td><td><code class="path">backend/app/api/deps.py:21-26</code> · <code class="path">backend/app/core/db.py:7</code></td><td><span class="ok-mark">✓</span> 传参即可</td></tr>
+        <tr><td>Database Model</td><td>SQLModel table=True 单文件 models.py；表由 alembic 迁移建</td><td><code class="path">backend/app/models.py:132</code> · <code class="path">backend/app/alembic/</code></td><td><span class="ok-mark">✓</span> 模式照抄</td></tr>
+        <tr><td>CRUD</td><td><strong>不统一</strong>：User 走 <code class="path">backend/app/crud.py</code>，Item 内联 Router；crud.create_item 仅测试使用</td><td><code class="path">backend/app/crud.py</code> · <code class="path">backend/app/api/routes/items.py</code></td><td><span class="gap-mark">!</span> 骨架缺口</td></tr>
+        <tr><td>Response Serialization</td><td>response_model=XxxPublic 白名单过滤；也有显式 model_validate 写法</td><td><code class="path">backend/app/api/routes/items.py:61,44</code></td><td><span class="ok-mark">✓</span> 加 Public 类</td></tr>
+        <tr><td>API Client</td><td>openapi.json 快照 → npm run generate-client（hey-api + axios，按 tag 分 Service）</td><td><code class="path">frontend/openapi-ts.config.ts</code> · <code class="path">frontend/src/client/</code></td><td><span class="ok-mark">✓</span> 重新生成即含</td></tr>
+        <tr><td>Error Handling</td><td>Router 手动 HTTPException + FastAPI 自动 422/401 + 前端全局 401/403 踢登录 + toast</td><td><code class="path">backend/app/api/routes/items.py</code> · <code class="path">frontend/src/main.tsx:22-38</code> · <code class="path">frontend/src/utils.ts</code></td><td><span class="gap-mark">!</span> 领域异常需自转 HTTP</td></tr>
+        <tr><td>Config</td><td>pydantic-settings 读 ../.env，settings 模块级单例</td><td><code class="path">backend/app/core/config.py</code></td><td><span class="ok-mark">✓</span> 直接 import</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ================= 10 ================= -->
+<section id="s10">
+  <h2><span class="idx">10</span>Service 接入测试</h2>
+  <p class="sub">假设未来别人给你一个 ExampleService——它能不能自然长进当前骨架？四个参数逐一给出真实来源。</p>
+
+  <h3>仓库里已有的真实先例</h3>
+  <p><code class="path">backend/app/services/</code> 目录已存在（dify.py、llm.py、openmaic.py、snapshot.py、storage.py），<code class="path">backend/app/services/__init__.py</code> 为空——没有注册机制，直接 import 用。消费方式见 <code class="path">backend/app/api/routes/ask.py:131-134</code>：</p>
+  <pre><code>try:
+    answer = llm.chat_completion(system=..., user=...)
+except llm.LLMError as e:
+    raise HTTPException(status_code=502, detail=str(e)) from e</code></pre>
+  <p><strong>Service 是普通 Python 模块/函数，不碰 HTTP 对象；它抛领域异常，Router 负责翻译成 HTTPException。</strong>这就是当前骨架事实上的接入模式（函数式而非类式，但 ExampleService 这种类写法同样成立）。</p>
+
+  <h3>ExampleService.execute(user_id, item_id, content, db) 逐参数来源</h3>
+  <div class="tw">
+    <table>
+      <thead><tr><th>参数</th><th>从哪来</th><th>具体写法</th></tr></thead>
+      <tbody>
+        <tr><td><code>user_id</code></td><td>CurrentUser 依赖</td><td>endpoint 签名 <code>current_user: CurrentUser</code>，传 <code>current_user.id</code>。<strong>永远不要信 body 里的 user_id</strong></td></tr>
+        <tr><td><code>item_id</code></td><td>path 参数</td><td><code>@router.post("/items/{id}/example")</code> + <code>id: uuid.UUID</code>，FastAPI 解析并校验 UUID</td></tr>
+        <tr><td><code>content</code></td><td>body schema</td><td><code class="path">backend/app/models.py</code> 加 <code>class ExampleCreate(SQLModel): content: str = Field(...)</code>，endpoint 参数 body: ExampleCreate</td></tr>
+        <tr><td><code>db</code></td><td>SessionDep 依赖</td><td>签名 <code>session: SessionDep</code> 直接传入。<strong>Service 不要自己建 session/engine</strong></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p><strong>execute() 最适合的调用位置</strong>：Router endpoint 内部，依赖装配之后、response_model 序列化之前——endpoint 只做「取参 → 鉴权（如需）→ 调 service → 把结果映射成响应 schema」。</p>
+
+  <h3>需要新增的文件（4 处）</h3>
+  <ol class="steps">
+    <li><code class="path">backend/app/services/example.py</code>——Service 本体（目录已存在）。</li>
+    <li><code class="path">backend/app/models.py</code> 加请求 / 响应两个 schema 类。</li>
+    <li><code class="path">backend/app/api/routes/example.py</code> 新 Router（或挂进现有域的 router）。</li>
+    <li><code class="path">backend/app/api/main.py</code> 注册一行；之后走第 07 节的 client 生成流程。</li>
+  </ol>
+
+  <h3>完全不需要改的现有机制</h3>
+  <p><code class="path">backend/app/api/deps.py</code> 全部依赖、engine/Session 生命周期、JWT 认证链、CORS、config 单例、alembic（不动表时）、前端 token 注入与全局错误处理、client 生成管线。<strong>这就是「能自然接入」的直接证据：四个入参在当前骨架里全都有现成的、彼此正交的来源。</strong></p>
+
+  <h3>Service 复杂起来后，可能要调整骨架的地方（按优先级）</h3>
+  <ol class="steps">
+    <li><strong>事务边界——最实质的缺口</strong>。commit 散落在每个 endpoint/业务处，get_db 只 close 不 rollback 也不包事务。Service 多步写操作必须先约定「谁 commit」（推荐：Service 不 commit、endpoint 统一 commit；或包一层 UoW）。骨架不阻止任何一种，但也没有任何一种的惯例。</li>
+    <li><strong>领域异常 → HTTP 的映射</strong>。目前每个 Router 手写 try/except 翻译（<code class="path">backend/app/api/routes/ask.py</code> 翻成 502）。Service 多了以后值得加统一 exception_handler，但这是渐进的。</li>
+    <li><strong>models.py 单文件</strong>。已近 400 行、7 个域混在一起，业务变多后拆分是组织问题（不影响接入机制）。</li>
+    <li><strong>前端 403 误伤</strong>。<code class="path">frontend/src/main.tsx:24</code> 把所有 403 当登录失效踢出，Service 引入更细的权限错误后会放大这个问题。</li>
+    <li><strong>外部调用治理</strong>。<code class="path">backend/app/services/</code> 里对 Dify / LLM / OpenMAIC 的超时、重试约定，本次未逐一核对代码，无法确认是否已有统一配置——接入前值得看一眼。</li>
+  </ol>
+
+  <div class="verdict">
+    <span class="tag">结论</span>
+    <p>别人写好的 ExampleService <strong>可以自然接入当前模板</strong>——参数来源、调用位置、文件落点全部现成。模板真正缺的不是「接入口」，而是<strong>团队级的两条约定</strong>：事务边界归谁管、领域异常怎么翻译。这两条不定，Service 一复杂就会出现「半个 router 半个 service 都在 commit」的混合态——而 Item 自己现在就是这个状态的缩影（items.py 内联版与 crud.py 孪生版并存）。</p>
+  </div>
+</section>
+
+<footer class="doc-foot">
+  <div>基于 main @ 6e75a7a 真实代码核对 · 2026-09-07</div>
+  <div>文件路径相对仓库根目录 · 无法从当前代码确认之处均已标注（openapi.json 更新流程、services 外部调用超时约定）</div>
+</footer>
+
+</main>
+</div>
+
+<script>
+(function () {
+  var links = Array.prototype.slice.call(document.querySelectorAll('.toc a'));
+  var map = {};
+  links.forEach(function (a) {
+    var id = a.getAttribute('href').slice(1);
+    map[id] = a;
+  });
+  function setActive(id) {
+    links.forEach(function (a) { a.classList.remove('active'); });
+    if (map[id]) map[id].classList.add('active');
+  }
+  try {
+    var obs = new IntersectionObserver(function (entries) {
+      var visible = entries.filter(function (e) { return e.isIntersecting; })
+        .sort(function (a, b) { return a.boundingClientRect.top - b.boundingClientRect.top; });
+      if (visible.length) setActive(visible[0].target.id);
+    }, { rootMargin: '-10% 0px -70% 0px', threshold: 0 });
+    document.querySelectorAll('main section[id]').forEach(function (s) { obs.observe(s); });
+  } catch (e) { /* 无 observer 时目录仍可用 */ }
+})();
+</script>
+</body>
+</html>

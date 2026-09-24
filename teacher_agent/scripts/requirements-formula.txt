@@ -1,0 +1,3 @@
+# Runtime dependency for scripts/convert-mathtype-ole.py.
+# The OLE reader and MTEF parser are vendored under vendor/formula-converter.
+lxml>=4.9,<7

@@ -1,0 +1,62 @@
+<Slide style={{ width: '1280px', height: '720px', padding: 0, background: '#FFFFFF' }}>
+  <Box style={{ position: 'absolute', top: 36, left: 64, right: 64, flexDirection: 'row', gap: 16 }}>
+    <Box style={{ width: 8, height: 40, background: '#1B4F9C', borderRadius: 2, marginTop: 4 }} />
+    <Box>
+      <Text style={{ fontSize: 34, fontWeight: 'bold', color: '#0F2E5C' }}>第二步：填课程内容 —— 写在哪、谁在读</Text>
+      <Text style={{ fontSize: 15, color: '#64748B', marginTop: 6 }}>五类内容文件，各自的用途与被编排器读取的时机</Text>
+    </Box>
+  </Box>
+  <Box style={{ position: 'absolute', top: 128, left: 64, right: 64, bottom: 56, flexDirection: 'row', gap: 24 }}>
+    <Box style={{ width: 240, background: '#0F2E5C', borderRadius: 12, padding: '24px 22px', gap: 14 }}>
+      <Text style={{ fontSize: 52, fontWeight: 'bold', color: '#F59E0B', lineHeight: 1 }}>5 类</Text>
+      <Text style={{ fontSize: 17, color: '#FFFFFF', lineHeight: 1.6 }}>内容文件<br />构成一门课的<br />全部「燃料」</Text>
+      <Text style={{ fontSize: 13, color: '#9FB9E0', lineHeight: 1.7, marginTop: 'auto' }}>提问三级兜底链：<br />stages 出题 → TMISSION 检验问题 → KNOWLEDGE-BASE 检测问题</Text>
+    </Box>
+    <Box style={{ flex: 1 }}>
+      <Table
+        style={{ width: '100%', height: '100%' }}
+        defaultTextStyle={{ fontSize: 13, textAlign: 'left', color: '#0F2E5C' }}
+        defaultCellStyle={{ border: { bottom: { width: 1, color: '#D7E4F6' } }, padding: 7 }}
+        cells={[
+          [
+            { text: '文件', textStyle: { bold: true, color: '#FFFFFF' }, cellStyle: { background: { color: '#1B4F9C' } } },
+            { text: '老师写什么', textStyle: { bold: true, color: '#FFFFFF' }, cellStyle: { background: { color: '#1B4F9C' } } },
+            { text: '编排器何时 / 被谁读取', textStyle: { bold: true, color: '#FFFFFF' }, cellStyle: { background: { color: '#1B4F9C' } } },
+          ],
+          [
+            { text: 'rules/KNOWLEDGE-BASE.md', textStyle: { bold: true, color: '#1B4F9C', fontSize: 12 } },
+            '知识点目录：定义、检测问题、掌握表现 + 4 个探究字段',
+            { text: '每轮装配；探究字段是深层探究的唯一燃料；检测问题是题库最后一级兜底', cellStyle: { background: { color: '#E8F0FB' } } },
+          ],
+          [
+            { text: 'runtime/TMISSION.md', textStyle: { bold: true, color: '#1B4F9C', fontSize: 12 } },
+            '老师目标、核心难点（含检验问题）、易混淆点名称',
+            '讲解与复述阶段读取；检验问题是复述题库的第 2 级来源',
+          ],
+          [
+            { text: 'runtime/LESSON-CONTENT.md', textStyle: { bold: true, color: '#1B4F9C', fontSize: 12 }, cellStyle: { background: { color: '#E8F0FB' } } },
+            { text: '本课先修 / 新内容 / 任务 / 成功证据', cellStyle: { background: { color: '#E8F0FB' } } },
+            { text: '讲解阶段装配，决定「这一段要讲到什么程度」', cellStyle: { background: { color: '#E8F0FB' } } },
+          ],
+          [
+            { text: 'lesson-data/segments/seg-XXX.json', textStyle: { bold: true, color: '#1B4F9C', fontSize: 12 } },
+            '每个片段讲什么，order 定顺序，绑定 KP 编号',
+            '引导学习阶段逐段驱动：active_segment_id 指向哪段讲哪段',
+          ],
+          [
+            { text: 'stages/<阶段>/questions · rubric · prompt.md', textStyle: { bold: true, color: '#1B4F9C', fontSize: 12 }, cellStyle: { background: { color: '#E8F0FB' } } },
+            { text: '各阶段的题目、评判标准、AI 提示词（可留空）', cellStyle: { background: { color: '#E8F0FB' } } },
+            { text: '仅演到对应幕时加载：teach 读 prompt/questions，judge_mastery 读 rubric', cellStyle: { background: { color: '#E8F0FB' } } },
+          ],
+        ]}
+      />
+    </Box>
+  </Box>
+  <Box style={{ position: 'absolute', left: 64, right: 64, bottom: 20, flexDirection: 'row', justifyContent: 'space-between' }}>
+    <Box style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+      <Box style={{ width: 10, height: 10, background: '#1B4F9C', borderRadius: 2 }} />
+      <Text style={{ fontSize: 13, color: '#64748B' }}>主动引导智能体 · 项目介绍</Text>
+    </Box>
+    <Text style={{ fontSize: 13, color: '#64748B' }}>08 / 18</Text>
+  </Box>
+</Slide>

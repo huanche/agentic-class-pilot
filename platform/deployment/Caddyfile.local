@@ -1,0 +1,91 @@
+:8088 {
+  encode zstd gzip
+
+  # Stable public prefixes. The upstream services keep their native paths,
+  # which keeps this gateway independent from their business code.
+  handle /teacher {
+    redir * / 302
+  }
+  handle_path /teacher/* {
+    reverse_proxy host.docker.internal:3200
+  }
+  handle /student-agent/app {
+    redir * /app?{query} 302
+  }
+  handle /app* {
+    reverse_proxy host.docker.internal:8000
+  }
+
+  # Next.js emits root-level assets and some root-level page links. These
+  # routes are unambiguous in the current platform topology.
+  handle /_next/* {
+    reverse_proxy host.docker.internal:3200
+  }
+  # Public static assets of the teacher agent (agent avatars etc.).
+  handle /avatars/* {
+    reverse_proxy host.docker.internal:3200
+  }
+  handle /mentra-icon.svg {
+    reverse_proxy host.docker.internal:3200
+  }
+  handle /mentra-logo.svg {
+    reverse_proxy host.docker.internal:3200
+  }
+  handle /logo-horizontal.png {
+    reverse_proxy host.docker.internal:3200
+  }
+  handle /teacher-workspace* {
+    reverse_proxy host.docker.internal:3200
+  }
+  handle /course-space* {
+    reverse_proxy host.docker.internal:3200
+  }
+  handle /classroom-player* {
+    reverse_proxy host.docker.internal:3200
+  }
+  # Native teacher-app page paths used by internal router.push calls; without
+  # these the platform SPA fallback answers and shows its 404 view.
+  handle /classes* {
+    reverse_proxy host.docker.internal:3200
+  }
+  handle /classroom* {
+    reverse_proxy host.docker.internal:3200
+  }
+  handle /prepare* {
+    reverse_proxy host.docker.internal:3200
+  }
+  handle /review* {
+    reverse_proxy host.docker.internal:3200
+  }
+  handle /generation-preview* {
+    reverse_proxy host.docker.internal:3200
+  }
+
+  # Both agents expose /api at their native origin. Route browser requests by
+  # the page that initiated them; platform API remains the default below.
+  @teacher_api {
+    path /api/*
+    header_regexp Referer ^http://localhost:8088/(teacher/|teacher-workspace|course-space|classroom-player)
+  }
+  handle @teacher_api {
+    reverse_proxy host.docker.internal:3200
+  }
+  # Student agent API: path-based routing (no Referer dependency).
+  # Platform uses /api/v1/*; student agent uses /api/session/*.
+  handle /api/session/* {
+    reverse_proxy host.docker.internal:8000
+  }
+  # Classroom data + media APIs are teacher-agent endpoints used by the
+  # embedded player; path-based like above (platform has no /api/classroom*).
+  handle /api/classroom* {
+    reverse_proxy host.docker.internal:3200
+  }
+  # Class roster/data APIs for the teacher app's classes pages (same reason).
+  handle /api/classes* {
+    reverse_proxy host.docker.internal:3200
+  }
+
+  handle {
+    reverse_proxy host.docker.internal:8080
+  }
+}

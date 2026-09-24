@@ -1,0 +1,65 @@
+openapi: 3.1.0
+info:
+  title: MENTRA Teacher Agent Integration API
+  version: 0.1.0
+servers:
+  - url: /api
+paths:
+  /teacher-agent/plan:
+    post:
+      summary: Convert a teacher command into a reviewable operation plan
+      operationId: planTeacherOperation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [courseId, message]
+              properties:
+                courseId: { type: string }
+                message: { type: string, maxLength: 12000 }
+                scope: { $ref: '#/components/schemas/CourseScope' }
+      responses:
+        '200': { description: Planned operation }
+        '404': { description: Course or recognized operation not found }
+  /teacher-agent/execute:
+    post:
+      summary: Execute a teacher-confirmed operation plan
+      operationId: executeTeacherOperation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [courseId, plan]
+              properties:
+                courseId: { type: string }
+                plan: { type: object, additionalProperties: true }
+      responses:
+        '200': { description: Operation accepted or completed }
+        '400': { description: Invalid operation plan }
+  /teacher-agent/capabilities:
+    get:
+      summary: Read integration routes and capabilities
+      operationId: getTeacherAgentCapabilities
+      responses:
+        '200': { description: Service capabilities }
+components:
+  schemas:
+    CourseScope:
+      oneOf:
+        - type: object
+          required: [type]
+          properties: { type: { const: course } }
+        - type: object
+          required: [type, moduleId]
+          properties:
+            type: { const: module }
+            moduleId: { type: string }
+        - type: object
+          required: [type, lessonId]
+          properties:
+            type: { const: lesson }
+            lessonId: { type: string }

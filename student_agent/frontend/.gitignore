@@ -1,0 +1,24 @@
+# Next.js 依赖与构建产物
+node_modules/
+.next/
+out/
+
+# 本地环境变量（模板 .env.example 保留在仓库）
+.env*.local
+
+# 本地预览与截图
+.preview/
+
+# 开发时的临时文件（测试脚本、诊断页）
+.t-*.js
+.t-*.html
+.t-*.txt
+.c.js
+.s.js
+
+# 编辑器与系统
+.vscode/
+.idea/
+Thumbs.db
+Desktop.ini
+.DS_Store

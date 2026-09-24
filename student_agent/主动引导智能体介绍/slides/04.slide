@@ -1,0 +1,55 @@
+<Slide style={{ width: '1280px', height: '720px', padding: 0, background: '#FFFFFF' }}>
+  <Box style={{ position: 'absolute', top: 36, left: 64, right: 64, flexDirection: 'row', gap: 16 }}>
+    <Box style={{ width: 8, height: 40, background: '#1B4F9C', borderRadius: 2, marginTop: 4 }} />
+    <Box>
+      <Text style={{ fontSize: 34, fontWeight: 'bold', color: '#0F2E5C' }}>一节课的六幕：时间表就是剧本</Text>
+      <Text style={{ fontSize: 15, color: '#64748B', marginTop: 6 }}>以 45 分钟示例课《第3章 处理机调度》为例 —— 时长占比来自 lesson-plan.json 真实配置</Text>
+    </Box>
+  </Box>
+  <Box style={{ position: 'absolute', top: 128, left: 64, right: 64 }}>
+    <svg width={1152} height={500} viewBox="0 0 1152 500">
+      <text x={80} y={40} fontSize={14} fill="#64748B">0%</text>
+      <text x={320} y={40} fontSize={14} fill="#64748B">50%</text>
+      <text x={535} y={40} fontSize={14} fill="#64748B">70%</text>
+      <text x={700} y={40} fontSize={14} fill="#64748B">85%</text>
+      <text x={880} y={40} fontSize={14} fill="#64748B">100%</text>
+      <rect x={40} y={60} width={44} height={92} rx={8} fill="#64748B" />
+      <text x={62} y={108} fontSize={13} fill="#FFFFFF" textAnchor="middle" fontWeight="bold">开场</text>
+      <rect x={88} y={60} width={488} height={92} rx={8} fill="#1B4F9C" />
+      <text x={332} y={100} fontSize={18} fill="#FFFFFF" textAnchor="middle" fontWeight="bold">引导学习 · 讲解 + 主动提问</text>
+      <text x={332} y={128} fontSize={15} fill="#BFD4F2" textAnchor="middle">22 分钟</text>
+      <rect x={580} y={60} width={200} height={92} rx={8} fill="#3D7BE0" />
+      <text x={680} y={100} fontSize={17} fill="#FFFFFF" textAnchor="middle" fontWeight="bold">复述与讨论</text>
+      <text x={680} y={128} fontSize={15} fill="#D6E4F8" textAnchor="middle">9 分钟</text>
+      <rect x={784} y={60} width={155} height={92} rx={8} fill="#1B4F9C" />
+      <text x={861} y={100} fontSize={17} fill="#FFFFFF" textAnchor="middle" fontWeight="bold">深层探究</text>
+      <text x={861} y={128} fontSize={15} fill="#BFD4F2" textAnchor="middle">7 分钟</text>
+      <rect x={943} y={60} width={155} height={92} rx={8} fill="#E8F0FB" stroke="#1B4F9C" strokeWidth={2} strokeDasharray="8 6" />
+      <text x={1020} y={100} fontSize={16} fill="#1B4F9C" textAnchor="middle" fontWeight="bold">全班讨论</text>
+      <text x={1020} y={128} fontSize={13} fill="#64748B" textAnchor="middle">7′ 本课已停用</text>
+      <rect x={1102} y={60} width={44} height={92} rx={8} fill="#64748B" />
+      <text x={1124} y={108} fontSize={13} fill="#FFFFFF" textAnchor="middle" fontWeight="bold">收尾</text>
+      <path d="M332 156 L332 180" stroke="#F59E0B" strokeWidth={2.5} />
+      <text x={332} y={204} fontSize={15} fill="#F59E0B" textAnchor="middle" fontWeight="bold">1 星「已接触」</text>
+      <path d="M680 156 L680 180" stroke="#F59E0B" strokeWidth={2.5} />
+      <text x={680} y={204} fontSize={15} fill="#F59E0B" textAnchor="middle" fontWeight="bold">2–3 星</text>
+      <path d="M861 156 L861 180" stroke="#F59E0B" strokeWidth={2.5} />
+      <text x={861} y={204} fontSize={15} fill="#F59E0B" textAnchor="middle" fontWeight="bold">4 星</text>
+      <text x={1020} y={204} fontSize={13} fill="#64748B" textAnchor="middle">只记快照</text>
+      <rect x={40} y={240} width={1106} height={2} fill="#D7E4F6" />
+      <rect x={40} y={270} width={1106} height={86} rx={12} fill="#E8F0FB" />
+      <text x={64} y={306} fontSize={17} fill="#0F2E5C">幕可自由启停：lesson-plan.json 里 <tspan fontWeight="bold">enabled: false</tspan> 即整段跳过（本课关掉了全班讨论）</text>
+      <text x={64} y={336} fontSize={14} fill="#64748B">intro / ending 是系统幕，不占老师的时间预算；中间各幕分钟数之和 ≤ 总时长，开课前由 8 项校验把关</text>
+      <rect x={40} y={386} width={1106} height={86} rx={12} fill="#FFFFFF" stroke="#D7E4F6" />
+      <text x={64} y={422} fontSize={17} fill="#0F2E5C">时间表不是估算：<tspan fontWeight="bold" fill="#1B4F9C">编排器对真实墙上时钟负责</tspan>，不数「聊了几轮」</text>
+      <text x={64} y={452} fontSize={14} fill="#64748B">到点（minutes 预算耗尽）按 advance_policy 切幕：立即切 / 收尾后切 / 允许延长 ≤3 分钟</text>
+    </svg>
+  </Box>
+  <Box style={{ position: 'absolute', left: 64, right: 64, bottom: 20, flexDirection: 'row', justifyContent: 'space-between' }}>
+    <Box style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+      <Box style={{ width: 10, height: 10, background: '#1B4F9C', borderRadius: 2 }} />
+      <Text style={{ fontSize: 13, color: '#64748B' }}>主动引导智能体 · 项目介绍</Text>
+    </Box>
+    <Text style={{ fontSize: 13, color: '#64748B' }}>04 / 18</Text>
+  </Box>
+</Slide>

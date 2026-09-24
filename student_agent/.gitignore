@@ -1,0 +1,43 @@
+# 运行时产物
+apps/classroom-chat/server.log
+apps/classroom-chat/server-error.log
+apps/classroom-chat/.env
+
+# 依赖
+node_modules/
+__pycache__/
+*.pyc
+
+# 编辑器
+.vscode/
+.idea/
+.DS_Store
+
+# 本地密钥（复制 .env.local.example 为 .env.local 后填写）
+.env.local
+.env
+
+# 闲置的旧实现（保留在磁盘但不入版本库）
+.workbuddy/trash/
+
+# 编排器 Checkpointer（本地状态）
+orchestrator/*.sqlite
+orchestrator/*.sqlite-journal
+
+# 工具产物
+.cache/
+.slidep/
+
+# Office 锁文件
+~$*
+
+# 会话运行数据（学生档案，不入库）
+runtime/sessions/
+runtime/students/
+
+# 前端（Next.js）。源码在 frontend/，是构建出来的静态产物：
+#   cd frontend && npm run build   然后同步 out/ 到 apps/static/app/
+# 根目录双击 构建前端.cmd 等价。
+frontend/.next/
+frontend/out/
+apps/static/app/

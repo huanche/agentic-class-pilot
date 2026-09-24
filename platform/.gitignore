@@ -1,0 +1,40 @@
+.vscode/*
+!.vscode/extensions.json
+node_modules/
+backend/app/frontend/
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+
+# OpenMAIC runs as a separate external service
+openmaic/
+
+# Upstream reference checkout; pinned source recorded in vendor/README.md
+/vendor/fastapi-langgraph-agent-production-ready-template/
+
+# Local secrets
+.env
+docs/账号密码/
+
+# Local assistant settings and ad-hoc captures
+.claude/*.local.json
+/root-shot.png
+
+# Local courseware snapshot test data (large JSON + wav)
+snapshots_export/
+
+# Build artifacts
+*.tsbuildinfo
+frontend/vite.config.js
+frontend/vite.config.d.ts
+
+# Local planning working files (session scratch, not project docs)
+task_plan.md
+progress.md
+findings.md
+
+# Local secrets (integration baseline)
+LOCAL-ACCESS.txt
+local-db-init/01-roles.sql
+.venv/

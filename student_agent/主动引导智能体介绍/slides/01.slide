@@ -1,0 +1,48 @@
+<Slide style={{ width: '1280px', height: '720px', padding: 0, background: '#FFFFFF', flexDirection: 'row' }}>
+  <Box style={{ width: 470, height: '100%', background: 'linear-gradient(135deg, #1B4F9C 0%, #0F2E5C 100%)', padding: '64px 48px', justifyContent: 'space-between' }}>
+    <Box style={{ gap: 10 }}>
+      <Box style={{ width: 44, height: 5, background: '#F59E0B' }} />
+      <Text style={{ fontSize: 15, color: '#BFD4F2', letterSpacing: 3, marginTop: 6 }}>课堂智能体 · 项目介绍</Text>
+    </Box>
+    <Box style={{ gap: 18 }}>
+      <Text style={{ fontSize: 62, fontWeight: 'bold', color: '#FFFFFF', lineHeight: 1.15 }}>主动引导<br />智能体</Text>
+      <Text style={{ fontSize: 19, color: '#D6E4F8', lineHeight: 1.6 }}>课程计划驱动、AI 自动推进的课堂<br />提示词管「怎么教」，数据管「教什么、教多久」</Text>
+    </Box>
+    <Box style={{ gap: 6 }}>
+      <Text style={{ fontSize: 14, color: '#9FB9E0' }}>重构自 Dify-Classroom-Interactive-Agent</Text>
+      <Text style={{ fontSize: 14, color: '#9FB9E0' }}>LangGraph 编排 · 2026.09</Text>
+    </Box>
+  </Box>
+  <Box style={{ flex: 1, height: '100%', justifyContent: 'center', alignItems: 'center', background: '#FFFFFF' }}>
+    <svg width={640} height={460} viewBox="0 0 640 460">
+      <rect x={30} y={30} width={580} height={400} rx={16} fill="#E8F0FB" opacity={0.55} />
+      <circle cx={150} cy={120} r={34} fill="#1B4F9C" />
+      <text x={150} y={126} fontSize={15} fill="#FFFFFF" textAnchor="middle" fontWeight="bold">计划</text>
+      <circle cx={330} cy={80} r={34} fill="#3D7BE0" />
+      <text x={330} y={86} fontSize={15} fill="#FFFFFF" textAnchor="middle" fontWeight="bold">时钟</text>
+      <circle cx={500} cy={140} r={34} fill="#3D7BE0" />
+      <text x={500} y={146} fontSize={15} fill="#FFFFFF" textAnchor="middle" fontWeight="bold">教学</text>
+      <circle cx={490} cy={310} r={34} fill="#1B4F9C" />
+      <text x={490} y={316} fontSize={15} fill="#FFFFFF" textAnchor="middle" fontWeight="bold">判星</text>
+      <circle cx={310} cy={370} r={38} fill="#F59E0B" />
+      <text x={310} y={376} fontSize={15} fill="#FFFFFF" textAnchor="middle" fontWeight="bold">切幕</text>
+      <circle cx={140} cy={300} r={34} fill="#1B4F9C" />
+      <text x={140} y={306} fontSize={15} fill="#FFFFFF" textAnchor="middle" fontWeight="bold">落盘</text>
+      <path d="M184 116 L296 84" stroke="#1B4F9C" strokeWidth={2.5} fill="none" markerEnd="url(#arr)" />
+      <path d="M364 92 L470 128" stroke="#3D7BE0" strokeWidth={2.5} fill="none" markerEnd="url(#arr)" />
+      <path d="M498 174 L492 276" stroke="#3D7BE0" strokeWidth={2.5} fill="none" markerEnd="url(#arr)" />
+      <path d="M456 326 L348 358" stroke="#1B4F9C" strokeWidth={2.5} fill="none" markerEnd="url(#arr)" />
+      <path d="M272 362 L176 316" stroke="#F59E0B" strokeWidth={3} fill="none" markerEnd="url(#arrA)" />
+      <path d="M144 266 L148 154" stroke="#1B4F9C" strokeWidth={2.5} fill="none" markerEnd="url(#arr)" />
+      <defs>
+        <marker id="arr" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+          <path d="M0,0 L0,6 L9,3 z" fill="#1B4F9C" />
+        </marker>
+        <marker id="arrA" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+          <path d="M0,0 L0,6 L9,3 z" fill="#F59E0B" />
+        </marker>
+      </defs>
+      <text x={320} y={446} fontSize={14} fill="#64748B" textAnchor="middle">学生每说一句话，状态机就走一圈</text>
+    </svg>
+  </Box>
+</Slide>

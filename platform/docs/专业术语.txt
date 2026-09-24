@@ -1,0 +1,7 @@
+CDOS（Cross-Origin Resource Sharing）跨域资源共享：允许一个网页从不同源请求资源，通过在请求和响应中添加特定的HTTP头部字段实现安全的跨域通信
+JWT（JSON Web Token）：用于用户身份验证和信息安全传输，用户提交凭证到服务端，服务端验证后生成JWT返回客户端，客户端保存JWT并且在候选HTTP Header中都携带JWT。服务端解析JWT并且验证用户身份和权限
+JWT有过期时间
+ORM是“对象关系映射”（Object-Relational Mapping）：将变成语言中的对象与关系型数据库中的数据表进行映射，从而简化数据库操作
+CORS跨境资源共享：浏览器的一种安全机制，限制不同源之间的资源访问
+Hocuspocus：基于 WebSocket 的实时协作后端服务
+Repository 层：（仓储层）是用于处理数据存储和访问的一个重要部分。主要作用是将数据存储和查询的逻辑封装起来，使得业务逻辑层不需要直接与数据库交互
