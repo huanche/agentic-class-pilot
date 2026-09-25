@@ -121,7 +121,9 @@ export function createStage(ctx) {
     beginSession(ctx.sessionId).then(function (res) {
       hideTyping();
       var text = res && res.message && res.message.text;
-      if (text) appendMessage("ai", text);
+      /* 轮询链路可能已把这条开场白带出来了（replySeenByPoll 按 seq 判断），
+         两条路径只渲染一次，否则会出现两条相同的 AI 消息 */
+      if (text && !ctx.replySeenByPoll(res)) appendMessage("ai", text);
       ctx.applyServerTurn(res);
       if (res && res.hostPhase === "guided_learning" && !introDone) {
         introDone = true;
@@ -144,7 +146,8 @@ export function createStage(ctx) {
 
     sendMessage(ctx.sessionId, text).then(function (res) {
       hideTyping();
-      if (res.message.text) appendMessage("ai", res.message.text);
+      /* 同一条回复轮询链路可能已投递（见 pollSession 的 seq 过滤），只渲染一次 */
+      if (res.message.text && !ctx.replySeenByPoll(res)) appendMessage("ai", res.message.text);
       ctx.applyServerTurn(res);
       if (res.hostPhase === "guided_learning" && !introDone) {
         introDone = true;
@@ -187,7 +190,9 @@ export function createStage(ctx) {
     if (skipBtn) { skipBtn.disabled = true; skipBtn.textContent = "老师准备中…"; }
 
     notifyMediaDone(ctx.sessionId, sceneId, eventId).then(function (res) {
-      if (res && res.message && res.message.text) appendMessage("ai", res.message.text);
+      if (res && res.message && res.message.text && !ctx.replySeenByPoll(res)) {
+        appendMessage("ai", res.message.text);
+      }
       ctx.applyServerTurn(res);
       if (skipBtn) { skipBtn.disabled = false; skipBtn.textContent = "视频已结束，继续"; }
     }).catch(function (err) {

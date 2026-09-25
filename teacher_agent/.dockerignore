@@ -1,5 +1,9 @@
 # dependencies
 node_modules
+# nested workspace package node_modules (packages/@openmaic/*): shipping the
+# host's pnpm symlinks into the build context lets `COPY . .` clobber the
+# deps-stage's Linux links — module resolution in dist/ then breaks.
+**/node_modules
 .pnpm-store
 
 # build output
