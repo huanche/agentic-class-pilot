@@ -30,6 +30,9 @@ export default function ClassroomDetailPage() {
   const searchParams = useSearchParams();
   const classroomId = params?.id as string;
   const embeddedCourseWorkspace = searchParams.get('embedded') === 'course-workspace';
+  // Player-only embed (student agent iframe): hide all playback chrome so the
+  // embedded viewer sees just the scene canvas. See PlaybackChromeRoot.
+  const playerOnlyEmbed = searchParams.get('embedded') === 'player';
 
   const { loadFromStorage } = useStageStore();
 
@@ -254,7 +257,11 @@ export default function ClassroomDetailPage() {
               </div>
             </div>
           ) : (
-            <Stage onRetryOutline={retrySingleOutline} forceEditMode={embeddedCourseWorkspace} />
+            <Stage
+              onRetryOutline={retrySingleOutline}
+              forceEditMode={embeddedCourseWorkspace}
+              videoOnly={playerOnlyEmbed}
+            />
           )}
         </div>
       </MediaStageProvider>

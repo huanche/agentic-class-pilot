@@ -33,10 +33,13 @@ import { preloadEditor } from '@/lib/edit/preload-editor';
 export function Stage({
   onRetryOutline,
   forceEditMode = false,
+  videoOnly = false,
 }: {
   onRetryOutline?: (outlineId: string) => Promise<void>;
   /** Embed the existing OpenMAIC Pro workspace without learner playback/chat chrome. */
   forceEditMode?: boolean;
+  /** Player-only embed (student agent): playback chrome is hidden, canvas only. */
+  videoOnly?: boolean;
 }) {
   const { mode, setMode, scenes, currentSceneId, generatingOutlines, stage } = useStageStore();
   const currentScene = useStageStore((s) => s.getCurrentScene());
@@ -158,8 +161,9 @@ export function Stage({
             <PlaybackChromeRoot
               ref={playbackRef}
               onRetryOutline={onRetryOutline}
-              canEnterProMode={isEditable}
+              canEnterProMode={isEditable && !videoOnly}
               onEnterProMode={toggleHandler}
+              videoOnly={videoOnly}
             />
           </motion.div>
         )}
