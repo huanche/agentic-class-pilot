@@ -6,6 +6,7 @@ explicitly marked `is_default` — the hardcoded operating-system keyword
 groups are never applied to other courses.
 """
 from typing import Any, Dict, List
+import re
 
 from .models import EvaluationContract, KnowledgePoint
 
@@ -102,12 +103,18 @@ def _point_from_rubric(item: Dict[str, Any]) -> KnowledgePoint:
 
 
 def _concepts_from_content(content: str) -> List[str]:
-    """Distill candidate concepts from published content: heading lines and
-    frequent key terms (subject to the per-point cap)."""
+    """Use substantive statements, never treat document headings as answer evidence.
+
+    Semantic concept extraction is performed by the question generator with
+    the full published text. These statements are only fallback assessment hints.
+    """
     concepts: List[str] = []
     for line in content.splitlines():
-        text = line.strip().lstrip("#*-— ").strip()
-        if not text or len(text) > 24:
+        if line.lstrip().startswith(("#", ">", "|")):
+            continue
+        text = line.strip().lstrip("*-— ").strip()
+        if (not 25 <= len(text) <= 240 or not re.search(r"[。；：]", text)
+                or any(word in text for word in ("使用说明", "课程名称", "填空题", "基础巩固层"))):
             continue
         if text not in concepts:
             concepts.append(text)

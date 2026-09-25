@@ -124,8 +124,14 @@ def load_context(state: ClassroomState) -> dict:
     if state.get("active_segment_id"):
         parts.append(_read(f"lesson-data/segments/{state['active_segment_id']}.json"))
     # 阶段层（只有复述/探究/讨论三幕有）
+    # 复述阶段只读 prompt.md（questions.md / rubric.md 已删）；探究/讨论仍读三件。
     if phase in ("recap_discussion", "deep_inquiry", "class_discussion"):
-        for f in ("questions.md", "prompt.md", "rubric.md"):
+        stage_files = (
+            ("prompt.md",)
+            if phase == "recap_discussion"
+            else ("questions.md", "prompt.md", "rubric.md")
+        )
+        for f in stage_files:
             text = _read_optional(f"stages/{phase}/{f}")
             parts.append(text or "[本阶段内容未配置]")  # ← 空壳降级
 

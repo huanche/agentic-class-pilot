@@ -1,4 +1,5 @@
-fastapi
-uvicorn
-langgraph
+fastapi>=0.115,<1
+uvicorn>=0.30,<1
+langgraph>=0.2,<2
+# 平台集成层 apps/integration/persistence.py 需要（写入平台 student schema）
 psycopg[binary]>=3.2,<4

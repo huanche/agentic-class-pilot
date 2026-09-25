@@ -12,14 +12,9 @@ export const viewport = {
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="zh-CN" suppressHydrationWarning>
-      <head>
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `(function(){try{var m=localStorage.getItem("ai-learn.theme")||"auto";var t=m==="auto"?(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"):m;document.documentElement.dataset.theme=t}catch(e){document.documentElement.dataset.theme="light"}})();`,
-          }}
-        />
-      </head>
+    // 只有浅色模式，没有主题切换 —— 所以不需要首屏防闪脚本，
+    // 也不需要 suppressHydrationWarning（那是为了内联脚本先于 React 改 html 属性）。
+    <html lang="zh-CN">
       <body>{children}</body>
     </html>
   );

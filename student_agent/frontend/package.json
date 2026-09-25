@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "test:e2e": "npm run build && playwright test"
   },
   "dependencies": {
     "next": "latest",
@@ -14,6 +15,7 @@
     "react-dom": "latest"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "eslint": "latest",
     "eslint-config-next": "latest"
   }

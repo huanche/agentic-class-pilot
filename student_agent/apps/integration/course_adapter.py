@@ -42,7 +42,7 @@ def from_platform_payload(payload: Dict[str, Any]) -> CourseLearningContext:
         classroom=_classroom(payload.get("classroom")),
     )
     context.lessons = _published_lessons(payload.get("lessons"), context) or _lessons(context)
-    context.evaluation = evaluation_adapter.from_internal_context(context)
+    context.evaluation = evaluation_adapter.from_platform_context(payload)
     return context
 
 
@@ -223,5 +223,6 @@ def load_plan_for_session(state) -> Optional[dict]:
         },
         "evaluation": context.evaluation.model_dump(),
         "knowledge_points": knowledge_points,
+        "knowledge_sources": [entry.model_dump() for entry in context.knowledge_package.entries],
     }
     return plan

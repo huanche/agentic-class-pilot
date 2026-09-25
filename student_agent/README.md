@@ -5,7 +5,7 @@
 > 本仓库是 `HELLO-APL/Dify-Classroom-Interactive-Agent` 的重构版。
 > 旧仓库 `D:\project\Dify 课堂互动智能体` 保留不动，仅作参照。
 >
-> **主要变化**：移除学生标注 · 移除 n8n 与前端 · 改为四阶段（可配置）编排模型 · 新增 LangGraph 编排结构 · 目录改为无空格英文命名。
+> **主要变化**：移除学生标注与 n8n · 改为四阶段（可配置）编排模型 · 新增 LangGraph 编排结构 · 学生端统一并入 `frontend/`。
 
 ---
 
@@ -20,84 +20,8 @@
 
 **核心设计：** 提示词负责"怎么教"，数据负责"教什么、按什么顺序教、多久教完"。改课程结构不用改提示词。
 
-> **本仓库只做智能体逻辑与规则，不含前端、不含 n8n。**
-> 所有产物是 Markdown 规则 + JSON 配置 + 一份编排规范。
-
----
-
-## 环境配置
-
-### 1. 版本要求
-
-| 组件 | 要求 | 用在哪 | 不满足的后果 |
-| --- | --- | --- | --- |
-| **Python** | **≥ 3.10**（开发机 3.11.4） | 后端、编排器、全部脚本 | 3.9 及以下直接起不来：请求模型用了 `str \| None`（PEP 604 写法，3.10 才支持） |
-| **Node.js** | **≥ 20.9.0**（开发机 22.16.0，自带 npm） | **只**用于构建学生端页面 | 不装也能上课，只是 `/app` 学生端页面打不开 |
-| 大模型 Key | 可选 | 润色老师的讲解措辞 | 不配也能上完整节课，讲解词走确定性降级脚本 |
-
-> **只有要重新构建 `frontend/` 时才需要 Node.js。** 后端 + 编排器 + 命令行上课是纯 Python。
-
-### 2. Python 依赖
-
-```bash
-python -m pip install fastapi uvicorn langgraph
-```
-
-| 包 | 谁在用 | 干什么 |
-| --- | --- | --- |
-| `fastapi` | `apps/server.py` | HTTP 接口 + 托管学生端 / 老师页 |
-| `uvicorn` | `apps/start.py` · `apps/server.py` | ASGI 服务器 |
-| `langgraph` | `orchestrator/agent.py` · `run_demo.py` | 编排状态图（11 节点） |
-
-`apps/cli.py`、`apps/smoke_test.py`、`orchestrator/clock_reference.py` 本身只用标准库，但它们要连的服务端依赖上面三个。
-
-| 缺哪个 | 启动时的表现 |
-| --- | --- |
-| `fastapi` / `uvicorn` | `apps/start.py` 直接报出缺哪个并给出安装命令；`apps/server.py` 抛 `SystemExit("缺依赖：pip install fastapi uvicorn")` |
-| `langgraph` | 抛 `ModuleNotFoundError: No module named 'langgraph'`（`server.py` 在 import 阶段就拉 `agent.py`）—— 装上即可，不用改代码 |
-
-### 3. 环境变量
-
-**全部可选。** 不配任何变量也能跑完整节课。下面是全部变量，以及两种给法（优先级从高到低）：
-
-| 变量 | 默认 | 作用 |
-| --- | --- | --- |
-| `AGENT_LLM_BASE_URL` | 空 | 任意 OpenAI 兼容端点，如 `https://api.deepseek.com/v1` |
-| `AGENT_LLM_API_KEY` | 空 | 端点 Key |
-| `AGENT_LLM_MODEL` | 空 | 模型名，如 `deepseek-chat` |
-| `AGENT_TICK_SECONDS` | `10` | 心跳时钟间隔（秒）。调小 → 切幕判断更密 |
-| `AGENT_PORT` | `8000` | 直接 `python apps/server.py` 时的端口；走 `apps/start.py --port` 时以命令行为准 |
-
-**`AGENT_LLM_*` 三个必须同时给**：缺任意一个，`teach` 节点就退回确定性脚本 —— 编排结果一字不差，只是老师的话变成模板文案（见下文「接真实大模型」）。
-
-**首选：建 `.env.local`**（已在 `.gitignore`，不会提交）
-
-```bash
-cp .env.local.example .env.local      # Windows CMD: copy .env.local.example .env.local
-# 然后填入 Key
-python orchestrator/llm_probe.py      # 先单独验证端点通不通
-```
-
-文件从**仓库根目录**读取，支持 `.env.local` 与 `.env` 两个名字；**已存在的同名环境变量不会被文件覆盖**，所以临时用命令行覆盖很方便。
-
-**次选：直接用环境变量**
-
-```bash
-export AGENT_LLM_BASE_URL=https://api.deepseek.com/v1   # Windows PowerShell: $env:AGENT_LLM_BASE_URL="..."
-export AGENT_LLM_API_KEY=sk-xxx
-export AGENT_LLM_MODEL=deepseek-chat
-```
-
-### 4. 首次运行顺序
-
-```bash
-python -m pip install fastapi uvicorn langgraph   # ① 装依赖
-# ② 可选：根目录双击 构建前端.cmd  —— 只有要 /app 学生端页面才做
-# ③ 根目录双击 启动课堂.bat，或：
-python apps/start.py
-```
-
-`启动课堂.bat` 先找 `.workbuddy\binaries\python\envs\default\Scripts\python.exe`（开发机的隔离环境），**找不到就退回系统 `python`** —— 换机器不用改脚本，保证 `python` 在 PATH 里即可。
+> 本仓库现在包含智能体、FastAPI 会话层和 Next.js 学生端。所有阶段共用
+> `POST /api/session/{sid}/message`，由后端 `host_phase` 决定当前教学行为。
 
 ---
 
@@ -108,17 +32,16 @@ python apps/start.py
 ├── rules/                       # 规则层（AI 每轮只读，老师维护）
 │   ├── KNOWLEDGE-BASE.md        # 知识点目录（含 4 个探究字段）
 │   ├── interaction/             # 课堂节奏规则、判星规则、各文件格式模板
-│   │   ├── SKILL.md             #   课堂互动 Skill（阶段行为）
+│   │   ├── RECAP-GUIDE.md       #   ★ 复述引导：学生状态 → 引导策略（代码每轮读它）
 │   │   ├── MASTERY-STAR-RULES.md   # 0-5 星唯一权威规则
 │   │   └── *-FORMAT.md          #   七个运行时文件的字段模板
-│   └── dialogue/SKILL.md        # 对话 Skill（学生轮次路由）
 │
 ├── lesson-data/                 # 课程数据层（老师配置）
 │   ├── lesson-plan.json         #   ★ 编排入口：阶段开关 + 时长预算 + 推进策略 + 时钟策略
 │   └── segments/seg-XXX.json    #   课程片段（order 定顺序，绑定 KP）
 │
 ├── stages/                      # 阶段内容层（可空壳，留空不影响运行）
-│   ├── recap_discussion/        #   复述：questions.md / rubric.md / prompt.md
+│   ├── recap_discussion/        #   复述：prompt.md（问题/判分由知识点字段与通用规则提供）
 │   ├── deep_inquiry/            #   深挖：questions.md / rubric.md / prompt.md
 │   └── class_discussion/        #   讨论：questions.md / rubric.md / prompt.md
 │
@@ -135,15 +58,14 @@ python apps/start.py
 │       ├── mastery-history.json
 │       └── dialogue-log.json
 │
-├── frontend/                    # ★ 学生端页面（Next.js 源码，静态导出的）
-│   ├── src/legacy/              #   路由、课堂面板、学情报告、接口层 api.js
-│   └── next.config.mjs          #   output:'export' + basePath:'/app'
-│
 ├── apps/                        # 会话层：把编排器接进真实对话
-│   ├── server.py                #   ★ FastAPI：开课 / 发言 / 心跳时钟 / 学情导出 / 托管前端
+│   ├── server.py                #   ★ FastAPI：开课 / 发言 / 心跳时钟 / 学情导出
 │   ├── smoke_test.py            #   ★ 课前彩排脚本（不发言跑完一节课）
-│   ├── static/index.html        #     老师页（对话 + 三个按钮 + 进度条）
-│   └── static/app/              #     前端构建产物（生成物，不入库）
+│   └── static/index.html        #     学生端页面（对话 + 阶段进度）
+│
+├── frontend/                    # Next.js 学生端；静态构建由 FastAPI 同源托管
+│   ├── src/                     #   页面、课堂阶段与统一 API 适配层
+│   └── out/                     #   npm run build 生成（不入库）
 │
 └── orchestrator/                # 编排器：规范 + 实现 + 演示
     ├── ORCHESTRATOR.md          #   ★ LangGraph 状态图、节点、条件边、调度约定（权威规范）
@@ -158,15 +80,31 @@ python apps/start.py
 
 ### 跑起来（真实 LangGraph）
 
-先按 **「环境配置」** 装好 Python 依赖（`python -m pip install fastapi uvicorn langgraph`），然后：
-
 ```bash
+# 依赖装在隔离 Python 环境里
+pip install -r requirements.txt
 python orchestrator/run_demo.py        # 模拟一节课（讲解 → 复述 → 探究 → 下课）
 ```
 
 ### 课堂里跑起来（一键）
 
 **双击项目根目录的 `启动课堂.bat`** —— 起服务、自动开浏览器、打印局域网地址，就这样。
+
+### 测试
+
+```powershell
+# 后端接口与阶段状态机
+python -m unittest apps.test_api_integration -v
+
+# 前端代码检查
+npm run lint --prefix frontend
+
+# 构建前端、启动真实后端，并用浏览器走完整课堂流程
+npm run test:e2e --prefix frontend
+```
+
+端到端测试会实际点击课程、开始上课、结束视频、提交复述与深入思考，最后在课堂讨论框
+发送消息，并断言课堂不会错误地跳到结束页。
 
 命令行等价物（可加参数）：
 
@@ -191,30 +129,9 @@ python apps/start.py --no-browser    # 只起服务
 
 | 入口 | 命令 | 给谁用 |
 | --- | --- | --- |
-| **学生端页面** | 构建后打开 `http://127.0.0.1:8000/app` | 学生。完整的四阶段界面 + 课后学习报告 |
-| 老师页 | 浏览器打开 `http://127.0.0.1:8000/` | 老师。自带「开始上课 / 视频播完 / 下一环节」三个按钮 |
+| 网页 | 浏览器打开 `http://127.0.0.1:8000/` | 老师/学生。页面自带「开始上课 / 视频播完 / 下一环节」三个按钮 |
 | **命令行窗口** | `python apps/cli.py` | 不等前端时直接上课：`/begin` `/video` `/next` 是三个按钮，直接打字是学生发言 |
 | HTTP API | 见 **`apps/API.md`** | 前端同学对接用：全部接口、字段、时序图、curl 示例 |
-
-### 学生端页面（`/app`）
-
-学生端是一个 Next.js 应用，源码在 `frontend/`，**静态导出**后由 FastAPI 挂在 `/app`
-（同源，所以不需要 CORS）。改过前端代码要重新构建（需要 **Node.js ≥ 20.9**，见「环境配置」）：
-
-```bash
-# 根目录双击 构建前端.cmd，或：
-cd frontend && npm ci && npm run build
-# 再把 out/ 同步到 apps/static/app/
-```
-
-> `apps/static/app/` 是构建产物、不入库。**没构建过也不影响上课**（老师页与命令行照常），
-> 只是 `/app` 会返回 404 并提示「前端还没构建」。
-
-它跟后端的分工是：**前端不做教学判断**。讲哪一段、问哪一题、什么时候切幕、打几星
-全由编排器决定，前端每 2 秒轮询 `/state` 和 `/messages` 跟随，按钮照 `available_actions` 渲染。
-课后学习报告读的是 `/api/session/{sid}/export?fmt=json`。
-
-细节见 `frontend/README.md`；接口契约以 `apps/API.md` 为准。
 
 命令行窗口长这样：
 
@@ -249,13 +166,19 @@ python apps/smoke_test.py chat             # 模拟学生答题，看反馈与�
 ### 接真实大模型（可选）
 
 `teach` 节点接任意 OpenAI 兼容端点。**不配也能跑完整节课**，只是老师的话是模板生成的。
-变量名与配置方式见上文 **「环境配置」第 3 节**，这里是要跑的命令：
 
 ```bash
-cp .env.local.example .env.local    # Windows CMD: copy .env.local.example .env.local
-# 填入 Key（该文件已进 .gitignore）
+cp .env.local.example .env.local    # 然后填入你的 Key（该文件已进 .gitignore）
 python orchestrator/llm_probe.py    # 先单独验证端点通不通
 python orchestrator/run_demo.py     # 再跑整节课
+```
+
+也可以直接用环境变量，不用建文件：
+
+```bash
+export AGENT_LLM_BASE_URL=https://api.deepseek.com/v1
+export AGENT_LLM_API_KEY=sk-xxx
+export AGENT_LLM_MODEL=deepseek-chat
 ```
 
 > **模型只负责措辞，不负责编排。** `teach` 分两层：确定性骨架决定"讲哪段、问哪题"，
@@ -283,6 +206,14 @@ python orchestrator/run_demo.py     # 再跑整节课
 ---
 
 ## 老师配一门课：三步
+
+> **现在有接口了**：`POST /api/teacher/lesson` 一次传完整的一节课
+> （元数据 + 阶段 + 段落 + 知识点），落盘成 `lesson-data/lessons/<lesson_id>.json`，
+> 不用再手工改三处文件；系统也不再只能跑一节课。契约见
+> [apps/API.md 第 10 节](apps/API.md)，回读用 `GET /api/teacher/lesson/{id}`。
+>
+> 下面写的是直接改文件的老路子 —— 它仍然有效（`lesson-data/lesson-plan.json`
+> 那一节原样保留），适合还没接接口时的本地调试。
 
 ### 1. 定阶段与时长
 
@@ -338,7 +269,7 @@ lesson_elapsed_minutes = now - lesson_started_at    # 本课已花分钟
 | 老师目标、核心难点（检验问题）、易混淆点 | `runtime/TMISSION.md` | 内容已有 |
 | 本课先修/新内容/任务/成功证据 | `runtime/LESSON-CONTENT.md` | 内容已有 |
 | 每个片段讲什么 | `lesson-data/segments/seg-XXX.json` | 已有 |
-| 各阶段的问题与评判标准 | `stages/<阶段>/questions.md` · `rubric.md` | **暂不填（按需）** |
+| 各阶段的问题与评判标准 | `stages/<阶段>/questions.md` · `rubric.md`（复述阶段无此两项） | **暂不填（按需）** |
 
 ### 3. 交付给编排器
 
@@ -357,6 +288,10 @@ lesson_elapsed_minutes = now - lesson_started_at    # 本课已花分钟
 | `stages/<id>/prompt.md` 空 | 用内置默认提示词 |
 | `class_discussion` 无内容 | AI 提示"请老师主导"+ 计时，然后切幕 |
 
+> 复述阶段（`recap_discussion`）已删去 `questions.md` / `rubric.md`，只剩 `prompt.md`：
+> 问题取 `TMISSION.md` 检验问题（空则回落 `KNOWLEDGE-BASE.md` 的 `检测问题`），
+> 判分只用 `MASTERY-STAR-RULES.md` 通用标准。
+
 所以**整条链路现在就是可运行的**，只是问法朴素。填上 `stages/` 后质量自然提升，不需要改代码。
 
 ---
@@ -371,7 +306,6 @@ lesson_elapsed_minutes = now - lesson_started_at    # 本课已花分钟
 | `source: class_point` | 剩余来源：`dialogue` / `assessment` / `manual` |
 | `lecturing` / `segment_summary` 幕 | 被四阶段模型取代 |
 | **n8n 工作流** | 本仓库不再包含 `workflow/` 与 n8n 节点 |
-| **前端** | 本仓库不再包含 `apps/`、课堂页面、学生 workspace 页面 |
 | `LESSON-INTERACTION.md` | 改名为 `LESSON-CONTENT.md`（旧名与实际内容不符） |
 
 ---
@@ -382,10 +316,32 @@ lesson_elapsed_minutes = now - lesson_started_at    # 本课已花分钟
 | --- | --- |
 | `orchestrator/ORCHESTRATOR.md` | **编排器结构**：LangGraph 状态 schema、节点、条件边、文件调度、校验规则 |
 | `orchestrator/MIGRATION.md` | 新旧路径映射与变更记录 |
+| `rules/interaction/RECAP-GUIDE.md` | **复述引导（状态驱动）**：学生状态 → 策略 → 动作。改它就能改 AI 的复述引导，不用动代码 |
 | `rules/interaction/MASTERY-STAR-RULES.md` | **0-5 星唯一权威规则** + 阶段快照机制 |
 | `rules/interaction/DIALOGUE-LOG-FORMAT.md` | 会话状态字段（含编排器字段） |
 | `rules/interaction/LESSON-CONTENT-FORMAT.md` | `LESSON-CONTENT` 与 `TMISSION` 的分工 |
 | `stages/*/README.md` | 各阶段在干什么、没配置时怎么降级 |
+| `apps/API.md` | **会话层接口**：一节课的完整时序、九个会话接口、老师上传课时定义（第 10 节） |
+| `apps/API-SAAS.md` | **SaaS 底座 × 教师端对接**：双向调用关系、教师端两条接入路径、鉴权现状与缺口清单 |
+| `apps/PLATFORM-INTEGRATION.md` | **平台对接分析**：SZU-AgentEduPlatform 接口的逐行实测、与学生端的字段映射、差在哪 |
+| `frontend/docs/api/后端接口说明.md` | **学生端接口说明**：统一消息入口、控制与同步接口、课后报告契约 |
+
+---
+
+## 学生端：课后学习报告
+
+课后页展示这节课的学习报告，三块内容：**知识点掌握**（0–5 星 + 状态）、
+**各阶段表现**（阶段名 + 用时 + 目标计数）、**课后建议**（从知识点里挑 `stars <= 2` 的，
+与后端 md 分支的「理解线」一致）。
+
+只呈现学生自己的部分：教师侧的会话标识（`student_id` / `session_id`）、原始证据摘录
+（`stage_snapshots[].evidence`）和编排遥测（`advance_reason`、`assembled_prompt`）都不下发到这一页。
+星级以后端 `rules/interaction/MASTERY-STAR-RULES.md` 为准，前端不自己算一套。
+
+数据来自 `GET /api/session/{sid}/export?fmt=json`（`apps/server.py` 的 `export()`，
+与它自己 `fmt=md` 的「学情报告」是同一份数据）。**响应是裸 JSON，没有 `{ ok }` 信封**，
+与本仓库其它接口不同。契约与对接注意点见
+[学生端接口说明](frontend/docs/api/后端接口说明.md#课后学情报告学生版)。
 
 ---
 
@@ -398,5 +354,10 @@ lesson_elapsed_minutes = now - lesson_started_at    # 本课已花分钟
 | **视频位置接口未打通** | `source.position` 是占位符 | 中 |
 | **判星粒度未定** | 各阶段星级的精确判定标准待明确 | 中 |
 | **`class_discussion` 内容为空** | 当前刻意留空，AI 不参与讨论 | 低（设计如此） |
+| **课后报告只在同源下能跑** | 页面已接真实导出接口（`USE_MOCK` 那套 mock 已随前端重构移除）。生产由 FastAPI 同源托管，正常；但**后端没有 CORS 中间件**，前端跑 `localhost:3000`、后端在 `127.0.0.1:8000` 时请求会被浏览器拦掉。联调前需给 FastAPI 加 `CORSMiddleware`，或让前端走同源代理 | 中 |
+| **报告可能缺少「未接触」的知识点** | 后端只在 `kp_stars` 有条目时才输出知识点，学生完全没碰过的不进数组，于是整个 `knowledge_points` 可能是空的，页面画不出「未检测」那些行。建议后端按课时知识点目录补全，未接触的返回 `stars: 0` | 中 |
+| **后端 `STAR_STATUS` 只定义了 1–4 星** | 缺 0 和 5 两个键，所以一个 5 星知识点会被后端报成 `"status": "未检测"`。前端已按权威规则表本地兜底（不重算星级，只补标签），后端仍应补上这两个键 | 低 |
+| **上传课时的判星链路是空的** | `EVIDENCE_GROUPS`（`agent.py`）是写死的旧课时关键词表。老师上传的新知识点没有对应组 → `match_evidence()` 返回 `(0, 0)` → 复述/探究阶段**不会靠关键词升星**，`judge_advance` 的「证据充分」分支也不会触发，只能按时间预算切幕。知识点能被讲、能被问（题库已按课时隔离，不会再借旧课的题），但星级到不了 3 星以上。解法是让上传时带 per-KP 关键词 | 中 |
+| **课时定义无鉴权** | `POST /api/teacher/lesson` 会写盘且不需要凭证，而 `apps/start.py` 默认绑 `0.0.0.0`。局域网内任何人都能覆盖课时、进而向课堂注入任意提示词内容。生产部署前需要加 token 或反向代理 | 中（仅部署相关） |
 
 已解决：~~无定时器~~（学生不发消息就无法切幕）—— 心跳时钟见上文「课堂里跑起来」。

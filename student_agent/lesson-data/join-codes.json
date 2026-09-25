@@ -1,0 +1,6 @@
+{
+  "_note": "课程码：course_id → 学生加入课程时输入的码。老师侧用 POST /api/teacher/course-code 生成或轮换（regenerate=true）。这里预置了内置课时的码，方便本地演示与 e2e。",
+  "codes": {
+    "operating-systems": "OSK7M3"
+  }
+}

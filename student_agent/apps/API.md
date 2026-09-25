@@ -5,6 +5,13 @@
 JSON 一律 UTF-8。
 
 > 自己动手试：`python apps/start.py` 起服务，然后照下面的 curl 敲一遍。
+>
+> **要接 SaaS 底座或教师端**，看 [API-SAAS.md](API-SAAS.md) —— 那份讲跨系统
+> 怎么对接、谁调谁、有哪些缺口；本文只讲接口本身。
+>
+> **要对 SZU-AgentEduPlatform 那套平台**，看
+> [PLATFORM-INTEGRATION.md](PLATFORM-INTEGRATION.md) —— 那份是逐行实测，
+> 结论是两边对不上、缺中间一层适配。
 
 ## 一节课的完整时序
 
@@ -175,33 +182,82 @@ curl "http://127.0.0.1:8000/api/session/class-1/messages?since=5"
 `since` = 上次返回的 `total`。AI 主动说的话（心跳推进产生的）也在这条里出现，
 **所以轮询这条就够把对话画完整**。
 
-### 9. 课堂星级（按知识点，带中文标题）
-
-```bash
-curl http://127.0.0.1:8000/api/session/class-1/stars
-```
-
-```json
-{ "knowledge_points": [
-    { "kp_id": "KP-002", "title": "三级调度", "stars": 3, "status": "理解中" }
-] }
-```
-
-形状与 `/export` 里的 `knowledge_points` 一致。**专门给上课时轮询用的**：
-`/state` 的 `stars` 是 `{"KP-001": 3}` 这种裸 map，只有内部编号，
-而 `MASTERY-STAR-RULES.md` 要求「不能把 KP-004 这类内部编号说给学生听」——
-这里有 `kp_title()` 换好的中文标题。
-
-### 10. 学情导出 / 停课
+### 9. 学情导出 / 停课
 
 ```bash
 curl -o report.md http://127.0.0.1:8000/api/session/class-1/export?fmt=md    # 或 fmt=json
 curl -X DELETE http://127.0.0.1:8000/api/session/class-1                      # 停课
 ```
 
-`export?fmt=json` 是**课后学习报告**的数据源。注意它跟其它接口不一样：
-**没有 `{ ok }` 信封**，直接返回整个对象，而且响应头带 `Content-Disposition: attachment`
-（按「下载」设计的，浏览器 `fetch` 仍能读到 body）。
+### 10. 老师上传课时定义
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/teacher/lesson \
+  -H 'Content-Type: application/json' -d @lesson.json
+```
+
+一次传完整的一节课：元数据 + `stages` + `segments` + `knowledge_points`。
+落盘成 `lesson-data/lessons/<lesson_id>.json`，之后这节课就能像原来那节一样
+出现在选课目录、能开课、能看课后报告。
+
+```json
+{
+  "lesson_id": "ch4-deadlock",
+  "lesson_title": "第4章 死锁",
+  "course_id": "operating-systems",
+  "course": "操作系统",
+  "chapter": "第 4 周",
+  "week": 4,
+  "total_minutes": 45,
+  "stages": [
+    {"id": "guided_learning",  "enabled": true, "minutes": 20, "advance_when": "either"},
+    {"id": "recap_discussion", "enabled": true, "minutes": 15, "advance_when": "either"},
+    {"id": "deep_inquiry",     "enabled": true, "minutes": 10, "advance_when": "either"}
+  ],
+  "knowledge_points": [
+    {"kp_id": "KP-401", "title": "死锁的定义",
+     "定义": "……", "检测问题": "……", "掌握表现": "……",
+     "为什么这样设计": "", "如何实现": "", "解决什么实际问题": "", "关联学科": ""}
+  ],
+  "segments": [
+    {"id": "seg-401", "minutes": 20, "order": 1, "title": "……",
+     "knowledge_point_ids": ["KP-401"], "knowledge_points": ["死锁"],
+     "summary": "……", "content": "……"}
+  ]
+}
+```
+
+约束：`stages[].id` 只能是 `guided_learning` / `recap_discussion` /
+`deep_inquiry` / `class_discussion`；`segments[].knowledge_point_ids` 必须指向
+本课已声明的 `kp_id`；`advance_policy` 与 `segments[].order` 可省，省略时用默认值。
+
+回读确认存进去了什么：
+
+```bash
+curl http://127.0.0.1:8000/api/teacher/lesson/ch4-deadlock
+```
+
+返回 `{ok, lesson, source, problems}`；`problems` 非空表示这份定义开课时会失败。
+
+**错误码**：`lesson_id` 非法（`../evil`、`a/b`、`CON` 这类）→ 400；
+定义校验不过（阶段 / 段落 / 知识点 / `advance_policy`）→ 422，
+`detail` 里是中文问题清单。
+
+**三个必须知道的点**：
+
+1. **校验用的就是开课时那一套 `validate_plan`** —— 这里过了，开课就不会再
+   因为计划本身失败。反过来，绕过接口手改文件可能让 `/begin` 报「开课校验失败」。
+2. **改完要新建会话才生效**。会话在 `/begin` 那一刻把课时定义冻进状态
+   （老师不该在上课中途被抽掉进度），响应里的 `staleSessions` 会列出受影响的
+   在跑会话。但老师传的**知识点正文**是每轮重读的，改错别字下一次心跳就生效。
+3. **可以覆盖内置课时**。`ch3-process-scheduling` 是仓库自带的，走
+   `lesson-data/lesson-plan.json`。用同一个 id 上传会生成
+   `lesson-data/lessons/ch3-process-scheduling.json`，它**优先于**内置那份；
+   删掉这个文件就恢复原样，内置文件本身全程不被改写。
+
+老师传的知识点会进模型的备课材料（`assembled_prompt` 的 `[本课知识点]`），
+但**讲什么、问什么仍由编排骨架决定**，模型只负责把话说准。
+`assembled_prompt` 属于编排遥测，任何情况都不下发给学生端。
 
 ## 前端注意事项
 

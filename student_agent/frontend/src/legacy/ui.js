@@ -71,6 +71,33 @@ export function appendChatMessage(log, role, text) {
   return row;
 }
 
+/* ── 「AI 正在输入」的三个点 ──────────────────────────────── */
+
+/** 三点气泡**本体**（不含外层行）。className 套各阶段的样式，如 "msg__bubble"。 */
+export function typingBubble(className) {
+  var bubble = el("div", (className ? className + " " : "") + "typing");
+  bubble.innerHTML = "<span></span><span></span><span></span>";
+  return bubble;
+}
+
+/** 会话区通用版：一行 .msg--ai + 三点气泡。返回移除它的函数。
+ *
+ *  调用方**拿到回复时要立刻调用**返回的函数，否则点会压在 AI 消息上面。
+ *
+ *  复述/探究三幕原来只在等待期间把输入框禁用，没有任何"AI 在想"的反馈 ——
+ *  之前响应是瞬间的看不出来，接了真实大模型之后每轮要等好几秒就很明显。
+ *  （讲解阶段 stage-class.js 更早就有自己的一份，这里没动它，避免碰working的路径。）
+ */
+export function showTyping(log, avatar) {
+  var row = el("div", "msg msg--ai");
+  row.dataset.typing = "1";
+  row.appendChild(el("span", "msg__avatar", avatar || "师"));
+  row.appendChild(typingBubble("msg__bubble"));
+  log.appendChild(row);
+  scrollToEnd(log);
+  return function hideTyping() { row.remove(); };
+}
+
 /* ── 轻提示 ──────────────────────────────────────────────── */
 
 export function showToast(text) {

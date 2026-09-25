@@ -37,6 +37,7 @@
 - attempts: {number}
 - mastered: {本幕被证据关闭的目标}
 - unresolved: {本幕仍未关闭的目标}
+- unresolved_question_notes: {超过 5 轮的问题、当前引导状态，以及学生之后推导出的结论}
 
 ### 学生
 - student_status: {active | practicing | waiting | ended}

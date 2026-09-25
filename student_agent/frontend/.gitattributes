@@ -1,0 +1,4 @@
+# 批处理文件必须保持 CRLF —— cmd.exe 对 LF 结尾的 .cmd 解析会出错。
+# 其他文件跟随 git 的默认换行处理。
+*.cmd text eol=crlf
+*.bat text eol=crlf

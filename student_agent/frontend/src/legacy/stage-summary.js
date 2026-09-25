@@ -1,61 +1,77 @@
-/* ═══════════════════════════════════════════════════════════
-   阶段 2：总结复述（recap_discussion）
-
-   后端在这一幕是「一问一答」：它抛出当前问题（/state 的 current_question），
-   学生用自然语言答，它给反馈并判星。
-
-   ⚠️ 前端 mock 里那套「讲对的 / 遗漏的 / 补充 / 和以前内容的关联」结构化
-   反馈**后端没有这个接口**，所以「我再改一版」那个按钮也去掉了 ——
-   留着一个转不动的按钮比没有更糟。
-
-   老师说的话和 AI 的反馈由 app.js 轮询 /messages 统一画，
-   这个面板只管收字、发出去。
-   ═══════════════════════════════════════════════════════════ */
-
-import { $ } from "./ui.js";
+/* 总结复述：整整这一幕都是对话 —— AI 追问，学生接着答、接着补，直到编排器切走这一幕。
+ *
+ * 输入框**始终可用**：每答完一句，AI 的回复里就带着下一个问题或反馈。
+ * 没有「我再改一版」—— 想补充直接接着说就行，不需要先"撤回"上一版。
+ *
+ * 什么时候离开这一幕由后端的 judge_advance 决定（证据够了 / 时间预算耗尽），
+ * 前端不替它做决定（"前端不决定演到哪一幕"，见 README）。
+ * 底下那个「进入下一阶段」按钮是**测试用**的：不想干等那几分钟时手动推一把。
+ */
+import { $, appendChatMessage, showTyping } from "./ui.js";
+import { sendMessage, advanceStage } from "./api.js";
 
 export function createStage(ctx) {
-
+  var log = $("summary-log");
   var form = $("summary-composer");
   var input = $("summary-input");
   var count = $("summary-count");
   var submitBtn = $("summary-submit");
   var nextBtn = $("summary-next");
-
   var busy = false;
 
   function updateCount() {
     count.textContent = input.value.length + " / 600";
     count.classList.toggle("is-near", input.value.length > 510);
-    submitBtn.disabled = busy || input.value.trim().length < 10;
+    // 这一幕是对话：老师在追问，学生的回答常常只有几个字，
+    // 所以门槛跟探究阶段对齐（2 字），而不是"写一篇总结"的 10 字。
+    submitBtn.disabled = busy || input.value.trim().length < 2;
   }
 
   function submit() {
     var text = input.value.trim();
-    if (busy || text.length < 10) return;
+    if (busy || text.length < 2) return;
 
     busy = true;
     input.disabled = true;
+    var message = appendChatMessage(log, "me", text);
     input.value = "";
     updateCount();
 
-    ctx.sendMessage(text).catch(function () {
-      /* 失败：把内容还回输入框，别让学生白打一遍 */
-      if (!input.value) input.value = text;
-    }).then(function () {
-      busy = false;
-      input.disabled = false;
-      updateCount();
-    });
+    var stopTyping = showTyping(log);
+    sendMessage(ctx.sessionId, text)
+      .then(function (res) {
+        stopTyping();
+        // 回复里带的就是反馈或下一个问题，继续留在对话框里
+        if (res.message.text) appendChatMessage(log, "ai", res.message.text);
+        ctx.applyServerTurn(res);
+      })
+      .catch(function (err) {
+        stopTyping();
+        message.remove();
+        input.value = text;
+        ctx.toast("发送失败：" + err.message);
+      })
+      .finally(function () {
+        busy = false;
+        input.disabled = false;
+        updateCount();
+        input.focus();
+      });
   }
 
-  /* 「进入下一环节」是老师的 next_stage 动作 —— 无条件切幕。
-     能不能按由后端的 available_actions 说了算（app.js 的 renderActions）。 */
-  function nextStage() {
+  /* 手动推进到下一幕。
+     正常情况下切幕由后端的 judge_advance 决定（证据够了 / 预算耗尽），
+     这个按钮是**测试用**的：不用等那几分钟就能往下走。
+     它不影响对话式复述本身 —— 点不点都能接着复述。 */
+  function goNext() {
     nextBtn.disabled = true;
-    ctx.teacherAction("next_stage").catch(function () {
-      /* 失败就按后端说的重算，别卡死在禁用态 */
-      nextBtn.disabled = ctx.getActions().indexOf("next_stage") === -1;
+    advanceStage(ctx.sessionId).then(function (res) {
+      ctx.applyServerTurn(res);
+      // 后端判定还不能走 → 放开按钮，学生可以接着复述
+      if (ctx.getPhase() === "recap_discussion") nextBtn.disabled = false;
+    }).catch(function (err) {
+      nextBtn.disabled = false;
+      ctx.toast("切幕失败：" + err.message);
     });
   }
 
@@ -64,27 +80,24 @@ export function createStage(ctx) {
       input.maxLength = 600;
       input.addEventListener("input", updateCount);
       input.addEventListener("keydown", function (event) {
-        if (event.key === "Enter" && !event.shiftKey) {
-          event.preventDefault();
-          form.requestSubmit();
-        }
+        if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); form.requestSubmit(); }
       });
-      form.addEventListener("submit", function (event) {
-        event.preventDefault();
-        submit();
-      });
-      nextBtn.addEventListener("click", nextStage);
+      form.addEventListener("submit", function (event) { event.preventDefault(); submit(); });
+      nextBtn.addEventListener("click", goNext);
       updateCount();
     },
-
-    enter: function () {
-      updateCount();
+    enter: function (stage, turn) {
+      if (turn && turn.message && turn.message.text) {
+        appendChatMessage(log, "ai", turn.message.text);
+      }
       input.focus();
     },
-
     leave: function () {},
-
+    receiveMessage: function (text) {
+      appendChatMessage(log, "ai", text);
+    },
     reset: function () {
+      log.innerHTML = "";
       input.value = "";
       input.disabled = false;
       busy = false;

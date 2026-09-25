@@ -1,9 +1,10 @@
 @echo off
-REM One-click start. Double-click this file to run a lesson.
+setlocal
 cd /d "%~dp0"
-
-set "PY=%USERPROFILE%\.workbuddy\binaries\python\envs\default\Scripts\python.exe"
-if not exist "%PY%" set "PY=python"
-
-"%PY%" apps\start.py %*
-if errorlevel 1 pause
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\start-classroom.ps1" %*
+if errorlevel 1 (
+  echo.
+  echo Startup failed. Press any key to close.
+  pause >nul
+)
+endlocal

@@ -17,9 +17,6 @@ export var UI_OF_PHASE = {
   uninitialized:    "idle",
   intro:            "chat",
   guided_learning:  "chat",
-  /* Compatibility for sessions created before the platform adapter aligned
-     its stage id with the public frontend contract. */
-  teach:             "chat",
   recap_discussion: "summary",
   deep_inquiry:     "reflect",
   class_discussion: "discuss",
@@ -31,7 +28,6 @@ export var LABEL_OF_PHASE = {
   uninitialized:    "课前",
   intro:            "课程介绍",
   guided_learning:  "引导学习",
-  teach:             "引导学习",
   recap_discussion: "总结复述",
   deep_inquiry:     "深入思考",
   class_discussion: "课堂讨论",

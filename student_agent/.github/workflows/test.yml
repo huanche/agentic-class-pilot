@@ -1,0 +1,46 @@
+name: Test unified classroom
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install backend dependencies
+        run: pip install -r requirements.txt
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Install Playwright Chromium
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: Backend integration test
+        run: python -m unittest apps.test_api_integration -v
+        env:
+          AGENT_LLM_API_KEY: ""
+
+      - name: Frontend lint
+        working-directory: frontend
+        run: npm run lint
+
+      - name: Browser end-to-end test
+        working-directory: frontend
+        run: npm run test:e2e

@@ -89,11 +89,12 @@ var platformPlayer = {
 
     if (type === "SCENE_COMPLETED" && data.sceneId && !this.completedScenes[data.sceneId]) {
       this.completedScenes[data.sceneId] = true;
-      if (this.onMediaDone) this.onMediaDone();
+      // 带上场景/事件 id —— 平台侧按场景幂等记进度，丢了就退化成"整段完成"一行
+      if (this.onMediaDone) this.onMediaDone(data.sceneId, data.eventId);
     }
     if (type === "PLAYBACK_ENDED" && !this.ended) {
       this.ended = true;
-      if (this.onMediaDone) this.onMediaDone();
+      if (this.onMediaDone) this.onMediaDone(data.sceneId, data.eventId);
       if (status) status.textContent = "课程内容播放完毕";
     }
   },

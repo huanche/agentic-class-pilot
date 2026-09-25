@@ -35,7 +35,8 @@ export const platformPlayerAdapter = {
       if (!message) return;
       if ((message.type === "PLAYBACK_ENDED" || message.type === "CLASSROOM_COMPLETED") && !ended) {
         ended = true;
-        context.onEnded();
+        // 透传场景/事件 id：平台侧按场景幂等记进度，适配器边界丢了这个信息就补不回来
+        context.onEnded(message.sceneId, message.eventId);
       } else if (message.type === "PLAYER_ERROR" && context.onError) {
         context.onError(new Error(message.message || "播放器运行失败"));
       }

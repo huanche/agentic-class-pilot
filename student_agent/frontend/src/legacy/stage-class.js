@@ -1,22 +1,21 @@
 /* ═══════════════════════════════════════════════════════════
    「引导学习」这一幕的三个子界面
-   idle（课前）→ chat（AI 对话）→ video（教学视频）
+   idle（课前）→ chat（AI 介绍对话）→ video（教学视频）
 
-   切哪一幕由后端的 phase 决定（app.js 的 applySessionState）。
-   这里只管这三块界面本身，以及把学生的动作转给后端：
-     · 「开始上课」    → POST /begin
-     · 输入框发言      → POST /message
-     · 「视频已结束」  → POST /media/done
-
-   ⚠️ 老师说的话**不在这里渲染**。后端的转录只有一份，由 app.js
-   轮询 /messages 统一画；这里再 append 一次就会重复显示。
+   idle→chat 是学生点「开始上课」；chat→video 是点「播放视频」，
+   这两步是前端的局部切换。video 之后要通知后端（/视频结束），
+   由后端决定下一幕是什么。
    ═══════════════════════════════════════════════════════════ */
 
-import { $ } from "./ui.js";
+import { $, el, icon, renderInline, scrollToEnd } from "./ui.js";
+import {
+  beginSession, sendMessage, notifyMediaDone, fetchLessonVideo
+} from "./api.js";
 import { mountVideoPlayer } from "./video-player.js";
 
 export function createStage(ctx) {
 
+  var chatLog = $("chat-log");
   var composer = $("composer");
   var input = $("composer-input");
   var sendBtn = $("composer-send");
@@ -24,10 +23,8 @@ export function createStage(ctx) {
   var chat = $("stage-chat");
   var video = $("stage-video");
 
-  var busy = false;
-  var playerHandle = null;
-  /* 已经为哪节课挂过播放器。enterVideo 会被反复调用，靠它做到幂等 */
-  var videoMountedFor = null;
+  var introDone = false;      /* 课程介绍是否讲完（决定要不要显示「播放视频」）*/
+  var busy = false;           /* 一次请求进行中 */
 
   /* ── 子阶段切换 ──────────────────────────────────────── */
 
@@ -39,12 +36,7 @@ export function createStage(ctx) {
     });
   }
 
-  function setComposerEnabled(on) {
-    input.disabled = !on;
-    sendBtn.disabled = !on;
-  }
-
-  /* ── 课前：课时信息 ──────────────────────────────────── */
+  /* ── 课前：课程信息 ──────────────────────────────────── */
 
   function renderLesson(data) {
     $("lesson-eyebrow").textContent = data.course + " · " + data.chapter;
@@ -55,98 +47,194 @@ export function createStage(ctx) {
     $("meta-min").textContent = data.estimatedMinutes;
   }
 
-  /* ── 开始上课 ────────────────────────────────────────── */
+  /* ── AI 对话 ─────────────────────────────────────────── */
 
-  /* 起课铃。后端只认一次，重复按会 409 —— 正常按不到第二次，
-     因为按钮的可用性由 available_actions 控制（app.js 的 renderActions）。 */
-  function startLesson() {
-    if (busy) return;
-    busy = true;
-    $("btn-start").disabled = true;
+  function appendMessage(role, text) {
+    var row = el("div", "msg msg--" + (role === "me" ? "me" : "ai"));
 
-    ctx.teacherAction("begin").catch(function () {
-      /* 失败了就让按钮回到后端说的状态，让学生能重试 */
-      $("btn-start").disabled = ctx.getActions().indexOf("begin") === -1;
-    }).then(function () { busy = false; });
+    if (role !== "me") {
+      row.appendChild(el("div", "msg__avatar", "AI"));
+    }
+
+    var bubble = el("div", "msg__bubble");
+    bubble.innerHTML = renderInline(text);
+    row.appendChild(bubble);
+
+    chatLog.appendChild(row);
+    scrollToEnd(chatLog);
+    return row;
   }
 
-  /* ── 发言 ────────────────────────────────────────────── */
+  function showTyping() {
+    var row = el("div", "msg msg--ai");
+    row.id = "typing-row";
+    row.appendChild(el("div", "msg__avatar", "AI"));
 
-  /* 只把话发给后端。回复由轮询画出来 —— 这里 append 就会和后端
-     转录里的同一条重上加重。 */
+    var bubble = el("div", "msg__bubble typing");
+    bubble.innerHTML = "<span></span><span></span><span></span>";
+    row.appendChild(bubble);
+
+    chatLog.appendChild(row);
+    scrollToEnd(chatLog);
+  }
+
+  function hideTyping() {
+    var row = $("typing-row");
+    if (row) row.remove();
+  }
+
+  /* 开场白播放期间锁住输入区，避免学生在 AI 还在说话时插话 */
+  function setComposerEnabled(on) {
+    input.disabled = !on;
+    sendBtn.disabled = !on;
+  }
+
+  /* 开场白讲完 —— 挂按钮而不是自动跳转。两个原因：
+     浏览器会拦截「无用户手势的带声自动播放」；
+     学生可能还在读最后一句，画面突然切走很突兀。 */
+  function appendIntroAction() {
+    var row = el("div", "chat-action");
+    var btn = el("button", "btn btn--primary", "开始播放教学视频");
+    btn.type = "button";
+    btn.appendChild(icon('<path d="M3 8h10M9 4l4 4-4 4"/>'));
+    btn.addEventListener("click", function () { startVideo(); });
+
+    row.appendChild(btn);
+    chatLog.appendChild(row);
+    scrollToEnd(chatLog);
+  }
+
+  /* 开课是会话控制事件；学生发言才进入统一 AI 消息接口。 */
+  function startLesson() {
+    if (busy) return;
+
+    showPane("chat");
+    ctx.setStatus("课程介绍");
+
+    /* 已经开过课就不再发 —— 回入口再进来时保留进度 */
+    if (introDone) return;
+
+    busy = true;
+    setComposerEnabled(false);
+    showTyping();
+
+    beginSession(ctx.sessionId).then(function (res) {
+      hideTyping();
+      var text = res && res.message && res.message.text;
+      if (text) appendMessage("ai", text);
+      ctx.applyServerTurn(res);
+      if (res && res.hostPhase === "guided_learning" && !introDone) {
+        introDone = true;
+        appendIntroAction();
+      }
+    }).catch(function (err) {
+      hideTyping();
+      appendMessage("ai", "上课失败：" + err.message);
+    }).finally(function () {
+      busy = false;
+      setComposerEnabled(true);
+    });
+  }
+
   function submitMessage(text) {
     busy = true;
     setComposerEnabled(false);
+    appendMessage("me", text);
+    showTyping();
 
-    ctx.sendMessage(text).catch(function () {
-      /* 失败：把内容还回输入框，别让学生白打一遍 */
-      if (!input.value) input.value = text;
-    }).then(function () {
+    sendMessage(ctx.sessionId, text).then(function (res) {
+      hideTyping();
+      if (res.message.text) appendMessage("ai", res.message.text);
+      ctx.applyServerTurn(res);
+      if (res.hostPhase === "guided_learning" && !introDone) {
+        introDone = true;
+        appendIntroAction();
+      }
+    }).catch(function (err) {
+      hideTyping();
+      appendMessage("ai", "消息发送失败：" + err.message);
+    }).finally(function () {
       busy = false;
       setComposerEnabled(true);
-      input.focus();
     });
   }
 
   /* ── 教学视频 ────────────────────────────────────────── */
 
+  /* 视频结束只通知后端一次；这是播放器事件，不占用 AI 消息接口。 */
+  var videoEndNotified = false;
+  var playerHandle = null;
+
   function destroyPlayer() {
     if (playerHandle) playerHandle.destroy();
     playerHandle = null;
-    videoMountedFor = null;
   }
 
-  /* 进视频面板并挂上播放器。**幂等** —— 每次进 guided_learning 都会调，
-     重复挂会把正在播的播放器打回原形。 */
-  function enterVideo() {
+  function notifyVideoEnd(how, sceneId, eventId) {
+    if (videoEndNotified) return;
+    videoEndNotified = true;
+
+    var status = $("video-player-status");
+    var skipBtn = $("btn-skip-video");
+
+    /* ⚠️ 这一轮服务端要**现场让模型生成老师的下一句话**，实测 20–35 秒
+       （平台态更慢：每轮要带上 1 万多字的已发布课程上下文）。
+       期间必须禁用按钮并写明在等什么 —— 否则看起来就是"点了没反应"，
+       用户会反复点击，而幂等守卫会让后续点击完全静默。 */
+    status.textContent = how === "ended"
+      ? "视频已播完，正在请老师准备下一环节…（约需 20–30 秒）"
+      : "已通知老师，正在准备下一环节…（约需 20–30 秒）";
+    if (skipBtn) { skipBtn.disabled = true; skipBtn.textContent = "老师准备中…"; }
+
+    notifyMediaDone(ctx.sessionId, sceneId, eventId).then(function (res) {
+      if (res && res.message && res.message.text) appendMessage("ai", res.message.text);
+      ctx.applyServerTurn(res);
+      if (skipBtn) { skipBtn.disabled = false; skipBtn.textContent = "视频已结束，继续"; }
+    }).catch(function (err) {
+      status.textContent = "通知失败：" + err.message + "（可再点一次重试）";
+      ctx.toast("通知失败：" + err.message);
+      videoEndNotified = false;   /* 允许重试 */
+      if (skipBtn) { skipBtn.disabled = false; skipBtn.textContent = "视频已结束，继续"; }
+    });
+  }
+
+  function startVideo() {
     showPane("video");
-    if (videoMountedFor === ctx.lessonId && playerHandle) return;
+    ctx.setStatus("教学视频");
+
+    videoEndNotified = false;     /* 重进视频页时重置 */
 
     var slot = $("video-player-slot");
     destroyPlayer();
     $("video-player-status").textContent = "正在准备播放器…";
 
-    var lesson = ctx.getLesson();
-    var first = lesson && lesson.segments && lesson.segments[0];
-    var startSeconds = first && typeof first.startSeconds === "number" ? first.startSeconds : 0;
-
-    try {
+    fetchLessonVideo(ctx.lessonId).then(function (data) {
+      var lesson = ctx.getLesson();
+      var first = lesson && lesson.segments && lesson.segments[0];
       playerHandle = mountVideoPlayer(slot, {
-      lessonId: ctx.lessonId,
-      lesson: lesson,
-      classroomId: lesson && lesson.classroomId,
-      /* 后端没有「取视频」的接口 —— 视频文件和播放完全归前端。
-         业务方通过 window.StudentAgentVideoPlayer 注册自己的播放器；
-         没注册时 mountVideoPlayer 会挂一个占位提示。 */
-      video: null,
-      startSeconds: startSeconds,
-      onEnded: function () { notifyVideoEnd(); },
-      onError: function (error) {
-        var message = error && error.message ? error.message : String(error || "未知错误");
-        $("video-player-status").textContent = "播放器错误：" + message;
-        ctx.toast("播放器错误：" + message);
-      }
+        lessonId: ctx.lessonId,
+        /* 平台态：平台播放器适配器读 lesson.playerUrl 来嵌教师端播放器；
+           独立态：默认播放器用 video（/api/lesson/video 返回的单个地址）。
+           两者都传，适配器各取所需。 */
+        lesson: lesson,
+        /* 平台播放器适配器（src/platform/playerAdapter.js）靠 classroomId 决定
+           嵌哪间课堂；缺了它会直接显示"本课时尚未发布播放器内容"。
+           独立态默认播放器不用这个字段。 */
+        classroomId: lesson && lesson.classroomId,
+        video: data || null,
+        startSeconds: first && typeof first.startSeconds === "number" ? first.startSeconds : 0,
+        onEnded: function (sceneId, eventId) { notifyVideoEnd("ended", sceneId, eventId); },
+        onError: function (error) {
+          var message = error && error.message ? error.message : String(error || "未知错误");
+          $("video-player-status").textContent = "播放器错误：" + message;
+          ctx.toast("播放器错误：" + message);
+        }
       });
-    } catch (error) {
-      var mountMessage = error && error.message ? error.message : String(error || "未知错误");
-      $("video-player-status").textContent = "播放器加载失败：" + mountMessage;
-      slot.textContent = "播放器加载失败";
-      ctx.toast("播放器加载失败：" + mountMessage);
-      return;
-    }
-    videoMountedFor = ctx.lessonId;
-
-    $("video-player-status").textContent = playerHandle.mounted
-      ? "播放器已接入"
-      : "等待接入外部视频播放器";
-  }
-
-  /* 通知后端视频播完了。后端 media_done 的语义是**整段视频全片播完、
-     播完报一次**（这节课是 delivery:video，AI 全程不出讲解词）。 */
-  function notifyVideoEnd() {
-    $("video-player-status").textContent = "视频已播完，正在通知后端…";
-    ctx.teacherAction("media_done").catch(function () {
-      $("video-player-status").textContent = "通知失败，可以再点一次";
+      $("video-player-status").textContent = playerHandle.mounted
+        ? "播放器已接入"
+        : "等待接入外部视频播放器";
+    }).catch(function (err) {
+      $("video-player-status").textContent = "视频信息获取失败：" + err.message;
     });
   }
 
@@ -155,7 +243,10 @@ export function createStage(ctx) {
   return {
     mount: function () {
       $("btn-start").addEventListener("click", startLesson);
-      $("btn-skip-video").addEventListener("click", notifyVideoEnd);
+
+      $("btn-skip-video").addEventListener("click", function () {
+        notifyVideoEnd("manual");
+      });
 
       composer.addEventListener("submit", function (e) {
         e.preventDefault();
@@ -186,21 +277,37 @@ export function createStage(ctx) {
         showPane("idle");
       } else if (stage === "chat") {
         showPane("chat");
+        if (ctx.getPhase() === "guided_learning" && !introDone) {
+          introDone = true;
+          appendIntroAction();
+        }
+        ctx.setStatus(introDone ? "引导学习" : "课程介绍");
       } else if (stage === "video") {
-        enterVideo();
+        showPane("video");
+        ctx.setStatus("教学视频");
       }
     },
 
     leave: function () {
+      /* 离开时把在途打字指示器收掉，避免下次进来还挂着 */
+      hideTyping();
       destroyPlayer();
     },
 
-    /* 换课：清掉输入、播放器和子面板，回到课前 */
+    receiveMessage: function (text) {
+      appendMessage("ai", text);
+    },
+
+    /* 换课：清空对话、开场白进度与视频，回到课前 */
     reset: function () {
+      chatLog.innerHTML = "";
+      introDone = false;
       busy = false;
       setComposerEnabled(true);
+
       input.value = "";
       input.style.height = "auto";
+      input.placeholder = "说点什么，或向老师提问…";
 
       destroyPlayer();
       $("video-player-slot").replaceChildren();
@@ -209,7 +316,6 @@ export function createStage(ctx) {
       showPane("idle");
     },
 
-    enterVideo: enterVideo,
     renderLesson: renderLesson
   };
 }

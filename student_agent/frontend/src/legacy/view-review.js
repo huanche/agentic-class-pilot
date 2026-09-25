@@ -189,8 +189,7 @@ export function createView(ctx) {
     var lessonId = ctx.lessonId;
     showState("loading");
 
-    /* sessionId 就是后端的会话 id —— 两边共用同一个（见 api.js 第 ② 节） */
-    fetchLessonReport(ctx.sessionId).then(function (report) {
+    fetchLessonReport(ctx.sessionId, lessonId).then(function (report) {
       if (seq !== requestSeq) return;   /* 期间又切走了，丢弃这次结果 */
       loadedLessonId = lessonId;
       loadedReport = report;

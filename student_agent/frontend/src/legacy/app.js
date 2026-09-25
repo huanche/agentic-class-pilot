@@ -9,15 +9,13 @@
    可选课程与已开放周次由课程目录返回；未来由后端提供真值。
    ═══════════════════════════════════════════════════════════ */
 
-import { $, visibleRoot, showToast, appendChatMessage, el, scrollToEnd } from "./ui.js";
+import { $, visibleRoot, showToast } from "./ui.js";
 
 import {
   fetchLesson, fetchStudentCourses, startSession,
-  fetchSessionState, fetchSessionMessages, sendStudentMessage, sendTeacherAction,
-  fetchLessonStars, STAR_LABELS
+  fetchSessionState, fetchSessionMessages, stopSession
 } from "./api.js";
 import { uiOf, labelOf, isKnown } from "./phases.js";
-import { createThemeSwitch } from "./theme.js";
 import { createStage as createClassStage } from "./stage-class.js";
 import { createView as createReviewView } from "./view-review.js";
 import { createStage as createSummaryStage } from "./stage-summary.js";
@@ -30,22 +28,61 @@ import { createStage as createDoneStage } from "./stage-done.js";
    会话与课时
    ═══════════════════════════════════════════════════════════ */
 
-/* sessionId 不能每次刷新都换新的 —— 它是后端 checkpointer 的
-   thread_id（ORCHESTRATOR.md §7），换了就等于每次刷新后端都当新会话，
-   上一轮的状态接不上。所以持久化。 */
+/* 刷新时恢复正在进行的课堂；已经结束或长期中断的课堂自动换新会话。 */
 var SESSION_KEY = "ai-learn.sessionId.";
+
+function createSessionId() {
+  return (window.crypto && crypto.randomUUID)
+    ? crypto.randomUUID()
+    : "s-" + Date.now() + "-" + Math.random().toString(16).slice(2);
+}
+
+function saveSessionId(lessonId, value) {
+  try { localStorage.setItem(SESSION_KEY + lessonId, value); } catch (e) { /* 忽略 */ }
+  return value;
+}
 
 function loadSessionId(lessonId) {
   try {
     var saved = localStorage.getItem(SESSION_KEY + lessonId);
     if (saved) return saved;
   } catch (e) { /* 隐私模式下不可用 */ }
-
-  var fresh = (window.crypto && crypto.randomUUID)
-    ? crypto.randomUUID()
-    : "s-" + Date.now() + "-" + Math.random().toString(16).slice(2);
-  try { localStorage.setItem(SESSION_KEY + lessonId, fresh); } catch (e) { /* 忽略 */ }
+  var fresh = createSessionId();
+  saveSessionId(lessonId, fresh);
   return fresh;
+}
+
+function renewSessionId(lessonId) {
+  return saveSessionId(lessonId, createSessionId());
+}
+
+/* 「这一页是刚打开的，还是刷新出来的？」
+
+   用来区分老师关掉命令行窗口重新启动（= 该从头上新课），
+   和学生按了下 F5（= 不该把上到一半的课清掉）。
+
+   **不能靠时间判断**：关窗再启动通常也在两分钟以内，和刷新没差别。
+   sessionStorage 正好是那个中介 —— 它能挺过 F5，但关掉标签页/窗口就没了。 */
+var continuedPageSession = (function () {
+  try {
+    if (window.sessionStorage.getItem("ai-learn.page-open")) return true;
+    window.sessionStorage.setItem("ai-learn.page-open", "1");
+    return false;
+  } catch (e) {
+    // 隐私模式读不到 sessionStorage —— 保守当成刷新，宁可留着课也别误清
+    return true;
+  }
+})();
+
+function shouldRenewSession(state) {
+  if (!state || state.status === "ended") return true;
+  // 没在上课（idle）：不用换，也顺带避开"刚建好的新会话又被换掉"
+  if (state.status !== "running") return false;
+  // 正在上课 + 这一页是新开的窗口 → 新的一节课
+  if (!continuedPageSession) return true;
+  if (!state.updated_at) return false;
+  var updated = Date.parse(state.updated_at);
+  return Number.isFinite(updated) && Date.now() - updated > 2 * 60 * 1000;
 }
 
 var sessionId = "";
@@ -57,32 +94,8 @@ var catalogPromise = null;
 
 /* 后端当前说的那一幕。null 表示还没跟后端对过话 */
 var hostPhase = null;
-
-/* 后端此刻允许按哪些按钮（available_actions）。前端照它渲染，不自己猜 */
-var actions = [];
-
-/* 当前这一幕**之后**还有哪些阶段（后端只算 lesson-plan 里 enabled 的）。
-   空数组 = 已经是最后一幕，再点一下就是下课。 */
-var remainingStages = [];
-
-/* ── 转录与轮询 ──────────────────────────────────────────
-   后端的 s["messages"] 是**唯一**的事实来源：学生发言、AI 回复、
-   心跳推的话全在里面。POST 的 reply_text 是同一份数据的副本，
-   拿它渲染会让每条消息出现两遍 —— 所以这里只认 /messages。 */
-var transcript = [];
 var messageCursor = 0;
 var pollTimer = null;
-var pollBusy = false;
-
-/* 课后演练用：?scale=12 把 45 分钟压成约 4 分钟（后端的 time_scale）。
-   正式上课不要带这个参数。 */
-var timeScale = (function () {
-  var v = parseFloat(new URLSearchParams(location.search).get("scale") || "1");
-  return isFinite(v) && v > 0 ? v : 1;
-})();
-
-var themeSwitch = null;
-
 
 /* ═══════════════════════════════════════════════════════════
    路由
@@ -165,11 +178,9 @@ function availableLessons(course) {
   return course.lessons.filter(function (item) { return item.status === "completed" || item.status === "current"; });
 }
 
-/* 原来这里有个 lessonDestination()，按「这节课上过没有」决定去课堂还是课后，
-   并且拿它挡路由、藏入口卡片。现在去掉了 ——
-   后端允许随时开课（/start 幂等，已结束的会话也能恢复），
-   到底该显示哪一幕由 /state 的 phase 说了算，前端不必再用猜的状态去挡。
-   真正的坑是：只有一节课时，一旦它变成 completed，课堂入口会从界面上消失。 */
+function lessonDestination(item) {
+  return item.status === "completed" ? "review" : "class";
+}
 
 function makeNode(tag, className, content) {
   var node = document.createElement(tag);
@@ -235,29 +246,20 @@ function selectLesson(course, item) {
     sessionId = loadSessionId(item.lessonId);
     lesson = null;
     hostPhase = null;
-    /* 换了课时就是换了一个后端会话，转录和游标都得从头来 */
-    stopPolling();
-    actions = [];
-    remainingStages = [];
-    transcript = [];
     messageCursor = 0;
-    lastStars = {};
     resetClassroom();
   }
   $("hub-title").textContent = course.name + " · 第 " + item.week + " 周 · " + item.title;
-  /* 两张入口卡都留着：课堂随时能进（后端幂等开课），课后报告随时能看
-     （没上过就显示空态）。不再按 status 藏其中一张。 */
   $("hub").querySelector(".hub__grid").classList.add("hub__grid--single");
+  document.querySelectorAll("#hub [data-goto]").forEach(function (card) {
+    card.hidden = card.dataset.goto !== lessonDestination(item);
+  });
   $("review-title").textContent = course.name + " · " + item.title + " · 课后";
   /* 课后页的报告内容由 view-review.js 在 enter() 时填 */
 }
 
 function renderRoute() {
   var route = parseHash();
-  if (themeSwitch) themeSwitch.setVisible(!route.name);
-  /* 轮询只在课堂里跑；切到课程表 / 课后就停掉，别让它在后台空转 */
-  if (route.name !== "class") stopPolling();
-
   loadCourses().then(function () {
     if (location.hash.replace(/^#$/, "") !== (route.name ? "#/" + [route.name, route.courseId, route.lessonId].filter(Boolean).map(encodeURIComponent).join("/") : "")) return;
     if (!route.name) { renderCourses(); showView(VIEWS.courses); return; }
@@ -271,6 +273,10 @@ function renderRoute() {
       return;
     }
     selectLesson(course, item);
+    if ((route.name === "class" || route.name === "review") && route.name !== lessonDestination(item)) {
+      location.replace(lessonHash(course.courseId, item.lessonId));
+      return;
+    }
     if (route.name === "lesson") { showView(VIEWS.lesson); return; }
     if (route.name === "class") { openLessonRoute(); return; }
     if (route.name === "review") { showView(VIEWS.review); reviewView.enter(); return; }
@@ -322,22 +328,12 @@ function ctxFor() {
     get lessonId() { return currentLessonId; },
     getLesson: function () { return lesson; },
     getPhase: function () { return hostPhase; },
-    /* 后端此刻允许按哪些按钮（available_actions 原样） */
-    getActions: function () { return actions; },
-
-    /* 学生发言。轮询会把回复画出来，调用方不要自己 append ——
-       后端的转录只有一份，自己画就重了。 */
-    sendMessage: sendMessage,
-    /* 老师动作：begin / media_done / next_stage。按不按得动照 available_actions。 */
-    teacherAction: teacherAction,
-
-    /* 讲解阶段（视频模式）直接进播放器面板。幂等 */
-    enterVideo: function () {
-      if (classStage && classStage.enterVideo) classStage.enterVideo();
-    },
-
+    /* 后端每轮返回后统一交给这里 —— 「完全跟随」的落点 */
+    applyServerTurn: applyServerTurn,
     /* 各阶段模块更新页头状态（视频这类子状态用） */
     setStatus: setStatus,
+    /* 课堂内部的局部切换（对话 ⇄ 视频），不经后端 */
+    showStage: setStage,
     toast: showToast,
     goHome: function () { go(lessonHash(currentCourseId, currentLessonId)); },
     getReviewHash: function () { return partHash("review"); }
@@ -345,7 +341,7 @@ function ctxFor() {
 }
 
 /* 立即切换界面。只改显示，不碰任何进度概念 */
-function setStage(name) {
+function setStage(name, turn) {
   if (!PANE[name]) return;
   currentStage = name;
 
@@ -358,210 +354,69 @@ function setStage(name) {
   setStatus(hostPhase ? labelOf(hostPhase) : "");
 
   var owner = owners[name];
-  if (owner && owner.enter) owner.enter(name);
+  if (owner && owner.enter) owner.enter(name, turn);
 }
 
-/* ── 转录 ⇄ 面板 ─────────────────────────────────────────
-   后端的转录是**一条线**（学生发言和 AI 回复混在同一个列表里），
-   而界面是按阶段分成好几个面板的。所以切面板时把整条转录
-   重画进当前面板的 log —— 否则学生切到复述面板就看不到之前说过的话。 */
-var LOG_OF_STAGE = {
-  chat: "chat-log",
-  summary: "summary-log",
-  reflect: "reflect-log",
-  discuss: "discuss-log"
-};
+/* 后端每轮返回后统一处理。读 host_phase，变了才切界面。
+   切幕由后端的 judge_advance 决定，前端不参与判断。 */
+function applyServerTurn(res) {
+  if (!res || !res.hostPhase) return;
+  if (typeof res.total === "number") messageCursor = Math.max(messageCursor, res.total);
 
-function renderTranscript() {
-  var id = LOG_OF_STAGE[currentStage];
-  var log = id ? $(id) : null;
-  if (!log) return;
-  log.replaceChildren();
-  transcript.forEach(function (m) {
-    appendChatMessage(log, m.role === "student" ? "me" : "ai", m.text);
-  });
-  if (awaitingReply) appendTypingRow(log);
-}
+  var phase = res.hostPhase;
 
-/* 「AI 正在想」的提示。挂在转录末尾而不是单独占一个元素 ——
-   轮询会重画整条转录，独立元素会被抹掉。 */
-var awaitingReply = false;
-
-function appendTypingRow(log) {
-  var row = el("div", "msg msg--ai");
-  row.appendChild(el("div", "msg__avatar", "AI"));
-
-  var bubble = el("div", "msg__bubble typing");
-  bubble.innerHTML = "<span></span><span></span><span></span>";
-  row.appendChild(bubble);
-
-  log.appendChild(row);
-  scrollToEnd(log);
-}
-
-/* 结束态没有对话区，把老师最后那句收尾发言放进副标题 ——
-   比重复课时名有用。 */
-function renderDoneRemark() {
-  var sub = $("done-sub");
-  if (!sub) return;
-  for (var i = transcript.length - 1; i >= 0; i--) {
-    if (transcript[i].role === "teacher") {
-      sub.textContent = transcript[i].text;
-      return;
-    }
-  }
-}
-
-/* ── 星级变化提示 ────────────────────────────────────────
-   /state 的 stars 只有 KP-xxx 内部编号，规则里明确不许说给学生听；
-   所以比的是 /stars 那份带标题的。只在**变化**时提示，进场不刷屏。 */
-var lastStars = {};
-
-function notifyStarChanges(points) {
-  points.forEach(function (item) {
-    var prev = lastStars[item.kp_id];
-    if (prev !== undefined && prev !== item.stars) {
-      showToast("★ " + (item.title || item.kp_id) + " → " +
-        (STAR_LABELS[item.stars] || "未检测"));
-    }
-    lastStars[item.kp_id] = item.stars;
-  });
-}
-
-/* ── 老师按钮 ────────────────────────────────────────────
-   后端在 available_actions 里说了此刻允许按哪些，前端照着渲染。
-   输入框不在这里管 —— 它们是「随时能打字」，禁用逻辑各阶段模块自己管。 */
-function renderActions() {
-  var beginBtn = $("btn-start");
-  if (beginBtn) beginBtn.disabled = actions.indexOf("begin") === -1;
-
-  var videoBtn = $("btn-skip-video");
-  if (videoBtn) {
-    videoBtn.disabled = actions.indexOf("media_done") === -1 ||
-      hostPhase !== "guided_learning" && hostPhase !== "teach";
-  }
-
-  /* 「下一环节」按钮的措辞跟着后端说的走：
-     remaining_stages 空了就说明这一幕是最后一幕，再点一下就是下课，
-     还写「进入下一环节」会让人以为后面还有内容。
-     本课 class_discussion 是 enabled:false，所以进了深层探究之后就是「结束课程」。 */
-  var canNext = actions.indexOf("next_stage") !== -1;
-  var nextLabel = remainingStages.length ? "进入下一环节" : "结束课程";
-
-  ["summary-next", "reflect-next", "discuss-end"].forEach(function (id) {
-    var btn = $(id);
-    if (btn && !btn.hidden) {
-      btn.disabled = !canNext;
-      btn.textContent = nextLabel;
-    }
-  });
-}
-
-/* 后端状态落地。phase 变了才切界面 —— 切幕由后端的 judge_advance 决定，
-   前端不参与判断。 */
-function applySessionState(state) {
-  actions = state.available_actions || [];
-  remainingStages = state.remaining_stages || [];
-  renderActions();
-
-  var phase = state.phase;
-  if (!phase) return;
   if (!isKnown(phase)) {
-    console.warn("[app] 后端下发了不认识的 phase，已忽略：" + phase);
+    console.warn("[app] 后端下发了不认识的 host_phase，已忽略：" + phase);
     return;
   }
-  if (phase === hostPhase) return;
+
+  if (phase === hostPhase) return;      /* 没变，什么都不做 */
 
   hostPhase = phase;
+  if (phase === "ending") {
+    var course = courseById(currentCourseId);
+    var completedLesson = course && course.lessons.find(function (item) { return item.lessonId === currentLessonId; });
+    if (completedLesson) completedLesson.status = "completed";
+  }
   setStatus(labelOf(phase));
 
   var target = uiOf(phase);
   if (!target) return;
-  if (target !== currentStage) setStage(target);
-  renderTranscript();
-  if (phase === "ending") renderDoneRemark();
 
-  /* 讲解阶段是整段视频模式：后端全程静默，界面直接进播放器面板，
-     不该再让学生先点一次「开始播放教学视频」。enterVideo 自己幂等。 */
-  if (phase === "guided_learning" || phase === "teach") ctx.enterVideo();
+  /* 已经在目标界面了（比如视频是 guided_learning 的内部状态），
+     只更新状态文字，别把学生正在看的视频打断 */
+  if (target === currentStage) return;
+  if (phase === "guided_learning" && currentStage === "video") return;
+
+  setStage(target, res);
 }
 
-/* ── 轮询 ────────────────────────────────────────────────
-   一次拉三样：状态、新消息、带标题的星级。
-   闹网络的时候不弹提示，下一轮自己会补上。 */
-var POLL_MS = 2000;
+function deliverServerMessage(message) {
+  if (!message || message.role !== "teacher" || !message.text) return;
+  var owner = owners[currentStage];
+  if (owner && owner.receiveMessage) owner.receiveMessage(message.text);
+}
 
-function poll() {
-  if (pollBusy || !sessionId) return Promise.resolve();
-  pollBusy = true;
-
-  return Promise.all([
-    fetchSessionState(sessionId).catch(function () { return null; }),
-    fetchSessionMessages(sessionId, messageCursor).catch(function () { return null; }),
-    fetchLessonStars(sessionId).catch(function () { return null; })
-  ]).then(function (results) {
-    var state = results[0], page = results[1], stars = results[2];
-
-    if (state) applySessionState(state);
-
-    if (page && page.messages && page.messages.length) {
-      transcript = transcript.concat(page.messages);
-      messageCursor = page.total;
-      renderTranscript();
-      if (hostPhase === "ending") renderDoneRemark();
-    }
-    if (stars) notifyStarChanges(stars);
-  }).catch(function () {
-    /* 静默：下一轮再试 */
-  }).then(function () {
-    pollBusy = false;
+function pollSession() {
+  var route = parseHash();
+  if (route.name !== "class" || !sessionId) return;
+  Promise.all([
+    fetchSessionState(sessionId),
+    fetchSessionMessages(sessionId, messageCursor)
+  ]).then(function (values) {
+    var state = values[0];
+    var feed = values[1];
+    applyServerTurn(state);
+    (feed.messages || []).forEach(deliverServerMessage);
+    messageCursor = feed.total || messageCursor;
+  }).catch(function (error) {
+    if (error.status !== 404) console.warn("课堂同步失败", error);
   });
 }
 
 function startPolling() {
-  if (pollTimer) return;
-  poll();
-  pollTimer = setInterval(poll, POLL_MS);
-}
-
-function stopPolling() {
-  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
-}
-
-/* ── 发言 / 老师动作 ─────────────────────────────────────
-   两者都只是「让后端推进一轮」，推进后立刻拉一次，不用干等 2 秒。
-   失败时统一提示，并把 rejection 继续抛给调用方 ——
-   调用方需要知道失败好恢复按钮状态，但不必再提示一遍。 */
-function describeError(err) {
-  if (err && err.status === 409) return "这节课现在不能发言（可能还没开始上课）";
-  return (err && err.message) || "操作失败";
-}
-
-/* 一次用户动作：发给后端 → 立刻拉一次（不用干等下一个 2 秒）。
-   awaitingReply 期间转录末尾挂着打字提示。 */
-function withPending(request) {
-  awaitingReply = true;
-  renderTranscript();
-
-  return request.then(function () {
-    return poll();
-  }).catch(function (err) {
-    showToast(describeError(err));
-    throw err;      /* 抛给调用方恢复按钮状态，但不再提示第二遍 */
-  }).then(function () {
-    awaitingReply = false;
-    renderTranscript();
-  });
-}
-
-function sendMessage(text) {
-  if (!sessionId) return Promise.reject(new Error("还没进课堂"));
-  return withPending(sendStudentMessage(sessionId, text));
-}
-
-function teacherAction(action) {
-  if (!sessionId) return Promise.reject(new Error("还没进课堂"));
-  return withPending(sendTeacherAction(sessionId, action));
+  if (pollTimer) clearInterval(pollTimer);
+  pollTimer = setInterval(pollSession, 2000);
 }
 
 /* 去重：chat/video 和 idle 是同一个模块实例 */
@@ -578,12 +433,6 @@ function resetClassroom() {
   uniqueOwners().forEach(function (owner) {
     if (owner.reset) owner.reset();
   });
-  /* 转录是四个面板共用的，换课时把每个面板的对话区都清掉 */
-  Object.keys(LOG_OF_STAGE).forEach(function (key) {
-    var log = $(LOG_OF_STAGE[key]);
-    if (log) log.replaceChildren();
-  });
-  awaitingReply = false;
   currentStage = "idle";
 }
 
@@ -595,33 +444,55 @@ function resetClassroom() {
 function openLessonRoute() {
   showView(VIEWS.class);
 
-  /* 先把界面摆出来，跟后端对上的那一刻再按 phase 纠正 */
-  setStage(lesson ? currentStage : "idle");
+  if (lesson) {
+    if (hostPhase === "ending") {
+      sessionId = renewSessionId(currentLessonId);
+      hostPhase = null;
+      messageCursor = 0;
+      resetClassroom();
+      lesson = null;
+      openLessonRoute();
+      return;
+    }
+    /* 再进来时保留进度，只恢复所处阶段 */
+    setStage(currentStage);
+    $("btn-start").disabled = false;
+    return;
+  }
+
+  /* 先把「课前」摆出来，课程信息到了再填 */
+  setStage("idle");
+  $("btn-start").disabled = true;   /* 课程没到位不让开课 */
 
   var requestedLessonId = currentLessonId;
-
-  /* 跟后端握手。/start 是幂等的：重复进同一节课不会重开，
-     已经结束的会话也会把状态原样读回来，所以每次进课堂都可以放心调。 */
-  startSession({ sessionId: sessionId, lessonId: requestedLessonId, timeScale: timeScale })
-    .then(function () {
-      if (currentLessonId !== requestedLessonId) return;
-      startPolling();
+  Promise.all([
+    fetchLesson(requestedLessonId),
+    fetchSessionState(sessionId).catch(function (error) {
+      if (error.status !== 404) throw error;
+      return startSession({ sessionId: sessionId, lessonId: requestedLessonId });
+    }).then(function (state) {
+      if (!shouldRenewSession(state)) return state;
+      // 换新会话之前先把旧的停掉：后端为它复活的心跳线程否则会一直跑到下课，
+      // 在后台把这场"没人上的课"的学情写进这个学生的档案。
+      stopSession(sessionId).catch(function () { /* 停不掉也别挡住上课 */ });
+      sessionId = renewSessionId(requestedLessonId);
+      hostPhase = null;
+      messageCursor = 0;
+      resetClassroom();
+      return startSession({ sessionId: sessionId, lessonId: requestedLessonId });
     })
-    .catch(function (err) {
-      if (currentLessonId !== requestedLessonId) return;
-      showToast("连不上课堂服务：" + err.message);
-    });
-
-  if (lesson) return;   /* 课时信息已经有了，不用再取 */
-
-  fetchLesson(requestedLessonId, sessionId).then(function (data) {
+  ]).then(function (values) {
+    var data = values[0];
+    var session = values[1];
     if (currentLessonId !== requestedLessonId) return;
     lesson = data;
     classStage.renderLesson(data);
     $("class-title").textContent = data.chapter + " " + data.title;
     $("done-sub").textContent = data.course + " · " + data.chapter + " " + data.title;
-    /* #btn-start 能不能按由 renderActions() 照后端的 available_actions 给，
-       这里不再手动开关 —— 前端不猜能不能开课 */
+    applyServerTurn(session);
+    $("btn-start").disabled = session.status !== "idle";
+    startPolling();
+    pollSession();
   }).catch(function (err) {
     if (currentLessonId !== requestedLessonId) return;
     $("lesson-eyebrow").textContent = "课程";
@@ -664,8 +535,6 @@ document.addEventListener("keydown", function (e) {
 /* ═══════════════════════════════════════════════════════════
    启动
    ═══════════════════════════════════════════════════════════ */
-
-themeSwitch = createThemeSwitch();
 
 var hubBack = makeNode("button", "back", "← 返回课时列表");
 hubBack.type = "button";

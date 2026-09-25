@@ -47,35 +47,6 @@
   --conversation-height: clamp(420px, calc(100dvh - 130px), 660px);
 }
 
-/* 深色主题由 html[data-theme="dark"] 驱动，不再绑死系统设置。
-   「跟随系统」由 src/legacy/theme.js 监听 media query 后代为设置该属性 ——
-   这样 CSS 只需要一套深色规则，不必写两遍。 */
-:root[data-theme="dark"] {
-  color-scheme: dark;
-
-  --bg:             #000000;
-  --surface:        rgba(28, 28, 30, 0.72);
-  --surface-solid:  #1c1c1e;
-  --surface-border: rgba(255, 255, 255, 0.09);
-  --hairline:       rgba(255, 255, 255, 0.10);
-
-  --text-1:         #f5f5f7;
-  --text-2:         #a1a1a6;
-  --text-3:         #86868b;
-
-  --blue:           #0a84ff;
-  --purple:         #bf5af2;
-  --green:          #30d158;
-  --orange:         #ff9f0a;
-
-
-  --shadow-rest:    0 1px 2px rgba(0,0,0,.4), 0 6px 18px rgba(0,0,0,.5);
-  --shadow-hover:   0 2px 6px rgba(0,0,0,.5), 0 20px 48px rgba(0,0,0,.65);
-
-  --glow:           .48;
-  --glow-hover:     .82;
-}
-
 /* ── 基础 ────────────────────────────────────────────────── */
 * { box-sizing: border-box; }
 
@@ -108,12 +79,6 @@ body::before {
     radial-gradient(58% 46% at 18% 8%,  rgba(0, 122, 255, .13), transparent 68%),
     radial-gradient(52% 44% at 86% 88%, rgba(175, 82, 222, .13), transparent 68%);
   pointer-events: none;
-}
-
-:root[data-theme="dark"] body::before {
-  background:
-    radial-gradient(58% 46% at 18% 8%,  rgba(10, 132, 255, .20), transparent 68%),
-    radial-gradient(52% 44% at 86% 88%, rgba(191, 90, 242, .18), transparent 68%);
 }
 
 /* 标题是程序化聚焦的（切视图时把焦点移过去，作为读屏与 Tab 的起点），
@@ -831,110 +796,6 @@ body::before {
   margin: 0 auto;
 }
 
-/* ═══════════ 外观切换 ═══════════════════════════════════════ */
-
-.theme-switch {
-  position: fixed;
-  top: 22px;
-  right: 26px;
-  z-index: 150;
-}
-
-.theme-switch__btn {
-  display: grid;
-  place-items: center;
-  width: 38px;
-  height: 38px;
-  padding: 0;
-  color: var(--text-2);
-  cursor: pointer;
-
-  background: var(--surface);
-  border: 1px solid var(--surface-border);
-  border-radius: 50%;
-  box-shadow: var(--shadow-rest);
-  -webkit-backdrop-filter: saturate(180%) blur(20px);
-  backdrop-filter: saturate(180%) blur(20px);
-
-  transition:
-    transform .3s var(--ease-out),
-    box-shadow .3s var(--ease-out),
-    color .2s var(--ease);
-}
-.theme-switch__btn svg { width: 18px; height: 18px; }
-
-.theme-switch__btn:hover  { color: var(--text-1); box-shadow: var(--shadow-hover); }
-.theme-switch__btn:active { transform: scale(.92); }
-.theme-switch__btn[aria-expanded="true"] { color: var(--blue); }
-
-/* 菜单 */
-.theme-menu {
-  position: absolute;
-  top: calc(100% + 8px);
-  right: 0;
-  min-width: 172px;
-  padding: 6px;
-
-  background: var(--surface);
-  border: 1px solid var(--surface-border);
-  border-radius: 15px;
-  box-shadow: var(--shadow-hover);
-  -webkit-backdrop-filter: saturate(180%) blur(24px);
-  backdrop-filter: saturate(180%) blur(24px);
-
-  animation: menuIn .22s var(--ease-out);
-  transform-origin: top right;
-}
-@keyframes menuIn {
-  from { opacity: 0; transform: translateY(-6px) scale(.95); }
-  to   { opacity: 1; transform: none; }
-}
-
-.theme-menu__item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 9px 11px;
-
-  font: inherit;
-  font-size: 14px;
-  color: var(--text-1);
-  text-align: left;
-  cursor: pointer;
-
-  background: transparent;
-  border: 0;
-  border-radius: 10px;
-  transition: background .16s var(--ease);
-}
-.theme-menu__item:hover { background: rgba(120, 120, 128, .13); }
-
-.theme-menu__icon {
-  display: inline-grid;
-  place-items: center;
-  width: 17px;
-  height: 17px;
-  flex: none;
-  color: var(--text-2);
-  transition: color .2s var(--ease);
-}
-.theme-menu__icon svg { width: 100%; height: 100%; }
-
-.theme-menu__item[aria-checked="true"] .theme-menu__icon { color: var(--blue); }
-
-.theme-menu__label { flex: 1; }
-
-.theme-menu__check {
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--blue);
-  opacity: 0;
-  transform: scale(.7);
-  transition: opacity .2s var(--ease), transform .25s var(--ease-out);
-}
-.theme-menu__item[aria-checked="true"] .theme-menu__check { opacity: 1; transform: none; }
-
 /* ── 总结复述 / 深入思考：统一对话面板 ───────────────────── */
 .stage--summary,
 .stage--reflect {
@@ -1492,9 +1353,6 @@ body::before {
   .report__kp-name       { flex: 1 1 auto; }
   .report__kp-status     { margin-left: auto; }
   .report__stage-targets { margin-left: 0; width: 100%; }
-
-  .theme-switch      { top: 16px; right: 16px; }
-  .theme-switch__btn { width: 36px; height: 36px; }
 }
 
 /* ── 尊重"减少动态效果" ──────────────────────────────────── */
@@ -1522,18 +1380,7 @@ body::before {
   --shadow-rest: 0 3px 16px rgba(35, 22, 33, .045);
   --shadow-hover: 0 12px 30px rgba(35, 22, 33, .10);
 }
-:root[data-theme="dark"] {
-  --brand: #f18bb8;
-  --brand-strong: #a71958;
-  --brand-soft: rgba(241, 139, 184, .13);
-  --brand-border: rgba(241, 139, 184, .35);
-  --bg: #17151a;
-  --surface: #242128;
-  --surface-solid: #242128;
-  --surface-border: #39333d;
-  --hairline: #39333d;
-}
-body::before, :root[data-theme="dark"] body::before { background: none; }
+body::before { background: none; }
 :focus-visible { outline-color: var(--brand); }
 
 .course-browser__brand,
@@ -1600,12 +1447,199 @@ body::before, :root[data-theme="dark"] body::before { background: none; }
 .dm--host .dm__bubble { background: var(--brand-soft); }
 .done__check { background: #16835b; box-shadow: none; }
 .done__kp-num { background: var(--brand-soft); }
-.theme-switch__btn[aria-expanded="true"],
-.theme-menu__item[aria-checked="true"] .theme-menu__icon { color: var(--brand); }
 
 @media (max-width: 780px) {
   .hub { padding: 24px 22px 36px; }
   .hub__header { padding-top: 18px; }
   .card { min-height: 0; }
   .view__header { gap: 12px; }
+}
+
+/* ══════════════════════════════════════════════════════════
+   学生登录遮罩
+   视觉仿平台的访问码弹窗（柔光背景 + 居中玻璃卡片），
+   但配色走本仓库的 brand token、动效手写 —— 不引 Tailwind/Framer Motion。
+   ══════════════════════════════════════════════════════════ */
+
+.login {
+  position: fixed;
+  inset: 0;
+  z-index: 400;              /* 高过 toast(300)，别让提示盖住登录 */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+/* 背景和其他页面共用同一套 token（白底 + 酒红），只压一层很淡的柔光，
+   不另搞一套配色。 */
+.login__backdrop {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(
+    ellipse 70% 50% at 50% 0%,
+    var(--brand-soft) 0%,
+    transparent 70%
+  );
+}
+
+.login__card {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 380px;
+  padding: 32px;
+  border: 1px solid var(--surface-border);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  backdrop-filter: blur(20px) saturate(1.3);
+  -webkit-backdrop-filter: blur(20px) saturate(1.3);
+  box-shadow: var(--shadow-hover);
+  animation: loginIn .5s var(--ease-out) both;
+}
+
+@keyframes loginIn {
+  from { opacity: 0; transform: translateY(16px) scale(.97); }
+  to   { opacity: 1; transform: none; }
+}
+
+.login__icon {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  margin: 0 auto 18px;
+  border-radius: 50%;
+  background: var(--brand-soft);
+  color: var(--brand);
+  animation: loginIn .5s var(--ease-out) .08s both;
+}
+.login__icon svg { width: 28px; height: 28px; }
+
+.login__title {
+  margin: 0 0 4px;
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: -.01em;
+  text-align: center;
+  color: var(--text-1);
+}
+
+.login__subtitle {
+  margin: 0 0 24px;
+  font-size: 13px;
+  text-align: center;
+  color: var(--text-3);
+}
+
+.login__field { display: block; margin-bottom: 14px; }
+
+.login__label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.login__input {
+  width: 100%;
+  padding: 12px 14px;
+  font: inherit;
+  font-size: 15px;
+  color: var(--text-1);
+  background: var(--bg);
+  border: 1px solid var(--surface-border);
+  border-radius: var(--r-sm);
+  outline: none;
+  transition: border-color .2s var(--ease), box-shadow .2s var(--ease);
+}
+.login__input::placeholder { color: var(--text-3); opacity: .6; }
+.login__input:focus {
+  border-color: var(--brand-border);
+  box-shadow: 0 0 0 3px var(--brand-soft);
+}
+.login__input:disabled { opacity: .6; }
+
+.login__error {
+  margin: 0 0 12px;
+  font-size: 13px;
+  text-align: center;
+  color: #d70015;
+}
+
+.login__submit {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 12px 16px;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 500;
+  color: #fff;
+  background: var(--brand);
+  border: 0;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  transition: background .2s var(--ease), transform .2s var(--ease-out);
+}
+.login__submit:hover:not(:disabled)  { background: var(--brand-strong); }
+.login__submit:active:not(:disabled) { transform: scale(.985); }
+.login__submit:disabled { opacity: .45; cursor: default; }
+.login__submit-arrow svg { display: block; width: 15px; height: 15px; }
+
+.login__hint {
+  margin: 16px 0 0;
+  font-size: 12px;
+  line-height: 1.6;
+  text-align: center;
+  color: var(--text-3);
+}
+
+/* 登录 / 注册 互切 */
+.login__switch {
+  margin: 14px 0 0;
+  font-size: 13px;
+  text-align: center;
+  color: var(--text-2);
+}
+
+.login__switch-btn {
+  margin-left: 6px;
+  padding: 0;
+  font: inherit;
+  color: var(--brand);
+  background: none;
+  border: 0;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.login__switch-btn:hover:not(:disabled) { color: var(--brand-strong); }
+.login__switch-btn:disabled { opacity: .5; cursor: default; }
+
+/* 课程码：等宽 + 拉开字距，六位码好读好核对 */
+.login__input--code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 17px;
+  letter-spacing: .18em;
+  text-align: center;
+}
+
+/* 应用内的「加入课程」入口。视觉直接复用 .btn--ghost（跟应用里其它按钮一致），
+   这里只管定位和浮层 */
+.join-fab {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 200;
+  box-shadow: var(--shadow-rest);
+}
+
+@media (max-width: 780px) {
+  .join-fab { right: 16px; bottom: 16px; }
 }
