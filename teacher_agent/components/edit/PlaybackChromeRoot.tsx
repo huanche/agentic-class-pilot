@@ -79,6 +79,10 @@ interface PlaybackChromeRootProps {
   readonly canEnterProMode?: boolean;
   /** Pro Switch click handler — parent coordinates editLock + teardown. */
   readonly onEnterProMode?: () => void;
+  /** Player-only embed (student agent iframe): hide sidebar, header,
+   *  roundtable and chat panel; the scene canvas fills the viewport.
+   *  Playback internals (lecture engine, host events) are untouched. */
+  readonly videoOnly?: boolean;
 }
 
 /**
@@ -89,7 +93,7 @@ interface PlaybackChromeRootProps {
  * the engine wind down cleanly.
  */
 export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackChromeRootProps>(
-  function PlaybackChromeRoot({ onRetryOutline, canEnterProMode, onEnterProMode }, ref) {
+  function PlaybackChromeRoot({ onRetryOutline, canEnterProMode, onEnterProMode, videoOnly }, ref) {
     const { t } = useI18n();
     const {
       mode,
@@ -1381,12 +1385,13 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
       : null;
 
     // Scene viewer height — header is 80px when visible, roundtable is
-    // 192px in playback mode (autonomous hides it). Mode is guaranteed
-    // non-'edit' here since the parent Stage unmounts this component
-    // when entering Pro mode.
+    // 192px in playback mode (autonomous hides it). Player-only embeds
+    // (videoOnly) show neither, so the canvas fills the whole viewport.
+    // Mode is guaranteed non-'edit' here since the parent Stage unmounts
+    // this component when entering Pro mode.
     const sceneViewerHeight = (() => {
-      const headerHeight = isPresenting ? 0 : 80;
-      const roundtableHeight = mode === 'playback' && !isPresenting ? 192 : 0;
+      const headerHeight = isPresenting || videoOnly ? 0 : 80;
+      const roundtableHeight = mode === 'playback' && !isPresenting && !videoOnly ? 192 : 0;
       return `calc(100% - ${headerHeight + roundtableHeight}px)`;
     })();
 
@@ -1398,21 +1403,23 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
           isPresenting && !controlsVisible && 'cursor-none',
         )}
       >
-        <SceneSidebar
-          collapsed={sidebarCollapsed}
-          onCollapseChange={setSidebarCollapsed}
-          onSceneSelect={gatedSceneSwitch}
-          onRetryOutline={onRetryOutline}
-          isCourseComplete={isCourseComplete}
-        />
+        {!videoOnly && (
+          <SceneSidebar
+            collapsed={sidebarCollapsed}
+            onCollapseChange={setSidebarCollapsed}
+            onSceneSelect={gatedSceneSwitch}
+            onRetryOutline={onRetryOutline}
+            isCourseComplete={isCourseComplete}
+          />
+        )}
 
         {/* Main Content Area */}
         <div className="flex-1 flex flex-col overflow-hidden min-w-0 relative">
           {/* Header — playback only. The Pro Switch fires `onEnterProMode`
             (passed by the parent Stage) which acquires the cross-tab
             edit lock and then awaits our `teardown()` before flipping
-            mode to 'edit'. */}
-          {!isPresenting && (
+            mode to 'edit'. Player-only embeds render no header. */}
+          {!isPresenting && !videoOnly && (
             <Header
               currentSceneTitle={
                 currentScene?.title ||
@@ -1489,8 +1496,9 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
             />
           </div>
 
-          {/* Roundtable Area */}
-          {mode === 'playback' && (
+          {/* Roundtable Area — hidden for player-only embeds: the embedded
+            viewer gets the canvas only, no AI-teacher subtitle strip. */}
+          {mode === 'playback' && !videoOnly && (
             <div
               className={cn(
                 'transition-opacity duration-300',
@@ -1640,8 +1648,9 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
 
         {/* Chat Area — playback / autonomous always renders it here; Pro
           (edit) mode unmounts this whole PlaybackChromeRoot, so the
-          edit branch has no chat. */}
-        <div className="flex shrink-0">
+          edit branch has no chat. Player-only embeds keep it mounted
+          (the lecture engine drives its session) but visually hidden. */}
+        <div className={videoOnly ? 'hidden' : 'flex shrink-0'}>
           <ChatArea
             ref={chatAreaRef}
             width={chatAreaWidth}

@@ -44,8 +44,11 @@ var platformPlayer = {
     self.ended = false;
 
     // Resolve the player URL: same origin, teacher prefix (Caddy strips it).
+    // ?embedded=player = player-only mode: the embedded classroom player hides
+    // its chrome (header, scene sidebar, AI-teacher roundtable, chat panel) and
+    // shows just the scene canvas.
     var iframe = document.createElement("iframe");
-    iframe.src = "/teacher/classroom-player/" + encodeURIComponent(classroomId);
+    iframe.src = "/teacher/classroom-player/" + encodeURIComponent(classroomId) + "?embedded=player";
     iframe.style.width = "100%";
     iframe.style.height = "100%";
     iframe.style.border = "none";

@@ -16,8 +16,12 @@ export const platformPlayerAdapter = {
     if (!url) throw new Error("课程没有可播放的已发布课堂地址");
 
     const playerOrigin = new URL(url, window.location.href).origin;
+    // ?embedded=player = player-only mode: the embedded classroom player hides
+    // its chrome (header, scene sidebar, AI-teacher roundtable, chat panel) and
+    // shows just the scene canvas.
+    const embedUrl = url + (url.includes("?") ? "&" : "?") + "embedded=player";
     const iframe = document.createElement("iframe");
-    iframe.src = url;
+    iframe.src = embedUrl;
     iframe.title = "课程播放器";
     iframe.allow = "autoplay; fullscreen";
     iframe.referrerPolicy = "same-origin";
