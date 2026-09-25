@@ -15,7 +15,7 @@ from sqlalchemy import text
 from app.api.deps import CurrentUser, SessionDep, TeacherUser
 from app.core.config import settings
 from app.models import Course
-from app.api.routes.student_bridge import is_published_classroom
+from app.api.routes.student_bridge import is_published_classroom, _published_classroom
 from app.services.browser_sessions import user_for_cookie
 from app.services.course_access import get_accessible_course, get_owned_course
 
