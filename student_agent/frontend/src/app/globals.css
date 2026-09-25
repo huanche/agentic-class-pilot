@@ -946,6 +946,8 @@ body::before {
 .course-browser__header { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 48px; }
 .course-browser__brand { font-size: 17px; font-weight: 750; letter-spacing: -.03em; color: #a71958; }
 .course-browser__brand span, .course-browser__semester { font-size: 13px; font-weight: 500; color: var(--text-3); }
+.course-browser__brand { display: inline-flex; align-items: center; gap: 9px; }
+.course-browser__logo { width: 34px; height: 34px; object-fit: contain; }
 .course-browser__intro { padding: 10px 0 2px; }
 .course-browser__eyebrow { margin: 0 0 7px; font-size: 13px; font-weight: 700; letter-spacing: .08em; color: #a71958; }
 .course-browser__intro h1 { margin: 0; font-size: clamp(28px, 3.5vw, 38px); letter-spacing: -.04em; }
@@ -1552,6 +1554,8 @@ body::before, :root[data-theme="dark"] body::before { background: none; }
 .hub { justify-content: flex-start; max-width: 1220px; gap: 30px; padding-top: 34px; }
 .hub__header { text-align: left; padding: 58px 0 0; }
 .hub__eyebrow { color: var(--brand); font-weight: 700; }
+.hub__eyebrow { display: inline-flex; align-items: center; gap: 10px; }
+.hub__logo { width: 44px; height: 44px; object-fit: contain; }
 .hub__title { font-size: clamp(28px, 3.5vw, 38px); letter-spacing: -.04em; }
 .hub__grid { gap: 20px; }
 .card { min-height: 270px; gap: 20px; padding: 26px; background: var(--surface-solid); border-radius: 22px; box-shadow: var(--shadow-rest); backdrop-filter: none; -webkit-backdrop-filter: none; transition-duration: .2s; }

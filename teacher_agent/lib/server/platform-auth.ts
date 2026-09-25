@@ -17,7 +17,7 @@ export async function platformMiddleware(request: NextRequest): Promise<NextResp
   // the gateway need them without a platform round-trip.
   if (request.nextUrl.pathname === '/api/health') return NextResponse.next();
   if (request.nextUrl.pathname.startsWith('/avatars/')) return NextResponse.next();
-  if (['/mentra-icon.svg', '/mentra-logo.svg', '/logo-horizontal.png'].includes(request.nextUrl.pathname)) {
+  if (['/brand-mark.png', '/mentra-icon.svg', '/mentra-logo.svg', '/logo-horizontal.png'].includes(request.nextUrl.pathname)) {
     return NextResponse.next();
   }
   const headers = new Headers(request.headers);
@@ -45,7 +45,7 @@ export async function platformMiddleware(request: NextRequest): Promise<NextResp
     });
     if (!response.ok) {
       if (response.status === 401 && !request.nextUrl.pathname.startsWith('/api/')) {
-        return NextResponse.redirect(new URL('/login', process.env.PLATFORM_PUBLIC_URL || 'http://localhost:8080'));
+        return NextResponse.redirect(new URL('/login', process.env.PLATFORM_PUBLIC_URL || request.nextUrl.origin));
       }
       if (response.status >= 500) {
         return NextResponse.json({ success: false, error: '平台身份服务暂不可用，请稍后重试' }, { status: 503 });

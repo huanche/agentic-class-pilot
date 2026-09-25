@@ -11,6 +11,20 @@ import {
 import { extractPptxText } from '@/lib/server/pptx-text-extractor';
 import { extractLegacyPptText } from '@/lib/server/ppt-text-extractor';
 
+function replaceUnpairedSurrogates(value: string): string {
+  return value.replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, '\uFFFD');
+}
+
+/** PostgreSQL JSONB rejects escaped, unpaired surrogates emitted by some PDF extractors. */
+export function sanitizeParsedContent(parsed: ParsedPdfContent): ParsedPdfContent {
+  return {
+    ...parsed,
+    text: replaceUnpairedSurrogates(parsed.text),
+    layout: parsed.layout?.map((item) => ({ ...item, content: replaceUnpairedSurrogates(item.content) })),
+    formulas: parsed.formulas?.map((formula) => ({ ...formula, latex: replaceUnpairedSurrogates(formula.latex) })),
+  };
+}
+
 export function splitIntoPageChunks(materialId: string, parsed: ParsedPdfContent): CourseMaterialChunk[] {
   const byPage = new Map<number, string[]>();
   for (const item of parsed.layout ?? []) {
@@ -84,6 +98,7 @@ export async function parseStoredCourseMaterial(input: {
       }
       parsed = payload.data;
     }
+    parsed = sanitizeParsedContent(parsed);
     const extraction: CourseMaterialExtraction = {
       materialId: material.id,
       courseId: course.id,

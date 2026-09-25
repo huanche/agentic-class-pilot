@@ -11,6 +11,7 @@
 # Build and tool output
 **/.next/
 **/__pycache__/
+*.tar
 **/*.pyc
 **/.pytest_cache/
 **/test-results/

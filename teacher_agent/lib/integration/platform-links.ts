@@ -2,10 +2,9 @@
  * Platform navigation adaptation (see PLATFORM-INTEGRATION.md).
  *
  * Product-level "back to platform" targets for the teacher service overview
- * pages. The origin comes exclusively from NEXT_PUBLIC_SAAS_HOST_ORIGIN
- * (set by the launchers: http://localhost:8080 locally, the site origin in
- * the same-domain /teacher reverse-proxy deployment). Business components
- * must not hardcode the platform host.
+ * pages. In the same-domain deployment, use the browser's current origin so
+ * production navigation never depends on a build-time development address.
+ * A configured origin remains available outside the browser.
  *
  * Inlined at build time for production builds: rebuild after changing the
  * environment variable. Pages INSIDE a course workspace keep their own
@@ -13,7 +12,8 @@
  */
 
 export function platformOrigin(): string {
-  return process.env.NEXT_PUBLIC_SAAS_HOST_ORIGIN || 'http://localhost:8080';
+  if (typeof window !== 'undefined') return window.location.origin;
+  return process.env.NEXT_PUBLIC_SAAS_HOST_ORIGIN?.trim() || '';
 }
 
 /** Teacher product portal — the product-level back target for overview pages. */

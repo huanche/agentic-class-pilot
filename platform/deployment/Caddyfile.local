@@ -28,6 +28,9 @@
   handle /mentra-icon.svg {
     reverse_proxy host.docker.internal:3200
   }
+  handle /brand-mark.png {
+    reverse_proxy host.docker.internal:3200
+  }
   handle /mentra-logo.svg {
     reverse_proxy host.docker.internal:3200
   }
@@ -74,6 +77,10 @@
   # Platform uses /api/v1/*; student agent uses /api/session/*.
   handle /api/session/* {
     reverse_proxy host.docker.internal:8000
+  }
+  # Course building is served by the teacher Agent regardless of Referer.
+  handle /api/course-space* {
+    reverse_proxy host.docker.internal:3200
   }
   # Classroom data + media APIs are teacher-agent endpoints used by the
   # embedded player; path-based like above (platform has no /api/classroom*).

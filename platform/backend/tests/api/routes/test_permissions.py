@@ -83,6 +83,24 @@ def test_signup_accepts_student_role(client: TestClient, db: Session) -> None:
     assert r.json()["role"] == "student"
 
 
+def test_signup_accepts_teacher_role(client: TestClient, db: Session) -> None:
+    from tests.utils.verification import insert_verification_code
+
+    email = random_email()
+    insert_verification_code(db, email, "123456")
+    r = client.post(
+        f"{settings.API_V1_STR}/users/signup",
+        json={
+            "email": email,
+            "password": random_lower_string(),
+            "role": "teacher",
+            "code": "123456",
+        },
+    )
+    assert r.status_code == 200
+    assert r.json()["role"] == "teacher"
+
+
 def test_student_cannot_read_unenrolled_course(
     client: TestClient, db: Session
 ) -> None:

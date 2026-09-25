@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm } from 'fs/promises';
 import { tmpdir } from 'os';
 import path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { splitIntoPageChunks } from '@/lib/server/course-material-parser';
+import { sanitizeParsedContent, splitIntoPageChunks } from '@/lib/server/course-material-parser';
 import JSZip from 'jszip';
 import { extractPptxText } from '@/lib/server/pptx-text-extractor';
 
@@ -49,6 +49,18 @@ describe('server course space', () => {
     });
     expect(chunks.map((chunk) => chunk.page)).toEqual([1, 2]);
     expect(chunks[1].text).toContain('[公式] P=UI');
+  });
+
+  it('replaces unpaired PDF surrogates while preserving valid characters', () => {
+    const parsed = sanitizeParsedContent({
+      text: 'a\uD835b\uD835\uDC00c\uDC00',
+      images: [],
+      layout: [{ page: 1, type: 'text', content: 'x\uD835y' }],
+      formulas: [{ page: 1, latex: '\uDC00+1' }],
+    });
+    expect(parsed.text).toBe('a\uFFFDb\uD835\uDC00c\uFFFD');
+    expect(parsed.layout?.[0].content).toBe('x\uFFFDy');
+    expect(parsed.formulas?.[0].latex).toBe('\uFFFD+1');
   });
 
   it('extracts PPTX slide text locally without requiring MinerU', async () => {
