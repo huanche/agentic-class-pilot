@@ -57,6 +57,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && /opt/deepseek-harness/bin/python -c 'import deepseek_harness'
 ENV DEEPSEEK_HARNESS_PYTHON=/opt/deepseek-harness/bin/python
 ENV DEEPSEEK_HARNESS_BRIDGE=/app/scripts/deepseek-harness-bridge.py
+ENV HOME=/app/data XDG_CACHE_HOME=/app/data/.cache
 RUN groupadd --system --gid 1001 nodejs && useradd --system --uid 1001 --gid nodejs --home-dir /app nextjs
 COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
