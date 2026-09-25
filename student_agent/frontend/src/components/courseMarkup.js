@@ -1,7 +1,7 @@
 export const courseMarkup = `
   <section class="view course-browser" id="view-courses" aria-labelledby="courses-title">
     <header class="course-browser__header">
-      <span class="course-browser__brand">AI 学习空间 <span>· 学生端</span></span>
+      <span class="course-browser__brand"><img src="/app/brand-mark.png" alt="" class="course-browser__logo" />AI 学习空间 <span>· 学生端</span></span>
       <span class="course-browser__semester">2026—2027 学年 · 第一学期</span>
     </header>
     <div class="course-browser__intro">

@@ -573,7 +573,7 @@ export default function CourseSpacePage() {
           >
             <ArrowLeft />
           </Button>
-          <img src="/mentra-icon.svg" alt="MENTRA" className="size-9" />
+          <img src="/brand-mark.png" alt="MENTRA" className="size-9" />
           <div className="h-7 w-px bg-slate-200" />
           <div>
             <div className="flex items-center gap-2">

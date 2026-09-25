@@ -46,7 +46,7 @@ function useAdminItems(): Item[] {
   ]
 }
 
-/** Teacher navigation; 课程建设/授课管理 are served by the teacher workspace. */
+/** Teacher navigation; course and classroom pages are served by the teacher workspace. */
 function useTeacherItems(): Item[] {
   const status = usePlatformStatus()
   const courseBuilding = teacherServiceUrl(
@@ -60,7 +60,7 @@ function useTeacherItems(): Item[] {
       ? [
           {
             icon: BookOpenCheck,
-            title: "课程建设",
+            title: "课程中心",
             path: courseBuilding,
             external: true,
             badge: "教师工作区",
@@ -71,7 +71,7 @@ function useTeacherItems(): Item[] {
       ? [
           {
             icon: Presentation,
-            title: "授课管理",
+            title: "课堂管理",
             path: classTeaching,
             external: true,
             badge: "教师工作区",

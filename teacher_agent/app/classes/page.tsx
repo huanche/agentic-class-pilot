@@ -39,7 +39,7 @@ export default function ClassesPage() {
             <Button variant="ghost" size="icon" aria-label="返回管理平台" onClick={() => window.location.assign(platformHomeUrl())}>
               <ArrowLeft className="size-5" />
             </Button>
-            <img src="/mentra-logo.svg" alt="MENTRA" className="h-9 w-auto" />
+            <img src="/brand-mark.png" alt="MENTRA" className="h-9 w-auto" />
             <div>
               <h1 className="text-xl font-semibold">授课 Class</h1>
               <p className="text-xs text-slate-500">显示课程通道已经发布的课程</p>

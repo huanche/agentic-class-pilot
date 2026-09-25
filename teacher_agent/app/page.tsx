@@ -1113,7 +1113,7 @@ function HomePage({
             className="mb-2 flex items-center justify-center"
             aria-label="MENTRA"
           >
-            <img src="/mentra-logo.svg" alt="MENTRA" className="h-16 md:h-24 w-auto" />
+            <img src="/brand-mark.png" alt="MENTRA" className="h-16 md:h-24 w-auto" />
           </motion.div>
         )}
 
@@ -2338,7 +2338,7 @@ export default function Page() {
   return (
     <main className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_25%_15%,rgba(176,0,85,.13),transparent_35%),radial-gradient(circle_at_80%_75%,rgba(59,130,246,.09),transparent_38%),#fcf8fa] px-6 text-slate-900">
       <div className="w-full max-w-3xl rounded-[36px] border border-white/80 bg-white/75 px-8 py-16 text-center shadow-[0_35px_90px_-45px_rgba(98,23,59,.3)] backdrop-blur-xl sm:px-16">
-        <img src="/mentra-logo.svg" alt="MENTRA" className="mx-auto h-24 w-auto sm:h-32" />
+        <img src="/brand-mark.png" alt="MENTRA" className="mx-auto h-24 w-auto sm:h-32" />
         <p className="mt-7 text-sm tracking-wide text-slate-500">
           Multi-agent Education Network for Teaching, Reflection &amp; Assessment
         </p>

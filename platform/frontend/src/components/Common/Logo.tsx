@@ -13,7 +13,7 @@ export function Logo({
   className,
   asLink = true,
 }: LogoProps) {
-  const mark = <span className="grid size-9 place-items-center rounded-xl bg-[#B00055] text-lg font-bold text-white shadow-lg shadow-[#B00055]/25">A</span>
+  const mark = <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-white p-1 shadow-sm"><img src="/brand-mark.png" alt="" className="size-full object-contain" /></span>
   const content = variant === "icon" ? mark : (
     <span className={cn("inline-flex items-center gap-3", className)}>
       {mark}

@@ -188,7 +188,7 @@ export default function CourseOverviewPage() {
           >
             <ArrowLeft />
           </Button>
-          <img src="/mentra-icon.svg" alt="MENTRA" className="size-10" />
+          <img src="/brand-mark.png" alt="MENTRA" className="size-10" />
           <div>
             <h1 className="text-lg font-semibold">课程建设概览</h1>
             <p className="text-xs text-muted-foreground">先检查当前状态，再进入教师课程工作区</p>

@@ -264,9 +264,9 @@ def register_user(session: SessionDep, user_in: UserRegister) -> Any:
             detail="该邮箱已被注册",
         )
     _verify_registration_code(session, str(user_in.email), user_in.code)
-    # Public registration creates students only. Teacher privileges are granted
-    # through an administrator-managed workflow, never by a browser field.
-    user_create = UserCreate.model_validate(user_in, update={"role": "student"})
+    # The verified signup form lets the user choose a student or teacher account.
+    # UserRegister restricts the value to those two roles.
+    user_create = UserCreate.model_validate(user_in, update={"role": user_in.role})
     user = crud.create_user(session=session, user_create=user_create)
     return user
 

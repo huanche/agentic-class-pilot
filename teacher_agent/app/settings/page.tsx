@@ -5,8 +5,7 @@ import { ArrowLeft, Settings } from 'lucide-react';
 
 import { SettingsDialog } from '@/components/settings';
 import { Button } from '@/components/ui/button';
-
-const platformHome = process.env.NEXT_PUBLIC_PLATFORM_PUBLIC_URL || 'http://localhost:8088';
+import { platformHomeUrl } from '@/lib/integration/platform-links';
 
 export default function ModelSettingsPage() {
   const [open, setOpen] = useState(true);
@@ -22,7 +21,7 @@ export default function ModelSettingsPage() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => window.location.assign(platformHome)}>
+          <Button variant="outline" onClick={() => window.location.assign(platformHomeUrl())}>
             <ArrowLeft className="mr-2 size-4" />返回平台
           </Button>
           <Button onClick={() => setOpen(true)}>

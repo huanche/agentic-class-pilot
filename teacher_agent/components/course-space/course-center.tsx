@@ -34,7 +34,7 @@ export function CourseCenter() {
 
   return <main className="min-h-screen bg-[radial-gradient(circle_at_22%_5%,rgba(59,130,246,0.12),transparent_30%),radial-gradient(circle_at_80%_90%,rgba(176,0,85,0.10),transparent_34%),#f7f9fc] text-slate-900">
     <header className="flex items-center justify-between border-b border-white/80 bg-white/75 px-7 py-4 backdrop-blur-xl">
-      <div className="flex items-center gap-3"><Button variant="ghost" size="icon" className="rounded-full" aria-label="返回管理平台" onClick={() => window.location.assign(platformHomeUrl())}><ArrowLeft/></Button><img src="/mentra-icon.svg" alt="MENTRA" className="size-10"/><div><h1 className="text-xl font-semibold">课程中心</h1><p className="text-xs text-muted-foreground">管理完整课程体系与教师智能体工作区</p></div></div>
+      <div className="flex items-center gap-3"><Button variant="ghost" size="icon" className="rounded-full" aria-label="返回管理平台" onClick={() => window.location.assign(platformHomeUrl())}><ArrowLeft/></Button><img src="/brand-mark.png" alt="MENTRA" className="size-10"/><div><h1 className="text-xl font-semibold">课程中心</h1><p className="text-xs text-muted-foreground">管理完整课程体系与教师智能体工作区</p></div></div>
       <div className="rounded-full border bg-white px-4 py-2 text-xs text-muted-foreground">默认教师 · {courses.length} 门课程</div>
     </header>
     <section className="mx-auto max-w-[1440px] px-7 py-8">
