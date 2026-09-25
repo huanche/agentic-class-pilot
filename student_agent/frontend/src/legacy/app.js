@@ -35,16 +35,17 @@ import { createStage as createDoneStage } from "./stage-done.js";
    上一轮的状态接不上。所以持久化。 */
 var SESSION_KEY = "ai-learn.sessionId.";
 
-function loadSessionId(lessonId) {
+function loadSessionId(courseId, lessonId) {
+  var storageKey = SESSION_KEY + courseId + "." + lessonId;
   try {
-    var saved = localStorage.getItem(SESSION_KEY + lessonId);
+    var saved = localStorage.getItem(storageKey);
     if (saved) return saved;
   } catch (e) { /* 隐私模式下不可用 */ }
 
   var fresh = (window.crypto && crypto.randomUUID)
     ? crypto.randomUUID()
     : "s-" + Date.now() + "-" + Math.random().toString(16).slice(2);
-  try { localStorage.setItem(SESSION_KEY + lessonId, fresh); } catch (e) { /* 忽略 */ }
+  try { localStorage.setItem(storageKey, fresh); } catch (e) { /* 忽略 */ }
   return fresh;
 }
 
@@ -232,7 +233,7 @@ function selectLesson(course, item) {
   if (currentLessonId !== item.lessonId || currentCourseId !== course.courseId) {
     currentCourseId = course.courseId;
     currentLessonId = item.lessonId;
-    sessionId = loadSessionId(item.lessonId);
+    sessionId = loadSessionId(course.courseId, item.lessonId);
     lesson = null;
     hostPhase = null;
     /* 换了课时就是换了一个后端会话，转录和游标都得从头来 */
@@ -602,7 +603,8 @@ function openLessonRoute() {
 
   /* 跟后端握手。/start 是幂等的：重复进同一节课不会重开，
      已经结束的会话也会把状态原样读回来，所以每次进课堂都可以放心调。 */
-  startSession({ sessionId: sessionId, lessonId: requestedLessonId, timeScale: timeScale })
+  var started = startSession({ sessionId: sessionId, lessonId: requestedLessonId, timeScale: timeScale });
+  started
     .then(function () {
       if (currentLessonId !== requestedLessonId) return;
       startPolling();
@@ -614,7 +616,11 @@ function openLessonRoute() {
 
   if (lesson) return;   /* 课时信息已经有了，不用再取 */
 
-  fetchLesson(requestedLessonId, sessionId).then(function (data) {
+  /* 新课时的会话必须先由 /start 建好，再按该会话读取课时。并发请求会
+     偶发让 /lesson 先到达，表现为课程内容串课或首次进入 404。 */
+  started.then(function () {
+    return fetchLesson(requestedLessonId, sessionId);
+  }).then(function (data) {
     if (currentLessonId !== requestedLessonId) return;
     lesson = data;
     classStage.renderLesson(data);

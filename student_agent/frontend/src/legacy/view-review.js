@@ -16,7 +16,7 @@
    ═══════════════════════════════════════════════════════════ */
 
 import { $, el, renderInline } from "./ui.js";
-import { fetchLessonReport, STAR_LABELS, REPORT_WEAK_STARS } from "./api.js";
+import { fetchLesson, fetchLessonReport, STAR_LABELS, REPORT_WEAK_STARS } from "./api.js";
 import { labelOf } from "./phases.js";
 
 export function createView(ctx) {
@@ -207,6 +207,25 @@ export function createView(ctx) {
 
   return {
     mount: function () {
+      var header = $("view-review").querySelector(".view__header");
+      var replay = el("button", "btn btn--ghost", "回看课堂视频");
+      replay.type = "button";
+      replay.id = "review-replay-video";
+      replay.addEventListener("click", function () {
+        replay.disabled = true;
+        replay.textContent = "正在打开播放器…";
+        fetchLesson(ctx.lessonId, ctx.sessionId).then(function (lesson) {
+          if (!lesson.playerUrl) throw new Error("本课时没有可回看的已发布课堂");
+          var url = new URL(lesson.playerUrl, window.location.href);
+          if (lesson.playbackToken) url.searchParams.set("playback_token", lesson.playbackToken);
+          window.location.assign(url.toString());
+        }).catch(function (error) {
+          replay.disabled = false;
+          replay.textContent = "回看课堂视频";
+          ctx.toast("无法打开回看视频：" + error.message);
+        });
+      });
+      header.appendChild(replay);
       $("report-retry").addEventListener("click", function () {
         loadedLessonId = null;
         loadedReport = null;

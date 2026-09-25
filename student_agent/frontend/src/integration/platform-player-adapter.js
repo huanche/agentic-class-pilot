@@ -17,7 +17,11 @@ export const platformPlayerAdapter = {
 
     const playerOrigin = new URL(url, window.location.href).origin;
     const iframe = document.createElement("iframe");
-    iframe.src = url;
+    const playerUrl = new URL(url, window.location.href);
+    if (context.lesson.playbackToken) {
+      playerUrl.searchParams.set("playback_token", context.lesson.playbackToken);
+    }
+    iframe.src = playerUrl.toString();
     iframe.title = "课程播放器";
     iframe.allow = "autoplay; fullscreen";
     iframe.referrerPolicy = "same-origin";

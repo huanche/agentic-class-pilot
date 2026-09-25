@@ -101,6 +101,18 @@ def _published_classroom(session: SessionDep, course_id: uuid.UUID) -> str | Non
     return row[0] if row else None
 
 
+def is_published_classroom(session: SessionDep, course_id: uuid.UUID,
+                           classroom_id: str) -> bool:
+    """Return whether a classroom is any published lesson of the course."""
+    row = session.execute(
+        text("SELECT 1 FROM teacher.mentra_course_artifacts a "
+             "JOIN teacher_course_link l ON l.external_course_id = a.course_id "
+             "WHERE l.course_id=:course AND a.payload->>'classroomId'=:classroom "
+             "AND a.payload->>'classPublicationId' IS NOT NULL LIMIT 1"),
+        {"course": course_id, "classroom": classroom_id}).first()
+    return row is not None
+
+
 class StudentAuthorization(BaseModel):
     cookie: str | None = None
     launch_token: str | None = None
@@ -226,7 +238,7 @@ def _published_lessons(session: SessionDep, course_id: uuid.UUID,
              "a.payload->>'classPublishedAt' "
              "FROM teacher.mentra_course_artifacts a "
              "JOIN teacher_course_link l ON l.external_course_id = a.course_id "
-             "WHERE l.course_id=:id AND a.status='published' "
+             "WHERE l.course_id=:id "
              "AND a.payload->>'classPublicationId' IS NOT NULL "
              "AND a.payload->>'classroomId' IS NOT NULL "
              "ORDER BY (a.payload->>'classPublishedAt')::bigint ASC NULLS LAST, a.created_at ASC"),

@@ -41,6 +41,14 @@ class CourseAdapterTests(unittest.TestCase):
         self.assertEqual(context.lessons[0].segments[0].completion_rule, "discussed")
         self.assertIn("心理沙盘", context.lessons[0].segments[0].content)
 
+    def test_playback_grant_is_preserved_by_adapter(self):
+        payload = json.loads(json.dumps(self.payload))
+        payload["classroom"]["playbackToken"] = "signed-playback-grant"
+        context = self.adapter.from_platform_payload(payload)
+        self.assertEqual(context.classroom.playback_token, "signed-playback-grant")
+        self.assertEqual(context.lessons[0].classroom.playback_token,
+                         "signed-playback-grant")
+
     def test_unknown_schema_version_rejected(self):
         payload = dict(self.payload, schemaVersion=99)
         with self.assertRaises(self.adapter.ContextContractError):

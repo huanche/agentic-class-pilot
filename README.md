@@ -157,6 +157,8 @@ Get-NetTCPConnection -State Listen -LocalPort 8088,8080,3200,8000
 
 更详细的子项目说明参见：
 
+- `docs/database-architecture.md`
+- `docs/database-er-diagram.md`
 - `platform/docs/integration-log.md`
 - `teacher_agent/PLATFORM-INTEGRATION.md`
 - `teacher_agent/README-zh.md`

@@ -43,6 +43,7 @@ class ClassroomScene(BaseModel):
 class ClassroomRef(BaseModel):
     id: str
     player_url: str = ""
+    playback_token: Optional[str] = None
     scenes: List[ClassroomScene] = Field(default_factory=list)
 
 

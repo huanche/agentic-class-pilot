@@ -82,7 +82,12 @@ def _classroom(raw: Optional[Dict[str, Any]]) -> Optional[ClassroomRef]:
             actions=actions,
         ))
     scenes.sort(key=lambda item: item.order)
-    return ClassroomRef(id=str(raw["id"]), player_url=str(raw.get("playerUrl") or ""), scenes=scenes)
+    return ClassroomRef(
+        id=str(raw["id"]),
+        player_url=str(raw.get("playerUrl") or ""),
+        playback_token=(str(raw["playbackToken"]) if raw.get("playbackToken") else None),
+        scenes=scenes,
+    )
 
 
 def _lessons(context: CourseLearningContext) -> List[Lesson]:

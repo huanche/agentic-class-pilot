@@ -842,6 +842,7 @@ def session_lesson(lessonId: str = "", sessionId: str = "") -> dict:
                 continue
         for lesson in context.lessons:
             if not lessonId or lesson.id == lessonId:
+                classroom = lesson.classroom or context.classroom
                 return {
                     "lessonId": lesson.id,
                     "course": context.course_title,
@@ -857,8 +858,9 @@ def session_lesson(lessonId: str = "", sessionId: str = "") -> dict:
                          "startSeconds": 0, "endSeconds": 0}
                         for seg in lesson.segments
                     ],
-                    "classroomId": context.classroom.id if context.classroom else None,
-                    "playerUrl": context.classroom.player_url if context.classroom else "",
+                    "classroomId": classroom.id if classroom else None,
+                    "playerUrl": classroom.player_url if classroom else "",
+                    "playbackToken": classroom.playback_token if classroom else None,
                 }
     raise HTTPException(status_code=404, detail="未找到该课时的学习上下文（请从平台进入）")
 

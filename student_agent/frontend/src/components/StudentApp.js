@@ -27,35 +27,30 @@ export default function StudentApp() {
       try { sessionStorage.setItem("__launch_token", token); } catch (e) {}
       url.searchParams.delete("launch_token");
       window.history.replaceState({}, "", url);
-      // Register the platform player adapter so the classroom video area
-      // embeds the teacher-side player instead of the placeholder.
-      import("../platform/playerAdapter.js").catch(function (error) {
-        console.error("播放器适配层加载失败", error);
-      });
     }
 
-    import("../legacy/app.js").then(() => {
+    // Resolve and pin the platform course before the legacy router reads its
+    // catalog. Otherwise it may cache the session id from a previously opened
+    // course and briefly render that course's lessons.
+    const prepareCourse = token
+      ? import("../legacy/api.js").then((api) =>
+          api.startSession({ timeScale: 1 }).then((result) => {
+            try { sessionStorage.setItem("__studentSessionId", result.session_id); } catch (e) {}
+            return api.fetchStudentCourses(result.session_id);
+          }).then((courses) => {
+            const course = courses && courses[0];
+            if (course && window.location.hash === "") {
+              window.location.hash = `/course/${encodeURIComponent(course.courseId)}`;
+            }
+          })
+        ).catch((error) => {
+          console.error("平台课程初始化失败", error);
+        })
+      : Promise.resolve();
+
+    prepareCourse.then(() => import("../legacy/app.js")).then(() => {
       if (!active) return;
       setReady(true);
-      // Platform deep link: establish the trusted course context, then show
-      // that course's published lesson list.  A classroom is entered only
-      // after the student explicitly selects a lesson.
-      if (token && window.location.hash === "") {
-        import("../legacy/api.js").then((api) => {
-          // Create the session FIRST (the learning context only exists after
-          // start), then navigate to the class view using the session's course.
-          return api.startSession({ timeScale: 1 }).then((result) => {
-            try { sessionStorage.setItem("__studentSessionId", result.session_id); } catch (e) {}
-            return api.fetchStudentCourses(result.session_id).then((courses) => {
-              const course = courses && courses[0];
-              if (!course) return;
-              window.location.hash = `/course/${encodeURIComponent(course.courseId)}`;
-            });
-          });
-        }).catch((error) => {
-          console.error("平台课程初始化失败", error);
-        });
-      }
     }).catch((error) => {
       console.error("学生端初始化失败", error);
     });
