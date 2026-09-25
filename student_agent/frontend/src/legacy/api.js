@@ -3,7 +3,9 @@
 var API_BASE_URL = (process.env.NEXT_PUBLIC_API_BASE_URL || "").replace(/\/$/, "");
 
 function request(method, url, body) {
-  var options = { method: method, headers: {} };
+  // credentials: "include" —— 同源托管时行为不变；NEXT_PUBLIC_API_BASE_URL 指向
+  // 独立后端（跨域）时也带上会话 Cookie（后端需配 AGENT_CORS_ORIGIN_REGEX 放行）。
+  var options = { method: method, headers: {}, credentials: "include" };
   if (body !== undefined) {
     options.headers["Content-Type"] = "application/json";
     options.body = JSON.stringify(body);

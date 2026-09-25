@@ -71,9 +71,12 @@ SESSIONS: dict[str, dict] = {}
 _REGISTRY_LOCK = threading.Lock()
 
 app = FastAPI(title="主动引导智能体 · 会话层")
+# CORS：默认仅放行本机调试来源；跨域部署时设 AGENT_CORS_ORIGIN_REGEX 为真实来源
+# （正则，如 https://(www\.)?example\.com$，多个用 | 连接）。网关同源反代不经过此处。
+CORS_ORIGIN_REGEX = os.environ.get("AGENT_CORS_ORIGIN_REGEX") or r"https?://(localhost|127\.0\.0\.1)(:\d+)?"
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?",
+    allow_origin_regex=CORS_ORIGIN_REGEX,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -894,7 +897,9 @@ def _set_session_cookie(response: Response, student_id: str) -> None:
         STUDENT_COOKIE,
         _sign_student(student_id),
         httponly=True,
-        samesite="lax",
+        # 跨域/跨站 iframe 部署需 AGENT_COOKIE_SAMESITE=none（此时浏览器还要求
+        # Secure，即同时设 AGENT_COOKIE_SECURE=1），否则登录态 Cookie 不会随请求带上。
+        samesite=os.environ.get("AGENT_COOKIE_SAMESITE", "lax"),
         path="/",
         max_age=60 * 60 * 12,
         secure=os.environ.get("AGENT_COOKIE_SECURE") == "1",
