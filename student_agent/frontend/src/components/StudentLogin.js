@@ -37,7 +37,7 @@ async function postJson(url, body) {
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    credentials: "same-origin",
+    credentials: "include",
     body: JSON.stringify(body),
   });
   if (!res.ok) {
@@ -65,7 +65,7 @@ export default function StudentLogin({ onDone }) {
 
   useEffect(() => {
     let alive = true;
-    fetch("/api/student/session", { credentials: "same-origin" })
+    fetch("/api/student/session", { credentials: "include" })
       .then((res) => (res.ok ? res.json() : Promise.reject(new Error("HTTP " + res.status))))
       .then((data) => {
         if (!alive) return;

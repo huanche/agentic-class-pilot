@@ -29,7 +29,7 @@ export default function StudentEnroll({ required = false, onDone, onSkip }) {
       const res = await fetch("/api/student/join", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        credentials: "same-origin",
+        credentials: "include",
         body: JSON.stringify({ code: value }),
       });
       if (!res.ok) {
