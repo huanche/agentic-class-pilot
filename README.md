@@ -41,7 +41,7 @@
 │   └── segments/seg-XXX.json    #   课程片段（order 定顺序，绑定 KP）
 │
 ├── stages/                      # 阶段内容层（可空壳，留空不影响运行）
-│   ├── recap_discussion/        #   复述：questions.md / rubric.md / prompt.md
+│   ├── recap_discussion/        #   复述：prompt.md（问题/判分由知识点字段与通用规则提供）
 │   ├── deep_inquiry/            #   深挖：questions.md / rubric.md / prompt.md
 │   └── class_discussion/        #   讨论：questions.md / rubric.md / prompt.md
 │
@@ -269,7 +269,7 @@ lesson_elapsed_minutes = now - lesson_started_at    # 本课已花分钟
 | 老师目标、核心难点（检验问题）、易混淆点 | `runtime/TMISSION.md` | 内容已有 |
 | 本课先修/新内容/任务/成功证据 | `runtime/LESSON-CONTENT.md` | 内容已有 |
 | 每个片段讲什么 | `lesson-data/segments/seg-XXX.json` | 已有 |
-| 各阶段的问题与评判标准 | `stages/<阶段>/questions.md` · `rubric.md` | **暂不填（按需）** |
+| 各阶段的问题与评判标准 | `stages/<阶段>/questions.md` · `rubric.md`（复述阶段无此两项） | **暂不填（按需）** |
 
 ### 3. 交付给编排器
 
@@ -287,6 +287,10 @@ lesson_elapsed_minutes = now - lesson_started_at    # 本课已花分钟
 | `stages/<id>/rubric.md` 空 | 只用 `MASTERY-STAR-RULES.md` 的通用标准 |
 | `stages/<id>/prompt.md` 空 | 用内置默认提示词 |
 | `class_discussion` 无内容 | AI 提示"请老师主导"+ 计时，然后切幕 |
+
+> 复述阶段（`recap_discussion`）已删去 `questions.md` / `rubric.md`，只剩 `prompt.md`：
+> 问题取 `TMISSION.md` 检验问题（空则回落 `KNOWLEDGE-BASE.md` 的 `检测问题`），
+> 判分只用 `MASTERY-STAR-RULES.md` 通用标准。
 
 所以**整条链路现在就是可运行的**，只是问法朴素。填上 `stages/` 后质量自然提升，不需要改代码。
 

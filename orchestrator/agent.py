@@ -8,7 +8,7 @@ judge_mastery / judge_advance / advance_stage / write_state / format_reply
 - `now` 由会话层注入 state，图内任何节点不调 datetime.now() → 可单测、可回放。
 - 判断写进 state（target_phase），路由函数只读不判。
 - `stage_snapshots` 用 Annotated[list, operator.add] 累加，不覆盖。
-- 空壳降级：stages/*/questions.md 为空 → TMISSION 检验问题 → KNOWLEDGE-BASE 检测问题。
+- 空壳降级：复述阶段问题取 TMISSION 检验问题 → KNOWLEDGE-BASE 检测问题；探究阶段另读 stages/deep_inquiry/questions.md。
 
 LLM 接入（可选）：
     设置环境变量 AGENT_LLM_BASE_URL / AGENT_LLM_API_KEY / AGENT_LLM_MODEL
@@ -250,8 +250,10 @@ def judge_state(hits: int, total: int) -> str:
 
 
 # ═══════════════════════════════════════════════════════════════
-# 三级问题兜底链：
-#   stages/<phase>/questions.md → runtime/TMISSION.md 检验问题 → KNOWLEDGE-BASE 检测问题
+# 复述阶段问题兜底链：
+#   runtime/TMISSION.md 检验问题 → KNOWLEDGE-BASE 检测问题
+#   （复述阶段题库 questions.md 已删，不再读阶段题库；
+#     探究阶段仍读 stages/deep_inquiry/questions.md）
 # ═══════════════════════════════════════════════════════════════
 
 def _read(path: str) -> str:
@@ -266,7 +268,7 @@ def _strip_code_fences(text: str) -> str:
 
 
 def _parse_stage_questions(phase: str) -> list[dict]:
-    """第 1 级：stages/<phase>/questions.md 里老师填的问题（剥掉代码块示例）。"""
+    """第 1 级：stages/<phase>/questions.md 里老师填的问题（剥掉代码块示例，现仅探究阶段用）。"""
     text = _read(f"stages/{phase}/questions.md")
     if not text:
         return []
@@ -447,9 +449,8 @@ def build_question_queue(
         return _lesson_question_bank(phase, lesson_id)
 
     if phase == "recap_discussion":
-        q = _parse_stage_questions("recap_discussion")
-        if q:
-            return q
+        # 复述阶段不再读阶段题库（questions.md 已删），
+        # 问题直接取 TMISSION 检验问题 → KNOWLEDGE-BASE 检测问题。
         q = _parse_tmission_questions()
         if q:
             return q
@@ -549,7 +550,7 @@ class ClassroomState(TypedDict):
     current_target: str | None
     current_question: str | None
     pending_question: dict | None     # 当前等待学生回答的问题 {kp_id, question, source}
-    question_queue: list[dict]        # 本阶段的问题队列（三级兜底链产出）
+    question_queue: list[dict]        # 本阶段的问题队列（兜底链产出）
     q_index: int
     attempts: int
     miss_streak: int                  # 复述阶段连续未命中次数（有证据表却没命中才算）
@@ -596,6 +597,7 @@ class ClassroomState(TypedDict):
 LESSONS_DIR = ROOT / "lesson-data" / "lessons"
 LEGACY_PLAN_PATH = ROOT / "lesson-data" / "lesson-plan.json"
 SEGMENTS_DIR = ROOT / "lesson-data" / "segments"
+LESSON_DATA_DIR = ROOT / "lesson-data"
 
 # lesson_id 会被拼进文件名，必须白名单。只放行字母数字和 . _ -，
 # 且首字符是字母数字 —— 拦住 ../、绝对路径、盘符，以及 Windows 保留名
@@ -634,6 +636,14 @@ def _legacy_plan() -> dict | None:
     return _read_json(LEGACY_PLAN_PATH)
 
 
+def _scan_lesson_plan_path(lesson_id: str) -> Path | None:
+    """扫 lesson-data/<course>/<lesson>/lesson-plan.json（ingest 产出），找 lesson_id 命中那份。"""
+    for path in sorted(LESSON_DATA_DIR.glob("*/*/lesson-plan.json")):
+        if (_read_json(path) or {}).get("lesson_id") == lesson_id:
+            return path
+    return None
+
+
 def is_uploaded_lesson(lesson_id: str) -> bool:
     """是否老师上传的新式课时（区别于旧版单课时文件）。"""
     try:
@@ -644,7 +654,7 @@ def is_uploaded_lesson(lesson_id: str) -> bool:
 
 
 def list_lesson_ids() -> list[str]:
-    """全部可用课时 id：老师上传的 + 旧版那一节。"""
+    """全部可用课时 id：老师上传的 + ingest 产出的 lesson-plan + 旧版那一节。"""
     ids: list[str] = []
     if (legacy := _legacy_plan()) and legacy.get("lesson_id"):
         ids.append(legacy["lesson_id"])
@@ -652,6 +662,11 @@ def list_lesson_ids() -> list[str]:
         for path in sorted(LESSONS_DIR.glob("*.json")):
             if path.stem not in ids:
                 ids.append(path.stem)
+    if LESSON_DATA_DIR.is_dir():
+        for path in sorted(LESSON_DATA_DIR.glob("*/*/lesson-plan.json")):
+            doc = _read_json(path) or {}
+            if doc.get("lesson_id") and doc["lesson_id"] not in ids:
+                ids.append(doc["lesson_id"])
     return ids
 
 
@@ -674,6 +689,12 @@ def load_lesson(lesson_id: str) -> tuple[dict, list[dict]] | None:
         if not doc:
             return None
         return doc, list(doc.get("segments") or [])
+
+    # ingest 产出的 per-课时 lesson-plan（lesson-data/<course>/<lesson>/lesson-plan.json）
+    if (scanned_path := _scan_lesson_plan_path(lesson_id)) and (
+        scanned := _read_json(scanned_path)
+    ):
+        return scanned, list(scanned.get("segments") or [])
 
     # 旧版：只认 lesson-plan.json 自己声明的那个 lesson_id
     plan = _legacy_plan()
@@ -710,6 +731,8 @@ def lesson_source_label(lesson_id: str) -> str:
     """给接口返回用：这节课的定义存在哪。"""
     if is_uploaded_lesson(lesson_id):
         return f"lesson-data/lessons/{lesson_id}.json"
+    if (path := _scan_lesson_plan_path(lesson_id)):
+        return str(path.relative_to(ROOT)).replace("\\", "/")
     if (plan := _legacy_plan()) and plan.get("lesson_id") == lesson_id:
         return "lesson-data/lesson-plan.json（旧版单课时）"
     return "未找到"
@@ -934,7 +957,7 @@ def _current_segment_text(state: ClassroomState) -> str:
 
 def load_context(state: ClassroomState) -> dict:
     """分层装配上下文（规范第 4 节）。空壳阶段注入占位提示，不报错；
-    进入复述/探究阶段时按三级兜底链组装问题队列。"""
+    进入复述/探究阶段时按兜底链组装问题队列。"""
     phase = state.get("host_phase")
     parts: list[str] = []
 
@@ -960,8 +983,15 @@ def load_context(state: ClassroomState) -> dict:
         if seg_text:
             parts.append("[当前段落]\n" + seg_text)
     # 阶段层（只有复述/探究/讨论三幕有；空壳 → 占位提示）
+    # 复述阶段只读 prompt.md（questions.md / rubric.md 已删）；
+    # 探究 / 讨论阶段仍读 questions.md + prompt.md + rubric.md。
     if phase in ("recap_discussion", "deep_inquiry", "class_discussion"):
-        for f in ("questions.md", "prompt.md", "rubric.md"):
+        stage_files = (
+            ("prompt.md",)
+            if phase == "recap_discussion"
+            else ("questions.md", "prompt.md", "rubric.md")
+        )
+        for f in stage_files:
             text = _read(f"stages/{phase}/{f}")
             parts.append(f"[{f}]\n" + (text.strip() or "[本阶段内容未配置]"))
     # 档案层

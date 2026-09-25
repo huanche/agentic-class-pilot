@@ -27,6 +27,10 @@ lesson-plan.json   ──→   runtime/DIALOGUE-LOG.md  ──→  每轮读 →
 | **幕里问什么** | `stages/<stage_id>/questions.md` | 老师（可空壳） |
 | **幕的及格线** | `stages/<stage_id>/rubric.md` | 老师（可空壳） |
 
+> 复述阶段（`recap_discussion`）例外：删去 `questions.md` / `rubric.md`，只保留
+> `prompt.md`。「问什么」由 `TMISSION.md` 检验问题 → `KNOWLEDGE-BASE.md` 检测问题
+> 提供，「及格线」由 `MASTERY-STAR-RULES.md` 通用标准提供。
+
 ---
 
 ## 2. 状态 Schema（LangGraph `State`）
@@ -144,7 +148,7 @@ class ClassroomState(TypedDict):
 | **规则层** | `rules/KNOWLEDGE-BASE.md` 目录 + `rules/interaction/MASTERY-STAR-RULES.md` | 每轮 |
 | **计划层** | `lesson-data/lesson-plan.json`（仅当前阶段的配置） | 每轮 |
 | **课堂层** | `runtime/DIALOGUE-LOG.md` + 当前 `segments/seg-XXX.json` + 该段绑定的 KP 全文 | 每轮 |
-| **阶段层** | `stages/<当前阶段>/questions.md` + `prompt.md` + `rubric.md` | 仅当前阶段 |
+| **阶段层** | `stages/<当前阶段>/questions.md` + `prompt.md` + `rubric.md`（复述阶段仅 `prompt.md`） | 仅当前阶段 |
 | **历史层** | `runtime/data/dialogue-log.json` 的相关片段 | 按需召回 |
 | **档案层** | `mastery-state.json` / `mastery-history.json` | 仅判星级时 |
 
@@ -154,7 +158,7 @@ class ClassroomState(TypedDict):
 | --- | --- |
 | `intro` | （无） |
 | `guided_learning` | （无，用 segment 的 `content`） |
-| `recap_discussion` | `stages/recap_discussion/` |
+| `recap_discussion` | `stages/recap_discussion/`（仅 `prompt.md`） |
 | `deep_inquiry` | `stages/deep_inquiry/` |
 | `class_discussion` | `stages/class_discussion/` |
 | `ending` | （无） |
@@ -292,8 +296,8 @@ load_plan ──► tick ──► load_context ──► classify_turn
 
 | 缺失的东西 | 降级行为 |
 | --- | --- |
-| `stages/<id>/questions.md` 为空 | 复述/探究阶段改用 `rules/KNOWLEDGE-BASE.md` 的 `检测问题` 提问 |
-| `stages/<id>/rubric.md` 为空 | 判星级只用 `MASTERY-STAR-RULES.md` 的通用标准 |
+| `stages/<id>/questions.md` 为空（复述阶段已无此文件） | 复述取 `runtime/TMISSION.md` 检验问题 → `rules/KNOWLEDGE-BASE.md` 的 `检测问题`；探究另有兜底 |
+| `stages/<id>/rubric.md` 为空（复述阶段已无此文件） | 判星级只用 `MASTERY-STAR-RULES.md` 的通用标准 |
 | `stages/<id>/prompt.md` 为空 | 使用内置默认提示词（见下） |
 | `class_discussion` 无内容 | AI 输出提示"进入全班讨论，请老师主导"，然后按 `minutes` 计时，到点切幕 |
 
