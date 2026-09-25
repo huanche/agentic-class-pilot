@@ -112,7 +112,7 @@ def main() -> int:
 
     import uvicorn
 
-    uvicorn.run("apps.server:app", host=a.host, port=a.port, log_level="warning")
+    uvicorn.run("apps.server:app", host=a.host, port=a.port, log_level="info")
     return 0
 
 

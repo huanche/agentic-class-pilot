@@ -29,3 +29,6 @@
 .idea/
 .DS_Store
 Thumbs.db
+# 学生端运行时对话日志（会话数据，不入库）
+**/runtime/DIALOGUE-LOG.md
+**/runtime/data/
