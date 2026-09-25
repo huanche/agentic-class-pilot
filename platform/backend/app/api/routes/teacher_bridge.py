@@ -15,7 +15,7 @@ from sqlalchemy import text
 from app.api.deps import CurrentUser, SessionDep, TeacherUser
 from app.core.config import settings
 from app.models import Course
-from app.api.routes.student_bridge import _published_classroom
+from app.api.routes.student_bridge import is_published_classroom
 from app.services.browser_sessions import user_for_cookie
 from app.services.course_access import get_accessible_course, get_owned_course
 
@@ -167,7 +167,8 @@ def _authorize_teacher_request(body: TeacherAuthorization, session: SessionDep,
                 text("SELECT 1 FROM enrollment WHERE course_id=:course AND student_id=:student"),
                 {"course": platform_course_id, "student": user.id},
             ).first()
-            if not enrolled or _published_classroom(session, platform_course_id) != classroom_id:
+            if not enrolled or not is_published_classroom(
+                    session, platform_course_id, classroom_id):
                 raise HTTPException(403, "Student may only view an enrolled published classroom")
             return {"userId": str(user.id), "role": user.role, "isAdmin": False}
     if user.role != "teacher" and not user.is_superuser:
@@ -338,4 +339,3 @@ def teacher_course_members(
             for row in rows
         ],
     }
-
