@@ -26,7 +26,10 @@ export function createStage(ctx) {
     var stopTyping = showTyping(log);
     sendMessage(ctx.sessionId, answer).then(function (res) {
       stopTyping();
-      if (res.message.text) appendChatMessage(log, "ai", res.message.text);
+      /* 轮询链路可能已投递同一条回复（replySeenByPoll 按 seq 判断），只渲染一次 */
+      if (res.message.text && !ctx.replySeenByPoll(res)) {
+        appendChatMessage(log, "ai", res.message.text);
+      }
       ctx.applyServerTurn(res);
       if (res.hostPhase === "deep_inquiry") actions.hidden = false;
     }).catch(function (err) {
@@ -59,7 +62,9 @@ export function createStage(ctx) {
       nextBtn.addEventListener("click", function () {
         nextBtn.disabled = true;
         advanceStage(ctx.sessionId).then(function (res) {
-          if (res.message.text) appendChatMessage(log, "ai", res.message.text);
+          if (res.message.text && !ctx.replySeenByPoll(res)) {
+            appendChatMessage(log, "ai", res.message.text);
+          }
           ctx.applyServerTurn(res);
           if (ctx.getPhase() === "deep_inquiry") nextBtn.disabled = false;
         }).catch(function (err) {

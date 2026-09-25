@@ -41,8 +41,11 @@ export function createStage(ctx) {
     sendMessage(ctx.sessionId, text)
       .then(function (res) {
         stopTyping();
-        // 回复里带的就是反馈或下一个问题，继续留在对话框里
-        if (res.message.text) appendChatMessage(log, "ai", res.message.text);
+        // 回复里带的就是反馈或下一个问题，继续留在对话框里。
+        // 轮询链路可能已投递同一条回复（replySeenByPoll 按 seq 判断），只渲染一次
+        if (res.message.text && !ctx.replySeenByPoll(res)) {
+          appendChatMessage(log, "ai", res.message.text);
+        }
         ctx.applyServerTurn(res);
       })
       .catch(function (err) {

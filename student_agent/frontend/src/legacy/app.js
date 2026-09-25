@@ -330,6 +330,12 @@ function ctxFor() {
     getPhase: function () { return hostPhase; },
     /* 后端每轮返回后统一交给这里 —— 「完全跟随」的落点 */
     applyServerTurn: applyServerTurn,
+    /* POST 响应里的回复是否已被轮询链路投递过。回复是本轮最后一条消息，
+       seq = total-1；轮询若已带到它，messageCursor 就已越过该 seq。
+       与 pollSession 的 seq 过滤配对，堵住「POST 响应 vs 在飞轮询」双投递。 */
+    replySeenByPoll: function (res) {
+      return typeof res.total === "number" && res.total - 1 < messageCursor;
+    },
     /* 各阶段模块更新页头状态（视频这类子状态用） */
     setStatus: setStatus,
     /* 课堂内部的局部切换（对话 ⇄ 视频），不经后端 */
@@ -407,8 +413,14 @@ function pollSession() {
     var state = values[0];
     var feed = values[1];
     applyServerTurn(state);
-    (feed.messages || []).forEach(deliverServerMessage);
-    messageCursor = feed.total || messageCursor;
+    /* seq 去重：POST 响应路径可能已把最新回复渲染并推进了 messageCursor，
+       这里按投递时刻的 cursor 过滤，跳过已覆盖的消息——否则同一条回复
+       会被两条链路各显示一次（用户看到 AI 连发两条相同消息）。 */
+    (feed.messages || []).forEach(function (message) {
+      if (typeof message.seq === "number" && message.seq < messageCursor) return;
+      deliverServerMessage(message);
+    });
+    messageCursor = Math.max(messageCursor, feed.total || messageCursor);
   }).catch(function (error) {
     if (error.status !== 404) console.warn("课堂同步失败", error);
   });
