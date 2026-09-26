@@ -1,14 +1,32 @@
-﻿'use client';
+'use client';
 
-import { useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { ArrowLeft, Settings } from 'lucide-react';
 
 import { SettingsDialog } from '@/components/settings';
 import { Button } from '@/components/ui/button';
 import { platformHomeUrl } from '@/lib/integration/platform-links';
 
-export default function ModelSettingsPage() {
+function ModelSettingsPageInner() {
+  const searchParams = useSearchParams();
+  // 平台侧边栏以 iframe 内嵌本页（/settings?embed=1）：只渲染面板本体，
+  // 用户点面板的 X 时通知父页面把外层对话框一起关掉。
+  const embed = searchParams.get('embed') === '1';
   const [open, setOpen] = useState(true);
+
+  useEffect(() => {
+    if (embed && !open) {
+      window.parent?.postMessage(
+        { source: 'teacher-settings', event: 'closed' },
+        '*',
+      );
+    }
+  }, [embed, open]);
+
+  if (embed) {
+    return <SettingsDialog open={open} onOpenChange={setOpen} initialSection="providers" />;
+  }
 
   return (
     <main className="min-h-screen bg-gradient-to-br from-rose-50 via-white to-slate-50 p-6">
@@ -32,5 +50,13 @@ export default function ModelSettingsPage() {
 
       <SettingsDialog open={open} onOpenChange={setOpen} initialSection="providers" />
     </main>
+  );
+}
+
+export default function ModelSettingsPage() {
+  return (
+    <Suspense fallback={null}>
+      <ModelSettingsPageInner />
+    </Suspense>
   );
 }

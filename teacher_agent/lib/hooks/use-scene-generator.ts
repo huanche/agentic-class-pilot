@@ -269,6 +269,8 @@ interface TTSApiResponse {
   success?: boolean;
   base64?: string;
   format?: string;
+  /** Serving URL when the server persisted the bytes (classroomId sent). */
+  audioUrl?: string;
   error?: string;
   details?: string;
 }
@@ -325,6 +327,11 @@ export async function generateAndStoreTTS(
           ttsBaseUrl:
             ttsProviderConfig?.baseUrl || ttsProviderConfig?.customDefaultBaseUrl || undefined,
           ttsProviderOptions: providerOptions,
+          // Lets the server persist the bytes beside the classroom, so the
+          // narration survives on the server instead of only in this
+          // browser's asset pool (students and other browsers resolve through
+          // the returned serving URL).
+          classroomId: stageId,
         }),
         signal: requestSignal,
       });

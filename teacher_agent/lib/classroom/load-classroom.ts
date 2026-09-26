@@ -49,6 +49,7 @@ interface AgentLookupResult {
 
 export interface RunClassroomLoadArgs<TMediaTasks = unknown> {
   classroomId: string;
+  preferServerClassroom?: boolean;
   loadToken: StageSceneLoadToken;
   isCurrent: () => boolean;
   loadFromStorage: (classroomId: string, loadToken: StageSceneLoadToken) => Promise<void>;
@@ -56,6 +57,7 @@ export interface RunClassroomLoadArgs<TMediaTasks = unknown> {
   fetchClassroom: (
     classroomId: string,
     shouldConvert?: () => boolean,
+    replaceExisting?: boolean,
   ) => Promise<ClassroomPayload | null>;
   applyFallbackScenes: (args: {
     loadToken: StageSceneLoadToken;
@@ -104,6 +106,7 @@ export function resetLegacyAgentFallbackProbes(): void {
 
 export async function runClassroomLoad<TMediaTasks = unknown>({
   classroomId,
+  preferServerClassroom = false,
   loadToken,
   isCurrent,
   loadFromStorage,
@@ -124,16 +127,16 @@ export async function runClassroomLoad<TMediaTasks = unknown>({
   log,
 }: RunClassroomLoadArgs<TMediaTasks>): Promise<void> {
   try {
-    await loadFromStorage(classroomId, loadToken);
+    if (!preferServerClassroom) await loadFromStorage(classroomId, loadToken);
     if (!isCurrent()) return;
 
-    if (!getCurrentStage()) {
+    if (preferServerClassroom || !getCurrentStage()) {
       log.info('No IndexedDB data, trying server-side storage for:', classroomId);
       // The fetch path converts and commits under the per-stage document lock.
       // Once it returns, the document owns every allocation; a later
       // navigation may discard only this in-memory apply, never the durable
       // assets -- so nothing here rolls allocations back.
-      const classroom = await fetchClassroom(classroomId, isCurrent);
+      const classroom = await fetchClassroom(classroomId, isCurrent, preferServerClassroom);
       if (!isCurrent()) return;
 
       if (classroom) {
@@ -148,6 +151,8 @@ export async function runClassroomLoad<TMediaTasks = unknown>({
           return;
         }
         log.info('Loaded from server-side storage:', classroomId);
+      } else if (preferServerClassroom) {
+        setError('无法加载服务器上的课堂内容');
       }
     }
 
@@ -248,6 +253,7 @@ export async function fetchClassroomFromApi(
   classroomId: string,
   shouldConvert: () => boolean = () => true,
   deps: DocumentMigrationDeps = {},
+  replaceExisting = false,
 ): Promise<ClassroomPayload | null> {
   const res = await fetch(`/api/classroom?id=${encodeURIComponent(classroomId)}`);
   if (!res.ok) return null;
@@ -323,6 +329,7 @@ export async function fetchClassroomFromApi(
         }
       },
       deps,
+      replaceExisting ? { mode: 'replace' } : {},
     );
   } catch {
     // Persisting the raw transport is never an acceptable fallback: the next

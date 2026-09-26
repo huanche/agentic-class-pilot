@@ -79,7 +79,13 @@ export async function GET(
       headers: {
         'Content-Type': contentType,
         'Content-Length': String(stat.size),
-        'Cache-Control': 'public, max-age=86400, immutable',
+        // Narration files are regenerated in place under stable names (server
+        // narration re-runs and browser TTS re-uploads both overwrite
+        // `tts_s<order>_<actionId>.<ext>`), so audio must always revalidate —
+        // an immutable entry would pin superseded bytes for a day. Slide media
+        // is content-final and stays immutable-cacheable.
+        'Cache-Control':
+          subDir === 'audio' ? 'private, no-cache' : 'public, max-age=86400, immutable',
       },
     });
   } catch (error) {

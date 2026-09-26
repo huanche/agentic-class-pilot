@@ -9,6 +9,7 @@ import {
 import { generateTTSForClassroom } from '@/lib/server/classroom-media-generation';
 import { readClassroomBindingFromDatabase } from '@/lib/server/course-space-database';
 import { createLogger } from '@/lib/logger';
+import { getPlatformUserModelConfigForRequest } from '@/lib/server/platform-user-model-config';
 
 const log = createLogger('ClassroomNarration');
 
@@ -34,10 +35,12 @@ export async function POST(
       return apiError(API_ERROR_CODES.INVALID_REQUEST, 404, 'Classroom not found');
     }
 
+    const byok = await getPlatformUserModelConfigForRequest(request);
     const result = await generateTTSForClassroom(
       classroom.scenes,
       classroomId,
       buildRequestOrigin(request),
+      byok?.tts,
     );
     if (result.generated === 0) {
       return apiError(

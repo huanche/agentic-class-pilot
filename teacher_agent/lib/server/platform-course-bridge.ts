@@ -111,3 +111,38 @@ export function platformProvidedCourseId(body: Partial<CreateCourseSpaceInput>):
   const id = (body as { id?: string }).id;
   return typeof id === 'string' && id.length > 0 ? id : undefined;
 }
+
+const PLATFORM_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// Positive results are stable (the mapping row never changes owner), negatives
+// are not cached so a course linked after a failed lookup is found next time.
+const legacyIdCache = new Map<string, string>();
+
+/**
+ * Platform entry points (建设概览, enrollment links) reference courses by the
+ * platform UUID, while pre-integration courses keep their legacy nanoid inside
+ * this service. Resolve through the platform mapping table; returns null when
+ * platform mode is off, the id is not a UUID, or no mapping exists.
+ */
+export async function resolveLegacyCourseId(courseId: string): Promise<string | null> {
+  if (!isPlatformAuthEnabled() || !PLATFORM_UUID.test(courseId)) return null;
+  const cached = legacyIdCache.get(courseId);
+  if (cached !== undefined) return cached;
+  try {
+    const response = await fetch(
+      `${process.env.PLATFORM_AUTH_URL}/api/v1/internal/teacher/course-alias/${encodeURIComponent(courseId)}`,
+      {
+        headers: { 'X-Teacher-Service-Key': process.env.PLATFORM_SERVICE_KEY || '' },
+        cache: 'no-store',
+        redirect: 'error',
+        signal: AbortSignal.timeout(5000),
+      },
+    );
+    if (!response.ok) return null;
+    const data = (await response.json()) as { legacyCourseId?: string | null };
+    if (!data.legacyCourseId || data.legacyCourseId === courseId) return null;
+    legacyIdCache.set(courseId, data.legacyCourseId);
+    return data.legacyCourseId;
+  } catch {
+    return null;
+  }
+}

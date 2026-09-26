@@ -7,9 +7,17 @@
  * POST /api/generate/tts
  */
 
+import { promises as fs } from 'fs';
+import path from 'path';
+import { createHash } from 'crypto';
 import { NextRequest } from 'next/server';
 import { generateTTS, TTSRateLimitError } from '@/lib/audio/tts-providers';
 import { recordGenerationUsage } from '@/lib/server/usage-storage';
+import {
+  buildRequestOrigin,
+  CLASSROOMS_DIR,
+  isValidClassroomId,
+} from '@/lib/server/classroom-storage';
 import {
   isServerConfiguredProvider,
   isServerTTSProviderDisabled,
@@ -44,6 +52,10 @@ export async function POST(req: NextRequest) {
       ttsApiKey?: string;
       ttsBaseUrl?: string;
       ttsProviderOptions?: Record<string, unknown>;
+      /** Stage id the narration belongs to; when present the bytes are also
+       * persisted server-side so other browsers (and the student embed) can
+       * resolve them through /api/classroom-media. */
+      classroomId?: string;
     };
     ttsProviderId = body.ttsProviderId;
     ttsVoice = body.ttsVoice;
@@ -134,7 +146,46 @@ export async function POST(req: NextRequest) {
     // Convert to base64
     const base64 = Buffer.from(audio).toString('base64');
 
-    return apiSuccess({ audioId, base64, format });
+    // Persist the bytes beside the classroom when the request names one, so
+    // narration regenerated in a browser survives on the server: without this,
+    // the audio exists only in that browser's asset pool while the saved
+    // classroom document references the pool-local id — every other browser
+    // (the student player embed, an incognito window, a cleared profile) then
+    // resolves nothing and plays silence. The filename mirrors the
+    // server-narration scheme (`tts_s<order>_<actionId>`), which is also what
+    // `persistClassroom` re-derives when stamping the serving URL on save.
+    let audioUrl: string | undefined;
+    const classroomId =
+      typeof body.classroomId === 'string' && isValidClassroomId(body.classroomId)
+        ? body.classroomId
+        : undefined;
+    // Scene-generation requests already label `tts_s<order>_<actionId>`;
+    // per-line regeneration labels `tts_request_s<order>_<actionId>`. Both
+    // persist under the canonical `tts_...` stem.
+    const stripped = audioId.replace(/^tts_request_/, '');
+    const fileStem = stripped.startsWith('tts_') ? stripped : `tts_${stripped}`;
+    if (classroomId && /^tts_[A-Za-z0-9_-]+$/.test(fileStem) && /^(wav|mp3|ogg|aac)$/.test(format)) {
+      try {
+        const audioDir = path.join(CLASSROOMS_DIR, classroomId, 'audio');
+        await fs.mkdir(audioDir, { recursive: true });
+        const filename = `${fileStem}.${format}`;
+        await fs.writeFile(path.join(audioDir, filename), audio);
+        // Content-hash version token (same convention as server narration):
+        // regenerated audio under the stable filename still gets a distinct
+        // URL, so converted browsers never reuse a mirror for stale bytes.
+        const version = createHash('sha256').update(audio).digest('hex').slice(0, 12);
+        audioUrl = `${buildRequestOrigin(req)}/api/classroom-media/${classroomId}/audio/${filename}?v=${version}`;
+      } catch (error) {
+        // The audio still returns to the caller; only cross-browser durability
+        // is degraded for this clip.
+        log.warn(
+          `Failed to persist TTS audio for classroom ${classroomId} [audioId=${audioId}]:`,
+          error,
+        );
+      }
+    }
+
+    return apiSuccess({ audioId, base64, format, ...(audioUrl ? { audioUrl } : {}) });
   } catch (error) {
     log.error(
       `TTS generation failed [provider=${ttsProviderId ?? 'unknown'}, voice=${ttsVoice ?? 'unknown'}, audioId=${audioId ?? 'unknown'}]:`,

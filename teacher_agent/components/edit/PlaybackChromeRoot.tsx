@@ -896,8 +896,12 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
         engineRef.current = engine;
         activeSceneIdRef.current = currentScene.id;
 
-        // Auto-start if triggered by auto-play scene advance
-        if (autoStartRef.current) {
+        // Auto-start if triggered by auto-play scene advance, or immediately
+        // for player-only embeds: the student iframe hides every playback
+        // control (header/sidebar/roundtable), so nothing else can ever call
+        // engine.start() there — without this the embed sits on a frozen
+        // first slide with no narration.
+        if (autoStartRef.current || videoOnly) {
           autoStartRef.current = false;
           (async () => {
             if (currentScene && chatAreaRef.current) {
