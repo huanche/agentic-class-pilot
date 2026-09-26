@@ -302,6 +302,16 @@ export async function listCourseJobsFromDatabase(courseId: string) {
   });
 }
 
+/** Active (queued/running) jobs across all courses — used by the startup stale sweep. */
+export async function listActiveCourseJobsFromDatabase() {
+  return withDatabase(async (client) => {
+    const result = await client.query(
+      "SELECT payload FROM mentra_artifact_jobs WHERE status IN ('queued','running')",
+    );
+    return result.rows.map((row) => row.payload as CourseArtifactJob);
+  });
+}
+
 export async function readKnowledgePackageFromDatabase(packageId: string) {
   return withDatabase(async (client) => {
     const result = await client.query('SELECT payload FROM mentra_knowledge_packages WHERE id=$1', [packageId]);

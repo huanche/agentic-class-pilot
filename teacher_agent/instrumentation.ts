@@ -19,4 +19,21 @@ export async function register(): Promise<void> {
   const { startAssetCollectorSchedule } =
     await import('@/lib/persistence/asset-collector-schedule');
   startAssetCollectorSchedule();
+
+  // A restart (redeploy, crash) kills in-flight artifact jobs mid-run; without
+  // this sweep they stay "running" in the teacher UI until a same-scope job is
+  // resubmitted. Fire-and-forget so readiness never blocks on the database.
+  // The import can throw when the storage mode is misconfigured — that must
+  // not take the whole server down with it.
+  try {
+    const { sweepAllStaleCourseJobs } = await import('@/lib/server/course-space-storage');
+    void sweepAllStaleCourseJobs()
+      .then((stale) => {
+        if (stale.length > 0)
+          console.info(`[startup] marked ${stale.length} stale artifact job(s) failed`);
+      })
+      .catch((error) => console.warn('[startup] stale artifact job sweep failed:', error));
+  } catch (error) {
+    console.warn('[startup] stale artifact job sweep unavailable:', error);
+  }
 }

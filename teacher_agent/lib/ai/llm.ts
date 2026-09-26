@@ -276,6 +276,35 @@ export interface LLMRetryOptions {
 const DEFAULT_VALIDATE = (text: string) => text.trim().length > 0;
 
 // ---------------------------------------------------------------------------
+// Request timeout
+//
+// A wedged provider connection (observed in production: a scene-content call
+// that never returned) hangs a background artifact job in "running" forever.
+// Every callLLM attempt carries a fresh hard cap; LLM_TIMEOUT_MS overrides,
+// 0 disables. Applies to callLLM only — interactive streams keep their own
+// lifecycle.
+// ---------------------------------------------------------------------------
+
+const DEFAULT_LLM_TIMEOUT_MS = 10 * 60 * 1000;
+
+function resolveRequestTimeoutMs(): number {
+  const raw = Number(process.env.LLM_TIMEOUT_MS);
+  if (Number.isFinite(raw)) return Math.max(0, Math.trunc(raw));
+  return DEFAULT_LLM_TIMEOUT_MS;
+}
+
+/** AbortSignal.timeout raises a TimeoutError; SDKs may wrap it in `cause`. */
+function looksLikeAbortError(error: unknown): boolean {
+  let current: unknown = error;
+  for (let depth = 0; current && depth < 4; depth++) {
+    const name = (current as { name?: unknown }).name;
+    if (name === 'AbortError' || name === 'TimeoutError') return true;
+    current = (current as { cause?: unknown }).cause;
+  }
+  return false;
+}
+
+// ---------------------------------------------------------------------------
 // Usage capture
 //
 // Every server-side LLM call funnels through callLLM/streamLLM, so usage is
@@ -331,6 +360,7 @@ export async function callLLM<T extends GenerateTextParams>(
 ): Promise<GenerateTextResult<any, any>> {
   const maxAttempts = (retryOptions?.retries ?? 0) + 1;
   const validate = retryOptions?.validate ?? (maxAttempts > 1 ? DEFAULT_VALIDATE : undefined);
+  const timeoutMs = resolveRequestTimeoutMs();
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let lastResult: GenerateTextResult<any, any> | undefined;
@@ -342,11 +372,15 @@ export async function callLLM<T extends GenerateTextParams>(
       const effectiveThinking = thinking ?? getGlobalThinkingConfig();
       const injectedParams = injectProviderOptions(params, effectiveThinking);
 
+      // Fresh signal per attempt: a wedged connection must not outlive its
+      // own cap, and retries get a full window of their own.
+      const abortSignal = timeoutMs > 0 ? AbortSignal.timeout(timeoutMs) : undefined;
+
       // Wrap in thinkingContext so the custom fetch wrapper in providers.ts
       // can read the config and inject vendor-specific body params for
       // OpenAI-compatible providers.
       const result = await thinkingContext.run(effectiveThinking, () =>
-        generateText(injectedParams),
+        generateText(abortSignal ? { ...injectedParams, abortSignal } : injectedParams),
       );
 
       // Record before validating: every attempt that got this far was billed,
@@ -371,10 +405,16 @@ export async function callLLM<T extends GenerateTextParams>(
 
       return result;
     } catch (error) {
-      lastError = error;
+      // Surface aborts as an explicit timeout so the failure reason that ends
+      // up in job records / degradation notes says "timed out", not a bare
+      // AbortError from an opaque signal.
+      lastError =
+        timeoutMs > 0 && looksLikeAbortError(error)
+          ? new Error(`LLM request timed out after ${timeoutMs}ms [${source}]`, { cause: error })
+          : error;
 
       if (attempt < maxAttempts) {
-        log.warn(`[${source}] Call failed (attempt ${attempt}/${maxAttempts}), retrying...`, error);
+        log.warn(`[${source}] Call failed (attempt ${attempt}/${maxAttempts}), retrying...`, lastError);
         continue;
       }
     }
