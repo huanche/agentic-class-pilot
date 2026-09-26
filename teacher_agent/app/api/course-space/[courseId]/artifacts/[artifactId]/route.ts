@@ -21,7 +21,9 @@ export async function PATCH(
     readServerCourse(courseId),
     readCourseArtifact(artifactId),
   ]);
-  if (!course || !artifact || artifact.courseId !== courseId) {
+  // `courseId` may be a platform UUID; artifacts are keyed by the id the course
+  // was created under, so compare against the canonical course id.
+  if (!course || !artifact || artifact.courseId !== course.id) {
     return apiError('INVALID_REQUEST', 404, '待审核产物不存在');
   }
   const body = (await req.json()) as {
@@ -63,7 +65,10 @@ export async function PATCH(
   const content = body.content?.trim() ?? artifact.content;
   if (!content) return apiError('INVALID_REQUEST', 400, '审核内容不能为空');
   const approving = body.action === 'approve';
-  if (approving && artifact.citations.length === 0) {
+  // Interactive courseware (attached classroom) carries no material citations;
+  // its source lineage is the classroom itself, so the citation gate only
+  // applies to text artifacts generated from course materials.
+  if (approving && !artifact.classroomId && artifact.citations.length === 0) {
     return apiError('INVALID_REQUEST', 409, '产物缺少原始材料引用，不能批准');
   }
   const nextArtifact: CourseArtifactRecord = {

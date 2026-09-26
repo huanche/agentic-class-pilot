@@ -20,6 +20,9 @@ export async function POST(req: NextRequest, context: { params: Promise<{ course
   const { courseId } = await context.params;
   const course = await readServerCourse(courseId);
   if (!course) return apiError('INVALID_REQUEST', 404, '课程不存在');
+  // `courseId` may be a platform UUID; artifacts live under the canonical id
+  // the course was created with, so dedupe and persist under that id.
+  const canonicalId = course.id;
 
   const body = (await req.json()) as {
     classrooms?: ClassroomInput[];
@@ -48,7 +51,7 @@ export async function POST(req: NextRequest, context: { params: Promise<{ course
         createdAt: now, updatedAt: now,
       };
       const lessonToAdd = lesson;
-      savedCourse = await updateServerCourse(courseId, (current) => ({
+      savedCourse = await updateServerCourse(canonicalId, (current) => ({
         ...current,
         modules: current.modules.map((item) => item.id === courseModule.id
           ? { ...item, lessons: [...item.lessons, lessonToAdd], updatedAt: now }
@@ -64,7 +67,7 @@ export async function POST(req: NextRequest, context: { params: Promise<{ course
     || (scope.type === 'lesson' && savedCourse.modules.some((item) => item.lessons.some((lesson) => lesson.id === scope.lessonId)));
   if (!scopeExists) return apiError('INVALID_REQUEST', 400, '归档位置不属于当前课程');
 
-  const existing = await listCourseArtifacts(courseId);
+  const existing = await listCourseArtifacts(canonicalId);
   const now = Date.now();
   const artifacts: CourseArtifactRecord[] = [];
   for (const classroom of classrooms) {
@@ -82,7 +85,7 @@ export async function POST(req: NextRequest, context: { params: Promise<{ course
       id: nanoid(14),
       jobId: `attached_${nanoid(10)}`,
       teacherId: savedCourse.teacherId,
-      courseId,
+      courseId: canonicalId,
       scope,
       type: 'lesson-courseware',
       title,

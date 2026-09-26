@@ -16,7 +16,9 @@ export async function GET(request: Request, context: { params: Promise<{ courseI
   if (!course || course.status !== 'active') {
     return apiError('INVALID_REQUEST', 404, '正在授课的课程不存在');
   }
-  const artifacts = (await listCourseArtifacts(courseId)).filter(
+  // Artifacts are keyed by the id the course was created under; `courseId` may
+  // be the platform UUID, so list under the canonical id.
+  const artifacts = (await listCourseArtifacts(course.id)).filter(
     (item) => item.status === 'published' && item.classVisible && item.classPublicationId,
   );
   const materials = course.materials.filter((item) => item.classVisible && item.classPublicationId);
