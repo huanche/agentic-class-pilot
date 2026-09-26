@@ -65,18 +65,38 @@ describe('attachNarrationServingUrls', () => {
     expect((next.actions![0] as unknown as { audioUrl: string }).audioUrl).toBe(existing);
   });
 
-  it('skips actions without audio, invalidated actions, and missing files', async () => {
+  it('skips actions without audio, without files, and unsafe ids', async () => {
     process.env.CLASSROOMS_DATA_DIR = classroomsDir;
     const { attachNarrationServingUrls } = await loadModule();
     const scene = speechScene(1, [
       { text: '没有 audioId' },
-      { audioId: 'ast_2', audioInvalidated: true, text: '已失效' },
+      { audioId: 'ast_2', audioInvalidated: true, text: '已失效且无文件' },
       { audioId: 'ast_3', text: '磁盘上没有文件' },
       { audioId: 'ast_4', id: '../escape', text: '路径穿越' },
     ]);
     const result = await attachNarrationServingUrls([scene], 'cls_1', 'https://teacher.example');
 
     expect(result[0]).toBe(scene);
+  });
+
+  it('stamps an invalidated action when the file exists (staleness is not absence)', async () => {
+    process.env.CLASSROOMS_DATA_DIR = classroomsDir;
+    const { attachNarrationServingUrls } = await loadModule();
+    // The file was written by the browser-side regeneration upload; the
+    // invalidated flag survived a stale save. Every browser should hear the
+    // same narration the editing teacher does.
+    const file = path.join(classroomsDir, 'cls_1', 'audio', 'tts_s1_action_1.wav');
+    mkdirSync(path.dirname(file), { recursive: true });
+    writeFileSync(file, Buffer.from('RIFF'));
+
+    const scene = speechScene(1, [
+      { audioId: 'ast_ok', text: '正常行' },
+      { audioId: 'ast_stale', audioInvalidated: true, text: '文本改过但音频在' },
+    ]);
+    const [next] = await attachNarrationServingUrls([scene], 'cls_1', 'https://teacher.example');
+
+    const stale = next.actions![1] as unknown as { audioUrl?: string };
+    expect(stale.audioUrl).toMatch(/tts_s1_action_1\.wav\?v=/);
   });
 
   it('probes mp3 besides wav and returns the input by identity when nothing matches', async () => {

@@ -5,9 +5,9 @@ import { buildRequestOrigin } from '@/lib/server/classroom-storage';
 import { runCourseArtifactJob } from '@/lib/server/course-artifact-runner';
 import {
   listCourseJobs,
+  markStaleCourseJobsFailed,
   readServerCourse,
   saveCourseJob,
-  updateCourseJob,
 } from '@/lib/server/course-space-storage';
 import type { CourseArtifactJob, CourseArtifactType } from '@/lib/course-space/types';
 
@@ -17,8 +17,6 @@ const artifactTypes: CourseArtifactType[] = [
 ];
 
 export const maxDuration = 30;
-
-const STALE_JOB_MS = 15 * 60 * 1000;
 
 function sameScope(left: CourseArtifactJob['scope'], right: CourseArtifactJob['scope']) {
   if (left.type !== right.type) return false;
@@ -53,17 +51,7 @@ export async function POST(req: NextRequest, context: { params: Promise<{ course
       sameScope(job.scope, scope) &&
       (job.status === 'queued' || job.status === 'running'),
   );
-  const staleJobs = activeJobs.filter((job) => Date.now() - job.updatedAt > STALE_JOB_MS);
-  await Promise.all(
-    staleJobs.map((job) =>
-      updateCourseJob(job.id, {
-        status: 'failed',
-        progress: 100,
-        message: '生成进程已中断，可重新创建任务',
-        error: '后台生成进程中断或服务重启，任务未能继续执行',
-      }),
-    ),
-  );
+  const staleJobs = await markStaleCourseJobsFailed(activeJobs);
   const liveJob = activeJobs.find((job) => !staleJobs.some((stale) => stale.id === job.id));
   if (liveJob) {
     return apiError(

@@ -140,9 +140,8 @@ interface SpeechActionLike {
 /**
  * Stamp serving URLs onto speech actions whose narration exists on disk but
  * whose reference a browser round-trip reduced to a pool-local id. Actions that
- * already carry a URL (server-generated narration) are left untouched, and so
- * are invalidated or id-less actions. Returns the input by identity when
- * nothing resolved.
+ * already carry a URL (server-generated narration) and id-less actions are left
+ * untouched. Returns the input by identity when nothing resolved.
  */
 export async function attachNarrationServingUrls(
   scenes: Scene[],
@@ -163,11 +162,15 @@ export async function attachNarrationServingUrls(
     let sceneChanged = false;
     for (const action of scene.actions) {
       const speech = action as Action & SpeechActionLike;
+      // `audioInvalidated` is a text-staleness hint, not a statement that no
+      // audio exists: browser regeneration writes fresh bytes under the
+      // derived filename even when the flag survives a stale save. When the
+      // file is there, stamping the URL keeps every browser hearing exactly
+      // what the editing teacher hears.
       if (
         speech.type === 'speech' &&
         speech.audioId &&
         !speech.audioUrl &&
-        !speech.audioInvalidated &&
         isSafeNarrationToken(speech.id)
       ) {
         const audioUrl = await resolveNarrationUrl(classroomId, scene.order, speech.id, baseUrl);

@@ -87,6 +87,13 @@ export class PlaybackEngine {
   // Reading-time timer for speech actions without pre-generated audio (TTS disabled)
   private speechTimer: ReturnType<typeof setTimeout> | null = null;
   private speechTimerStart: number = 0; // Date.now() when timer was scheduled
+  /**
+   * True when the browser's autoplay policy refused to start a line's audio
+   * (NotAllowedError). The engine parks on that line instead of silently
+   * advancing, and retryBlockedAudio() — called from an in-frame user click —
+   * replays it.
+   */
+  private audioBlocked = false;
   // Browser-native TTS state (Web Speech API)
   private browserTTSActive: boolean = false;
   private browserTTSChunks: string[] = []; // sentence-level chunks for sequential playback
@@ -179,12 +186,32 @@ export class PlaybackEngine {
     );
   }
 
+  /**
+   * Replay the line the autoplay policy parked on. Callers must invoke this
+   * from an in-frame user gesture (the "开启声音" affordance) — the click is
+   * what makes the retried play() eligible. No-op when nothing is blocked.
+   */
+  retryBlockedAudio(): void {
+    if (!this.audioBlocked) return;
+    this.audioBlocked = false;
+    this.callbacks.onAudioUnblocked?.();
+    if (this.mode !== 'playing') return;
+    // The parked line was already consumed by processNext (actionIndex moved
+    // past it); step back so the replay speaks it instead of skipping it.
+    this.actionIndex = Math.max(0, this.actionIndex - 1);
+    this.processNext();
+  }
+
   async jumpToAction(actionIndex: number, options: { autoplay?: boolean } = {}): Promise<boolean> {
     const actions = this.scenes[0]?.actions ?? [];
     if (!this.canJumpToAction(actionIndex)) return false;
 
     const autoplay = options.autoplay ?? this.mode === 'playing';
     const generation = this.invalidatePlaybackGeneration();
+    if (this.audioBlocked) {
+      this.audioBlocked = false;
+      this.callbacks.onAudioUnblocked?.();
+    }
     this.cancelActivePlaybackWork();
     this.sceneIndex = 0;
     this.actionIndex = 0;
@@ -224,6 +251,11 @@ export class PlaybackEngine {
   pause(): void {
     if (this.mode === 'playing') {
       this.invalidatePlaybackGeneration();
+      // Pausing while parked on a blocked line: step back so resume() replays
+      // that line instead of silently skipping past it.
+      if (this.audioBlocked) {
+        this.actionIndex = Math.max(0, this.actionIndex - 1);
+      }
       // Cancel pending timers
       if (this.triggerDelayTimer) {
         clearTimeout(this.triggerDelayTimer);
@@ -318,6 +350,10 @@ export class PlaybackEngine {
   /** → idle */
   stop(): void {
     this.invalidatePlaybackGeneration();
+    if (this.audioBlocked) {
+      this.audioBlocked = false;
+      this.callbacks.onAudioUnblocked?.();
+    }
     // Set mode BEFORE stopping audio to prevent spurious processNext from
     // synchronous onend callbacks (see handleUserInterrupt for details).
     this.setMode('idle');
@@ -632,6 +668,10 @@ export class PlaybackEngine {
           .play(speechAction.audioId || '', (speechAction as LegacySpeechAction).audioUrl)
           .then((audioStarted) => {
             if (!this.isCurrentGeneration(generation)) return;
+            if (audioStarted && this.audioBlocked) {
+              this.audioBlocked = false;
+              this.callbacks.onAudioUnblocked?.();
+            }
             if (!audioStarted) {
               // No pre-generated audio — try browser-native TTS only when it is
               // the selected provider AND actually enabled (opt-in, #665).
@@ -655,6 +695,15 @@ export class PlaybackEngine {
           })
           .catch((err) => {
             if (!this.isCurrentGeneration(generation)) return;
+            if (err instanceof Error && err.name === 'NotAllowedError') {
+              // Autoplay policy: the audio exists but this frame may not start
+              // it without a gesture. Park on the line and surface the
+              // unlock affordance; a reading timer would advance the whole
+              // lesson silently.
+              this.audioBlocked = true;
+              this.callbacks.onAudioBlocked?.();
+              return;
+            }
             log.error('TTS error:', err);
             scheduleReadingTimer();
           });

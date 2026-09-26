@@ -24,6 +24,7 @@ import {
 import {
   assertCourseDatabaseReady,
   isCourseDatabaseConfigured,
+  listActiveCourseJobsFromDatabase,
   listCoursesFromDatabase,
   listCourseJobsFromDatabase,
   listKnowledgePackagesFromDatabase,
@@ -278,6 +279,49 @@ export async function listCourseJobs(courseId: string) {
   return (await listJson<CourseArtifactJob>(JOBS_DIR))
     .filter((job) => job.courseId === courseId)
     .sort((a, b) => b.createdAt - a.createdAt);
+}
+
+/**
+ * A queued/running job with no update for this long is considered dead — its
+ * process died with a container restart or a wedged LLM call. Without a sweep
+ * such jobs stay "running" forever in the teacher UI (only a same-scope
+ * resubmit used to clear them).
+ */
+export const STALE_ACTIVE_JOB_MS = 15 * 60 * 1000;
+
+export const STALE_ACTIVE_JOB_FAILURE = {
+  status: 'failed' as const,
+  progress: 100,
+  message: '生成进程已中断，可重新创建任务',
+  error: '后台生成进程中断或服务重启，任务未能继续执行',
+};
+
+export function isStaleActiveJob(job: CourseArtifactJob, now = Date.now()) {
+  return (
+    (job.status === 'queued' || job.status === 'running') &&
+    now - job.updatedAt > STALE_ACTIVE_JOB_MS
+  );
+}
+
+/** Mark the stale active jobs in `jobs` failed; returns the ones it touched. */
+export async function markStaleCourseJobsFailed(jobs: CourseArtifactJob[]) {
+  const stale = jobs.filter((job) => isStaleActiveJob(job));
+  await Promise.all(stale.map((job) => updateCourseJob(job.id, STALE_ACTIVE_JOB_FAILURE)));
+  return stale;
+}
+
+export async function sweepStaleCourseJobs(courseId: string) {
+  return markStaleCourseJobsFailed(await listCourseJobs(courseId));
+}
+
+/** Startup sweep across every course: restarts kill in-flight jobs mid-run. */
+export async function sweepAllStaleCourseJobs() {
+  const active = isCourseDatabaseConfigured()
+    ? (await listActiveCourseJobsFromDatabase()) ?? []
+    : (await listJson<CourseArtifactJob>(JOBS_DIR)).filter(
+        (job) => job.status === 'queued' || job.status === 'running',
+      );
+  return markStaleCourseJobsFailed(active);
 }
 
 export async function saveCourseArtifact(artifact: CourseArtifactRecord) {
