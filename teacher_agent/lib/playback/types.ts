@@ -61,5 +61,17 @@ export interface PlaybackEngineCallbacks {
   /** Get current playback speed multiplier (e.g. 1, 1.5, 2) */
   getPlaybackSpeed?: () => number;
 
+  /**
+   * Audio exists for the current line but the browser's autoplay policy
+   * refused to start it (NotAllowedError). Playback pauses on that line until
+   * the user grants an in-frame gesture and retryBlockedAudio() replays it —
+   * silently falling back to a reading timer would advance the lesson with
+   * none of the narration audible.
+   */
+  onAudioBlocked?: () => void;
+
+  /** A blocked line resumed (gesture received and audio started). */
+  onAudioUnblocked?: () => void;
+
   onComplete?: () => void;
 }

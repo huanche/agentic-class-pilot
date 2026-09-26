@@ -123,6 +123,9 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
 
     // PlaybackEngine state
     const [engineMode, setEngineMode] = useState<EngineMode>('idle');
+    // True while the autoplay policy has playback parked on a line it refuses
+    // to start without an in-frame gesture (student embed without controls).
+    const [audioBlocked, setAudioBlocked] = useState(false);
     const [sceneElapsedSeconds, setSceneElapsedSeconds] = useState(0);
     const [courseElapsedSeconds, setCourseElapsedSeconds] = useState(0);
     const [playbackCompleted, setPlaybackCompleted] = useState(false); // Distinguishes "never played" idle from "finished" idle
@@ -727,6 +730,14 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
         const engine = new PlaybackEngine([currentScene], actionEngine, audioPlayerRef.current, {
           onModeChange: (mode) => {
             setEngineMode(mode);
+          },
+          onAudioBlocked: () => {
+            // Autoplay policy parked playback on a line whose audio it refuses
+            // to start without an in-frame gesture — show the unlock pill.
+            setAudioBlocked(true);
+          },
+          onAudioUnblocked: () => {
+            setAudioBlocked(false);
           },
           onProgress: (snapshot) => {
             // Identity guard: a superseded engine (scene switch during an
@@ -1452,6 +1463,19 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
                 <span className="mx-2 text-white/35">｜</span>
                 课程剩余 {formatPlaybackDuration(courseRemainingSeconds)}
               </div>
+            )}
+            {/* Autoplay unlock — the engine parked on a line the browser
+              refuses to start without an in-frame gesture (student embeds
+              have no other control to click). The click itself is the
+              gesture; retryBlockedAudio() replays the parked line. */}
+            {audioBlocked && (
+              <button
+                type="button"
+                onClick={() => engineRef.current?.retryBlockedAudio()}
+                className="absolute left-1/2 top-1/2 z-40 -translate-x-1/2 -translate-y-1/2 rounded-full bg-slate-950/85 px-6 py-3 text-sm font-medium text-white shadow-xl backdrop-blur-md transition-colors hover:bg-slate-900"
+              >
+                🔊 点击开启声音
+              </button>
             )}
             <CanvasArea
               currentScene={currentScene}
