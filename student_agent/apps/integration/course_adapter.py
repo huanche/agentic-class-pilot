@@ -170,6 +170,15 @@ def load_plan_for_session(state) -> Optional[dict]:
         return None
     if isinstance(context, dict):
         context = CourseLearningContext(**context)
+    # 平台课时没有本地课时文件，kp_title 查不到标题会把 KP-xxx 编号念出来；
+    # 建计划时把平台下发的知识点标题注册进编排器。
+    try:
+        import agent as orchestrator_agent
+        orchestrator_agent.register_kp_titles(
+            {kp.id: kp.title for kp in context.evaluation.knowledge_points
+             if kp.id and kp.title})
+    except Exception as error:  # noqa: BLE001 —— 注册失败只影响称谓，不挡上课
+        print(f"[course_adapter] 知识点标题注册失败: {error}")
     selected = next((lesson for lesson in context.lessons
                      if lesson.id == state.get("lesson_id")), None)
     selected = selected or (context.lessons[0] if context.lessons else None)
@@ -199,6 +208,9 @@ def load_plan_for_session(state) -> Optional[dict]:
         "publication_version": context.publication.version,
         "lesson_id": selected.id if selected else context.course_id,
         "course_id": context.course_id,
+        # 开场白/报告等学生可见文案读的是 lesson_title；以前只有 title，
+        # 取不到就回退成 lesson-N7fcx... 这类原始 ID 念给学生听。
+        "lesson_title": selected.title if selected else (context.course_title or "今天的课程"),
         "title": selected.title if selected else context.course_title,
         "total_minutes": total_minutes,
         "stages": [

@@ -7,6 +7,7 @@
 
 import { promises as fs } from 'fs';
 import path from 'path';
+import { createHash } from 'crypto';
 import { createLogger } from '@/lib/logger';
 import { CLASSROOMS_DIR } from '@/lib/server/classroom-storage';
 import { generateImage } from '@/lib/media/image-providers';
@@ -38,6 +39,7 @@ import {
 } from '@/lib/audio/tts-utils';
 import { isGeneratedMediaPlaceholder } from '@/lib/media/media-ref';
 import { VOXCPM_AUTO_VOICE_ID, VOXCPM_TTS_PROVIDER_ID } from '@/lib/audio/voxcpm';
+import { type PlatformTtsConfig } from '@/lib/server/platform-user-model-config';
 
 const log = createLogger('ClassroomMedia');
 
@@ -250,6 +252,27 @@ export function replaceMediaPlaceholders(scenes: Scene[], mediaMap: Record<strin
   }
 }
 
+// Some Qwen streaming WAV responses use sentinel RIFF/data sizes. Browsers may
+// reject the otherwise valid PCM bytes, so finalize the header before storage.
+function finalizeWav(audio: Buffer): Buffer {
+  if (audio.length < 44 || audio.toString('ascii', 0, 4) !== 'RIFF' ||
+      audio.toString('ascii', 8, 12) !== 'WAVE') return audio;
+  let offset = 12;
+  while (offset + 8 <= audio.length) {
+    const chunkSize = audio.readUInt32LE(offset + 4);
+    if (audio.toString('ascii', offset, offset + 4) === 'data') {
+      const fixed = Buffer.from(audio);
+      fixed.writeUInt32LE(fixed.length - 8, 4);
+      fixed.writeUInt32LE(fixed.length - offset - 8, offset + 4);
+      return fixed;
+    }
+    const next = offset + 8 + chunkSize + (chunkSize % 2);
+    if (next <= offset || next > audio.length) break;
+    offset = next;
+  }
+  return audio;
+}
+
 // ---------------------------------------------------------------------------
 // TTS generation
 // ---------------------------------------------------------------------------
@@ -258,29 +281,50 @@ export async function generateTTSForClassroom(
   scenes: Scene[],
   classroomId: string,
   baseUrl: string,
+  ttsOverride?: PlatformTtsConfig | null,
 ): Promise<{ generated: number; failed: number; skipped: number }> {
   const audioDir = path.join(CLASSROOMS_DIR, classroomId, 'audio');
   await ensureDir(audioDir);
 
-  // Resolve TTS provider (exclude browser-native-tts and operator force-disabled
-  // providers — server precedence, #665).
-  const ttsProviderIds = Object.entries(getServerTTSProviders())
-    .filter(([id, info]) => id !== 'browser-native-tts' && !info.disabled)
-    .map(([id]) => id);
-  if (ttsProviderIds.length === 0) {
-    log.warn('No server TTS provider configured, skipping TTS generation');
-    return { generated: 0, failed: 0, skipped: 1 };
+  // Resolve TTS provider — platform BYOK override first (per-user config),
+  // then server-managed providers (exclude browser-native-tts and operator
+  // force-disabled providers — server precedence, #665).
+  let providerId: TTSProviderId;
+  let apiKey: string;
+  let byokModel: string | undefined;
+  let byokVoice: string | undefined;
+  if (ttsOverride?.apiKey) {
+    const requested = (ttsOverride.provider || '') as TTSProviderId;
+    if (TTS_PROVIDERS[requested as keyof typeof TTS_PROVIDERS]) {
+      providerId = requested;
+    } else {
+      log.warn(`BYOK TTS provider "${ttsOverride.provider ?? "?"}" unknown, falling back to qwen-tts`);
+      providerId = "qwen-tts" as TTSProviderId;
+    }
+    apiKey = ttsOverride.apiKey;
+    byokModel = ttsOverride.model || undefined;
+    byokVoice = ttsOverride.voice || undefined;
+  } else {
+    const ttsProviderIds = Object.entries(getServerTTSProviders())
+      .filter(([id, info]) => id !== "browser-native-tts" && !info.disabled)
+      .map(([id]) => id);
+    if (ttsProviderIds.length === 0) {
+      log.warn("No server TTS provider configured, skipping TTS generation");
+      return { generated: 0, failed: 0, skipped: 1 };
+    }
+    providerId = ttsProviderIds[0] as TTSProviderId;
+    apiKey = resolveTTSApiKey(providerId);
   }
-
-  const providerId = ttsProviderIds[0] as TTSProviderId;
-  const apiKey = resolveTTSApiKey(providerId);
   const ttsProvider = TTS_PROVIDERS[providerId as keyof typeof TTS_PROVIDERS];
   if (ttsProvider?.requiresApiKey && !apiKey) {
     log.warn(`No API key for TTS provider "${providerId}", skipping TTS generation`);
     return { generated: 0, failed: 0, skipped: 1 };
   }
-  const ttsBaseUrl = resolveTTSBaseUrl(providerId) || ttsProvider?.defaultBaseUrl;
-  const voice = DEFAULT_TTS_VOICES[providerId as keyof typeof DEFAULT_TTS_VOICES] || 'default';
+  const ttsBaseUrl =
+    (ttsOverride?.apiKey ? ttsOverride.baseUrl || undefined : resolveTTSBaseUrl(providerId)) ||
+    ttsProvider?.defaultBaseUrl;
+  const voice =
+    byokVoice || DEFAULT_TTS_VOICES[providerId as keyof typeof DEFAULT_TTS_VOICES] || "default";
   const format = ttsProvider?.supportedFormats?.[0] || 'mp3';
   if (providerId === VOXCPM_TTS_PROVIDER_ID && voice === VOXCPM_AUTO_VOICE_ID) {
     log.warn('VoxCPM Auto Voice requires agent context; skipping server-side TTS generation');
@@ -319,7 +363,7 @@ export async function generateTTSForClassroom(
         const result = await generateTTS(
           {
             providerId,
-            modelId: DEFAULT_TTS_MODELS[providerId as keyof typeof DEFAULT_TTS_MODELS] || '',
+            modelId: byokModel || DEFAULT_TTS_MODELS[providerId as keyof typeof DEFAULT_TTS_MODELS] || '',
             apiKey,
             baseUrl: ttsBaseUrl,
             voice,
@@ -328,11 +372,14 @@ export async function generateTTSForClassroom(
           speechAction.text,
         );
 
-        const filename = `${audioId}.${result.format || format}`;
-        await fs.writeFile(path.join(audioDir, filename), result.audio);
+        const outputFormat = result.format || format;
+        const audio = outputFormat === 'wav' ? finalizeWav(Buffer.from(result.audio)) : result.audio;
+        const filename = `${audioId}.${outputFormat}`;
+        await fs.writeFile(path.join(audioDir, filename), audio);
 
         speechAction.audioId = audioId;
-        speechAction.audioUrl = mediaServingUrl(baseUrl, classroomId, `audio/${filename}`);
+        const version = createHash('sha256').update(audio).digest('hex').slice(0, 12);
+        speechAction.audioUrl = `${mediaServingUrl(baseUrl, classroomId, `audio/${filename}`)}?v=${version}`;
         delete (speechAction as ServerTransportSpeechAction & { audioInvalidated?: boolean })
           .audioInvalidated;
         generated += 1;

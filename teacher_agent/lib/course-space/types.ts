@@ -111,6 +111,12 @@ export interface CourseStudentLearningState {
   progress: number;
   completedResourceIds: string[];
   lastActiveAt?: number;
+  /** 平台学情明细（学生 Agent 同步，选填）。 */
+  learnedLessons?: number;
+  totalLessons?: number;
+  sessionCount?: number;
+  endedCount?: number;
+  stars?: number;
 }
 
 export interface CourseSpace {

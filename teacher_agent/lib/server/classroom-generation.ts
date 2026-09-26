@@ -19,6 +19,7 @@ import { createLogger } from '@/lib/logger';
 import { isProviderKeyRequired } from '@/lib/ai/providers';
 import { resolveClassroomWebSearchConfig } from '@/lib/server/web-search-config';
 import { resolveModel } from '@/lib/server/resolve-model';
+import { type PlatformUserModelConfig, llmOverrideFromConfig } from '@/lib/server/platform-user-model-config';
 import { getStageModel, type LlmStage } from '@/lib/server/model-routes';
 import type { LanguageModel } from 'ai';
 import type { ThinkingConfig } from '@/lib/types/provider';
@@ -178,6 +179,8 @@ export async function generateClassroom(
   options: {
     baseUrl: string;
     onProgress?: (progress: ClassroomGenerationProgress) => Promise<void> | void;
+    /** Platform per-user BYOK config; wins over server-managed providers. */
+    platformModelConfig?: PlatformUserModelConfig;
   },
 ): Promise<GenerateClassroomResult> {
   const { requirement, pdfContent } = input;
@@ -196,7 +199,10 @@ export async function generateClassroom(
     providerId,
     apiKey,
     thinkingConfig: classroomThinking,
-  } = await resolveModel({ stage: 'generate-classroom' });
+  } = await resolveModel({
+    stage: 'generate-classroom',
+    platformOverrides: llmOverrideFromConfig(options.platformModelConfig),
+  });
   log.info(`Using server-configured model: ${modelString}`);
 
   // Fail fast if the resolved provider has no API key configured
@@ -693,7 +699,7 @@ export async function generateClassroom(
     });
 
     try {
-      await generateTTSForClassroom(scenes, stageId, options.baseUrl);
+      await generateTTSForClassroom(scenes, stageId, options.baseUrl, options.platformModelConfig?.tts);
       log.info('TTS generation complete');
     } catch (err) {
       log.warn('TTS generation phase failed, continuing:', err);

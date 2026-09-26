@@ -7,7 +7,7 @@ import { useSettingsStore } from '@/lib/store/settings';
 import { claimStageSceneLoadToken, isCurrentStageSceneLoadToken } from '@/lib/store/stage';
 import { loadImageMapping } from '@/lib/utils/image-storage';
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { useParams, useSearchParams } from 'next/navigation';
+import { useParams, usePathname, useSearchParams } from 'next/navigation';
 import { useSceneGenerator } from '@/lib/hooks/use-scene-generator';
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
 import { useWhiteboardHistoryStore } from '@/lib/store/whiteboard-history';
@@ -28,11 +28,13 @@ const log = createLogger('Classroom');
 export default function ClassroomDetailPage() {
   const params = useParams();
   const searchParams = useSearchParams();
+  const pathname = usePathname();
   const classroomId = params?.id as string;
   const embeddedCourseWorkspace = searchParams.get('embedded') === 'course-workspace';
   // Player-only embed (student agent iframe): hide all playback chrome so the
   // embedded viewer sees just the scene canvas. See PlaybackChromeRoot.
   const playerOnlyEmbed = searchParams.get('embedded') === 'player';
+  const preferServerClassroom = pathname.startsWith('/classroom-player/');
 
   const { loadFromStorage } = useStageStore();
 
@@ -65,11 +67,13 @@ export default function ClassroomDetailPage() {
 
       await runClassroomLoad({
         classroomId,
+        preferServerClassroom,
         loadToken,
         isCurrent,
         loadFromStorage,
         getCurrentStage: () => useStageStore.getState().stage,
-        fetchClassroom: defaultClassroomLoadDeps.fetchClassroom,
+        fetchClassroom: (id, shouldConvert, replaceExisting) =>
+          defaultClassroomLoadDeps.fetchClassroom(id, shouldConvert, {}, replaceExisting),
         applyFallbackScenes: (args) =>
           defaultClassroomLoadDeps.applyFallbackScenes({
             ...args,
@@ -90,7 +94,7 @@ export default function ClassroomDetailPage() {
         log,
       });
     },
-    [classroomId, embeddedCourseWorkspace, loadFromStorage],
+    [classroomId, embeddedCourseWorkspace, loadFromStorage, preferServerClassroom],
   );
 
   useEffect(() => {

@@ -80,5 +80,14 @@ if FRONTEND_DIR.exists():
             raise HTTPException(status_code=404, detail="Not Found") from error
 
         if requested.is_file():
-            return FileResponse(requested)
-        return FileResponse(frontend_root / "index.html")
+            if requested.name == "index.html":
+                return FileResponse(requested, headers={"Cache-Control": "no-cache"})
+            # Hashed bundles are immutable; cache them long.
+            return FileResponse(requested,
+                                headers={"Cache-Control": "public, max-age=31536000, immutable"})
+        # The SPA shell must never be cached: it references hashed asset
+        # bundles, and a stale shell keeps users on a removed route set
+        # (e.g. a sidebar entry pointing at a page the new build no longer
+        # has).
+        return FileResponse(frontend_root / "index.html",
+                            headers={"Cache-Control": "no-cache"})

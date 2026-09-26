@@ -15,6 +15,19 @@ type Member = {
 }
 type Members = { data: Member[]; count: number }
 
+type ClassroomLearningData = {
+  sessions: Array<{
+    sessionKey: string
+    userId: string
+    classroomId: string | null
+    startedAt: string
+    lastActiveAt: string
+    ended: boolean
+  }>
+  mastery: Array<{ userId: string; knowledgePointId: string; stars: number; status: string }>
+  eventSummary: Record<string, number>
+}
+
 async function api<T>(path: string): Promise<T> {
   const response = await fetch(`/api/v1${path}`, { credentials: "include" })
   const data = await response.json()
@@ -25,8 +38,8 @@ async function api<T>(path: string): Promise<T> {
 export const Route = createFileRoute("/_layout/learning-data")({ component: LearningData })
 
 /**
- * 学习数据页只展示真实已有数据。学生 Agent（课堂会话、播放事件、知识点掌握度）
- * 尚未接入时给出明确空状态；平台侧现有数据仅为选课关系与章节完成记录。
+ * 学习数据页：选课关系、章节完成记录，以及学生 Agent 落库的课堂学情
+ * （课堂会话、知识点掌握度、事件统计 —— 全部为真实落库数据）。
  */
 function LearningData() {
   const { user } = useAuth()
@@ -41,7 +54,7 @@ function LearningData() {
     <div>
       <p className="text-sm font-medium text-[#B00055]">学习分析</p>
       <h1 className="text-3xl font-semibold tracking-tight">学习数据</h1>
-      <p className="mt-2 text-muted-foreground">课程学习进度总览；课堂会话与掌握度数据将在学生 Agent 接入后展示。</p>
+      <p className="mt-2 text-muted-foreground">课程学习进度总览与课堂学情（学生 Agent 每节课自动同步）。</p>
     </div>
 
     {!studentAgentReady && (
@@ -49,10 +62,10 @@ function LearningData() {
         <CardContent className="flex items-start gap-3 p-6">
           <CircleAlert className="mt-0.5 size-5 shrink-0 text-amber-500" />
           <div className="space-y-1">
-            <p className="font-medium">学生 Agent 尚未接入</p>
+            <p className="font-medium">学生 Agent 暂不可用</p>
             <p className="text-sm text-muted-foreground">
-              课堂会话、发言记录、播放事件、阶段进度与知识点掌握度等数据由学生 Agent 写入统一数据库后才会出现在这里。
-              当前页面仅展示平台已有真实数据（选课关系与章节完成记录），不提供模拟统计。
+              课堂会话、发言记录、知识点掌握度等数据由学生 Agent 在课堂中写入统一数据库。
+              学生 Agent 离线期间不产生新数据，已有数据仍正常展示。
             </p>
           </div>
         </CardContent>
@@ -68,10 +81,25 @@ function LearningData() {
   </div>
 }
 
+type SessionRow = ClassroomLearningData["sessions"][number]
+
 function CourseProgressCard({ course }: { course: Course }) {
   const members = useQuery<Members>({ queryKey: ["course-members", course.id], queryFn: () => api(`/courses/${course.id}/members`) })
   const roster = members.data?.data ?? []
   const withProgress = roster.filter((member) => member.total_chapters > 0)
+  const classroom = useQuery<ClassroomLearningData>({
+    queryKey: ["course-classroom-learning", course.id],
+    queryFn: () => api(`/courses/${course.id}/learning-data`),
+    refetchInterval: 60_000,
+  })
+  const nameByUser = new Map(roster.map((m) => [m.id, m.full_name || m.email]))
+  const sessions = (classroom.data?.sessions ?? []).slice(0, 5)
+  const starsByUser = new Map<string, number>()
+  for (const row of classroom.data?.mastery ?? []) {
+    starsByUser.set(row.userId, (starsByUser.get(row.userId) ?? 0) + (row.stars ?? 0))
+  }
+  const eventSummary = classroom.data?.eventSummary ?? {}
+
   return <Card>
     <CardHeader>
       <CardTitle className="flex items-center gap-2">
@@ -97,6 +125,35 @@ function CourseProgressCard({ course }: { course: Course }) {
           </div>
         </div>
       })}
+
+      {classroom.data && (sessions.length > 0 || Object.keys(eventSummary).length > 0) && (
+        <div className="rounded-lg border bg-muted/30 p-3 space-y-2">
+          <p className="text-xs font-medium text-muted-foreground">课堂学情（学生 Agent 实时同步）</p>
+          {roster.map((member) => {
+            const stars = starsByUser.get(member.id)
+            return stars ? (
+              <div key={`m-${member.id}`} className="flex items-center justify-between text-xs">
+                <span className="truncate">{member.full_name || member.email}</span>
+                <span className="text-amber-500">★ {stars}</span>
+              </div>
+            ) : null
+          })}
+          {sessions.map((session: SessionRow) => (
+            <div key={session.sessionKey} className="flex items-center justify-between gap-2 text-xs">
+              <span className="truncate">{nameByUser.get(session.userId) ?? session.userId.slice(0, 8)}</span>
+              <span className="shrink-0 text-muted-foreground">
+                {session.ended ? "已完成" : "学习中"} ·{" "}
+                {new Date(session.lastActiveAt).toLocaleString("zh-CN", {
+                  month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit",
+                })}
+              </span>
+            </div>
+          ))}
+          <p className="text-xs text-muted-foreground">
+            {Object.entries(eventSummary).map(([type, count]) => `${type} ${count}`).join(" · ")}
+          </p>
+        </div>
+      )}
     </CardContent>
   </Card>
 }

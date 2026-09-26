@@ -60,6 +60,9 @@ agenticclasspilot.com {
   handle /classes* {
     reverse_proxy host.docker.internal:3200
   }
+  handle /settings* {
+    reverse_proxy host.docker.internal:3200
+  }
   handle /classroom* {
     reverse_proxy host.docker.internal:3200
   }

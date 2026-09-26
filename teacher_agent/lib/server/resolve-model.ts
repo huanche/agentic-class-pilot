@@ -14,6 +14,7 @@ import {
   resolveBaseUrl,
   resolveProxy,
 } from '@/lib/server/provider-config';
+import { llmOverrideFromConfig, getPlatformUserModelConfigForRequest } from '@/lib/server/platform-user-model-config';
 import { validateUrlForSSRF } from '@/lib/server/ssrf-guard';
 import { getStageRoute, type LlmStage } from '@/lib/server/model-routes';
 
@@ -51,6 +52,12 @@ export async function resolveModel(params: {
   baseUrl?: string;
   providerType?: string;
   thinkingConfig?: ThinkingConfig;
+  /**
+   * Platform per-user BYOK override (个人模型配置). When present it wins over
+   * stage routes, client headers and server-managed providers — the user's
+   * own persisted key is the point.
+   */
+  platformOverrides?: { modelString: string; apiKey: string; baseUrl?: string };
 }): Promise<ResolvedModel> {
   // Resolution order: stage route > x-model > DEFAULT_MODEL.
   // A configured stage route is the operator's deliberate per-stage choice and
@@ -61,7 +68,8 @@ export async function resolveModel(params: {
   // vendor default.
   const stageRoute = getStageRoute(params.stage);
   const stageModel = stageRoute?.model;
-  const modelString = stageModel || params.modelString || process.env.DEFAULT_MODEL;
+  const modelString =
+    params.platformOverrides?.modelString || stageModel || params.modelString || process.env.DEFAULT_MODEL;
   if (!modelString) {
     throw new Error(
       'No model could be resolved. Configure DEFAULT_MODEL (and/or a MODEL_ROUTES entry for this stage), or send a model via x-model.',
@@ -108,8 +116,8 @@ export async function resolveModel(params: {
     }
   }
 
-  const apiKey = resolveApiKey(providerId, clientApiKey || '');
-  const baseUrl = resolveBaseUrl(providerId, clientBaseUrl);
+  const apiKey = params.platformOverrides?.apiKey || resolveApiKey(providerId, clientApiKey || '');
+  const baseUrl = params.platformOverrides?.baseUrl || resolveBaseUrl(providerId, clientBaseUrl);
   const proxy = resolveProxy(providerId);
   const { model, modelInfo } = getModel({
     providerId,
@@ -162,6 +170,12 @@ export async function resolveModelFromHeaders(
   stage?: LlmStage,
   thinkingConfig?: ThinkingConfig,
 ): Promise<ResolvedModel> {
+  const platformOverrides = llmOverrideFromConfig(await getPlatformUserModelConfigForRequest(req));
+  if (platformOverrides) {
+    // BYOK takes over entirely: drop browser-supplied selection headers to
+    // avoid mixing the user's persisted credentials with stale session ones.
+    return resolveModel({ stage, thinkingConfig, platformOverrides });
+  }
   return resolveModel({
     modelString: req.headers.get('x-model') || undefined,
     stage,

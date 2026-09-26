@@ -340,6 +340,20 @@ export default function ClassDetailPage() {
                     </div>
                     <span className="text-xs font-medium tabular-nums">{student.progress}%</span>
                   </div>
+                  <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-slate-500">
+                    {typeof student.totalLessons === 'number' && student.totalLessons > 0 && (
+                      <span>已学 {student.learnedLessons ?? 0}/{student.totalLessons} 节</span>
+                    )}
+                    {typeof student.sessionCount === 'number' && student.sessionCount > 0 && (
+                      <span>会话 {student.sessionCount} 次 · 完成 {student.endedCount ?? 0}</span>
+                    )}
+                    {!!student.stars && <span className="text-amber-500">知识点 ★ {student.stars}</span>}
+                    {!!student.lastActiveAt && (
+                      <span>
+                        最近活跃 {new Date(student.lastActiveAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>

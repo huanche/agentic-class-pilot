@@ -14,7 +14,7 @@ import {
 export type Item = {
   icon: LucideIcon
   title: string
-  path: string
+  path?: string
   /**
    * Internal items navigate through the router; external items (teacher
    * workspace, other services) render a plain anchor with the absolute URL.
@@ -22,6 +22,11 @@ export type Item = {
   external?: boolean
   /** Small marker for entries served by an external service (e.g. 教师工作区). */
   badge?: string
+  /**
+   * In-app action items (e.g. 模型配置 opens a dialog) render a plain button
+   * instead of navigating. Takes precedence over path/external.
+   */
+  onSelect?: () => void
 }
 
 interface MainProps {
@@ -44,7 +49,7 @@ export function Main({ items }: MainProps) {
       <SidebarGroupContent>
         <SidebarMenu>
           {items.map((item) => {
-            const isActive = !item.external && currentPath === item.path
+            const isActive = !item.external && item.path === currentPath
 
             return (
               <SidebarMenuItem key={item.title}>
@@ -53,7 +58,18 @@ export function Main({ items }: MainProps) {
                   isActive={isActive}
                   asChild
                 >
-                  {item.external ? (
+                  {item.onSelect ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        item.onSelect?.()
+                        handleMenuClick()
+                      }}
+                    >
+                      <item.icon />
+                      <span>{item.title}</span>
+                    </button>
+                  ) : item.external ? (
                     <a href={item.path} onClick={handleMenuClick}>
                       <item.icon />
                       <span className="flex-1 truncate">{item.title}</span>

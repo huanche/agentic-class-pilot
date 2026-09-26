@@ -41,6 +41,7 @@ from agent import (  # noqa: E402
     kp_title, lesson_source_label, list_lesson_ids, load_lesson,
     run_turn_stateless, safe_lesson_id, save_lesson, validate_plan,
 )
+from llm_override import set_llm_override  # noqa: E402
 
 try:
     from fastapi import FastAPI, HTTPException, Request
@@ -175,11 +176,27 @@ def _step(sid: str, message: str = "", speaker: str = "student",
         for extra in ("platform", "learning_context"):
             if extra in s and extra not in s["state"]:
                 s["state"][extra] = s[extra]
-        st = run_turn_stateless(
-            GRAPH, s["state"], _now(), message, speaker,
-            tick_only=tick_only, time_scale=s["time_scale"],
-            external_event=external_event,
-        )
+        # 平台个人模型配置（BYOK）：每个会话只在第一轮拉取一次，
+        # 失败/未配置回退 AGENT_LLM_* 环境变量；仅对本轮线程生效。
+        if "platform" in s and "llm_override_loaded" not in s:
+            s["llm_override_loaded"] = True
+            uid = (s.get("platform") or {}).get("userId")
+            if uid:
+                from apps.integration import platform_client
+                cfg = platform_client.fetch_user_model_config(str(uid))
+                if cfg:
+                    s["llm_override"] = cfg
+                    print(f"[BYOK] 会话 {sid} 启用用户 {uid} 的个人模型配置 "
+                          f"({(cfg.get('llm') or {}).get('model', '?')})", file=sys.stderr)
+        set_llm_override(s.get("llm_override"))
+        try:
+            st = run_turn_stateless(
+                GRAPH, s["state"], _now(), message, speaker,
+                tick_only=tick_only, time_scale=s["time_scale"],
+                external_event=external_event,
+            )
+        finally:
+            set_llm_override(None)
 
         # 这一轮跑的这几秒里，会话可能已经被停掉了 —— 老师按了「停课」
         # （DELETE 会置 stop 并把 ended 落盘），或者进程/测试把它从注册表里摘了。
@@ -327,6 +344,23 @@ def _record_learning_event(sid: str, event_type: str,
         print(f"[persistence] {event_type} 写入失败: {exc}")
 
 
+def _notify_platform_progress(sid: str, event: str) -> None:
+    """课堂开始/结束时通知平台，由平台把学情同步到教师端授课管理（尽力而为）。"""
+    s = SESSIONS.get(sid)
+    if not s:
+        return
+    ctx = s.get("platform") or s.get("state", {}).get("platform") or {}
+    if not ctx.get("userId") or not ctx.get("courseId"):
+        return  # 非平台会话（demo）无需同步
+    try:
+        from apps.integration import platform_client
+        platform_client.post_learning_progress(
+            user_id=str(ctx["userId"]), course_id=str(ctx["courseId"]),
+            session_key=sid, classroom_id=ctx.get("classroomId"), event=event)
+    except Exception as exc:  # 通知失败不影响上课
+        print(f"[persistence] 学习进度通知失败: {exc}")
+
+
 def _persist_session_record(sid: str) -> None:
     """把会话行（首次）与消息流水同步到统一存储。"""
     s = SESSIONS.get(sid)
@@ -397,6 +431,7 @@ def _persist_lesson_completion(sid: str) -> None:
     )
     persistence.finish_session(sid)
     _record_learning_event(sid, event_type="lesson_ended")
+    _notify_platform_progress(sid, "ended")
 
 
 def _preload_disk_sessions() -> None:
@@ -464,7 +499,7 @@ def _lesson_payload(lesson_id: str) -> dict:
         for name in segment.get("knowledgePoints") or []:
             if name not in knowledge_points:
                 knowledge_points.append(name)
-    title = str(plan.get("lesson_title") or plan.get("lesson_id") or "本节课")
+    title = str(plan.get("lesson_title") or plan.get("title") or "本节课")
     display_title = title.split(" ", 1)[-1] if " " in title else title
     summary = plan.get("summary") or "；".join(segment["title"] for segment in segments[:3])
     return {
@@ -1183,6 +1218,7 @@ def begin(sid: str) -> dict:
     """
     st = _begin_lesson(sid)
     _record_learning_event(sid, event_type="lesson_began")
+    _notify_platform_progress(sid, "started")
     return {
         "ok": True,
         "reply_text": st.get("reply_text", ""),
@@ -1390,7 +1426,7 @@ def export(sid: str, fmt: str = "md") -> Response:
 
     weak = [(kp, v) for kp, v in sorted(stars.items()) if v <= 2]
     lines = [
-        f"# 学情报告 · {plan.get('lesson_title', lesson_id)}",
+        f"# 学情报告 · {plan.get('lesson_title') or plan.get('title') or '学情报告'}",
         "",
         f"- 学生：{student_id}",
         f"- 会话：{sid}",

@@ -3,7 +3,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import { nanoid } from 'nanoid';
 import { writeJsonFileAtomic } from '@/lib/server/classroom-storage';
-import { generateCourseId } from '@/lib/server/platform-course-bridge';
+import { generateCourseId, resolveLegacyCourseId } from '@/lib/server/platform-course-bridge';
 import type {
   CourseArtifactJob,
   CourseArtifactRecord,
@@ -107,8 +107,17 @@ export async function listServerCourses(teacherId: string): Promise<CourseSpace[
 export async function readServerCourse(courseId: string): Promise<CourseSpace | null> {
   assertId(courseId, 'course id');
   const databaseCourse = await readCourseFromDatabase(courseId);
-  if (isCourseDatabaseConfigured()) return databaseCourse ?? null;
-  return readJson<CourseSpace>(path.join(COURSES_DIR, `${courseId}.json`));
+  if (databaseCourse) return databaseCourse;
+  if (!isCourseDatabaseConfigured()) {
+    const localCourse = readJson<CourseSpace>(path.join(COURSES_DIR, `${courseId}.json`));
+    if (localCourse) return localCourse;
+  }
+  // Platform entry points reference pre-integration courses by the platform
+  // UUID; retry once under the legacy teacher-agent id via the mapping.
+  const legacyId = await resolveLegacyCourseId(courseId);
+  if (!legacyId) return null;
+  if (isCourseDatabaseConfigured()) return (await readCourseFromDatabase(legacyId)) ?? null;
+  return (await readJson<CourseSpace>(path.join(COURSES_DIR, `${legacyId}.json`))) ?? null;
 }
 
 export async function createServerCourse(input: CreateCourseSpaceInput): Promise<CourseSpace> {

@@ -79,7 +79,7 @@ export async function GET(
       headers: {
         'Content-Type': contentType,
         'Content-Length': String(stat.size),
-        'Cache-Control': 'public, max-age=86400, immutable',
+        'Cache-Control': subDir === 'audio' ? 'private, no-cache' : 'public, max-age=86400, immutable',
       },
     });
   } catch (error) {

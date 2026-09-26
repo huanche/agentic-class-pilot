@@ -32,25 +32,50 @@ export default function StudentApp() {
   useEffect(() => {
     const url = new URL(window.location.href);
     const token = url.searchParams.get("launch_token");
-    if (!token) {
-      setGate("auth");
+    if (token) {
+      // Keep the short-lived token out of copied URLs and browser history.
+      // Use TWO mechanisms: a window global AND a sessionStorage bridge that
+      // the legacy api.js reads synchronously (dynamic-import chunk timing).
+      window.__studentLaunchToken = token;
+      try { sessionStorage.setItem("__launch_token", token); } catch (e) {}
+      url.searchParams.delete("launch_token");
+      window.history.replaceState({}, "", url);
+      setPlatformEntry(true);
+      setGate("app");
       return;
     }
-    // Keep the short-lived token out of copied URLs and browser history.
-    // Use TWO mechanisms: a window global AND a sessionStorage bridge that
-    // the legacy api.js reads synchronously (dynamic-import chunk timing).
-    window.__studentLaunchToken = token;
-    try { sessionStorage.setItem("__launch_token", token); } catch (e) {}
-    url.searchParams.delete("launch_token");
-    window.history.replaceState({}, "", url);
-    setPlatformEntry(true);
-    setGate("app");
+    // 刷新 / 回退时 token 已从 URL 摘掉 —— sessionStorage 里还有就仍是平台态，
+    // 直接回课堂，不要落到独立登录页（平台部署下那页只会误导）。
+    let stored = "";
+    try { stored = sessionStorage.getItem("__launch_token") || ""; } catch (e) {}
+    if (stored) {
+      window.__studentLaunchToken = stored;
+      setPlatformEntry(true);
+      setGate("app");
+      return;
+    }
+    // 平台部署下直接访问 /app（无令牌、无会话）→ 回平台首页，
+    // 不再展示独立的登录 / 加入课程页。独立态只保留给本机开发。
+    const host = window.location.hostname;
+    if (host !== "localhost" && host !== "127.0.0.1") {
+      window.location.replace("/");
+      return;
+    }
+    setGate("auth");
   }, []);
 
   // 登录通过（或平台深链）之后才加载 legacy 应用 —— 别让它在登录页背后偷偷发请求
   useEffect(() => {
     if (gate !== "app") return;
     let active = true;
+
+    const bootLegacy = () => {
+      import("../legacy/app.js").then(() => {
+        if (active) setReady(true);
+      }).catch((error) => {
+        console.error("学生端初始化失败", error);
+      });
+    };
 
     if (platformEntry) {
       // 平台播放器适配层：把课堂视频区换成教师端播放器 iframe。
@@ -59,34 +84,29 @@ export default function StudentApp() {
       import("../platform/playerAdapter.js").catch(function (error) {
         console.error("播放器适配层加载失败", error);
       });
-    }
-
-    import("../legacy/app.js").then(() => {
-      if (!active) return;
-      setReady(true);
-      // Platform deep link: establish the trusted course context, then show
-      // that course's published lesson list.  A classroom is entered only
-      // after the student explicitly selects a lesson.
-      if (platformEntry && window.location.hash === "") {
-        import("../legacy/api.js").then((api) => {
-          // Create the session FIRST (the learning context only exists after
-          // start), then navigate to the class view using the session's course.
-          return api.startSession({ timeScale: 1 }).then((result) => {
-            try { sessionStorage.setItem("__studentSessionId", result.sessionId); } catch (e) {}
-            // 平台链路用会话的 learning_context 取课程，不用本系统的学生账号接口
-            return api.fetchSessionCourses(result.sessionId).then((courses) => {
-              const course = courses && courses[0];
-              if (!course) return;
+      // 平台深链：**先**建立会话并把 hash 指到对应课程的课时列表，**再**加载
+      // legacy 应用 —— 它启动即按当前 hash 渲染，空 hash 会先闪一下
+      // 「我的课程」页（/app#）再跳到选择课时。会话先行也保证课程接口能带上
+      // sessionId（learning_context 靠它定位）。
+      import("../legacy/api.js").then((api) => {
+        return api.startSession({ timeScale: 1 }).then((result) => {
+          try { sessionStorage.setItem("__studentSessionId", result.sessionId); } catch (e) {}
+          if (window.location.hash !== "") return; // 用户带着具体课时链接进来，别覆盖
+          // 平台链路用会话的 learning_context 取课程，不用本系统的学生账号接口
+          return api.fetchSessionCourses(result.sessionId).then((courses) => {
+            const course = courses && courses[0];
+            if (course) {
               window.location.hash = `/course/${encodeURIComponent(course.courseId)}`;
-            });
+            }
           });
-        }).catch((error) => {
-          console.error("平台课程初始化失败", error);
         });
-      }
-    }).catch((error) => {
-      console.error("学生端初始化失败", error);
-    });
+      }).then(bootLegacy).catch((error) => {
+        console.error("平台课程初始化失败", error);
+        bootLegacy(); // 会话建立失败也别白屏 —— 退回 legacy 自身的错误提示
+      });
+    } else {
+      bootLegacy();
+    }
 
     return () => {
       active = false;

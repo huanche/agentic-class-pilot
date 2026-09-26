@@ -640,6 +640,33 @@ async function generateGLMTTS(config: TTSModelConfig, text: string): Promise<TTS
 }
 
 /**
+ * DashScope may return a streaming WAV with placeholder RIFF/data lengths.
+ * Once downloaded, patch those lengths so browser media decoders can play it.
+ */
+export function normalizeQwenWav(audio: Uint8Array): Uint8Array {
+  if (audio.length < 44) return audio;
+  const view = new DataView(audio.buffer, audio.byteOffset, audio.byteLength);
+  const tag = (offset: number) => String.fromCharCode(...audio.subarray(offset, offset + 4));
+  if (tag(0) !== 'RIFF' || tag(8) !== 'WAVE') return audio;
+
+  const normalized = audio.slice();
+  const header = new DataView(normalized.buffer);
+  header.setUint32(4, normalized.length - 8, true);
+  let offset = 12;
+  while (offset + 8 <= normalized.length) {
+    const chunkSize = header.getUint32(offset + 4, true);
+    if (tag(offset) === 'data') {
+      header.setUint32(offset + 4, normalized.length - offset - 8, true);
+      return normalized;
+    }
+    const next = offset + 8 + chunkSize + (chunkSize % 2);
+    if (next <= offset || next > normalized.length) break;
+    offset = next;
+  }
+  return audio;
+}
+
+/**
  * Qwen TTS implementation (DashScope API - Qwen3 TTS Flash)
  */
 async function generateQwenTTS(config: TTSModelConfig, text: string): Promise<TTSGenerationResult> {
@@ -696,7 +723,7 @@ async function generateQwenTTS(config: TTSModelConfig, text: string): Promise<TT
   const arrayBuffer = await audioResponse.arrayBuffer();
 
   return {
-    audio: new Uint8Array(arrayBuffer),
+    audio: normalizeQwenWav(new Uint8Array(arrayBuffer)),
     format: 'wav', // Qwen3 TTS returns WAV format
   };
 }

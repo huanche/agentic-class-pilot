@@ -11,6 +11,11 @@ const VALID_STATUSES = new Set<CourseStudentLearningState['status']>([
   'needs-attention',
 ]);
 
+function optionalInt(value: unknown): number | undefined {
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 0 ? Math.round(n) : undefined;
+}
+
 function normalizeStudent(input: unknown): CourseStudentLearningState | null {
   if (!input || typeof input !== 'object') return null;
   const body = input as Partial<CourseStudentLearningState>;
@@ -40,6 +45,11 @@ function normalizeStudent(input: unknown): CourseStudentLearningState | null {
         ]
       : [],
     lastActiveAt: typeof body.lastActiveAt === 'number' ? body.lastActiveAt : Date.now(),
+    learnedLessons: optionalInt(body.learnedLessons),
+    totalLessons: optionalInt(body.totalLessons),
+    sessionCount: optionalInt(body.sessionCount),
+    endedCount: optionalInt(body.endedCount),
+    stars: optionalInt(body.stars),
   };
 }
 
