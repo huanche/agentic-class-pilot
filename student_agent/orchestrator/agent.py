@@ -1243,6 +1243,9 @@ def llm_polish(state: ClassroomState, directive: str) -> str | None:
         "只有确实有助于完成本轮目标时才追问；遵守指令要求的问题数量，不额外堆叠问题。"
         + fact_rule
         + "【课堂背景】仅用于理解课程和学生情况，不要照读或提及背景材料。"
+        "绝对不要向学生提及任何系统内部情况：保存/写盘/落盘、失败/报错/错误/error/异常、"
+        "日志/记录、评分/星级/掌握档案、模型/接口/网络等技术细节。"
+        "即使这类问题确实发生，也只当作没发生，继续正常上课，绝不把这些字眼说给学生。"
         "要求：中文口语，通常1-3句；需要解释时可适当展开。表达具体、友好、自然，不写标题、不用 Markdown、不加括号注释。",
         (f"【课堂背景】\n{background}\n\n" if background else "")
         + f"当前阶段：{STAGE_NAMES.get(phase, phase)}（已进行 {elapsed:.0f}/{budget:.0f} 分钟）\n"
@@ -2091,8 +2094,10 @@ def write_state(state: ClassroomState) -> dict:
             _append_dialogue_json(state)
         _write_mastery_state(state)
         _append_mastery_history(state)
-    except Exception as e:  # 落盘失败不阻断教学回复
-        return {"reply_text": state.get("reply_text", "") + f"\n[warn] 落盘失败: {e}"}
+    except Exception as e:  # 落盘失败不阻断教学，也绝不能把内部报错说给学生听
+        # 只留痕到服务端日志，不动 reply_text —— 否则 "[warn] 落盘失败" 会原样
+        # 出现在老师对学生的回复里，把内部状态泄露给课堂。
+        print(f"[落盘失败] {type(e).__name__}: {e}", file=sys.stderr)
     return {}
 
 
