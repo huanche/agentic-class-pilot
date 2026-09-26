@@ -53,6 +53,9 @@ var platformPlayer = {
     iframe.style.height = "100%";
     iframe.style.border = "none";
     iframe.setAttribute("allowfullscreen", "true");
+    // Let the embedded teacher player start audio without a direct click
+    // inside the iframe (browsers block play() in iframes without this).
+    iframe.setAttribute("allow", "autoplay; encrypted-media");
     iframe.setAttribute("title", "课程播放器");
 
     var status = document.getElementById("video-player-status");

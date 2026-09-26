@@ -99,12 +99,15 @@ STAGE_GOAL = {
 # LLM 可插拔层（OpenAI 兼容端点；未配置返回 None → 走确定性脚本）
 # ═══════════════════════════════════════════════════════════════
 
+try:
+    from llm_override import llm_params
+except ImportError:  # 作为 orchestrator 包导入时
+    from .llm_override import llm_params
+
+
 def llm_available() -> bool:
-    return bool(
-        os.environ.get("AGENT_LLM_BASE_URL")
-        and os.environ.get("AGENT_LLM_API_KEY")
-        and os.environ.get("AGENT_LLM_MODEL")
-    )
+    base, key, model = llm_params()
+    return bool(base and key and model)
 
 
 # 诊断计数：实测时用，能立刻看出"到底调没调成功"
@@ -117,9 +120,7 @@ def llm_chat(system: str, user: str) -> str | None:
     返回 None 时调用方走确定性降级脚本，但 last_error 会保留原因，
     否则实测时分不清"没接上"和"接上了但走了兜底"。
     """
-    base = os.environ.get("AGENT_LLM_BASE_URL")
-    key = os.environ.get("AGENT_LLM_API_KEY")
-    model = os.environ.get("AGENT_LLM_MODEL")
+    base, key, model = llm_params()
     if not (base and key and model):
         return None
     LLM_DIAG["calls"] += 1
@@ -158,6 +159,17 @@ def llm_chat(system: str, user: str) -> str | None:
 _KP_TITLES: dict[str, str] | None = None
 
 
+# 平台课程知识点标题注册表：load_plan_for_session 建计划时写入。
+_PLAN_KP_TITLES: dict[str, str] = {}
+
+
+def register_kp_titles(titles: dict[str, str] | None) -> None:
+    """注册平台下发的知识点标题，供 kp_title 免查本地课时直接使用。"""
+    for kp_id, title in (titles or {}).items():
+        if kp_id and title:
+            _PLAN_KP_TITLES[str(kp_id)] = str(title)
+
+
 def kp_title(kp_id: str, lesson_id: str | None = None) -> str:
     """KP 编号 → 中文标题。
 
@@ -174,6 +186,12 @@ def kp_title(kp_id: str, lesson_id: str | None = None) -> str:
             if kp.get("kp_id") == kp_id:
                 return str(kp.get("title") or kp_id)
         return kp_id
+
+    # 平台课程的知识点标题由集成层建计划时注册（course_adapter），
+    # 查得到就绝不说 KP-xxx 这类内部编号。
+    registered = _PLAN_KP_TITLES.get(kp_id)
+    if registered:
+        return registered
 
     global _KP_TITLES
     if _KP_TITLES is None:
@@ -815,7 +833,7 @@ def load_plan(state: ClassroomState) -> dict:
             return {
                 "host_phase": "ending",
                 "student_status": "ended",
-                "reply_text": f"开课失败：找不到课时 {lesson_id!r}",
+                "reply_text": "开课失败：这门课的课时没有加载成功，请返回重新选择，或联系老师检查课程发布状态。",
                 "advance_reason": "课时不存在",
             }
         plan, _segments = lesson
@@ -1110,7 +1128,7 @@ def host_event(state: ClassroomState) -> dict:
             "我会根据你的掌握情况调整节奏——听懂了我们就往前走，没听透我会多问几句。"
         )
         reply = (
-            f"上课！今天我们讲「{plan.get('lesson_title', state['lesson_id'])}」，"
+            f"上课！今天我们讲「{plan.get('lesson_title') or plan.get('title') or '今天的课程'}」，"
             f"共 {plan.get('total_minutes')} 分钟。\n"
             f"流程：{agenda}。\n"
             f"{lead}"
@@ -1359,7 +1377,7 @@ def teach(state: ClassroomState) -> dict:
                     f"当前段落《{cur.get('title')}》：{cur.get('content')}"
                     if cur
                     # 不写死课名：上传的课时走到这里会拿到别的课的内容
-                    else f"本课（{plan.get('lesson_title') or '本节课'}）已讲过的内容"
+                    else f"本课（{plan.get('lesson_title') or plan.get('title') or '本节课'}）已讲过的内容"
                 )
                 directive = (
                     f"学生回应简短。简短肯定他，然后围绕下面这段内容再往深讲一层：\n"

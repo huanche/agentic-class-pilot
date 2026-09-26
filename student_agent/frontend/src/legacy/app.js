@@ -178,8 +178,37 @@ function availableLessons(course) {
   return course.lessons.filter(function (item) { return item.status === "completed" || item.status === "current"; });
 }
 
+function lessonEndedFlag(lessonId) {
+  try { return localStorage.getItem("ai-learn.lessonEnded." + lessonId) === "1"; }
+  catch (e) { return false; }
+}
+
+function markLessonEnded(lessonId) {
+  if (!lessonId) return;
+  try { localStorage.setItem("ai-learn.lessonEnded." + lessonId, "1"); } catch (e) {}
+}
+
+/* 平台态入口标识：与 api.js 的 launchToken() 同源（该函数未导出） */
+function isPlatformEntry() {
+  try {
+    return Boolean(window.__studentLaunchToken ||
+      (window.sessionStorage && window.sessionStorage.getItem("__launch_token")));
+  } catch (e) { return Boolean(window.__studentLaunchToken); }
+}
+
+/* 课程列表的返回：平台态回平台「学生首页」（/student），
+   独立态才回到学生端内置课程列表。 */
+function exitToCourses() {
+  if (isPlatformEntry()) {
+    window.location.assign("/student");
+    return;
+  }
+  go("#");
+}
+
 function lessonDestination(item) {
-  return item.status === "completed" ? "review" : "class";
+  return (item && item.status === "completed") || lessonEndedFlag(item && item.lessonId)
+    ? "review" : "class";
 }
 
 function makeNode(tag, className, content) {
@@ -380,6 +409,7 @@ function applyServerTurn(res) {
 
   hostPhase = phase;
   if (phase === "ending") {
+    markLessonEnded(currentLessonId);
     var course = courseById(currentCourseId);
     var completedLesson = course && course.lessons.find(function (item) { return item.lessonId === currentLessonId; });
     if (completedLesson) completedLesson.status = "completed";
@@ -531,7 +561,8 @@ document.querySelectorAll("[data-goto]").forEach(function (card) {
 
 document.querySelectorAll("[data-back]").forEach(function (btn) {
   btn.addEventListener("click", function () {
-    go(btn.dataset.back === "courses" ? "#" : lessonHash(currentCourseId, currentLessonId));
+    if (btn.dataset.back === "courses") { exitToCourses(); return; }
+    go(lessonHash(currentCourseId, currentLessonId));
   });
 });
 
@@ -540,7 +571,8 @@ document.addEventListener("keydown", function (e) {
   if (e.key !== "Escape") return;
   var route = parseHash();
   if (!route.name || route.name === "class") return;
-  go(route.name === "course" ? "#" : route.name === "lesson" ? courseHash(route.courseId) : lessonHash(currentCourseId, currentLessonId));
+  if (route.name === "course") { exitToCourses(); return; }
+  go(route.name === "lesson" ? courseHash(route.courseId) : lessonHash(currentCourseId, currentLessonId));
 });
 
 

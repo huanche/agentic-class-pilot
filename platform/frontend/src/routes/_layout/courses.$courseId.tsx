@@ -5,6 +5,7 @@ import { Suspense, useState } from "react"
 
 import { CoursesService } from "@/client"
 import { CourseMembersPanel } from "@/components/Courses/CourseMembersPanel"
+import { ClassroomLearningPanel } from "@/components/Courses/ClassroomLearningPanel"
 import PendingItems from "@/components/Pending/PendingItems"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -23,6 +24,17 @@ async function openTeacherWorkspace(courseId: string) {
   })
   const data = await response.json()
   if (!response.ok) throw new Error(data.detail || "无法打开教师工作区")
+  window.location.assign(data.url)
+}
+
+async function openStudentWorkspace(courseId: string) {
+  // 与学生首页同一个可信入口：平台签发带 launch_token 的学习地址
+  const response = await fetch(`/api/v1/courses/${courseId}/student-workspace`, {
+    method: "POST",
+    credentials: "include",
+  })
+  const data = await response.json()
+  if (!response.ok) throw new Error(data.detail || "进入学习失败")
   window.location.assign(data.url)
 }
 
@@ -58,6 +70,17 @@ function CourseDetail() {
   const teacher = user?.role === "teacher" || user?.is_superuser === true
   const { showSuccessToast, showErrorToast } = useCustomToast()
   const [opening, setOpening] = useState(false)
+  const [entering, setEntering] = useState(false)
+
+  async function handleEnterLearning() {
+    setEntering(true)
+    try {
+      await openStudentWorkspace(courseId)
+    } catch (error) {
+      showErrorToast(error instanceof Error ? error.message : "进入学习失败，请稍后重试")
+      setEntering(false)
+    }
+  }
   const { data: course } = useSuspenseQuery({
     queryKey: ["courses", courseId],
     queryFn: async () => (await CoursesService.readCourse({ path: { course_id: courseId } })).data,
@@ -91,15 +114,11 @@ function CourseDetail() {
           )}
         </div>
         {teacher && <Button disabled={opening} onClick={handleOpenWorkspace}>{opening ? "正在打开…" : "进入教师工作区"}<ExternalLink className="ml-2 h-4 w-4" /></Button>}
+        {!teacher && <Button disabled={entering} onClick={handleEnterLearning}>{entering ? "正在进入…" : "进入学习"}</Button>}
       </div>
 
       {teacher ? <>
-        <Card className="border-[#B00055]/15">
-          <CardHeader><CardTitle>学生与学习情况</CardTitle></CardHeader>
-          <CardContent className="text-sm leading-6 text-muted-foreground">
-            管理本课程的选课码与学生名单。学生 Agent 尚未接入，当前章节记录不代表真实学习完成度；学习时长、任务提交和成绩将在接入后展示。
-          </CardContent>
-        </Card>
+        <ClassroomLearningPanel courseId={courseId} />
         <CourseMembersPanel courseId={courseId} enrollCode={course.enroll_code} />
       </> : <Suspense fallback={<PendingItems />}><StudentChapters courseId={courseId} /></Suspense>}
     </div>

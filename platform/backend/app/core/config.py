@@ -46,6 +46,8 @@ class Settings(BaseSettings):
     STUDENT_PUBLIC_URL: str = "http://localhost:8000"
     # Launch-token lifetime for student workspace entry, in seconds.
     STUDENT_LAUNCH_TOKEN_TTL_SECONDS: int = 600
+    # Secret used to encrypt per-user model credentials at rest (user_model_config).
+    CONFIG_ENCRYPTION_KEY: str = ""
     PLATFORM_URL: str = "http://localhost:8080"
     SENTRY_DSN: HttpUrl | None = None
     DATABASE_URL: PostgresDsn

@@ -101,13 +101,18 @@ export async function GET(request: Request, context: { params: Promise<{ courseI
     ].sort((a, b) => (b.activatedAt ?? 0) - (a.activatedAt ?? 0)),
     // Platform enrollment is the roster source of truth. The local field only
     // remains as a standalone/demo fallback until student progress is migrated.
-    students: (await platformCourseMembers(request as NextRequest, courseId).catch(() => undefined))?.map((member) => ({
-      studentId: member.studentId,
-      name: member.name,
-      status: 'not-started' as const,
-      progress: 0,
-      completedResourceIds: [],
-      lastActiveAt: member.enrolledAt ? Date.parse(member.enrolledAt) : 0,
-    })) ?? course.classStudents ?? [],
+    students: (await platformCourseMembers(request as NextRequest, courseId).catch(() => undefined))?.map((member) => {
+      // 平台学情同步（PUT students）写入的 classStudents 优先于空白名单状态，
+      // 否则授课管理永远显示「未开始 0%」。
+      const synced = (course.classStudents ?? []).find((item) => item.studentId === member.studentId);
+      return synced ?? {
+        studentId: member.studentId,
+        name: member.name,
+        status: 'not-started' as const,
+        progress: 0,
+        completedResourceIds: [],
+        lastActiveAt: member.enrolledAt ? Date.parse(member.enrolledAt) : 0,
+      };
+    }) ?? course.classStudents ?? [],
   });
 }

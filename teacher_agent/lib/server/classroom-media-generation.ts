@@ -76,8 +76,21 @@ async function downloadToBuffer(url: string): Promise<Buffer> {
   return Buffer.from(await resp.arrayBuffer());
 }
 
+/**
+ * Origins that only resolve on the server itself (loopback / private LAN).
+ * Generation triggered by the platform internally arrives without
+ * x-forwarded-host, so `baseUrl` can be one of these — and a URL persisted
+ * into a classroom document would then be unfetchable by the student's
+ * browser (silent player). Rewritten to the configured public origin.
+ */
+const PRIVATE_ORIGIN_RE =
+  /^https?:\/\/(?:127\.0\.0\.1|localhost|\[::1\]|10\.\d+\.\d+\.\d+|172\.(?:1[6-9]|2\d|3[01])\.\d+\.\d+|192\.168\.\d+\.\d+)(?::\d+)?/i;
+
 function mediaServingUrl(baseUrl: string, classroomId: string, subPath: string): string {
-  return `${baseUrl}/api/classroom-media/${classroomId}/${subPath}`;
+  const publicOrigin = process.env.PLATFORM_PUBLIC_URL?.trim().replace(/\/+$/, '');
+  const origin =
+    publicOrigin && PRIVATE_ORIGIN_RE.test(baseUrl) ? baseUrl.replace(PRIVATE_ORIGIN_RE, publicOrigin) : baseUrl;
+  return `${origin}/api/classroom-media/${classroomId}/${subPath}`;
 }
 
 // ---------------------------------------------------------------------------

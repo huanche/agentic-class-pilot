@@ -1,4 +1,4 @@
-import { useSuspenseQuery } from "@tanstack/react-query"
+import { useQuery, useSuspenseQuery } from "@tanstack/react-query"
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { GraduationCap, Search } from "lucide-react"
 import { Suspense } from "react"
@@ -19,11 +19,55 @@ export const Route = createFileRoute("/_layout/my-courses")({
   }),
 })
 
+type LearningSummary = {
+  courseId: string
+  courseTitle: string
+  totalLessons: number
+  learnedLessons: number
+  endedSessions: number
+  lastActiveAt: string | null
+  stars: number
+  percent: number
+}
+
+/** 学生端课堂学情（student agent 落库的真实数据，随每节课开始/结束更新）。 */
+function useLearningSummary(enabled: boolean) {
+  return useQuery<LearningSummary[]>({
+    queryKey: ["my-learning-summary"],
+    queryFn: async () => {
+      const response = await fetch("/api/v1/users/me/learning-summary", {
+        credentials: "include",
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.detail || "请求失败")
+      return data.courses
+    },
+    enabled,
+    refetchInterval: 30_000,
+  })
+}
+
+function formatLastActive(value: string | null): string {
+  if (!value) return "尚未进入课堂"
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return "尚未进入课堂"
+  return `最近学习 ${date.toLocaleString("zh-CN", {
+    month: "numeric",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  })}`
+}
+
 function MyCoursesContent() {
   const { data: courses } = useSuspenseQuery({
     queryKey: ["my-courses"],
     queryFn: async () => (await EnrollmentsService.readMyCourses()).data,
   })
+  const summary = useLearningSummary(courses.data.length > 0)
+  const summaryByCourse = new Map(
+    (summary.data ?? []).map((item) => [item.courseId, item]),
+  )
 
   if (courses.data.length === 0) {
     return (
@@ -45,6 +89,7 @@ function MyCoursesContent() {
         const total = course.total_chapters ?? 0
         const done = course.completed_chapters ?? 0
         const pct = total > 0 ? Math.round((done / total) * 100) : 0
+        const progress = summaryByCourse.get(course.id)
         return (
           <Link
             key={course.id}
@@ -73,6 +118,17 @@ function MyCoursesContent() {
                       style={{ width: `${pct}%` }}
                     />
                   </div>
+                  {progress && (progress.totalLessons > 0 || progress.lastActiveAt) && (
+                    <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
+                      <span>
+                        课堂学习 {progress.learnedLessons}/{progress.totalLessons} 节
+                        {progress.stars > 0 ? ` · ★ ${progress.stars}` : ""}
+                      </span>
+                      <span className="truncate ml-2">
+                        {formatLastActive(progress.lastActiveAt)}
+                      </span>
+                    </div>
+                  )}
                 </div>
               </CardHeader>
             </Card>

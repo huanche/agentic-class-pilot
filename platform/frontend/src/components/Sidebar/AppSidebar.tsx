@@ -4,10 +4,12 @@ import {
   Home,
   KeyRound,
   Presentation,
-  Settings,
+  Settings2,
   UserCog,
 } from "lucide-react"
+import { useState } from "react"
 
+import { ModelConfigDialog } from "@/components/ModelConfig/ModelConfigDialog"
 import { SidebarAppearance } from "@/components/Common/Appearance"
 import { Logo } from "@/components/Common/Logo"
 import {
@@ -27,26 +29,7 @@ const studentItems: Item[] = [
   { icon: KeyRound, title: "加入课程", path: "/join" },
 ]
 
-function useAdminItems(): Item[] {
-  const status = usePlatformStatus()
-  const modelSettings = teacherServiceUrl(status.data?.teacherUrl, "/settings")
-  return [
-    { icon: UserCog, title: "用户管理", path: "/admin" },
-    ...(modelSettings
-      ? [
-          {
-            icon: Settings,
-            title: "模型配置",
-            path: modelSettings,
-            external: true,
-            badge: "系统配置",
-          } as Item,
-        ]
-      : []),
-  ]
-}
-
-/** Teacher navigation; course and classroom pages are served by the teacher workspace. */
+/** Teacher navigation; 课程建设/授课管理 are served by the teacher workspace. */
 function useTeacherItems(): Item[] {
   const status = usePlatformStatus()
   const courseBuilding = teacherServiceUrl(
@@ -60,7 +43,7 @@ function useTeacherItems(): Item[] {
       ? [
           {
             icon: BookOpenCheck,
-            title: "课程中心",
+            title: "课程建设",
             path: courseBuilding,
             external: true,
             badge: "教师工作区",
@@ -71,7 +54,7 @@ function useTeacherItems(): Item[] {
       ? [
           {
             icon: Presentation,
-            title: "课堂管理",
+            title: "授课管理",
             path: classTeaching,
             external: true,
             badge: "教师工作区",
@@ -85,12 +68,20 @@ export function AppSidebar() {
   const { user: currentUser } = useAuth()
 
   const teacherItems = useTeacherItems()
-  const adminItems = useAdminItems()
+  const adminItems: Item[] = [{ icon: UserCog, title: "用户管理", path: "/admin" }]
+  const [modelConfigOpen, setModelConfigOpen] = useState(false)
+  // 模型配置：教师/管理员打开系统级配置面板，学生打开个人配置面板，
+  // 都以对话框形式就地展示，不再跳转外部页面。
+  const modelConfigItem: Item = {
+    icon: Settings2,
+    title: "模型配置",
+    onSelect: () => setModelConfigOpen(true),
+  }
   const items = currentUser?.is_superuser
-    ? adminItems
+    ? [...adminItems, modelConfigItem]
     : currentUser?.role === "teacher"
-      ? teacherItems
-      : studentItems
+      ? [...teacherItems, modelConfigItem]
+      : [...studentItems, modelConfigItem]
 
   return (
     <Sidebar collapsible="icon">
@@ -104,6 +95,10 @@ export function AppSidebar() {
         <SidebarAppearance />
         <User user={currentUser} />
       </SidebarFooter>
+      <ModelConfigDialog
+        open={modelConfigOpen}
+        onOpenChange={setModelConfigOpen}
+      />
     </Sidebar>
   )
 }

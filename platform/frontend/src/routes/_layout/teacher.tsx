@@ -144,16 +144,16 @@ function TeacherPortal() {
             {user?.full_name || user?.email}，欢迎回来
           </h1>
           <p className="mt-4 max-w-2xl text-base leading-7 text-muted-foreground">
-            从课程中心开始组织材料、完成 AI
-            辅助备课和内容发布；进入课堂管理查看已发布课程、教学资料与学生学习状态。
+            从课程建设开始组织材料、完成 AI
+            辅助备课和内容发布；进入授课管理查看已发布课程、教学资料与学生学习状态。
           </p>
         </div>
       </section>
 
       <div className="grid gap-6 lg:grid-cols-2">
         <ProductCard
-          eyebrow="BUILD"
-          title="课程中心"
+          eyebrow="COURSE DEVELOPMENT"
+          title="课程建设"
           description="围绕课程目标组织教学材料，通过教师 Agent 完成备课、生成、审核与发布。"
           features={[
             "创建课程与课程结构",
@@ -166,8 +166,8 @@ function TeacherPortal() {
           accent="primary"
         />
         <ProductCard
-          eyebrow="TEACH"
-          title="课堂管理"
+          eyebrow="TEACHING MANAGEMENT"
+          title="授课管理"
           description="集中查看正在授课的课程、已发布资料、播放器内容以及学生学习状态。"
           features={[
             "已发布课程与 Class",

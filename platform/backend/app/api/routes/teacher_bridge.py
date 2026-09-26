@@ -108,6 +108,40 @@ def register_teacher_course(
     return {"id": str(course.id)}
 
 
+@router.get("/internal/teacher/course-alias/{course_id}")
+def resolve_course_alias(
+    course_id: str,
+    session: SessionDep,
+    x_teacher_service_key: str | None = Header(default=None),
+):
+    """Map a platform course UUID to the teacher service's own course id.
+
+    Courses created before the integration keep their legacy nanoid inside the
+    teacher service; only this mapping table links the two. The teacher service
+    calls this when a UUID matches no local course so read paths can retry
+    under the legacy id instead of failing with 404.
+    """
+    check_service_key(x_teacher_service_key)
+    if session.execute(text("SELECT 1 FROM teacher.mentra_courses WHERE id=:id"), {"id": course_id}).first():
+        return {"platformCourseId": course_id, "legacyCourseId": None}
+    link = session.execute(
+        text("SELECT course_id::text, external_course_id FROM teacher_course_link "
+             "WHERE course_id::text=:pid OR external_course_id=:ext"),
+        {"pid": course_id, "ext": course_id},
+    ).first()
+    if not link:
+        raise HTTPException(404, "课程映射不存在")
+    platform_id, legacy_id = str(link[0]), str(link[1])
+    if not session.execute(
+        text("SELECT 1 FROM teacher.mentra_courses WHERE id=:id"), {"id": legacy_id}
+    ).first():
+        raise HTTPException(404, "课程尚未同步到教师服务")
+    return {
+        "platformCourseId": platform_id,
+        "legacyCourseId": legacy_id if legacy_id != course_id else None,
+    }
+
+
 @router.post("/internal/teacher/authorize")
 def authorize_teacher_request(body: TeacherAuthorization, session: SessionDep,
                               x_teacher_service_key: str | None = Header(default=None)):
@@ -201,6 +235,18 @@ def _authorize_teacher_request(body: TeacherAuthorization, session: SessionDep,
         course_id = classroom_course_id(session, parts[1])
     if course_id:
         row = session.execute(text("SELECT teacher_id FROM teacher.mentra_courses WHERE id=:id"), {"id": course_id}).first()
+        if not row:
+            # Platform entry points (建设概览, roster links) carry the platform
+            # UUID; pre-integration courses live under their legacy teacher-agent
+            # id, so resolve through the mapping table before rejecting.
+            link = session.execute(
+                text("SELECT external_course_id FROM teacher_course_link WHERE course_id::text=:pid"),
+                {"pid": course_id},
+            ).first()
+            if link and link[0] != course_id:
+                row = session.execute(
+                    text("SELECT teacher_id FROM teacher.mentra_courses WHERE id=:id"), {"id": link[0]}
+                ).first()
         if not row:
             raise HTTPException(404, "课程不存在或尚未同步到统一数据库")
         if row[0] != str(user.id) and not user.is_superuser:
@@ -319,7 +365,10 @@ def teacher_course_members(
     check_service_key(x_teacher_service_key)
     from app.models import User
 
-    user = session.get(User, uuid.UUID(x_platform_subject)) if x_platform_subject else None
+    try:
+        user = session.get(User, uuid.UUID(x_platform_subject)) if x_platform_subject else None
+    except (ValueError, TypeError):
+        user = None
     if not user or not user.is_active:
         raise HTTPException(401, "教师身份无效")
     course_uuid = resolve_platform_course_id(session, course_id)
