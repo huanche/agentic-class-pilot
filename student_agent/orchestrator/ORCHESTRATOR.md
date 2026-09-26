@@ -50,7 +50,7 @@ class ClassroomState(TypedDict):
     # ── 编排器核心（对应 DIALOGUE-LOG.md 字段）──
     host_phase: Literal[
         "uninitialized", "intro", "guided_learning",
-        "recap_discussion", "deep_inquiry", "class_discussion", "ending"
+        "recap_discussion", "deep_inquiry", "ending"
     ]
     active_segment_id: str | None
     stage_started_at: str          # ISO8601，本幕开始时刻
@@ -160,7 +160,6 @@ class ClassroomState(TypedDict):
 | `guided_learning` | （无，用 segment 的 `content`） |
 | `recap_discussion` | `stages/recap_discussion/`（仅 `prompt.md`） |
 | `deep_inquiry` | `stages/deep_inquiry/` |
-| `class_discussion` | `stages/class_discussion/` |
 | `ending` | （无） |
 
 > 空壳阶段：若 `stages/<id>/` 下文件为空或缺失，`load_context` **不报错**，注入占位提示 `[本阶段内容未配置]`，教学节点按默认行为运行（见第 7 节）。
@@ -299,7 +298,6 @@ load_plan ──► tick ──► load_context ──► classify_turn
 | `stages/<id>/questions.md` 为空（复述阶段已无此文件） | 复述取 `runtime/TMISSION.md` 检验问题 → `rules/KNOWLEDGE-BASE.md` 的 `检测问题`；探究另有兜底 |
 | `stages/<id>/rubric.md` 为空（复述阶段已无此文件） | 判星级只用 `MASTERY-STAR-RULES.md` 的通用标准 |
 | `stages/<id>/prompt.md` 为空 | 使用内置默认提示词（见下） |
-| `class_discussion` 无内容 | AI 输出提示"进入全班讨论，请老师主导"，然后按 `minutes` 计时，到点切幕 |
 
 **内置默认提示词（各空壳阶段的兜底）：**
 
@@ -307,7 +305,6 @@ load_plan ──► tick ──► load_context ──► classify_turn
 | --- | --- |
 | `recap_discussion` | "请用你自己的话复述刚才这一段讲了什么"，然后按学生回答追问 1-2 轮 |
 | `deep_inquiry` | 从 KP 的 `为什么/如何` 字段（若有）各取一问；若无，则问"这个知识点能解决什么实际问题" |
-| `class_discussion` | 输出"进入全班讨论，请老师主导"+ 计时 |
 
 > 所以：**你现在就可以跑通整条链路**，只是复述/探究的问法比较朴素。等你把 `stages/` 里的内容填上，质量自然提升，不需要改任何代码。
 
@@ -321,7 +318,7 @@ load_plan ──► tick ──► load_context ──► classify_turn
 2. `total_minutes` > 0
 3. 启用的阶段 `minutes` 之和 ≤ `total_minutes`
 4. `segments[].id` 均能在 `lesson-data/segments/` 找到对应文件
-5. 启用的阶段中，**需要阶段目录的阶段**（`recap_discussion` / `deep_inquiry` / `class_discussion`）其 `stages/<id>/` 目录存在
+5. 启用的阶段中，**需要阶段目录的阶段**（`recap_discussion` / `deep_inquiry`）其 `stages/<id>/` 目录存在
    > `intro` / `guided_learning` / `ending` **不需要** `stages/` 目录 —— 它们分别由系统、segment 内容、总结逻辑驱动
 6. `runtime/` 下模板文件齐全（缺失则从 `rules/interaction/*-FORMAT.md` 生成空白模板）
 7. `rules/KNOWLEDGE-BASE.md` 存在（缺失则警告但允许开课，只是不能提问）

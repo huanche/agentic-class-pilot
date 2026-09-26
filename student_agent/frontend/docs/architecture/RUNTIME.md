@@ -48,10 +48,7 @@
 17. **点「进入下一阶段」** → `POST /api/chat` `/继续`（**推不推由后端判定**）
 18. **后端返回** `hostPhase: "deep_inquiry"` → 立即切到深入思考对话框
 19. **回答三个视角** → 每轮 `POST /api/reflection` → AI 点评和下一题依次进入消息流
-20. **点「进入课堂讨论」** → `POST /api/chat` `/继续` → `class_discussion` → 立即切到讨论区
-21. **讨论区加载** → `GET /api/discussion` → 讨论题 + 发言**逐条间隔 520ms 出现**
-22. **发言** → `POST /api/discussion` → 自己的发言追加，老师追问随后出现
-23. **点「结束本节课」** → `POST /api/chat` `/下课` → 收尾发言 + `hostPhase: "ending"` → 立即切到结束态
+20. **点「结束本节课」** → `POST /api/chat` `/下课` → 收尾发言 + `hostPhase: "ending"` → 立即切到结束态
 
 ---
 
@@ -92,9 +89,6 @@
 | 提交总结 | `POST /api/summary/review` | 对话中的结构化反馈 |
 | 进入下一阶段 | `POST /api/chat` `/继续` | `deep_inquiry` |
 | 回答三个视角 | `POST /api/reflection` × 3 | 对话中的 AI 点评 |
-| 进入讨论 | `POST /api/chat` `/继续` | `class_discussion` |
-| 进讨论区 | `GET /api/discussion` | 讨论题 + 发言 |
-| 发言 | `POST /api/discussion` | 自己的发言 |
 | 结束 | `POST /api/chat` `/下课` | 收尾 + `ending` |
 
 **其中 4 个是 `/api/chat`** —— 每次对应一次"前端说一句话、后端决定演到哪一幕"。

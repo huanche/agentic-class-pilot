@@ -137,7 +137,7 @@ test("关掉窗口重开是一节新课，按 F5 不是", async ({ page, context
   await expect(reopened.locator("#stage-summary")).toBeHidden();    // 不再是复述界面
 });
 
-test("student can move through all classroom stages without ending on first discussion message", async ({ page }) => {
+test("student can move through all classroom stages and end after reflection", async ({ page }) => {
   await registerAndJoin(page, freshNumber());
 
   await page.getByRole("button", { name: /操作系统/ }).click();
@@ -167,12 +167,8 @@ test("student can move through all classroom stages without ending on first disc
   await expect(page.locator("#reflect-next")).toBeVisible();
   await page.locator("#reflect-next").click();
 
-  await expect(page.locator("#stage-discuss")).toBeVisible();
-  await page.locator("#discuss-input").fill("我会使用多级反馈队列，同时兼顾响应速度和吞吐量。");
-  await page.locator("#discuss-send").click();
-
-  await expect(page.locator("#stage-discuss")).toBeVisible();
-  await expect(page.locator("#stage-done")).toBeHidden();
-  await expect(page.locator("#class-badge")).toHaveText("课堂讨论");
-  await expect(page.locator("#discuss-log .dm--host")).not.toHaveCount(0);
+  // 深入思考是最后一个环节，结束后直接进入结束态；课堂讨论界面已移除
+  await expect(page.locator("#stage-done")).toBeVisible();
+  await expect(page.locator("#stage-discuss")).toHaveCount(0);
+  await expect(page.locator("#class-badge")).toHaveText("已结束");
 });

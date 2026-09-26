@@ -8,7 +8,7 @@
     python apps/smoke_test.py export --session X
 
 `stages` 是这次最该跑的一次检查：开始上课 → 视频播完 → 复述 → 下一环节 →
-深度探究 → 课堂讨论 → 下课，全靠外部按钮驱动，不需要等真实时间流逝。
+深度探究 → 下课，全靠外部按钮驱动，不需要等真实时间流逝。
 """
 
 from __future__ import annotations
@@ -125,9 +125,6 @@ def cmd_stages(sid: str) -> int:
                 reason = out.get("advance_reason") or ""
                 print(f"  ▸ 视频播完（{reason or '继续讲下一段'}）："
                       f"{out['reply_text'][:120]}")
-        elif phase == "class_discussion":
-            out = call(f"{base}/stage/next", method="POST")
-            print("  ▸ 结束讨论：" + out["reply_text"][:120])
         else:
             # 复述 / 深度探究：答一题，下一步就让老师跳下一环节
             if st.get("current_question") and not answered_in.get(phase):

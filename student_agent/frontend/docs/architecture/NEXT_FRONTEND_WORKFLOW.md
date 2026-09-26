@@ -76,12 +76,8 @@ flowchart TD
     V --> W[submitReflection 返回点评消息]
     W --> X{三个视角完成?}
     X -->|否| V
-    X -->|是| Y[发送 /继续]
-    Y --> Z[hostPhase = class_discussion]
-    Z --> AA[discuss：加载题目和讨论消息]
-    AA --> AB[学生发言，显示讨论反馈]
-    AB --> AC[点击结束本节课，发送 /下课]
-    AC --> AD[hostPhase = ending]
+    X -->|是| Y[点击结束本节课，发送 /下课]
+    Y --> AD[hostPhase = ending]
     AD --> AE[done：结束态和知识点清单]
     AE --> AF[点击去看看掌握情况，进入当前课时的 #/review/:courseId/:lessonId]
 ```
@@ -97,7 +93,6 @@ flowchart TD
 | `guided_learning` | `chat` | 引导学习对话；视频是局部状态 |
 | `recap_discussion` | `summary` | 总结复述 |
 | `deep_inquiry` | `reflect` | 深入思考 |
-| `class_discussion` | `discuss` | 课堂讨论 |
 | `ending` | `done` | 课程结束 |
 
 ```mermaid
@@ -118,7 +113,7 @@ flowchart TD
     N --> O[调用目标 owner.enter]
 ```
 
-这里的 `applyServerTurn()` 只处理阶段变化。总结反馈、反思点评、讨论消息等各阶段的业务内容由对应模块分别渲染。页面和 Stage 切换均为即时显隐；课堂聊天、总结复述、深入思考与课堂讨论使用固定尺寸的对话面板，消息在面板内滚动。消息、Toast、悬停等局部反馈动画仍保留。
+这里的 `applyServerTurn()` 只处理阶段变化。总结反馈、反思点评等各阶段的业务内容由对应模块分别渲染。页面和 Stage 切换均为即时显隐；课堂聊天、总结复述与深入思考使用固定尺寸的对话面板，消息在面板内滚动。消息、Toast、悬停等局部反馈动画仍保留。
 
 ## 5. API 与错误路径
 
@@ -130,8 +125,6 @@ flowchart TD
 | `GET /api/lesson/video` | 点击播放视频 | 视频地址和元数据 |
 | `POST /api/summary/review` | 提交总结 | 结构化反馈 |
 | `POST /api/reflection` | 提交思考卡 | 点评与追问 |
-| `GET /api/discussion` | 首次进入讨论 | 题目与消息 |
-| `POST /api/discussion` | 学生发言 | 新消息 |
 
 完整字段契约和预留接口见 [后端接口说明](../api/后端接口说明.md)。真实后端接入时将 `src/legacy/api.js` 的 `USE_MOCK` 置为 `false`，并在根目录 `.env.local` 配置 `NEXT_PUBLIC_API_BASE_URL`；该变量属于公开的浏览器端配置，不可存放密钥。
 

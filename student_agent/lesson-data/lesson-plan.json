@@ -27,12 +27,6 @@
       "enabled": true,
       "minutes": 7,
       "advance_when": "either"
-    },
-    {
-      "id": "class_discussion",
-      "enabled": true,
-      "minutes": 7,
-      "advance_when": "budget"
     }
   ],
   "segments": [

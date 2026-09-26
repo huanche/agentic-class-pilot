@@ -107,8 +107,7 @@ lesson-data/
   "stages": [
     {"id": "guided_learning", "enabled": true, "delivery": "video", "minutes": 0, "advance_when": "either"},
     {"id": "recap_discussion", "enabled": true, "minutes": 14, "advance_when": "either"},
-    {"id": "deep_inquiry", "enabled": true, "minutes": 13, "advance_when": "either"},
-    {"id": "class_discussion", "enabled": true, "minutes": 13, "advance_when": "budget"}
+    {"id": "deep_inquiry", "enabled": true, "minutes": 13, "advance_when": "either"}
   ],
   "segments": [],
   "advance_policy": {
@@ -126,18 +125,13 @@ lesson-data/
 
 ## 5. 课时计划（lesson-plan）生成规则
 
-由 `ingest/plan.py:build_plan` 生成，核心规则：
+由 `ingest/plan.py:build_plan` 生成：
 
-1. **总时长**：`extract.extract_duration` 从大纲抽「数字 + 分钟/min」（如“45 分钟”）；
-   **读不到 → 默认 40 分钟**。
-2. **视频时长**：暂定，先当显式输入（`--video-minutes`，默认 0 = 占位）。等视频接入后再填。
-3. **剩余时长** = 总时长 − 视频时长（视频播放完之后剩下的，分给非视频阶段）。
-4. **阶段分配**：
-   - 优先走**规划 AI**（环境变量 `PLANNER_LLM_BASE_URL / PLANNER_LLM_API_KEY / PLANNER_LLM_MODEL`，
-     OpenAI 兼容端点），由它决定启用哪些非视频阶段（要不要复述 `recap_discussion` 等）以及各阶段分钟。
-   - 没配 AI 或调用失败 → **确定性规则**兜底：按「复述 → 探究 → 讨论」优先级贪心启用，
-     剩余时长均分，余数往前补。
-   - **每个非视频阶段 ≥ 2 分钟**（`advance_policy.min_stage_minutes = 2`）。
+1. **总时长**：写死 40 分钟（不读大纲时长）。
+2. **视频时长**：视频阶段 minutes 沿用 `--video-minutes`（默认 0 = 占位），视频尚未接入。
+3. **非视频阶段分钟**：写死 —— 复述 5 分钟、深层探究 5 分钟。
+4. **非视频阶段取舍**：优先走规划 AI（`PLANNER_LLM_*`，OpenAI 兼容端点）决定要不要复述/深探；
+   没配或失败则默认都要（复述 5 + 深层探究 5）。
 5. `segments`（视频段落）**暂留空**，等视频分段信息到位后再填。
 
 ---
@@ -165,5 +159,3 @@ python ingest/run.py --course X --lesson Y --video-minutes 22                   
 ```
 
 - `--video-minutes`：视频时长（分钟），默认 0（暂定占位）。
-- 规划 AI 用 `PLANNER_LLM_*` 三个环境变量（OpenAI 兼容 `/chat/completions` 端点），
-  与课中教学 AI 的 `AGENT_LLM_*` 分开配置（可用更便宜/快的模型）。

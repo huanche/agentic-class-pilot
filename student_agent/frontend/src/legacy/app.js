@@ -20,7 +20,6 @@ import { createStage as createClassStage } from "./stage-class.js";
 import { createView as createReviewView } from "./view-review.js";
 import { createStage as createSummaryStage } from "./stage-summary.js";
 import { createStage as createReflectStage } from "./stage-reflect.js";
-import { createStage as createDiscussStage } from "./stage-discuss.js";
 import { createStage as createDoneStage } from "./stage-done.js";
 
 
@@ -328,7 +327,6 @@ var PANE = {
   video: "stage-video",
   summary: "stage-summary",
   reflect: "stage-reflect",
-  discuss: "stage-discuss",
   done: "stage-done"
 };
 
@@ -597,7 +595,6 @@ owners = {
   video:   classStage,
   summary: createSummaryStage(ctx),
   reflect: createReflectStage(ctx),
-  discuss: createDiscussStage(ctx),
   done:    createDoneStage(ctx),
   review:  reviewView     /* 视图模块，只为统一 mount */
 };

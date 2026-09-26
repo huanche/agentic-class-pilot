@@ -107,7 +107,7 @@ curl -X POST http://127.0.0.1:8000/api/session/class-1/media/done
 curl -X POST http://127.0.0.1:8000/api/session/class-1/stage/next
 ```
 
-无条件切到下一环节（复述 → 深度探究 → 课堂讨论[若启用] → 下课），
+无条件切到下一环节（复述 → 深度探究 → 下课），
 不管时间够不够、题答没答完——给老师掌控节奏用的。
 
 返回：`{"reply_text"（新环节开场白+第一问）, "phase", "phase_name", "status", "available_actions"}`
@@ -228,7 +228,7 @@ curl -X POST http://127.0.0.1:8000/api/teacher/lesson \
 ```
 
 约束：`stages[].id` 只能是 `guided_learning` / `recap_discussion` /
-`deep_inquiry` / `class_discussion`；`segments[].knowledge_point_ids` 必须指向
+`deep_inquiry`；`segments[].knowledge_point_ids` 必须指向
 本课已声明的 `kp_id`；`advance_policy` 与 `segments[].order` 可省，省略时用默认值。
 
 回读确认存进去了什么：

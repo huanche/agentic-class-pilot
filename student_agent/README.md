@@ -42,8 +42,7 @@
 │
 ├── stages/                      # 阶段内容层（可空壳，留空不影响运行）
 │   ├── recap_discussion/        #   复述：prompt.md（问题/判分由知识点字段与通用规则提供）
-│   ├── deep_inquiry/            #   深挖：questions.md / rubric.md / prompt.md
-│   └── class_discussion/        #   讨论：questions.md / rubric.md / prompt.md
+│   └── deep_inquiry/            #   深挖：questions.md / rubric.md / prompt.md
 │
 ├── runtime/                     # 运行时状态（每轮读写）
 │   ├── DIALOGUE-LOG.md          #   ★ 会话控制 + 编排器字段
@@ -103,8 +102,8 @@ npm run lint --prefix frontend
 npm run test:e2e --prefix frontend
 ```
 
-端到端测试会实际点击课程、开始上课、结束视频、提交复述与深入思考，最后在课堂讨论框
-发送消息，并断言课堂不会错误地跳到结束页。
+端到端测试会实际点击课程、开始上课、结束视频、提交复述与深入思考，并断言课堂
+正确走到结束页。
 
 命令行等价物（可加参数）：
 
@@ -190,15 +189,14 @@ export AGENT_LLM_MODEL=deepseek-chat
 
 ---
 
-## 五个阶段
+## 四个阶段
 
 | 阶段 | `host_phase` | 时间 | 干什么 | 星级影响 |
 | --- | --- | --- | --- | --- |
 | 开场 | `intro` | — | 交代目标与互动方式 | — |
 | 引导学习 | `guided_learning` | 0-50% | 讲解 + 主动提问 | 1 星（已接触） |
 | 复述与讨论 | `recap_discussion` | 50-70% | 学生复述，AI 补缺口 | 2-3 星 |
-| 深层探究 | `deep_inquiry` | 70-85% | 追问为什么/如何/用在哪/跨学科 | 4 星 |
-| 全班讨论 | `class_discussion` | 85-100% | 老师主导，AI 退居协助 | 只记快照 |
+| 深层探究 | `deep_inquiry` | 70-100% | 追问为什么/如何/用在哪/跨学科 | 4 星 |
 | 收尾 | `ending` | — | 总结 + 遗留问题 | — |
 
 **阶段可自由启停**：`lesson-plan.json` 里 `enabled: false` 即可跳过。
@@ -226,15 +224,14 @@ export AGENT_LLM_MODEL=deepseek-chat
   "stages": [
     { "id": "guided_learning",  "enabled": true,  "minutes": 22, "advance_when": "either" },
     { "id": "recap_discussion", "enabled": true,  "minutes": 9,  "advance_when": "either" },
-    { "id": "deep_inquiry",     "enabled": true,  "minutes": 7,  "advance_when": "either" },
-    { "id": "class_discussion", "enabled": false, "minutes": 7,  "advance_when": "budget" }
+    { "id": "deep_inquiry",     "enabled": true,  "minutes": 7,  "advance_when": "either" }
   ]
 }
 ```
 
 | 字段 | 含义 |
 | --- | --- |
-| `enabled` | `false` → **整段跳过**（比如这门课不要讨论） |
+| `enabled` | `false` → **整段跳过**（比如这门课不要某个环节） |
 | `minutes` | 这一幕的**时长预算** |
 | `advance_when` | `either`（证据达标或时间到）/ `evidence`（学透才走）/ `budget`（只看时间） |
 
@@ -286,7 +283,6 @@ lesson_elapsed_minutes = now - lesson_started_at    # 本课已花分钟
 | `stages/<id>/questions.md` 空 | 改用 `KNOWLEDGE-BASE.md` 的 `检测问题` |
 | `stages/<id>/rubric.md` 空 | 只用 `MASTERY-STAR-RULES.md` 的通用标准 |
 | `stages/<id>/prompt.md` 空 | 用内置默认提示词 |
-| `class_discussion` 无内容 | AI 提示"请老师主导"+ 计时，然后切幕 |
 
 > 复述阶段（`recap_discussion`）已删去 `questions.md` / `rubric.md`，只剩 `prompt.md`：
 > 问题取 `TMISSION.md` 检验问题（空则回落 `KNOWLEDGE-BASE.md` 的 `检测问题`），
@@ -353,7 +349,6 @@ lesson_elapsed_minutes = now - lesson_started_at    # 本课已花分钟
 | **对话记忆窗口有限** | 长课程可能丢上下文 | 高 |
 | **视频位置接口未打通** | `source.position` 是占位符 | 中 |
 | **判星粒度未定** | 各阶段星级的精确判定标准待明确 | 中 |
-| **`class_discussion` 内容为空** | 当前刻意留空，AI 不参与讨论 | 低（设计如此） |
 | **课后报告只在同源下能跑** | 页面已接真实导出接口（`USE_MOCK` 那套 mock 已随前端重构移除）。生产由 FastAPI 同源托管，正常；但**后端没有 CORS 中间件**，前端跑 `localhost:3000`、后端在 `127.0.0.1:8000` 时请求会被浏览器拦掉。联调前需给 FastAPI 加 `CORSMiddleware`，或让前端走同源代理 | 中 |
 | **报告可能缺少「未接触」的知识点** | 后端只在 `kp_stars` 有条目时才输出知识点，学生完全没碰过的不进数组，于是整个 `knowledge_points` 可能是空的，页面画不出「未检测」那些行。建议后端按课时知识点目录补全，未接触的返回 `stars: 0` | 中 |
 | **后端 `STAR_STATUS` 只定义了 1–4 星** | 缺 0 和 5 两个键，所以一个 5 星知识点会被后端报成 `"status": "未检测"`。前端已按权威规则表本地兜底（不重算星级，只补标签），后端仍应补上这两个键 | 低 |

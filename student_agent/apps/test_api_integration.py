@@ -55,7 +55,7 @@ class StudentApiIntegrationTest(unittest.TestCase):
         self.assertEqual(media.status_code, 200)
         self.assertEqual(media.json()["phase"], "recap_discussion")
         state = self.client.get(f"/api/session/{self.sid}/state").json()
-        self.assertIn("class_discussion", state["remaining_stages"])
+        self.assertNotIn("class_discussion", state["remaining_stages"])
 
         answer = self.client.post(
             f"/api/session/{self.sid}/message",
@@ -68,14 +68,9 @@ class StudentApiIntegrationTest(unittest.TestCase):
 
         deep = self.client.post(f"/api/session/{self.sid}/stage/next")
         self.assertEqual(deep.json()["phase"], "deep_inquiry")
-        discussion = self.client.post(f"/api/session/{self.sid}/stage/next")
-        self.assertEqual(discussion.json()["phase"], "class_discussion")
-        discussion_reply = self.client.post(
-            f"/api/session/{self.sid}/message",
-            json={"text": "我认为时间片轮转更重视交互任务的响应速度。"},
-        )
-        self.assertEqual(discussion_reply.json()["phase"], "class_discussion")
-        self.assertEqual(discussion_reply.json()["status"], "running")
+        ending = self.client.post(f"/api/session/{self.sid}/stage/next")
+        self.assertEqual(ending.json()["phase"], "ending")
+        self.assertEqual(ending.json()["status"], "ended")
 
     def test_a_stopped_session_is_not_written_back(self) -> None:
         """停课之后，正在跑的那一轮不能把会话再落盘一次。

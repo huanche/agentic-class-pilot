@@ -99,12 +99,12 @@
 
 > 前端相关的数据文件（mastery/dialogue）迁到 `runtime/data/`，因为规则仍需要读写它们。
 
-### 新增：三阶段内容层
+### 新增：两阶段内容层
 
 | 新增 | 位置 |
 | --- | --- |
-| 阶段内容层（问题/标准/提示词） | `stages/{recap_discussion,deep_inquiry,class_discussion}/` |
-| 四阶段 `host_phase` 枚举 | `DIALOGUE-LOG-FORMAT.md` |
+| 阶段内容层（问题/标准/提示词） | `stages/{recap_discussion,deep_inquiry}/` |
+| 三阶段 `host_phase` 枚举 | `DIALOGUE-LOG-FORMAT.md` |
 | 编排器字段 | `DIALOGUE-LOG-FORMAT.md` |
 | 阶段快照机制 | `MASTERY-STAR-RULES.md` |
 | 课程计划配置 | `lesson-data/lesson-plan.json` |
@@ -119,7 +119,7 @@
 | --- | --- | --- |
 | 1 星"已标注" | **1 星"已接触"** | 标注移除后星级需保持连续 |
 | `LESSON-INTERACTION.md` | **`LESSON-CONTENT.md`** | 旧名太宽泛，且文件不含交互内容 |
-| `lecturing` / `segment_summary` | `guided_learning` / `recap_discussion` | 四阶段模型 |
+| `lecturing` / `segment_summary` | `guided_learning` / `recap_discussion` | 三阶段模型 |
 | `class agent` | `rules` | 去空格 |
 | `class-point` | `lesson-data` | 去空格 + 语义更准 |
 | `teach test` | `runtime` | 去空格 + 语义更准 |

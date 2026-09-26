@@ -879,160 +879,6 @@ body::before {
   color: var(--text-3);
 }
 .conversation-count.is-near { color: var(--orange); }
-/* ═══════════ 阶段 4：课堂讨论 ═══════════════════════════════ */
-
-.discuss-topic {
-  width: min(100%, var(--conversation-width));
-  margin: 0 auto;
-  padding: 22px 26px;
-  background: linear-gradient(90deg, rgba(175,82,222,.08), transparent 55%), var(--surface);
-  border: 1px solid var(--surface-border);
-  border-left: 3.5px solid var(--purple);
-  border-radius: var(--r-lg);
-  box-shadow: var(--shadow-rest);
-  -webkit-backdrop-filter: saturate(180%) blur(24px);
-  backdrop-filter: saturate(180%) blur(24px);
-}
-
-.discuss-topic__label {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  margin: 0 0 9px;
-  font-size: 12.5px;
-  font-weight: 600;
-  letter-spacing: .05em;
-  color: var(--purple);
-}
-
-.discuss-topic__dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--purple);
-  animation: pulse 2s var(--ease) infinite;
-}
-@keyframes pulse {
-  0%, 100% { opacity: 1;   transform: scale(1); }
-  50%      { opacity: .45; transform: scale(.82); }
-}
-
-.discuss-topic__text {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 500;
-  line-height: 1.62;
-}
-
-.discuss-panel {
-  display: flex;
-  flex-direction: column;
-  width: min(100%, var(--conversation-width));
-  height: var(--conversation-height);
-  flex: none;
-  margin: 0 auto;
-
-  background: var(--surface);
-  border: 1px solid var(--surface-border);
-  border-radius: var(--r-lg);
-  box-shadow: var(--shadow-rest);
-  -webkit-backdrop-filter: saturate(180%) blur(24px);
-  backdrop-filter: saturate(180%) blur(24px);
-  overflow: hidden;
-}
-
-.discuss-log {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 15px;
-  min-height: 0;
-  padding: 24px;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-}
-.discuss-log > *:first-child { margin-top: auto; }
-
-/* 一条发言 */
-.dm {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  max-width: 82%;
-  animation: rise .42s var(--ease-out);
-}
-.dm--me { align-self: flex-end; flex-direction: row-reverse; }
-
-.dm__avatar {
-  flex: none;
-  display: grid;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-  margin-top: 18px;
-
-  font-size: 12px;
-  font-weight: 700;
-  color: #fff;
-  border-radius: 50%;
-}
-
-.dm--host .dm__avatar { background: linear-gradient(160deg, #c77ded, var(--purple)); }
-.dm--peer .dm__avatar { background: linear-gradient(160deg, #9aa4ab, #6e767c); }
-
-.dm__body { min-width: 0; }
-
-.dm__head {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  margin-bottom: 5px;
-}
-.dm--me .dm__head { justify-content: flex-end; }
-
-.dm__name {
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--text-2);
-}
-.dm--host .dm__name { color: var(--purple); }
-
-.dm__time {
-  font-size: 11.5px;
-  color: var(--text-3);
-}
-
-.dm__bubble {
-  padding: 11px 16px;
-  font-size: 14.5px;
-  line-height: 1.65;
-  white-space: pre-wrap;
-  word-break: break-word;
-  border-radius: 18px;
-}
-
-.dm--host .dm__bubble {
-  color: var(--text-1);
-  background: rgba(175, 82, 222, .10);
-  border-bottom-left-radius: 6px;
-}
-.dm--peer .dm__bubble {
-  color: var(--text-1);
-  background: rgba(120, 120, 128, .12);
-  border-bottom-left-radius: 6px;
-}
-.dm--me .dm__bubble {
-  color: #fff;
-  background: linear-gradient(160deg, #4da3ff, var(--blue));
-  border-bottom-right-radius: 6px;
-}
-
-.discuss-foot {
-  display: flex;
-  justify-content: center;
-  padding: 0 16px 14px;
-}
-
 /* ═══════════ 课程结束态 ═════════════════════════════════════ */
 
 .done {
@@ -1338,13 +1184,8 @@ body::before {
   .view__badge   { display: none; }
 
   /* 对话框在窄屏上占满可用宽度，消息区内部滚动 */
-  .stage--chat, .conversation-panel, .discuss-panel { width: 100%; border-radius: var(--r-md); }
+  .stage--chat, .conversation-panel { width: 100%; border-radius: var(--r-md); }
   .conversation-actions { flex-wrap: wrap; }
-  .discuss-topic    { padding: 18px 20px; }
-  .discuss-topic__text { font-size: 15px; }
-  .discuss-log      { padding: 18px 16px; gap: 13px; }
-  .dm               { max-width: 92%; }
-  .dm__avatar       { width: 26px; height: 26px; font-size: 11px; }
 
   .done              { padding: 34px 26px 30px; }
   .done__title       { font-size: 25px; }
@@ -1422,7 +1263,7 @@ body::before { background: none; }
 .back { color: var(--brand); background: var(--surface-solid); border-color: var(--surface-border); backdrop-filter: none; -webkit-backdrop-filter: none; }
 .back:hover { background: var(--brand-soft); border-color: var(--brand-border); }
 .view__badge { color: var(--brand); background: var(--brand-soft); }
-.panel, .lesson, .stage--chat, .conversation-panel, .video-player-actions, .discuss-topic, .discuss-panel, .done {
+.panel, .lesson, .stage--chat, .conversation-panel, .video-player-actions, .done {
   background: var(--surface-solid);
   border: 1px solid var(--surface-border);
   border-radius: 22px;
@@ -1433,7 +1274,7 @@ body::before { background: none; }
 .lesson__eyebrow, .done__kps-label { color: var(--brand); font-weight: 700; }
 .lesson__title, .done__title { letter-spacing: -.04em; }
 .lesson__num, .done__kp-num { color: var(--brand); }
-.btn--primary, .composer__send, .msg__avatar, .msg--me .msg__bubble, .dm--me .dm__bubble {
+.btn--primary, .composer__send, .msg__avatar, .msg--me .msg__bubble {
   background: var(--brand-strong);
   box-shadow: none;
 }
@@ -1444,11 +1285,7 @@ body::before { background: none; }
 .composer__input { background: var(--bg); border: 1px solid var(--surface-border); border-radius: 12px; }
 .composer__input:focus { box-shadow: 0 0 0 3px var(--brand-border); border-color: var(--brand); }
 .composer__send { border-radius: 12px; }
-.msg--ai .msg__bubble, .dm--peer .dm__bubble { background: var(--bg); }
-.discuss-topic { border-left: 3px solid var(--brand-strong); background: var(--surface-solid); }
-.discuss-topic__label, .dm--host .dm__name { color: var(--brand); }
-.discuss-topic__dot, .dm--host .dm__avatar { background: var(--brand-strong); }
-.dm--host .dm__bubble { background: var(--brand-soft); }
+.msg--ai .msg__bubble { background: var(--bg); }
 .done__check { background: #16835b; box-shadow: none; }
 .done__kp-num { background: var(--brand-soft); }
 

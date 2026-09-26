@@ -101,19 +101,3 @@ def extract_goals(syllabus: str) -> list[str]:
             if m_item:
                 out.append(m_item.group(1).strip())
     return out
-
-
-_DURATION_RE = re.compile(r"(\d+(?:\.\d+)?)\s*(?:分钟|min(?:utes)?)", re.I)
-
-
-def extract_duration(syllabus: str) -> int | None:
-    """从大纲抽取课时总时长（分钟）。读不到返回 None（调用方默认 40 分钟）。
-
-    只认「数字 + 分钟/min」的写法（如“45 分钟”“45min”），且取 0~600 之间的合理值。
-    更聪明的抽取（自由文本/上下文理解）留给规划 AI 扩展点，这里保持确定性、离线可跑。
-    """
-    for m in _DURATION_RE.finditer(syllabus or ""):
-        minutes = round(float(m.group(1)))
-        if 0 < minutes < 600:
-            return minutes
-    return None

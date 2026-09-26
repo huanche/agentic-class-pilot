@@ -6,7 +6,7 @@
 
 **前端是块显示屏，后端是导演。** 演到哪一幕由后端的 `host_phase` 决定，前端只负责把它显示出来。
 
-教学模型是「一节课 4 个阶段」：引导学习 → 总结复述 → 深入思考 → 课堂讨论。
+教学模型是「一节课 3 个阶段」：引导学习 → 总结复述 → 深入思考。
 
 ---
 
@@ -43,7 +43,6 @@ graph BT
         SC["stage-class<br/>课前 / 对话 / 视频"]
         SS["stage-summary<br/>总结复述"]
         SR["stage-reflect<br/>深入思考"]
-        SD["stage-discuss<br/>课堂讨论"]
         SDO["stage-done<br/>结束态"]
         VR["view-review<br/>课后"]
     end
@@ -109,11 +108,8 @@ sequenceDiagram
     B-->>F: hostPhase = "deep_inquiry"
     F->>F: setStage("reflect") 立即切换
 
-    Note over S,B: 阶段 3 → 4 → 结束
-    S->>F: 在对话框答完三个视角 → 点「继续」
-    F->>B: POST /api/chat "/继续"
-    B-->>F: hostPhase = "class_discussion"
-    S->>F: 讨论 → 点「结束本节课」
+    Note over S,B: 阶段 3 → 结束
+    S->>F: 在对话框答完三个视角 → 点「结束本节课」
     F->>B: POST /api/chat "/下课"
     B-->>F: hostPhase = "ending"
     F-->>S: 结束态 + 知识点清单
@@ -137,8 +133,7 @@ stateDiagram-v2
     对话 --> 视频 : 学生点「播放视频」<br/>（前端局部切换，不经后端）
     视频 --> 总结对话 : hostPhase = recap_discussion
     总结对话 --> 思考对话 : hostPhase = deep_inquiry
-    思考对话 --> 讨论区 : hostPhase = class_discussion
-    讨论区 --> 结束态 : hostPhase = ending
+    思考对话 --> 结束态 : hostPhase = ending
     结束态 --> [*]
 
     note right of 视频
@@ -271,7 +266,7 @@ graph LR
 | 4. 播放视频 | 外部播放器挂载到预留容器，完成后调用 `onEnded()` |
 | 5. 阶段切换 | 展示 `hostPhase` 变化后界面立即更新 |
 | 6. 总结复述 | 在固定对话框中发送总结、查看 AI 反馈消息 |
-| 7. 深入思考 → 讨论区 → 结束态 | 三个视角按顺序在对话框中进行 |
+| 7. 深入思考 → 结束态 | 三个视角按顺序在对话框中进行 |
 
 想强调「前端跟随后端」的话，**打开网络面板** —— 每次切幕前都有一个 `/api/chat` 请求，`hostPhase` 就在响应里。
 

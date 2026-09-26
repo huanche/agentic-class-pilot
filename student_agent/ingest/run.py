@@ -43,11 +43,10 @@ def ingest(course_id: str, lesson_id: str, source: DataSource | None = None,
     store.update_knowledge_base(points)
     rel = store.write_lesson_data(course_id, lesson_id, points, goals, clean_sub)
 
-    # 课时计划：总时长（读不到默认 40）→ 视频 → 剩余 → AI/规则分阶段
-    total = extract.extract_duration(syllabus) or plan.DEFAULT_TOTAL_MINUTES
+    # 课时计划：总时长写死 40、复述/深探各 5 分钟；阶段取舍走规划 AI（没配则都要）
     plan_doc = plan.build_plan(
-        course_id=course_id, lesson_id=lesson_id,
-        total_minutes=total, video_minutes=video_minutes, syllabus=syllabus,
+        course_id=course_id, lesson_id=lesson_id, video_minutes=video_minutes,
+        syllabus=syllabus,
     )
     plan_rel = store.write_lesson_plan(course_id, lesson_id, plan_doc)
 
@@ -57,7 +56,7 @@ def ingest(course_id: str, lesson_id: str, source: DataSource | None = None,
         "knowledge_points": len(points),
         "goals": len(goals),
         "transcript_chars": len(clean_sub),
-        "total_minutes": total,
+        "total_minutes": plan_doc["total_minutes"],
         "written_to": rel,
         "lesson_plan": plan_rel,
     }

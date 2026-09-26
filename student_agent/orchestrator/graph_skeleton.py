@@ -31,7 +31,7 @@ class ClassroomState(TypedDict):
     # ── 编排器核心：演哪一幕 + 这一幕演了多久 ──
     host_phase: Literal[
         "uninitialized", "intro", "guided_learning",
-        "recap_discussion", "deep_inquiry", "class_discussion", "ending"
+        "recap_discussion", "deep_inquiry", "ending"
     ]
     active_segment_id: str | None
     stage_started_at: str
@@ -123,9 +123,9 @@ def load_context(state: ClassroomState) -> dict:
     # 课堂层（当前 segment + 绑定的 KP）
     if state.get("active_segment_id"):
         parts.append(_read(f"lesson-data/segments/{state['active_segment_id']}.json"))
-    # 阶段层（只有复述/探究/讨论三幕有）
-    # 复述阶段只读 prompt.md（questions.md / rubric.md 已删）；探究/讨论仍读三件。
-    if phase in ("recap_discussion", "deep_inquiry", "class_discussion"):
+    # 阶段层（只有复述/探究两幕有）
+    # 复述阶段只读 prompt.md（questions.md / rubric.md 已删）；探究仍读三件。
+    if phase in ("recap_discussion", "deep_inquiry"):
         stage_files = (
             ("prompt.md",)
             if phase == "recap_discussion"

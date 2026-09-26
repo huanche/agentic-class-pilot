@@ -3,8 +3,7 @@
 
    取值来源：ORCHESTRATOR.md §2 的
      host_phase: Literal["uninitialized", "intro", "guided_learning",
-                         "recap_discussion", "deep_inquiry",
-                         "class_discussion", "ending"]
+                         "recap_discussion", "deep_inquiry", "ending"]
 
    前端不决定演到哪一幕，只负责把后端说的那一幕显示出来。
    ═══════════════════════════════════════════════════════════ */
@@ -19,7 +18,6 @@ export var UI_OF_PHASE = {
   guided_learning:  "chat",
   recap_discussion: "summary",
   deep_inquiry:     "reflect",
-  class_discussion: "discuss",
   ending:           "done"
 };
 
@@ -30,7 +28,6 @@ export var LABEL_OF_PHASE = {
   guided_learning:  "引导学习",
   recap_discussion: "总结复述",
   deep_inquiry:     "深入思考",
-  class_discussion: "课堂讨论",
   ending:           "已结束"
 };
 

@@ -130,7 +130,7 @@ Content-Type: application/json
 1. **这是一次 upsert**，同一个 `lesson_id` 再传即覆盖。
 2. **校验就是开课时的校验**（`validate_plan`）。这里过了，开课就不会再因为
    计划本身失败。`stages[].id` 只能是 `guided_learning` / `recap_discussion` /
-   `deep_inquiry` / `class_discussion`；`segments[].knowledge_point_ids` 必须
+   `deep_inquiry`；`segments[].knowledge_point_ids` 必须
    指向本课已声明的 `kp_id`。
 3. **`advance_policy` 可省**，省略时用内置默认（`wrap_up` / `advance` / 2 分钟 / 超时 3 分钟）。
 4. **`staleSessions` 非空表示有正在上课的会话仍用旧版本。** 课时定义在 `/begin`
@@ -202,7 +202,7 @@ GET /api/session/{sid}/state
  "updated_at": "2026-09-22T15:51:41+08:00", "time_scale": 1.0,
  "stars": {"KP-401": 3},
  "segment_cursor": 1, "segment_total": 1, "played_media": [],
- "remaining_stages": ["deep_inquiry", "class_discussion"],
+ "remaining_stages": ["deep_inquiry"],
  "next_stage": "deep_inquiry",
  "available_actions": ["message", "media_done", "next_stage", "stop"]}
 ```

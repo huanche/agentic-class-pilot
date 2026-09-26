@@ -62,7 +62,6 @@ STAGE_NAMES = {
     "guided_learning": "讲解阶段",
     "recap_discussion": "复述阶段",
     "deep_inquiry": "深层探究阶段",
-    "class_discussion": "全班讨论阶段",
 }
 STAR_STATUS = {1: "已接触", 2: "初步理解", 3: "理解中", 4: "接近掌握"}
 
@@ -91,7 +90,6 @@ STAGE_GOAL = {
     "guided_learning": "我会把本课的新内容带你过一遍",
     "recap_discussion": "这一环节请你用自己的话把刚才的内容讲一遍",
     "deep_inquiry": "我们往深处挖一挖：为什么会这样设计、具体怎么实现、能用在哪儿",
-    "class_discussion": "这一环节请老师来主导讨论，我在旁边协助",
 }
 
 
@@ -552,7 +550,7 @@ class ClassroomState(TypedDict):
     # ── 编排器核心 ──
     host_phase: Literal[
         "uninitialized", "intro", "guided_learning",
-        "recap_discussion", "deep_inquiry", "class_discussion", "ending",
+        "recap_discussion", "deep_inquiry", "ending",
     ]
     active_segment_id: str | None
     stage_started_at: str
@@ -912,7 +910,7 @@ def validate_plan(plan: dict, *, uploaded: bool = False) -> list[str]:
             )
         if s.get("advance_when") not in ("either", "evidence", "budget"):
             problems.append(f"阶段 {stage_id} 的 advance_when 非法")
-        if stage_id in ("recap_discussion", "deep_inquiry", "class_discussion"):
+        if stage_id in ("recap_discussion", "deep_inquiry"):
             # 平台发布的计划不依赖仓库内 stages/ 内容 —— 阶段提示词与题库
             # 由已发布内容提供（见 prompt_context）。只有本地课时才必须落盘。
             if not prompt_context.is_platform_plan(plan) and not (ROOT / "stages" / stage_id).is_dir():
@@ -1055,11 +1053,11 @@ def load_context(state: ClassroomState) -> dict:
             seg_text = _current_segment_text(state)
             if seg_text:
                 parts.append("[当前段落]\n" + seg_text)
-    # 阶段层（只有复述/探究/讨论三幕有；空壳 → 占位提示）
+    # 阶段层（只有复述/探究两幕有；空壳 → 占位提示）
     # 复述阶段只读 prompt.md（questions.md / rubric.md 已删）；
-    # 探究 / 讨论阶段仍读 questions.md + prompt.md + rubric.md。
+    # 探究阶段仍读 questions.md + prompt.md + rubric.md。
     # 平台链路下这三阶段的内容由已发布内容提供，不读仓库内阶段文件。
-    if phase in ("recap_discussion", "deep_inquiry", "class_discussion") and not platform_context:
+    if phase in ("recap_discussion", "deep_inquiry") and not platform_context:
         stage_files = (
             ("prompt.md",)
             if phase == "recap_discussion"
@@ -1118,20 +1116,10 @@ def host_event(state: ClassroomState) -> dict:
     phase = state.get("host_phase")
     plan = state.get("lesson_plan") or {}
     if phase == "intro":
-        enabled = [s for s in plan.get("stages", []) if s.get("enabled")]
-        agenda = "，".join(
-            f"{STAGE_NAMES.get(s['id'], s['id'])}{s['minutes']}分钟" for s in enabled
-        )
-        lead = (
-            "这节课的讲解部分是一段视频，看完我们再一起复述和深入讨论。"
-            if stage_delivery(state) == "video" else
-            "我会根据你的掌握情况调整节奏——听懂了我们就往前走，没听透我会多问几句。"
-        )
+        lesson = plan.get('lesson_title') or plan.get('title') or '今天的课程'
         reply = (
-            f"上课！今天我们讲「{plan.get('lesson_title') or plan.get('title') or '今天的课程'}」，"
-            f"共 {plan.get('total_minutes')} 分钟。\n"
-            f"流程：{agenda}。\n"
-            f"{lead}"
+            f"欢迎来到「{lesson}」！"
+            f"这节课我们先一起学新内容，再请你用自己的话复述，最后深入探究几个问题。我们开始吧。"
         )
         return {"reply_text": reply, "student_status": "active"}
     if phase == "ending":
@@ -1243,6 +1231,9 @@ def llm_polish(state: ClassroomState, directive: str) -> str | None:
         "只有确实有助于完成本轮目标时才追问；遵守指令要求的问题数量，不额外堆叠问题。"
         + fact_rule
         + "【课堂背景】仅用于理解课程和学生情况，不要照读或提及背景材料。"
+        "绝对不要向学生提及任何系统内部情况：保存/写盘/落盘、失败/报错/错误/error/异常、"
+        "日志/记录、评分/星级/掌握档案、模型/接口/网络等技术细节。"
+        "即使这类问题确实发生，也只当作没发生，继续正常上课，绝不把这些字眼说给学生。"
         "要求：中文口语，通常1-3句；需要解释时可适当展开。表达具体、友好、自然，不写标题、不用 Markdown、不加括号注释。",
         (f"【课堂背景】\n{background}\n\n" if background else "")
         + f"当前阶段：{STAGE_NAMES.get(phase, phase)}（已进行 {elapsed:.0f}/{budget:.0f} 分钟）\n"
@@ -1577,12 +1568,6 @@ def teach(state: ClassroomState) -> dict:
 
         plain = "\n".join(x for x in lines if x)
         directive = "\n".join(dl)
-
-    elif phase == "class_discussion":
-        updates["current_target"] = None
-        updates["current_question"] = None
-        plain = wrap_line + "进入全班讨论，请老师主导。"
-        directive = "宣布进入全班讨论环节，请老师来主导。"
 
     elif phase == "ending":
         stars = state.get("kp_stars", {})
@@ -2004,7 +1989,7 @@ def advance_stage(state: ClassroomState) -> dict:
         "miss_streak": 0,
         "unresolved_question_notes": state.get("unresolved_question_notes") or [],
         "mastered": [],
-        "unresolved": carried if nxt in ("deep_inquiry", "class_discussion") else [],
+        "unresolved": carried if nxt in ("deep_inquiry",) else [],
         "active_segment_id": None,
         "reply_text": (reply + ("\n\n" if reply and opening else "") + opening).strip(),
         "advance_reason": state.get("advance_reason"),
@@ -2091,8 +2076,10 @@ def write_state(state: ClassroomState) -> dict:
             _append_dialogue_json(state)
         _write_mastery_state(state)
         _append_mastery_history(state)
-    except Exception as e:  # 落盘失败不阻断教学回复
-        return {"reply_text": state.get("reply_text", "") + f"\n[warn] 落盘失败: {e}"}
+    except Exception as e:  # 落盘失败不阻断教学，也绝不能把内部报错说给学生听
+        # 只留痕到服务端日志，不动 reply_text —— 否则 "[warn] 落盘失败" 会原样
+        # 出现在老师对学生的回复里，把内部状态泄露给课堂。
+        print(f"[落盘失败] {type(e).__name__}: {e}", file=sys.stderr)
     return {}
 
 

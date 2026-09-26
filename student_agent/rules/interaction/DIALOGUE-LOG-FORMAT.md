@@ -19,7 +19,7 @@
 - speaker: {host | student}
 
 ### 编排器
-- host_phase: {uninitialized | intro | guided_learning | recap_discussion | deep_inquiry | class_discussion | ending}
+- host_phase: {uninitialized | intro | guided_learning | recap_discussion | deep_inquiry | ending}
 - active_segment_id: {segment id or 无}
 - now: {ISO8601 本轮时间戳，由会话层注入}
 - lesson_started_at: {ISO8601 or 无}
@@ -64,7 +64,6 @@
 | `guided_learning` | AI 引导学习（0-50%） | 上一幕结束 |
 | `recap_discussion` | 复述与讨论（50-70%） | 上一幕结束 |
 | `deep_inquiry` | 深层探究（70-85%） | 上一幕结束 |
-| `class_discussion` | 全班讨论（85-100%） | 上一幕结束 |
 | `ending` | 收尾总结 | 上一幕结束 |
 
 > **已移除**：`lecturing`、`segment_summary`、`point_review`。
