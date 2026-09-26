@@ -48,7 +48,7 @@ var platformPlayer = {
     // its chrome (header, scene sidebar, AI-teacher roundtable, chat panel) and
     // shows just the scene canvas.
     var iframe = document.createElement("iframe");
-    iframe.src = "/teacher/classroom-player/" + encodeURIComponent(classroomId) + "?embedded=player";
+    iframe.src = "/teacher/classroom-player/" + encodeURIComponent(classroomId) + "?embedded=player" + (context && context.replay ? "&replay=1" : "");
     iframe.style.width = "100%";
     iframe.style.height = "100%";
     iframe.style.border = "none";

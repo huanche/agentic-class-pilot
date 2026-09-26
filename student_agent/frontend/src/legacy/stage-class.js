@@ -167,14 +167,17 @@ export function createStage(ctx) {
   /* 视频结束只通知后端一次；这是播放器事件，不占用 AI 消息接口。 */
   var videoEndNotified = false;
   var playerHandle = null;
+  var playbackRequest = 0;
+  var replayMode = false;
 
   function destroyPlayer() {
+    playbackRequest++;
     if (playerHandle) playerHandle.destroy();
     playerHandle = null;
   }
 
   function notifyVideoEnd(how, sceneId, eventId) {
-    if (videoEndNotified) return;
+    if (replayMode || videoEndNotified) return;
     videoEndNotified = true;
 
     var status = $("video-player-status");
@@ -203,21 +206,29 @@ export function createStage(ctx) {
     });
   }
 
-  function startVideo() {
+  function startVideo(replay) {
+    replayMode = replay === true;
+    $("btn-skip-video").hidden = replayMode;
+    $("btn-exit-replay").hidden = !replayMode;
     showPane("video");
-    ctx.setStatus("教学视频");
+    ctx.setStatus(replayMode ? "课程回放" : "教学视频");
 
     videoEndNotified = false;     /* 重进视频页时重置 */
 
     var slot = $("video-player-slot");
     destroyPlayer();
+    var request = playbackRequest;
+    var isReplay = replayMode;
+    var requestedLessonId = ctx.lessonId;
     $("video-player-status").textContent = "正在准备播放器…";
 
-    fetchLessonVideo(ctx.lessonId).then(function (data) {
+    fetchLessonVideo(requestedLessonId).then(function (data) {
+      if (request !== playbackRequest || ctx.lessonId !== requestedLessonId) return;
       var lesson = ctx.getLesson();
       var first = lesson && lesson.segments && lesson.segments[0];
       playerHandle = mountVideoPlayer(slot, {
         lessonId: ctx.lessonId,
+        replay: isReplay,
         /* 平台态：平台播放器适配器读 lesson.playerUrl 来嵌教师端播放器；
            独立态：默认播放器用 video（/api/lesson/video 返回的单个地址）。
            两者都传，适配器各取所需。 */
@@ -228,8 +239,12 @@ export function createStage(ctx) {
         classroomId: lesson && lesson.classroomId,
         video: data || null,
         startSeconds: first && typeof first.startSeconds === "number" ? first.startSeconds : 0,
-        onEnded: function (sceneId, eventId) { notifyVideoEnd("ended", sceneId, eventId); },
+        onEnded: function (sceneId, eventId) {
+          if (request !== playbackRequest || isReplay) return;
+          notifyVideoEnd("ended", sceneId, eventId);
+        },
         onError: function (error) {
+          if (request !== playbackRequest) return;
           var message = error && error.message ? error.message : String(error || "未知错误");
           $("video-player-status").textContent = "播放器错误：" + message;
           ctx.toast("播放器错误：" + message);
@@ -239,6 +254,7 @@ export function createStage(ctx) {
         ? "播放器已接入"
         : "等待接入外部视频播放器";
     }).catch(function (err) {
+      if (request !== playbackRequest) return;
       $("video-player-status").textContent = "视频信息获取失败：" + err.message;
     });
   }
@@ -247,6 +263,10 @@ export function createStage(ctx) {
 
   return {
     mount: function () {
+      $("btn-exit-replay").addEventListener("click", function () {
+        destroyPlayer();
+        location.hash = ctx.getReviewHash();
+      });
       $("btn-start").addEventListener("click", startLesson);
 
       $("btn-skip-video").addEventListener("click", function () {
@@ -321,6 +341,7 @@ export function createStage(ctx) {
       showPane("idle");
     },
 
+    startReplay: function () { startVideo(true); },
     renderLesson: renderLesson
   };
 }

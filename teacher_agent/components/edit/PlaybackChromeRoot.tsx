@@ -83,6 +83,7 @@ interface PlaybackChromeRootProps {
    *  roundtable and chat panel; the scene canvas fills the viewport.
    *  Playback internals (lecture engine, host events) are untouched. */
   readonly videoOnly?: boolean;
+  readonly hidePlaybackTiming?: boolean;
 }
 
 /**
@@ -93,7 +94,7 @@ interface PlaybackChromeRootProps {
  * the engine wind down cleanly.
  */
 export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackChromeRootProps>(
-  function PlaybackChromeRoot({ onRetryOutline, canEnterProMode, onEnterProMode, videoOnly }, ref) {
+  function PlaybackChromeRoot({ onRetryOutline, canEnterProMode, onEnterProMode, videoOnly, hidePlaybackTiming }, ref) {
     const { t } = useI18n();
     const {
       mode,
@@ -1446,7 +1447,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
             }}
             suppressHydrationWarning
           >
-            {currentScene && (
+            {currentScene && !hidePlaybackTiming && (
               <div className="pointer-events-none absolute left-1/2 top-3 z-30 -translate-x-1/2 rounded-full border border-white/60 bg-slate-950/75 px-4 py-2 text-xs font-medium text-white shadow-lg backdrop-blur-md">
                 本页 {formatPlaybackDuration(currentSceneRemainingSeconds)}
                 <span className="mx-2 text-white/35">｜</span>

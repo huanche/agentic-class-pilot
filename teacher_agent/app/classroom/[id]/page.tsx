@@ -265,6 +265,7 @@ export default function ClassroomDetailPage() {
               onRetryOutline={retrySingleOutline}
               forceEditMode={embeddedCourseWorkspace}
               videoOnly={playerOnlyEmbed}
+              hidePlaybackTiming={searchParams.get('replay') === '1'}
             />
           )}
         </div>

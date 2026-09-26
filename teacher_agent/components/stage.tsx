@@ -34,12 +34,14 @@ export function Stage({
   onRetryOutline,
   forceEditMode = false,
   videoOnly = false,
+  hidePlaybackTiming = false,
 }: {
   onRetryOutline?: (outlineId: string) => Promise<void>;
   /** Embed the existing OpenMAIC Pro workspace without learner playback/chat chrome. */
   forceEditMode?: boolean;
   /** Player-only embed (student agent): playback chrome is hidden, canvas only. */
   videoOnly?: boolean;
+  hidePlaybackTiming?: boolean;
 }) {
   const { mode, setMode, scenes, currentSceneId, generatingOutlines, stage } = useStageStore();
   const currentScene = useStageStore((s) => s.getCurrentScene());
@@ -164,6 +166,7 @@ export function Stage({
               canEnterProMode={isEditable && !videoOnly}
               onEnterProMode={toggleHandler}
               videoOnly={videoOnly}
+              hidePlaybackTiming={hidePlaybackTiming}
             />
           </motion.div>
         )}

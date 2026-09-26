@@ -287,8 +287,14 @@ function selectLesson(course, item) {
   /* 课后页的报告内容由 view-review.js 在 enter() 时填 */
 }
 
+var replayRouteActive = false;
+var replayRouteRequest = 0;
+
 function renderRoute() {
   var route = parseHash();
+  replayRouteRequest++;
+  if (replayRouteActive && classStage) classStage.leave();
+  replayRouteActive = false;
   loadCourses().then(function () {
     if (location.hash.replace(/^#$/, "") !== (route.name ? "#/" + [route.name, route.courseId, route.lessonId].filter(Boolean).map(encodeURIComponent).join("/") : "")) return;
     if (!route.name) { renderCourses(); showView(VIEWS.courses); return; }
@@ -309,6 +315,7 @@ function renderRoute() {
     if (route.name === "lesson") { showView(VIEWS.lesson); return; }
     if (route.name === "class") { openLessonRoute(); return; }
     if (route.name === "review") { showView(VIEWS.review); reviewView.enter(); return; }
+    if (route.name === "replay" && lessonDestination(item) === "review") { openReplayRoute(); return; }
     location.replace("#");
   }).catch(function () {});
 }
@@ -371,7 +378,8 @@ function ctxFor() {
     showStage: setStage,
     toast: showToast,
     goHome: function () { go(lessonHash(currentCourseId, currentLessonId)); },
-    getReviewHash: function () { return partHash("review"); }
+    getReviewHash: function () { return partHash("review"); },
+    getReplayHash: function () { return partHash("replay"); }
   };
 }
 
@@ -395,6 +403,7 @@ function setStage(name, turn) {
 /* 后端每轮返回后统一处理。读 host_phase，变了才切界面。
    切幕由后端的 judge_advance 决定，前端不参与判断。 */
 function applyServerTurn(res) {
+  if (parseHash().name === "replay") return;
   if (!res || !res.hostPhase) return;
   if (typeof res.total === "number") messageCursor = Math.max(messageCursor, res.total);
 
@@ -482,6 +491,28 @@ function resetClassroom() {
 /* ═══════════════════════════════════════════════════════════
    进入课堂
    ═══════════════════════════════════════════════════════════ */
+
+function openReplayRoute() {
+  replayRouteActive = true;
+  var request = replayRouteRequest;
+  showView(VIEWS.class);
+  setStage("video");
+  setStatus("课程回放");
+  $("btn-skip-video").hidden = true;
+  $("btn-exit-replay").hidden = false;
+  $("video-player-status").textContent = "正在加载课程…";
+  var requestedHash = location.hash;
+  var requestedLessonId = currentLessonId;
+  fetchLesson(requestedLessonId).then(function (data) {
+    if (request !== replayRouteRequest || location.hash !== requestedHash) return;
+    lesson = data;
+    $("class-title").textContent = data.title + " · 回放";
+    classStage.startReplay();
+  }).catch(function (err) {
+    if (request !== replayRouteRequest || location.hash !== requestedHash) return;
+    $("video-player-status").textContent = "课程加载失败：" + err.message;
+  });
+}
 
 function openLessonRoute() {
   showView(VIEWS.class);

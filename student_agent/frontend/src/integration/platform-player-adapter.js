@@ -19,7 +19,7 @@ export const platformPlayerAdapter = {
     // ?embedded=player = player-only mode: the embedded classroom player hides
     // its chrome (header, scene sidebar, AI-teacher roundtable, chat panel) and
     // shows just the scene canvas.
-    const embedUrl = url + (url.includes("?") ? "&" : "?") + "embedded=player";
+    const embedUrl = url + (url.includes("?") ? "&" : "?") + "embedded=player" + (context.replay ? "&replay=1" : "");
     const iframe = document.createElement("iframe");
     iframe.src = embedUrl;
     iframe.title = "课程播放器";

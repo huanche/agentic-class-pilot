@@ -206,6 +206,9 @@ export function createView(ctx) {
 
   return {
     mount: function () {
+      $("review-replay").addEventListener("click", function () {
+        location.hash = ctx.getReplayHash();
+      });
       $("report-retry").addEventListener("click", function () {
         loadedLessonId = null;
         loadedReport = null;
