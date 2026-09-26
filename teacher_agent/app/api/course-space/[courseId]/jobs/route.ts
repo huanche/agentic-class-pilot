@@ -30,6 +30,9 @@ export async function POST(req: NextRequest, context: { params: Promise<{ course
   const { courseId } = await context.params;
   const course = await readServerCourse(courseId);
   if (!course) return apiError('INVALID_REQUEST', 404, '课程不存在');
+  // Jobs (and the artifacts they produce) are keyed by the id the course was
+  // created under; platform UUID entry points must submit under that id.
+  const canonicalId = course.id;
   const body = (await req.json()) as {
     scope?: CourseArtifactJob['scope'];
     artifactTypes?: CourseArtifactType[];
@@ -44,7 +47,7 @@ export async function POST(req: NextRequest, context: { params: Promise<{ course
   if (!course.materials.some((item) => item.status === 'ready')) {
     return apiError('INVALID_REQUEST', 409, '请先解析至少一份课程材料');
   }
-  const existingJobs = await listCourseJobs(courseId);
+  const existingJobs = await listCourseJobs(canonicalId);
   const activeJobs = existingJobs.filter(
     (job) =>
       selected.includes(job.artifactType) &&
@@ -62,7 +65,7 @@ export async function POST(req: NextRequest, context: { params: Promise<{ course
   }
   const now = Date.now();
   const jobs = await Promise.all(selected.map((artifactType) => saveCourseJob({
-    id: nanoid(14), teacherId: course.teacherId, courseId,
+    id: nanoid(14), teacherId: course.teacherId, courseId: canonicalId,
     scope, artifactType,
     status: 'queued', progress: 0, message: '等待生成', createdAt: now, updatedAt: now,
   })));
