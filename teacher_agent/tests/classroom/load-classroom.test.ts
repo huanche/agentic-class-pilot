@@ -247,6 +247,9 @@ describe('runClassroomLoad', () => {
       expect(deps.fetchClassroom).toHaveBeenCalledExactlyOnceWith(
         'stage-warm-ghost',
         deps.isCurrent,
+        // The load ran local-first, so the server fetch sees the server-prefer
+        // flag as an explicit false.
+        false,
       );
       expect(deps.applyFallbackScenes).toHaveBeenCalledOnce();
       expect(useStageStore.getState().stage?.id).toBe('stage-warm-ghost');
@@ -302,6 +305,9 @@ describe('runClassroomLoad', () => {
       expect(deps.fetchClassroom).toHaveBeenCalledExactlyOnceWith(
         'stage-zero-ghost',
         deps.isCurrent,
+        // The load ran local-first, so the server fetch sees the server-prefer
+        // flag as an explicit false.
+        false,
       );
       expect(deps.applyFallbackScenes).toHaveBeenCalledOnce();
       expect(useStageStore.getState().stage?.id).toBe('stage-zero-ghost');
@@ -441,6 +447,9 @@ describe('runClassroomLoad', () => {
       expect(deps.fetchClassroom).toHaveBeenCalledExactlyOnceWith(
         'stage-del-success',
         deps.isCurrent,
+        // The load ran local-first, so the server fetch sees the server-prefer
+        // flag as an explicit false.
+        false,
       );
       expect(useStageStore.getState().stage?.id).toBe('stage-del-success');
       expect(useStageStore.getState().scenes.map((s) => s.id)).toEqual(['scene-server']);
