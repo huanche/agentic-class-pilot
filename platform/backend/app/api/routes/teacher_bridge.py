@@ -31,6 +31,17 @@ TEACHER_OPEN_API_PREFIXES = {"health", "server-providers", "access-code"}
 # narrow: opening the entire generate prefix would expose unrelated costly APIs.
 TEACHER_OPEN_API_PATHS = {"/api/generate/tts"}
 
+# Stateless text-generation steps used by the teacher preparation workflow.
+# These consume caller-supplied outlines/content; they neither read nor mutate
+# stored courses. Persisting/attaching the result still uses the scoped APIs.
+# Permit only these exact POST endpoints, not the entire /api/generate prefix.
+TEACHER_GENERATION_POST_PATHS = {
+    "/api/generate/scene-outlines-stream",
+    "/api/generate/scene-content",
+    "/api/generate/scene-actions",
+    "/api/generate/agent-profiles",
+}
+
 
 def teacher_write_origins() -> set[str]:
     """FRONTEND_HOST plus locally configured teacher service origins."""
@@ -258,6 +269,7 @@ def _authorize_teacher_request(body: TeacherAuthorization, session: SessionDep,
         and parts[1:2]
         and parts[1] not in TEACHER_SCOPED_API_PREFIXES | TEACHER_OPEN_API_PREFIXES
         and split.path not in TEACHER_OPEN_API_PATHS
+        and not (body.method == "POST" and split.path in TEACHER_GENERATION_POST_PATHS)
     ):
         if not user.is_superuser and not body.service_user_id:
             raise HTTPException(403, "This legacy operation requires an administrator")
@@ -387,4 +399,3 @@ def teacher_course_members(
             for row in rows
         ],
     }
-
