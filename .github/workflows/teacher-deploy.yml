@@ -1,0 +1,112 @@
+name: teacher-deploy
+
+# Build the teacher-agent production image (Dockerfile.harness) on every push
+# to main that touches teacher_agent/**, push it to Docker Hub, then SSH to the
+# production server and swap the agentic-teacher-prod container with health
+# check + automatic rollback (see teacher_agent/scripts/server-deploy-teacher.sh).
+#
+# Required secrets (repo Settings -> Secrets and variables -> Actions):
+#   DOCKERHUB_USERNAME  Docker Hub username (zmzm1443)
+#   DOCKERHUB_TOKEN     Docker Hub access token (Read & Write)
+#   SERVER_HOST         43.132.155.8
+#   SERVER_SSH_KEY      dedicated ed25519 private key (github-actions-teacher-deploy)
+#
+# Feature flags are baked into the browser bundle at build time. They default
+# to OFF (= current production, which was built with no --build-arg). Override
+# any of them via repo Variables, e.g. TEACHER_PI_CHAT_ENABLED = true.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'teacher_agent/**'
+      - '.github/workflows/teacher-deploy.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: teacher-deploy
+  cancel-in-progress: false
+
+env:
+  IMAGE: zmzm1443/agentic-teacher
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute image tag
+        run: echo "IMAGE_TAG=main-${GITHUB_SHA::7}" >> "$GITHUB_ENV"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: teacher_agent
+          file: teacher_agent/Dockerfile.harness
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:${{ env.IMAGE_TAG }}
+            ${{ env.IMAGE }}:latest
+          build-args: |
+            NEXT_PUBLIC_MAIC_EDITOR_ENABLED=${{ vars.TEACHER_MAIC_EDITOR_ENABLED }}
+            NEXT_PUBLIC_MAIC_EDITOR_RENDERER_ENABLED=${{ vars.TEACHER_MAIC_EDITOR_RENDERER_ENABLED }}
+            NEXT_PUBLIC_MAIC_PLAYBACK_RENDERER_ENABLED=${{ vars.TEACHER_MAIC_PLAYBACK_RENDERER_ENABLED }}
+            NEXT_PUBLIC_PI_CHAT_ENABLED=${{ vars.TEACHER_PI_CHAT_ENABLED }}
+            NEXT_PUBLIC_SHOW_VOCATIONAL_TEST_UI=${{ vars.TEACHER_SHOW_VOCATIONAL_TEST_UI }}
+            NEXT_PUBLIC_ENABLE_VIDEO_EXPORT=${{ vars.TEACHER_ENABLE_VIDEO_EXPORT }}
+            NEXT_PUBLIC_VIDEO_EXPORT_CTA_DESTINATION=${{ vars.TEACHER_VIDEO_EXPORT_CTA_DESTINATION }}
+            NEXT_PUBLIC_ENABLE_PPTX_IMPORT=${{ vars.TEACHER_ENABLE_PPTX_IMPORT }}
+            NEXT_PUBLIC_PERSISTENCE=${{ vars.TEACHER_PERSISTENCE }}
+            NEXT_PUBLIC_PERSISTENCE_TOKEN=${{ secrets.TEACHER_PERSISTENCE_TOKEN }}
+            ALLOWED_FRAME_ANCESTORS=${{ vars.TEACHER_ALLOWED_FRAME_ANCESTORS }}
+          cache-from: type=registry,ref=${{ env.IMAGE }}:buildcache
+          cache-to: type=registry,ref=${{ env.IMAGE }}:buildcache,mode=max
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute image tag
+        run: echo "IMAGE_TAG=main-${GITHUB_SHA::7}" >> "$GITHUB_ENV"
+
+      - name: Deploy to production server
+        env:
+          SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          printf '%s\n' "$SERVER_SSH_KEY" > /tmp/deploy_key
+          chmod 600 /tmp/deploy_key
+          SSH="ssh -i /tmp/deploy_key -o StrictHostKeyChecking=accept-new ubuntu@$SERVER_HOST"
+
+          # Upload the server-side deploy script (strip CR in case of CRLF checkout).
+          scp -i /tmp/deploy_key -o StrictHostKeyChecking=accept-new \
+            teacher_agent/scripts/server-deploy-teacher.sh \
+            "ubuntu@$SERVER_HOST:/tmp/server-deploy-teacher.sh"
+          $SSH "sed -i 's/\r$//' /tmp/server-deploy-teacher.sh"
+
+          # Authenticate the daemon for the private repo, then swap the container.
+          printf '%s' "$DOCKERHUB_TOKEN" | $SSH "docker login -u '$DOCKERHUB_USERNAME' --password-stdin"
+          $SSH "bash /tmp/server-deploy-teacher.sh '$IMAGE' '$IMAGE_TAG'"
+
+      # Informational only — the authoritative gate is the server-side health
+      # check + rollback in server-deploy-teacher.sh. The public endpoint may
+      # legitimately answer 401 once auth middleware covers /api/health.
+      - name: Verify public endpoint
+        run: |
+          sleep 5
+          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 \
+            https://agenticclasspilot.com/teacher/api/health || true)
+          echo "public /teacher/api/health -> $code"
