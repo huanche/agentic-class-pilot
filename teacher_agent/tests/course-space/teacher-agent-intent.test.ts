@@ -276,7 +276,7 @@ describe('teacher course operation planning', () => {
       fileTypes: ['lesson-objectives'],
       populateContent: true,
     });
-    expect(plan?.requiresConfirmation).toBe(false);
+    expect(plan?.requiresConfirmation).toBe(true);
   });
 
   it('uses the selected lesson for a course objective command without a week number', () => {

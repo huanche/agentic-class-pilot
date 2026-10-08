@@ -199,7 +199,8 @@ export function planTeacherWorkspaceOperation(
         summary: populateContent
           ? `将依据课程材料，为${targets[0].title}至${targets[targets.length - 1].title}生成 ${requestedLessonFiles.length} 类教学内容；已有同类型文件将更新正文。`
           : `将在${targets[0].title}至${targets[targets.length - 1].title}的 ${targets.length} 个课时文件夹中分别创建 ${requestedLessonFiles.length} 类结构化文件；已有同类型文件将保留。`,
-        requiresConfirmation: !populateContent,
+        // Content is generated as a draft and only persisted after teacher review.
+        requiresConfirmation: true,
         status: 'planned',
         action: {
           type: 'create-lesson-files',

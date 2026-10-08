@@ -79,6 +79,7 @@ next-env.d.ts
 /docs/*
 !/docs/STUDENT_AGENT_COURSE_API.md
 !/docs/course-data-api-v1.md
+!/docs/teacher-agent-review-migration.md
 # Eval results
 eval/whiteboard-layout/results/
 eval/outline-language/results/

@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   Bot,
   Brain,
@@ -15,12 +16,19 @@ import {
   Play,
   Presentation,
   Send,
+  Settings,
   ShieldCheck,
   X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { SpeechButton } from '@/components/audio/speech-button';
 import { InteractiveModeButton } from '@/components/generation/interactive-mode-button';
+import { SettingsDialog } from '@/components/settings';
+import { getCurrentModelConfig } from '@/lib/utils/model-config';
+import { requestTeacherAgentTurn } from '@/lib/course-space/teacher-agent-request';
+import { useSettingsStore } from '@/lib/store/settings';
+import { WEB_SEARCH_PROVIDERS, isWebSearchProviderConfigured } from '@/lib/web-search/constants';
+import type { SettingsSection } from '@/lib/types/settings';
 import type { CourseArtifactJob, CourseArtifactType, CourseSpace } from '@/lib/course-space';
 import type { TeacherOperationPlan } from '@/lib/course-space/teacher-agent-intent';
 
@@ -54,6 +62,7 @@ export function TeacherWorkspaceAgent({
   embedded?: boolean;
   externalPrompt?: { id: number; text: string; attachments?: ScreenshotAttachment[] };
 }) {
+  const router = useRouter();
   const initialMessage = useMemo<Message>(() => ({
     role: 'assistant',
     content: `你好，我是“${course.title}”的课程操作智能体。课程材料、结构、知识图谱与中间产物已作为插件接入。我可以按你的要求启动教学大纲、教学计划、课件、讲稿、习题和评分量规工作，也可以创建、移动或删除课程文件。生成任务会直接进入标准生成—审核—可视化流程；结构变更与删除操作会先提交计划供你确认。`,
@@ -72,6 +81,18 @@ export function TeacherWorkspaceAgent({
   const [loading, setLoading] = useState(false);
   const [mode, setMode] = useState('DeepSeek Harness');
   const [deepInteraction, setDeepInteraction] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsSection, setSettingsSection] = useState<SettingsSection | undefined>();
+  const [webSearch, setWebSearch] = useState(false);
+  const currentModelId = useSettingsStore((state) => state.modelId);
+  const webSearchProviderId = useSettingsStore((state) => state.webSearchProviderId);
+  const webSearchProvidersConfig = useSettingsStore((state) => state.webSearchProvidersConfig);
+  const baiduSubSources = useSettingsStore((state) => state.baiduSubSources);
+  const webSearchProvider = WEB_SEARCH_PROVIDERS[webSearchProviderId];
+  const webSearchAvailable = Boolean(
+    webSearchProvider &&
+      isWebSearchProviderConfigured(webSearchProvider, webSearchProvidersConfig[webSearchProviderId]),
+  );
   const conversationEndRef = useRef<HTMLDivElement>(null);
   const loadSessions = useCallback(async () => {
     const response = await fetch(`/api/course-space/${course.id}/agent?list=1`, { cache: 'no-store' });
@@ -145,7 +166,15 @@ export function TeacherWorkspaceAgent({
   useEffect(() => {
     conversationEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }, [messages, loading]);
-  const send = async (preset?: string) => {
+  const openDraft = (plan: TeacherOperationPlan) => {
+    if (plan.action?.type !== 'create-lesson-files' || !plan.action.populateContent) return false;
+    sessionStorage.setItem(`teacher-plan:${plan.id}`, JSON.stringify(plan));
+    router.push(
+      `/course-space/${encodeURIComponent(course.id)}/prepare?draft=${encodeURIComponent(plan.id)}`,
+    );
+    return true;
+  };
+  const send = async (preset?: string, presetAttachments?: ScreenshotAttachment[]) => {
     const content = (preset ?? input).trim();
     if (!content || loading) return;
     const next = [...messages, { role: 'user' as const, content }];
@@ -153,22 +182,37 @@ export function TeacherWorkspaceAgent({
     setInput('');
     setLoading(true);
     try {
-      const response = await fetch(`/api/course-space/${course.id}/agent`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
+      const response = await requestTeacherAgentTurn({
+        courseId: course.id,
+        modelConfig: getCurrentModelConfig(),
+        webSearch: webSearch ? {
+          providerId: webSearchProviderId,
+          providerConfig: webSearchProvidersConfig[webSearchProviderId],
+          baiduSubSources,
+        } : undefined,
+        body: {
           sessionId,
           message: content,
           history: messages,
-          attachments: externalPrompt?.attachments ?? attachments,
+          attachments: presetAttachments ?? attachments,
           scope: activeScope,
           deepInteraction,
-        }),
+        },
       });
       const data = await response.json();
       if (!response.ok || data.success === false) throw new Error(data.error || '智能体响应失败');
       let responseText = data.text;
       let responsePlan = data.plan as TeacherOperationPlan | undefined;
+      if (responsePlan && openDraft(responsePlan)) {
+        setMessages([
+          ...next,
+          { role: 'assistant', content: '已形成备课计划，正在打开草稿确认与审核页面。', plan: responsePlan },
+        ]);
+        setAttachments([]);
+        setMode('课程操作智能体');
+        void loadSessions().catch(() => undefined);
+        return;
+      }
       if (
         responsePlan?.action &&
         responsePlan.status === 'planned' &&
@@ -203,7 +247,7 @@ export function TeacherWorkspaceAgent({
           ? '课程操作智能体'
           : data.mode === 'deepseek-harness'
             ? 'DeepSeek Harness'
-            : 'DeepSeek 兼容模式',
+            : '模型兼容模式',
       );
     } catch (error) {
       setMessages([
@@ -221,12 +265,13 @@ export function TeacherWorkspaceAgent({
   useEffect(() => {
     if (!externalPrompt || loading || lastExternalPromptId.current === externalPrompt.id) return;
     lastExternalPromptId.current = externalPrompt.id;
-    void send(externalPrompt.text);
+    void send(externalPrompt.text, externalPrompt.attachments);
   }, [externalPrompt, loading]); // External prompts are one-shot commands from the shared workbench composer.
   const executePlan = async (messageIndex: number, plan: TeacherOperationPlan) => {
     if (loading) return;
     setLoading(true);
     try {
+      if (openDraft(plan)) return;
       const response = await fetch(`/api/course-space/${course.id}/agent/operations`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -377,7 +422,9 @@ export function TeacherWorkspaceAgent({
                       {message.plan.result}
                     </p>
                   )}
-                  {message.plan.requiresConfirmation && message.plan.status === 'planned' && (
+                  {(message.plan.requiresConfirmation ||
+                    (message.plan.action?.type === 'create-lesson-files' && message.plan.action.populateContent)) &&
+                    message.plan.status === 'planned' && (
                     <Button
                       size="sm"
                       variant={
@@ -387,7 +434,9 @@ export function TeacherWorkspaceAgent({
                       onClick={() => void executePlan(index, message.plan!)}
                     >
                       <Play className="mr-1 size-3.5" />
-                      {message.plan.action?.type.startsWith('delete') ? '确认删除' : '确认执行'}
+                      {message.plan.action?.type.startsWith('delete') ? '确认删除' :
+                        message.plan.action?.type === 'create-lesson-files' && message.plan.action.populateContent
+                          ? '打开草稿审核' : '确认执行'}
                     </Button>
                   )}
                 </div>
@@ -458,17 +507,24 @@ export function TeacherWorkspaceAgent({
             placeholder="例如：把第一周内容移到第二周、删除空课时文件夹，或生成本周课件…"
           />
           <div className="flex flex-wrap items-center gap-2 px-3 pb-3">
-            <button type="button" className="inline-flex h-8 items-center gap-1.5 rounded-full border border-violet-200 bg-violet-50 px-2.5 text-xs font-medium text-violet-700" title="使用高强度推理">
+            <button type="button" onClick={() => { setSettingsSection('providers'); setSettingsOpen(true); }} className="inline-flex h-8 max-w-40 items-center gap-1.5 rounded-full border border-violet-200 bg-violet-50 px-2.5 text-xs font-medium text-violet-700" title="选择语言模型与推理设置（兼容模式生效；平台个人配置和阶段路由优先）">
               <Brain className="size-3.5" />
-              high
+              <span className="truncate">{currentModelId || '选择模型'}</span>
             </button>
             <span className="h-4 w-px bg-slate-200" />
             <label className="grid size-8 shrink-0 cursor-pointer place-items-center rounded-full border border-slate-200 bg-white text-slate-500 hover:border-[#B00055]/30 hover:text-[#B00055]" title="上传或粘贴截图">
               <ImagePlus className="size-3.5" />
               <input type="file" accept="image/png,image/jpeg,image/webp" multiple className="sr-only" onChange={(event) => { addImageFiles(Array.from(event.target.files ?? [])); event.target.value = ''; }}/>
             </label>
-            <button type="button" className="grid size-8 place-items-center rounded-full border border-slate-200 bg-white text-slate-400" title="课程材料与已解析网页上下文">
+            <button type="button" aria-pressed={webSearch} onClick={() => {
+              if (webSearch) { setWebSearch(false); return; }
+              if (!webSearchAvailable) { setSettingsSection('web-search'); setSettingsOpen(true); return; }
+              setWebSearch(true);
+            }} className={`grid size-8 place-items-center rounded-full border ${webSearch ? 'border-violet-300 bg-violet-100 text-violet-700' : 'border-slate-200 bg-white text-slate-400'}`} title={webSearch ? '关闭网页检索' : webSearchAvailable ? '开启网页检索' : '配置网页检索服务'}>
               <Globe2 className="size-3.5" />
+            </button>
+            <button type="button" onClick={() => { setSettingsSection(undefined); setSettingsOpen(true); }} className="grid size-8 place-items-center rounded-full border border-slate-200 bg-white text-slate-500" title="模型与语音设置">
+              <Settings className="size-3.5" />
             </button>
             <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
               <button type="button" onClick={() => onGenerate('lesson-courseware', activeScope)} className="inline-flex h-8 items-center gap-1.5 rounded-full border border-[#B00055]/25 bg-[#B00055]/5 px-3 text-xs font-medium text-[#B00055] hover:bg-[#B00055]/10">
@@ -488,9 +544,16 @@ export function TeacherWorkspaceAgent({
         <p className="mt-2 text-[11px] text-muted-foreground">
           麦克风开启后会边听边显示文字，再次点击停止 · 可上传或 Ctrl+V 粘贴截图 · Enter 发送
         </p>
+        <p className="mt-1 text-[11px] text-muted-foreground">
+          模型设置用于兼容模式，平台个人模型配置与阶段路由优先；Harness 使用独立模型配置。网页检索结果可用于两种模式。
+        </p>
       </div>
         </div>
       </div>
+      <SettingsDialog open={settingsOpen} onOpenChange={(open) => {
+        setSettingsOpen(open);
+        if (!open) setSettingsSection(undefined);
+      }} initialSection={settingsSection} />
     </div>
   );
 }

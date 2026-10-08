@@ -901,13 +901,14 @@ function HomePage({
       const plan = data.plan as TeacherOperationPlan | undefined;
       if (
         plan?.action?.type === 'create-lesson-files' &&
-        plan.action.populateContent &&
-        plan.action.lessonIds.length === 1
+        plan.action.populateContent
       ) {
+        sessionStorage.setItem(`teacher-plan:${plan.id}`, JSON.stringify(plan));
         window.parent.postMessage(
           { type: 'teacher-workbench-open-plan', courseId, plan },
           window.location.origin,
         );
+        router.push(`/course-space/${encodeURIComponent(courseId)}/prepare?draft=${encodeURIComponent(plan.id)}`);
         setTeacherCommandResult('已创建备课计划，正在打开确认与审核页面。');
       } else if (plan?.action && plan.requiresConfirmation) {
         setPendingTeacherPlan(plan);

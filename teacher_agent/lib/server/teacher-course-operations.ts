@@ -10,7 +10,7 @@ import {
   updateServerCourse,
 } from './course-space-storage';
 
-const lessonFileTitles = {
+export const lessonFileTitles = {
   'lesson-objectives': '课时目标',
   'knowledge-points': '知识点',
   'teaching-activities': '教学活动',
@@ -198,28 +198,10 @@ export async function executeConfirmedTeacherPlan(
   }
   if (plan.kind === 'create-lesson-files' && plan.action?.type === 'create-lesson-files') {
     const action = plan.action;
-    let created = 0;
-    let populated = 0;
-    const currentCourse = await readServerCourse(courseId);
-    if (!currentCourse) throw new Error('课程不存在');
-    const generatedByLesson = new Map<
-      string,
-      Partial<Record<keyof typeof lessonFileTitles, string>>
-    >();
     if (action.populateContent) {
-      for (const lesson of currentCourse.modules.flatMap((module) => module.lessons)) {
-        if (!action.lessonIds.includes(lesson.id)) continue;
-        generatedByLesson.set(
-          lesson.id,
-          await generateLessonFileContent(
-            currentCourse,
-            lesson.title,
-            action.fileTypes,
-            action.instruction,
-          ),
-        );
-      }
+      throw new Error('课时内容必须通过草稿生成与教师审核页面保存，不能直接执行写入');
     }
+    let created = 0;
     await updateServerCourse(courseId, (course) => {
       const knownLessons = new Set(
         course.modules.flatMap((module) => module.lessons.map((lesson) => lesson.id)),
@@ -235,7 +217,6 @@ export async function executeConfirmedTeacherPlan(
           lessons: module.lessons.map((lesson) => {
             if (!action.lessonIds.includes(lesson.id)) return lesson;
             const existing = new Set((lesson.files ?? []).map((file) => file.type));
-            const generated = generatedByLesson.get(lesson.id) ?? {};
             const additions = action.fileTypes
               .filter((type) => !existing.has(type))
               .map((type, index) => ({
@@ -243,20 +224,13 @@ export async function executeConfirmedTeacherPlan(
                 lessonId: lesson.id,
                 type,
                 title: lessonFileTitles[type],
-                content: generated[type]?.trim() || '',
-                status: generated[type]?.trim() ? ('ready' as const) : ('draft' as const),
+                content: '',
+                status: 'draft' as const,
                 createdAt: now,
                 updatedAt: now,
               }));
             created += additions.length;
-            const updatedFiles = (lesson.files ?? []).map((file) => {
-              const content = generated[file.type]?.trim();
-              if (!content || !action.fileTypes.includes(file.type)) return file;
-              populated += 1;
-              return { ...file, content, status: 'ready' as const, updatedAt: now };
-            });
-            populated += additions.filter((file) => file.content).length;
-            return { ...lesson, updatedAt: now, files: [...updatedFiles, ...additions] };
+            return { ...lesson, updatedAt: now, files: [...(lesson.files ?? []), ...additions] };
           }),
         })),
       };
@@ -265,9 +239,7 @@ export async function executeConfirmedTeacherPlan(
       plan: {
         ...plan,
         status: 'completed',
-        result: action.populateContent
-          ? `已创建 ${created} 个课时结构文件，并写入或更新 ${populated} 个文件的具体内容。`
-          : `已创建 ${created} 个课时结构文件；已有同类型文件已自动跳过。`,
+        result: `已创建 ${created} 个课时结构文件；已有同类型文件已自动跳过。`,
         steps: plan.steps.map((step) => ({ ...step, status: 'completed' })),
       },
     };

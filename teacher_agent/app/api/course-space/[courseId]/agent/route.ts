@@ -7,6 +7,11 @@ import {
 import { readServerCourse } from '@/lib/server/course-space-storage';
 import { executeReadOnlyTeacherPlan } from '@/lib/server/teacher-course-operations';
 import type { CourseArtifactJob } from '@/lib/course-space/types';
+import type { ThinkingConfig } from '@/lib/types/provider';
+import {
+  getPlatformUserModelConfigForRequest,
+  llmOverrideFromConfig,
+} from '@/lib/server/platform-user-model-config';
 import {
   getCourseSpaceStorageAdapter,
   type TeacherAgentTurnLease,
@@ -92,6 +97,9 @@ export async function POST(
       attachments?: Array<{ name: string; mimeType: string; dataUrl: string }>;
       scope?: CourseArtifactJob['scope'];
       deepInteraction?: boolean;
+      webContext?: string;
+      thinkingConfig?: ThinkingConfig;
+      thinking?: ThinkingConfig;
     };
     if (!body.message?.trim())
       return NextResponse.json({ success: false, error: '请输入问题' }, { status: 400 });
@@ -132,6 +140,23 @@ export async function POST(
         { status: 400 },
       );
     }
+    // Only the authenticated platform lookup may supply BYOK overrides.
+    // Never forward a body-supplied modelConfig/platformOverrides object.
+    const platformOverrides = llmOverrideFromConfig(
+      await getPlatformUserModelConfigForRequest(request),
+    );
+    const thinking = body.thinkingConfig ?? body.thinking;
+    const modelConfig = {
+      thinkingConfig: thinking && typeof thinking === 'object' ? thinking : undefined,
+      ...(platformOverrides
+        ? { platformOverrides }
+        : {
+            modelString: request.headers.get('x-model') || undefined,
+            apiKey: request.headers.get('x-api-key') || undefined,
+            baseUrl: request.headers.get('x-base-url') || undefined,
+            providerType: request.headers.get('x-provider-type') || undefined,
+          }),
+    };
     const result = await runTeacherWorkspaceAgent({
       courseId,
       sessionId,
@@ -140,6 +165,8 @@ export async function POST(
       attachments,
       scope: body.scope,
       deepInteraction: body.deepInteraction === true,
+      webContext: typeof body.webContext === 'string' ? body.webContext.slice(0, 24000) : undefined,
+      modelConfig,
     });
     await storage.completeTeacherTurn(lease, result);
     return NextResponse.json({ success: true, ...result });
