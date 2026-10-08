@@ -5,6 +5,10 @@ name: teacher-deploy
 # production server and swap the agentic-teacher-prod container with health
 # check + automatic rollback (see teacher_agent/scripts/server-deploy-teacher.sh).
 #
+# Pull requests targeting main get a BUILD-ONLY check (no push, no deploy) so
+# build failures surface before merge. Fork PRs receive no secrets; the build
+# needs none (GitHub Actions cache is used instead of a registry cache).
+#
 # Required secrets (repo Settings -> Secrets and variables -> Actions):
 #   DOCKERHUB_USERNAME  Docker Hub username (zmzm1443)
 #   DOCKERHUB_TOKEN     Docker Hub access token (Read & Write)
@@ -17,6 +21,11 @@ name: teacher-deploy
 
 on:
   push:
+    branches: [main]
+    paths:
+      - 'teacher_agent/**'
+      - '.github/workflows/teacher-deploy.yml'
+  pull_request:
     branches: [main]
     paths:
       - 'teacher_agent/**'
@@ -41,17 +50,20 @@ jobs:
 
       - uses: docker/setup-buildx-action@v3
 
+      # Login only when we will push (push to main / manual run). PR builds
+      # never push, and fork PRs don't receive these secrets anyway.
       - uses: docker/login-action@v3
+        if: github.event_name != 'pull_request'
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build and push
+      - name: Build (and push on main)
         uses: docker/build-push-action@v6
         with:
           context: teacher_agent
           file: teacher_agent/Dockerfile.harness
-          push: true
+          push: ${{ github.event_name != 'pull_request' }}
           tags: |
             ${{ env.IMAGE }}:${{ env.IMAGE_TAG }}
             ${{ env.IMAGE }}:latest
@@ -67,10 +79,12 @@ jobs:
             NEXT_PUBLIC_PERSISTENCE=${{ vars.TEACHER_PERSISTENCE }}
             NEXT_PUBLIC_PERSISTENCE_TOKEN=${{ secrets.TEACHER_PERSISTENCE_TOKEN }}
             ALLOWED_FRAME_ANCESTORS=${{ vars.TEACHER_ALLOWED_FRAME_ANCESTORS }}
-          cache-from: type=registry,ref=${{ env.IMAGE }}:buildcache
-          cache-to: type=registry,ref=${{ env.IMAGE }}:buildcache,mode=max
+          cache-from: type=gha,scope=teacher-harness
+          cache-to: type=gha,mode=max,scope=teacher-harness
 
   deploy:
+    # PR builds stop after the build check; only main pushes / manual runs deploy.
+    if: github.event_name != 'pull_request'
     needs: build
     runs-on: ubuntu-latest
     steps:
