@@ -2,10 +2,8 @@ import { createFileRoute, redirect } from "@tanstack/react-router"
 import {
   ArrowRight,
   BookOpenCheck,
-  Bot,
   CheckCircle2,
   Presentation,
-  ShieldCheck,
   Sparkles,
 } from "lucide-react"
 
@@ -121,32 +119,26 @@ function TeacherPortal() {
 
   return (
     <div className="space-y-8 pb-8">
-      <section className="relative overflow-hidden rounded-[28px] border bg-gradient-to-br from-[#B00055]/10 via-background to-blue-600/10 px-7 py-10 md:px-10">
+      <section className="relative overflow-hidden rounded-[28px] border bg-gradient-to-br from-[#B00055]/10 via-background to-blue-600/10 px-7 py-9 shadow-sm md:px-10 md:py-11">
         <div className="absolute -right-16 -top-20 size-64 rounded-full bg-[#B00055]/10 blur-3xl" />
-        <div className="relative max-w-3xl">
-          <div className="mb-5 flex flex-wrap items-center gap-2 text-xs font-medium">
-            <span className="rounded-full bg-[#B00055]/10 px-3 py-1.5 text-[#B00055]">
-              AI 教育平台
-            </span>
-            <span className="flex items-center gap-1.5 rounded-full border bg-background/80 px-3 py-1.5 text-muted-foreground">
-              <ShieldCheck className="size-3.5" />
-              可信教师身份
-            </span>
-            <span className="flex items-center gap-1.5 rounded-full border bg-background/80 px-3 py-1.5 text-muted-foreground">
-              <Bot className="size-3.5" />
-              {status.data?.teacherReady
-                ? "教师 Agent 已就绪"
-                : "正在连接教师 Agent"}
-            </span>
+        <div className="relative">
+          <img
+            src="/agentic-class-pilot-logo.png"
+            alt="Agentic Class Pilot"
+            className="mx-auto block h-auto w-full max-w-3xl object-contain"
+          />
+          <div className="mx-auto mt-8 max-w-3xl border-t border-[#B00055]/10 pt-8 text-center">
+            <p className="text-sm font-medium text-[#B00055]">
+              教师产品工作空间
+            </p>
+            <h1 className="mt-3 text-3xl font-semibold tracking-tight md:text-4xl">
+              {user?.full_name || user?.email}，欢迎回来
+            </h1>
+            <p className="mx-auto mt-4 max-w-2xl text-base leading-7 text-muted-foreground">
+              从课程建设开始组织材料、完成 AI
+              辅助备课和内容发布；进入授课管理查看已发布课程、教学资料与学生学习状态。
+            </p>
           </div>
-          <p className="text-sm font-medium text-[#B00055]">教师产品工作空间</p>
-          <h1 className="mt-3 text-3xl font-semibold tracking-tight md:text-4xl">
-            {user?.full_name || user?.email}，欢迎回来
-          </h1>
-          <p className="mt-4 max-w-2xl text-base leading-7 text-muted-foreground">
-            从课程建设开始组织材料、完成 AI
-            辅助备课和内容发布；进入授课管理查看已发布课程、教学资料与学生学习状态。
-          </p>
         </div>
       </section>
 

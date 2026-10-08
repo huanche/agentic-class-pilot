@@ -13,8 +13,8 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { CoursewareModeDialog } from '@/components/generation/courseware-mode-dialog';
+import { CoursewareSourceDialog } from '@/components/course-space/courseware-source-dialog';
 import { CourseWorkspaceExplorer } from '@/components/course-space/course-workspace-explorer';
-import { CourseIntelligencePanel } from '@/components/course-space/course-intelligence-panel';
 import { CourseArtifactGallery } from '@/components/course-space/course-artifact-gallery';
 import { CourseWorkLocationPicker } from '@/components/course-space/course-work-location-picker';
 import { TeacherWorkspaceAgent } from '@/components/course-space/teacher-workspace-agent';
@@ -105,6 +105,7 @@ export default function CourseSpacePage() {
   const [generationScope, setGenerationScope] = useState('course');
   const [message, setMessage] = useState('');
   const [coursewareModeOpen, setCoursewareModeOpen] = useState(false);
+  const [coursewareSourceOpen, setCoursewareSourceOpen] = useState(false);
   const [workspacePanel, setWorkspacePanel] = useState<'generate' | 'artifacts'>('generate');
   const [coursewareMaterialId, setCoursewareMaterialId] = useState('');
   const [launchingCourseware, setLaunchingCourseware] = useState(false);
@@ -498,6 +499,7 @@ export default function CourseSpacePage() {
   const requestGeneration = async (
     requestedType: CourseArtifactType,
     requestedScope?: CourseArtifactJob['scope'],
+    entry?: 'lecturer-ppt',
   ) => {
     const artifactTypes = [requestedType];
     if (!selected) return;
@@ -511,14 +513,11 @@ export default function CourseSpacePage() {
             : `lesson:${requestedScope.lessonId}`,
       );
     const includesCourseware = artifactTypes.includes('lesson-courseware');
-    // A supplied PPT/PPTX takes the reviewable conversion path. For every
-    // other parsed material, create a normal AI courseware job instead. The
-    // previous implementation rejected TXT/PDF/Word materials here even
-    // though the server-side courseware generator supports their extraction.
-    const convertExistingPpt = includesCourseware && Boolean(selectedCoursewareMaterial);
-    const backgroundArtifacts = convertExistingPpt
-      ? artifactTypes.filter((type) => type !== 'lesson-courseware')
-      : artifactTypes;
+    if (entry === 'lecturer-ppt') {
+      setCoursewareSourceOpen(true);
+      return;
+    }
+    const backgroundArtifacts = artifactTypes;
     try {
       let jobCount = 0;
       let createdJob: CourseArtifactJob | undefined;
@@ -534,15 +533,7 @@ export default function CourseSpacePage() {
         createdJob = result.jobs[0];
         await refresh(selected.id);
       }
-      if (convertExistingPpt && selectedCoursewareMaterial) {
-        setCoursewareMaterialId(selectedCoursewareMaterial.id);
-        setCoursewareModeOpen(true);
-        setMessage(
-          jobCount
-            ? `已创建 ${jobCount} 个资料类任务；请继续选择课件转换路径。`
-            : '请选择高保真还原或 AI 增强课件。',
-        );
-      } else {
+      {
         setMessage(includesCourseware
           ? '已创建 AI 互动课件生成任务。生成结果须经教师审核、激活后才能用于授课。'
           : `已创建 ${jobCount} 个后台任务。生成结果必须经过教师审核后才能发布。`);
@@ -652,7 +643,7 @@ export default function CourseSpacePage() {
                 )}
               </div>
             </div>
-            <CourseIntelligencePanel course={selected} artifacts={artifacts} graphOnly />
+
             <CourseWorkspaceExplorer
               course={selected}
               artifacts={artifacts}
@@ -741,7 +732,7 @@ export default function CourseSpacePage() {
                       course={selected}
                       activeScope={activeScope}
                       embedded
-                      onGenerate={(type, scope) => void requestGeneration(type, scope)}
+                      onGenerate={(type, scope, entry) => void requestGeneration(type, scope, entry)}
                       onOperationComplete={() => refresh(selected.id)}
                       onOpenKnowledgeGraph={() =>
                         router.push(
@@ -763,6 +754,17 @@ export default function CourseSpacePage() {
           </div>
         )}
       </div>
+      {coursewareSourceOpen && selected && <CoursewareSourceDialog
+        key={selected.id}
+        course={selected}
+        onCancel={() => setCoursewareSourceOpen(false)}
+        onSelect={async (material) => {
+          await refresh(selected.id);
+          setCoursewareMaterialId(material.id);
+          setCoursewareSourceOpen(false);
+          setCoursewareModeOpen(true);
+        }}
+      />}
       <CoursewareModeDialog
         open={coursewareModeOpen}
         onOpenChange={setCoursewareModeOpen}

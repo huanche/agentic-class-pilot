@@ -56,7 +56,7 @@ export function TeacherWorkspaceAgent({
 }: {
   course: CourseSpace;
   activeScope: CourseArtifactJob['scope'];
-  onGenerate: (type: CourseArtifactType, scope?: CourseArtifactJob['scope']) => void;
+  onGenerate: (type: CourseArtifactType, scope?: CourseArtifactJob['scope'], entry?: 'lecturer-ppt') => void;
   onOperationComplete?: () => void | Promise<void>;
   onOpenKnowledgeGraph?: () => void;
   embedded?: boolean;
@@ -527,7 +527,7 @@ export function TeacherWorkspaceAgent({
               <Settings className="size-3.5" />
             </button>
             <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
-              <button type="button" onClick={() => onGenerate('lesson-courseware', activeScope)} className="inline-flex h-8 items-center gap-1.5 rounded-full border border-[#B00055]/25 bg-[#B00055]/5 px-3 text-xs font-medium text-[#B00055] hover:bg-[#B00055]/10">
+              <button type="button" onClick={() => onGenerate('lesson-courseware', activeScope, 'lecturer-ppt')} className="inline-flex h-8 items-center gap-1.5 rounded-full border border-[#B00055]/25 bg-[#B00055]/5 px-3 text-xs font-medium text-[#B00055] hover:bg-[#B00055]/10">
                 <Presentation className="size-3.5" />讲师 PPT
               </button>
               <button type="button" onClick={onOpenKnowledgeGraph} className="inline-flex h-8 items-center gap-1.5 rounded-full border border-[#B00055]/25 bg-[#B00055]/5 px-3 text-xs font-medium text-[#B00055] hover:bg-[#B00055]/10">

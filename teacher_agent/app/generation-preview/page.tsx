@@ -38,6 +38,8 @@ import {
   storeImages,
 } from '@/lib/utils/image-storage';
 import { getCurrentModelConfig } from '@/lib/utils/model-config';
+import { isModelCredentialFailure } from '@/lib/utils/generation-errors';
+import { shouldUseServerGenerationModel } from '@/lib/course-space/generation-model-policy';
 import { MAX_VISION_IMAGES } from '@/lib/constants/generation';
 import {
   MAX_DOCUMENT_BUNDLE_FILES,
@@ -185,11 +187,7 @@ function GenerationPreviewContent() {
   const isReviewingOutlines = session?.previewPhase === 'review';
 
   const sceneGenerationErrorMessage = (failure: SceneGenerationFailure): string => {
-    if (
-      failure.errorCode === 'MISSING_API_KEY' ||
-      failure.statusCode === 401 ||
-      failure.statusCode === 403
-    ) {
+    if (isModelCredentialFailure(failure)) {
       return t('generation.sceneGenerateAuthFailed');
     }
 
@@ -391,9 +389,7 @@ function GenerationPreviewContent() {
     setCurrentStepIndex(0);
 
     try {
-      const preferServerModel =
-        Boolean(currentSession.conversionMode) ||
-        currentSession.sourceType === 'pptx-structured-import';
+      const preferServerModel = shouldUseServerGenerationModel(currentSession);
       const usesImportedPptCanvas =
         currentSession.sourceType === 'pptx-faithful' ||
         currentSession.sourceType === 'pptx-structured-import';
