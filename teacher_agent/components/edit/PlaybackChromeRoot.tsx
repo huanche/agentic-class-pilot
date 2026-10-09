@@ -43,6 +43,7 @@ import {
   getSceneDurationSeconds,
 } from '@/lib/playback/timing-display';
 import {
+  isAutoPlayedStudentScene,
   isFinalStudentPlaybackSlide,
   nextStudentPlaybackSlide,
 } from '@/lib/playback/student-player-playlist';
@@ -142,7 +143,11 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
     const emittedCompletionRef = useRef<string | null>(null);
 
     useEffect(() => {
-      if (!playbackCompleted || !currentScene || (videoOnly && currentScene.type !== 'slide'))
+      if (
+        !playbackCompleted ||
+        !currentScene ||
+        (videoOnly && !isAutoPlayedStudentScene(currentScene))
+      )
         return;
       const completionKey = `${currentScene.id}:${currentPlaybackActionIndex ?? -1}`;
       if (emittedCompletionRef.current === completionKey) return;
@@ -880,13 +885,15 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
             }
             // Auto-play: advance to next scene after a short pause
             const { autoPlayLecture } = useSettingsStore.getState();
-            if (videoOnly ? currentScene.type === 'slide' : autoPlayLecture) {
+            if (videoOnly ? isAutoPlayedStudentScene(currentScene) : autoPlayLecture) {
               const plannedSeconds = getSceneDurationSeconds(currentScene, stage, scenes);
               // The student player is a media playlist, not a paced teacher
               // presentation. Once narration ends, move on immediately rather
               // than padding the slide to its lesson-plan duration.
               const transitionDelayMs = videoOnly
-                ? 300
+                ? currentScene.type === 'interactive'
+                  ? 1500
+                  : 300
                 : Math.max(250, (plannedSeconds - sceneElapsedSecondsRef.current) * 1000);
               setTimeout(() => {
                 const stageState = useStageStore.getState();
