@@ -1577,8 +1577,12 @@ def session_lesson(lessonId: str = "", sessionId: str = "") -> dict:
 
 @app.get("/api/session/health")
 def session_health() -> dict:
-    """平台探活端点（student_bridge 的 studentAgentReady 检查）。"""
-    return {"ok": True}
+    """平台探活端点（student_bridge 的 studentAgentReady 检查）。
+
+    frontendStale 为真 = /app 正在服务一份和 frontend/src 对不上的旧构建
+    （不影响探活判定，只作诊断信号，见上方「旧构建守卫」）。
+    """
+    return {"ok": True, "frontendStale": bool(FRONTEND_STALE_REASON)}
 
 
 @app.get("/api/session/demo-flag")
@@ -1603,6 +1607,69 @@ if not (FRONTEND_DIR / "index.html").is_file() and (FRONTEND_OUT_DIR / "index.ht
     # 还没跑同步那一步时，直接用 frontend/out 的产物（basePath 同样是 /app）
     FRONTEND_DIR = FRONTEND_OUT_DIR
 FRONTEND_DIR.mkdir(parents=True, exist_ok=True)
+
+
+# ── 旧构建守卫 ─────────────────────────────────────────────────
+# 上面的目录是**上次构建**的产物：改了 frontend/src 忘记重新构建时，浏览器
+# 拿到的是旧行为，而且全程零报错——症状还会指向别处（2026-10-09 的
+# 「刷新后掉登录/加入课程门」排查就是栽在这，旧产物比源码旧了 12 天）。
+# npm run build 会把源码指纹写进 out/.build-fingerprint
+# （frontend/scripts/write-build-fingerprint.mjs），这里启动时重算比对。
+
+FRONTEND_SRC_DIR = ROOT / "frontend" / "src"
+FRONTEND_BUILD_INPUTS = ("package.json", "package-lock.json", "next.config.mjs")
+
+
+def _frontend_fingerprint() -> str | None:
+    """与 frontend/scripts/write-build-fingerprint.mjs 同一套算法，勿单边改。"""
+    import hashlib
+
+    if not FRONTEND_SRC_DIR.is_dir():
+        return None  # 容器等场景可能只带产物没带源码，无从比对
+    inputs: list[tuple[str, bytes]] = []
+    for name in FRONTEND_BUILD_INPUTS:
+        path = ROOT / "frontend" / name
+        if path.is_file():
+            inputs.append((name, path.read_bytes()))
+    for path in FRONTEND_SRC_DIR.rglob("*"):
+        if path.is_file():
+            inputs.append((path.relative_to(ROOT / "frontend").as_posix(), path.read_bytes()))
+    if not inputs:
+        return None
+    combined = hashlib.sha256()
+    for rel, blob in sorted(inputs):
+        combined.update(rel.encode("utf-8"))
+        combined.update(b"\0")
+        combined.update(hashlib.sha256(blob).digest())
+    return combined.hexdigest()
+
+
+def _frontend_stale_reason() -> str | None:
+    if not (FRONTEND_DIR / "index.html").is_file():
+        return None  # 一次都没构建过 —— /app 的 404 文案已经在教怎么做了
+    expected = _frontend_fingerprint()
+    if expected is None:
+        return None
+    try:
+        actual = (FRONTEND_DIR / ".build-fingerprint").read_text(encoding="utf-8").strip()
+    except OSError:
+        return "构建产物里没有指纹文件（它早于指纹机制生成），无法证明与源码一致"
+    if actual != expected:
+        return "frontend/src 与上次构建的产物不一致（改了源码没有重新构建）"
+    return None
+
+
+FRONTEND_STALE_REASON = _frontend_stale_reason()
+if FRONTEND_STALE_REASON:
+    print(
+        "\n" + "!" * 64
+        + "\n!! 警告：" + FRONTEND_STALE_REASON
+        + "\n!! 现在 /app 服务的是旧前端，页面行为不会反映你的改动。"
+        + "\n!! 修复：在 student_agent/ 下运行 构建前端.cmd（或 cd frontend && npm run build"
+        + " 后把 out/ 同步到 apps/static/app/）"
+        + "\n" + "!" * 64 + "\n",
+        flush=True,
+    )
 
 
 @app.get("/app")
