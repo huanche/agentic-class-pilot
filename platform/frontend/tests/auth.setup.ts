@@ -8,6 +8,7 @@ setup("authenticate", async ({ page }) => {
   await page.getByTestId("email-input").fill(firstSuperuser)
   await page.getByTestId("password-input").fill(firstSuperuserPassword)
   await page.getByRole("button", { name: "登录" }).click()
-  await page.waitForURL("/")
+  /* 登录后按角色跳转(teacher/student/admin),到达任意非 /login 页面即认证成功 */
+  await page.waitForURL((url) => !url.pathname.startsWith("/login"))
   await page.context().storageState({ path: authFile })
 })
