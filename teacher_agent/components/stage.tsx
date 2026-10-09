@@ -178,7 +178,7 @@ export function Stage({
       {/* Keep-alive host for interactive scene iframes (#619). Lives here, above
           the mode-swap subtree, so its iframes survive Pro mode toggles and
           scene switches instead of reloading on every remount. */}
-      <InteractiveIframeHost />
+      <InteractiveIframeHost studentPlayer={videoOnly} />
     </div>
   );
 }

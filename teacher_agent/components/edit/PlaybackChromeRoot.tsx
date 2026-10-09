@@ -9,6 +9,7 @@ import {
   useRef,
   useState,
 } from 'react';
+import { createPortal } from 'react-dom';
 import { useStageStore } from '@/lib/store';
 import { PENDING_SCENE_ID } from '@/lib/store/stage';
 import { useCanvasStore } from '@/lib/store/canvas';
@@ -276,8 +277,18 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
     const cursorSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const pendingCursorRef = useRef<{ stageId: string; cursor: PlaybackCursor } | null>(null);
     const stageRef = useRef<HTMLDivElement>(null);
+    const [studentControlsTarget, setStudentControlsTarget] = useState<Element | null>(null);
     // Guard to prevent double flash when manual stop triggers onDiscussionEnd
     const manualStopRef = useRef(false);
+
+    useEffect(() => {
+      if (!videoOnly) return;
+      const syncTarget = () =>
+        setStudentControlsTarget(document.fullscreenElement ?? document.body);
+      syncTarget();
+      document.addEventListener('fullscreenchange', syncTarget);
+      return () => document.removeEventListener('fullscreenchange', syncTarget);
+    }, [videoOnly]);
 
     useEffect(() => {
       sceneElapsedSecondsRef.current = 0;
@@ -900,6 +911,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
                 if (!videoOnly && !useSettingsStore.getState().autoPlayLecture) return;
                 const allScenes = stageState.scenes;
                 const curId = stageState.currentSceneId;
+                if (curId !== currentScene.id) return;
                 const idx = allScenes.findIndex((s) => s.id === curId);
                 const nextScene = videoOnly
                   ? nextStudentPlaybackSlide(allScenes, curId)
@@ -1520,43 +1532,51 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
                 surface the presentation toggle as a floating control once
                 playback starts. Completion events auto-exit fullscreen (see
                 the completion effect) so the host flow's next stage shows. */}
-            {(videoOnlyPlaybackStarted ||
-              (videoOnly && currentScene && currentScene.type !== 'slide')) && (
-              <div className="absolute bottom-4 right-4 z-30 flex items-center gap-2">
-                {currentScene && currentScene.type !== 'slide' && currentScene.type !== 'quiz' && (
+            {studentControlsTarget &&
+              (videoOnlyPlaybackStarted ||
+                (videoOnly && currentScene && currentScene.type !== 'slide')) &&
+              createPortal(
+                <div className="fixed bottom-4 right-4 z-[2] flex items-center gap-2">
+                  {currentScene &&
+                    currentScene.type !== 'slide' &&
+                    currentScene.type !== 'quiz' && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const nextScene = nextStudentPlaybackSlide(scenes, currentScene.id);
+                          const completionKey = `${currentScene.id}:${currentPlaybackActionIndex ?? -1}`;
+                          if (emittedCompletionRef.current !== completionKey) {
+                            postPlayerHostEvent('SCENE_COMPLETED', currentScene.id);
+                            emittedCompletionRef.current = completionKey;
+                          }
+                          if (nextScene) {
+                            autoStartRef.current = true;
+                            void gatedSceneSwitch(nextScene.id);
+                          } else {
+                            postPlayerHostEvent('PLAYBACK_ENDED', currentScene.id);
+                          }
+                        }}
+                        className="rounded-full bg-slate-950/80 px-4 py-2.5 text-sm font-medium text-white shadow-lg backdrop-blur-md hover:bg-slate-900"
+                      >
+                        下一页 →
+                      </button>
+                    )}
                   <button
                     type="button"
-                    onClick={() => {
-                      const nextScene = nextStudentPlaybackSlide(scenes, currentScene.id);
-                      postPlayerHostEvent('SCENE_COMPLETED', currentScene.id);
-                      emittedCompletionRef.current = `${currentScene.id}:${currentPlaybackActionIndex ?? -1}`;
-                      if (nextScene) {
-                        autoStartRef.current = true;
-                        void gatedSceneSwitch(nextScene.id);
-                      } else {
-                        postPlayerHostEvent('PLAYBACK_ENDED', currentScene.id);
-                      }
-                    }}
-                    className="rounded-full bg-slate-950/80 px-4 py-2.5 text-sm font-medium text-white shadow-lg backdrop-blur-md hover:bg-slate-900"
+                    onClick={togglePresentation}
+                    title={isPresenting ? t('stage.exitFullscreen') : t('stage.fullscreen')}
+                    aria-label={isPresenting ? t('stage.exitFullscreen') : t('stage.fullscreen')}
+                    className="rounded-full bg-slate-950/70 p-2.5 text-white shadow-lg backdrop-blur-md transition-colors hover:bg-slate-900"
                   >
-                    下一页 →
+                    {isPresenting ? (
+                      <Minimize2 className="h-5 w-5" />
+                    ) : (
+                      <Maximize2 className="h-5 w-5" />
+                    )}
                   </button>
-                )}
-                <button
-                  type="button"
-                  onClick={togglePresentation}
-                  title={isPresenting ? t('stage.exitFullscreen') : t('stage.fullscreen')}
-                  aria-label={isPresenting ? t('stage.exitFullscreen') : t('stage.fullscreen')}
-                  className="rounded-full bg-slate-950/70 p-2.5 text-white shadow-lg backdrop-blur-md transition-colors hover:bg-slate-900"
-                >
-                  {isPresenting ? (
-                    <Minimize2 className="h-5 w-5" />
-                  ) : (
-                    <Maximize2 className="h-5 w-5" />
-                  )}
-                </button>
-              </div>
-            )}
+                </div>,
+                studentControlsTarget,
+              )}
             <CanvasArea
               currentScene={currentScene}
               studentPlayer={videoOnly}
