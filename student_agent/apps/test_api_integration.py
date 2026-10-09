@@ -587,28 +587,24 @@ class TeacherCourseCodeTest(unittest.TestCase):
         )
 
 class RecapStrategyTest(unittest.TestCase):
-    """复述阶段的状态驱动：同一道题，三种答法，AI 的引导必须明显不同。
+    """复述阶段：去掉写死关键词后，只区分「答了 / 没答」。
 
     关掉模型跑（AGENT_LLM_API_KEY=""），reply_text 就是确定性骨架拼出来的
-    朴素文案 —— 正好能直接断言分层，不用去猜模型会怎么说。
+    朴素文案 —— 正好能直接断言行为不变式，不用去猜模型会怎么说。
     """
 
     sid_prefix = "test-recap-strategy"
     student_id = "test-recap-student"
     lesson_id = "ch3-process-scheduling"
 
-    # 内置课时的复述第一题是 KP-002，它的证据表有 3 组（见 EVIDENCE_GROUPS）
-    FULL = "高级调度把作业调入内存，低级调度从就绪队列选一个上 CPU，中级调度负责对换和内存平衡"
-    PARTIAL = "高级调度把作业调入内存"
     BLANK = "不知道"
+    ANSWER = "高级调度把作业调入内存，低级调度从就绪队列选一个进程上 CPU，中级调度负责对换"
 
     def setUp(self) -> None:
         self.addCleanup(lambda: shutil.rmtree(
             agent.ROOT / "runtime" / "students" / self.student_id, ignore_errors=True))
 
-    def _answer_first_recap_question(
-        self, tag: str, answer: str, lesson_id: str | None = None
-    ) -> str:
+    def _answer_first_recap_question(self, tag: str, answer: str) -> str:
         """起一节新课，走到复述阶段的第一题，用 answer 作答，返回 AI 的回复。"""
         sid = f"{self.sid_prefix}-{tag}"
         server.SESSIONS.pop(sid, None)
@@ -618,7 +614,7 @@ class RecapStrategyTest(unittest.TestCase):
 
         client = TestClient(server.app)
         started = client.post("/api/session/start", json={
-            "session_id": sid, "lesson_id": lesson_id or self.lesson_id,
+            "session_id": sid, "lesson_id": self.lesson_id,
             "student_id": self.student_id,
         })
         self.assertEqual(started.status_code, 200, started.text)
@@ -632,106 +628,17 @@ class RecapStrategyTest(unittest.TestCase):
         return client.post(
             f"/api/session/{sid}/message", json={"text": answer}).json()["reply_text"]
 
-    def test_clear_answer_gets_praised(self) -> None:
-        reply = self._answer_first_recap_question("full", self.FULL)
-        self.assertIn("很完整", reply, reply)
+    def test_nonanswer_gets_scaffold_not_answer(self) -> None:
+        """学生说「不知道」时，给台阶引导，不能把答案念出来。"""
+        reply = self._answer_first_recap_question("blank", self.BLANK)
+        self.assertTrue(reply.strip(), "必须给点引导，不能空着")
+        self.assertNotIn("中级调度", reply, "第一轮就把答案给了")
 
-    def test_the_three_answers_get_three_different_guides(self) -> None:
-        """同一道题，三种答法 → 三种明显不同的引导。
-
-        刻意**不写死具体文案**：复述阶段的脚手架是逐级变化的（见
-        `_recap_scaffold`），钉死措辞会让测试变成"一改文案就挂" —— 这一版
-        最初就是那么写的，后来脚手架改成递进式，它就假报了两次失败。
-        这里钉的是**行为不变式**。
-        """
-        clear = self._answer_first_recap_question("full", self.FULL)
-        partial = self._answer_first_recap_question("partial", self.PARTIAL)
-        blank = self._answer_first_recap_question("blank", self.BLANK)
-
-        self.assertIn("很完整", clear, clear)                 # 答完整 → 先肯定
-        self.assertNotEqual(partial, blank, "两种没答对的情况该给不同的引导")
-        for tag, reply in (("部分", partial), ("不会", blank)):
-            self.assertNotIn("很完整", reply, f"{tag} 不该被当成答对")
-            self.assertTrue(reply.strip(), f"{tag} 必须给点引导，不能空着")
-            # 第一轮引导不能直接把答案念出来
-            self.assertNotIn("中级调度", reply, f"{tag} 第一轮就把答案给了")
-
-    def test_kp_without_evidence_table_is_not_treated_as_wrong(self) -> None:
-        """没有证据表的知识点，不能按「答错了」处理。
-
-        这是本轮的 bug 修复：老的 else 分支把 `match_evidence` 的 (0, 0)
-        和「学生没答上来」混在一起 —— 于是老师上传的课时、以及内置课时里
-        没进证据表的 KP，**每个回答都会被当成答错**，AI 一直重复同一句话。
-        """
-        lesson_id = "test-recap-no-rubric"
-        lesson_path = agent.LESSONS_DIR / f"{lesson_id}.json"
-        lesson_path.unlink(missing_ok=True)
-        self.addCleanup(lambda: lesson_path.unlink(missing_ok=True))
-
-        client = TestClient(server.app)
-        posted = client.post("/api/teacher/lesson", json={
-            "lesson_id": lesson_id,
-            "lesson_title": "第9章 测试课时",
-            "total_minutes": 30,
-            "stages": [
-                {"id": "guided_learning", "enabled": True, "minutes": 20,
-                 "advance_when": "either"},
-                {"id": "recap_discussion", "enabled": True, "minutes": 10,
-                 "advance_when": "either"},
-            ],
-            # KP-901 不在 EVIDENCE_GROUPS 里 → match_evidence 返回 (0, 0)
-            "knowledge_points": [{
-                "kp_id": "KP-901", "title": "测试知识点",
-                "定义": "D", "检测问题": "这道题有标准答案吗？",
-            }],
-            "segments": [{
-                "id": "seg-901", "minutes": 20, "title": "段落",
-                "knowledge_point_ids": ["KP-901"], "knowledge_points": ["k"],
-                "content": "段落正文。",
-            }],
-        })
-        self.assertEqual(posted.status_code, 200, posted.text)
-
-        reply = self._answer_first_recap_question(
-            "norubric", "我觉得是先把作业调进来", lesson_id=lesson_id)
-
-        self.assertNotIn("再想想", reply, "没有证据表 ≠ 学生答错了")
-        self.assertNotIn("还差一点", reply)
-        self.assertIn("换个角度", reply, reply)
-
-    def test_guide_action_reaches_the_model(self) -> None:
-        """策略表里的「动作」必须真的送进模型 —— 否则这份 skill 又是死的。
-
-        只断言 reply_text 不够：模型关掉时走的是朴素兜底，那条路径根本不经过
-        策略表。所以这里把 llm_chat 换掉，**抓送给模型的实参** ——
-        和 test_background_reaches_the_llm_call 是同一个套路。
-        """
-        sid = f"{self.sid_prefix}-directive"
-        server.SESSIONS.pop(sid, None)
-        server._path(sid).unlink(missing_ok=True)
-        self.addCleanup(lambda: (server.SESSIONS.pop(sid, None),
-                                 server._path(sid).unlink(missing_ok=True)))
-
-        client = TestClient(server.app)
-        client.post("/api/session/start", json={
-            "session_id": sid, "lesson_id": self.lesson_id,
-            "student_id": self.student_id})
-        client.post(f"/api/session/{sid}/begin")
-        client.post(f"/api/session/{sid}/media/done")
-
-        captured: dict = {}
-
-        def fake_chat(system: str, user: str):
-            captured["user"] = user
-            return "好，我们继续。"
-
-        with mock.patch.object(agent, "llm_available", return_value=True),                 mock.patch.object(agent, "llm_chat", side_effect=fake_chat):
-            client.post(f"/api/session/{sid}/message", json={"text": self.PARTIAL})
-
-        self.assertTrue(captured, "应该调了模型")
-        action = agent.recap_guide()[agent.STATE_PARTIAL]["动作"]
-        self.assertIn(action, captured["user"], "策略表的「动作」没进模型")
-        self.assertIn("【本轮指令】", captured["user"])
+    def test_answer_is_not_treated_as_wrong(self) -> None:
+        """有实质回答时不按「答错」处理，自然承接，而不是说「再想想」空转。"""
+        reply = self._answer_first_recap_question("answer", self.ANSWER)
+        self.assertTrue(reply.strip(), "有回答时不能空着")
+        self.assertNotIn("再想想", reply, "有回答不该被当成答错")
 
 
 

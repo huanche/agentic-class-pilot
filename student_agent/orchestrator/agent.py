@@ -14,7 +14,8 @@ LLM 接入（可选）：
     设置环境变量 AGENT_LLM_BASE_URL / AGENT_LLM_API_KEY / AGENT_LLM_MODEL
     （任意 OpenAI 兼容 /chat/completions 端点）后，teach 节点改用真实大模型。
     未配置时 teach 走规范第 8 节的确定性降级行为，整张图照样能跑完整节课。
-    星级判定（judge_mastery）始终是确定性的关键词匹配，不依赖模型。
+    星级评定由下课前的 LLM 依据整课对话综合判定（见 _assess_mastery_with_llm）；
+    复述/探究阶段「答没答上」的推进/留守也交给 LLM 判定，不再写死关键词表。
 
 运行演示：python orchestrator/run_demo.py
 """
@@ -154,12 +155,6 @@ def llm_chat(system: str, user: str) -> str | None:
         return None
 
 
-# ═══════════════════════════════════════════════════════════════
-# 证据匹配 —— 星级判定的确定性核心（judge_mastery 与 teach 共用）
-# 每个 KP 分若干"证据组"，学生话语命中全部组 = 完整证据，命中部分 = 零散要点。
-# 关键词取自 runtime/TMISSION.md 的 答对证据。
-# ═══════════════════════════════════════════════════════════════
-
 _KP_TITLES: dict[str, str] | None = None
 
 
@@ -206,69 +201,7 @@ def kp_title(kp_id: str, lesson_id: str | None = None) -> str:
     return _KP_TITLES.get(kp_id, kp_id)
 
 
-EVIDENCE_GROUPS: dict[str, list[list[str]]] = {
-    "KP-001": [["CPU", "一个进程", "只能"], ["调度", "规则", "谁先"]],
-    "KP-002": [
-        ["高级调度", "作业调度", "调入内存", "作业调入"],
-        ["低级调度", "进程调度", "就绪", "上 CPU", "上CPU"],
-        ["中级调度", "对换", "内存平衡"],
-    ],
-    "KP-003": [
-        ["周转", "提交", "完成"],
-        ["等待时间", "就绪队列"],
-        ["响应时间", "首次", "第一次"],
-    ],
-    "KP-004": [
-        ["饥饿", "长作业", "等很久"],
-        ["HRRN", "响应比", "动态优先级", "等待时间加"],
-    ],
-    "KP-005": [
-        ["打断", "中断", "抢占"],
-        ["时间片", "优先级", "更短", "耗尽"],
-    ],
-    "KP-006": [
-        ["时间片", "轮转", "RR"],
-        ["多级反馈队列", "队列间", "移动"],
-    ],
-}
-
-
-def match_evidence(kp_id: str, text: str) -> tuple[int, int]:
-    """返回 (命中的证据组数, 总组数)。"""
-    groups = EVIDENCE_GROUPS.get(kp_id, [])
-    if not groups:
-        return (0, 0)
-    hits = sum(1 for g in groups if any(kw in text for kw in g))
-    return (hits, len(groups))
-
-
-# 复述阶段的学生状态。名字必须与 rules/interaction/RECAP-GUIDE.md 的
-# `## 状态：<名字>` 小节一致 —— 那份文件就是靠这个对上号的。
-STATE_CLEAR = "讲清楚了"
-STATE_PARTIAL = "部分理解"
-STATE_BLANK = "完全不会"
-STATE_NO_RUBRIC = "没有评定标准"
 MAX_DEEP_INQUIRY_ATTEMPTS = 5
-
-
-def judge_state(hits: int, total: int) -> str:
-    """把证据命中情况映射成状态名（对应 RECAP-GUIDE.md 的一节）。
-
-    ⚠️ **`total == 0` 不是"学生没答上来"**，而是"这个知识点没有证据表"。
-    `EVIDENCE_GROUPS` 只覆盖内置课时的 KP-001~KP-006，其他知识点
-    （老师上传的课时、内置课时里没进表的 KP）一律返回 `(0, 0)`。
-    旧代码把这两种情况混在同一个 else 分支里，导致那些课时的**每个回答
-    都被当成答错**，还会去重复问同一个问题。
-
-    纯函数，不读 state、不读文件 —— 方便单测。
-    """
-    if total == 0:
-        return STATE_NO_RUBRIC
-    if hits == 0:
-        return STATE_BLANK
-    if hits < total:
-        return STATE_PARTIAL
-    return STATE_CLEAR
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -349,61 +282,6 @@ def _parse_kb_questions() -> list[dict]:
                 "source": "rules/KNOWLEDGE-BASE.md 检测问题",
             })
     return out
-
-
-def _parse_recap_guide() -> dict[str, dict]:
-    """读 rules/interaction/RECAP-GUIDE.md 的状态表 → {状态名: {字段: 值}}。
-
-    格式沿用 questions.md 那套 `## 标题` + `- 字段: 值`：
-
-        ## 状态：完全不会
-        - 判定: 有证据表但一组都没命中
-        - 策略: 降低认知负荷
-        - 动作: ...
-        - 反馈类型: 提示性
-
-    代码块里的示例会被 `_strip_code_fences` 剥掉（和 `_parse_stage_questions`
-    一样），所以文档里可以放心写示例。
-
-    缺 `判定` / `策略` / `动作` 任一个字段的小节会被丢弃 —— 宁可回落到内置
-    行为，也不要让半截配置生效。
-    """
-    text = _read("rules/interaction/RECAP-GUIDE.md")
-    if not text:
-        return {}
-    body = _strip_code_fences(text)
-    out: dict[str, dict] = {}
-    for block in re.split(r"^##\s*状态[:：]\s*", body, flags=re.M)[1:]:
-        lines = block.splitlines()
-        name = lines[0].strip() if lines else ""
-        if not name:
-            continue
-        fields: dict[str, str] = {}
-        for line in lines[1:]:
-            m = re.match(r"-\s*([^\s:：]+)\s*[:：]\s*(.+)", line)
-            if m:
-                fields[m.group(1).strip()] = m.group(2).strip()
-        if all(k in fields for k in ("判定", "策略", "动作")):
-            out[name] = fields
-    return out
-
-
-# 按 mtime 失效的缓存。老师改完 RECAP-GUIDE.md，下一轮读取就生效，不用重启进程
-# —— 这是刻意避开 `_KP_TITLES` 那个"缓存永不失效"的老坑。
-_RECAP_GUIDE_CACHE: dict = {"mtime": None, "data": {}}
-
-
-def recap_guide() -> dict[str, dict]:
-    """带 mtime 失效的 RECAP-GUIDE 状态表。读不到就返回空表（调用方兜底）。"""
-    path = ROOT / "rules" / "interaction" / "RECAP-GUIDE.md"
-    try:
-        mtime = path.stat().st_mtime_ns
-    except OSError:
-        return {}
-    if _RECAP_GUIDE_CACHE["mtime"] != mtime:
-        _RECAP_GUIDE_CACHE["data"] = _parse_recap_guide()
-        _RECAP_GUIDE_CACHE["mtime"] = mtime
-    return _RECAP_GUIDE_CACHE["data"]
 
 
 def _lesson_question_bank(phase: str, lesson_id: str | None) -> list[dict]:
@@ -519,10 +397,7 @@ def build_question_queue(
             if out:
                 return out
         # 全空 → 规范第 8 节兜底："这个知识点能解决什么实际问题"
-        kps = list(dict.fromkeys(
-            unresolved
-            + [k for k in EVIDENCE_GROUPS if k not in unresolved]
-        ))
+        kps = list(dict.fromkeys(unresolved))
         return [{
             "kp_id": kp,
             "question": (
@@ -612,6 +487,8 @@ class ClassroomState(TypedDict):
     kp_stars: dict[str, int]          # 运行中的星级（平台会话由会话层写 student.knowledge_mastery）
     kp_meta: dict[str, dict]          # 各 KP 的 last_source/stage/evidence
     stage_snapshots: Annotated[list[dict], operator.add]
+    dialogue_log: Annotated[list[dict], operator.add]  # 整课对话记录 [{"role": student/ai, "text"}]
+                                                        # 供下课前的 LLM 掌握度评定使用
 
     # ── 输出 ──
     reply_text: str
@@ -1238,17 +1115,49 @@ def llm_polish(state: ClassroomState, directive: str) -> str | None:
         if prompt_context.is_platform_plan(state.get("lesson_plan") or {})
         else ""
     )
-    return llm_chat(
-        "你是一名课堂智能体，正在给学生上课。"
-        "以【本轮指令】为教学目标和流程边界，但不要逐字复述指令或把它说成生硬的话术。"
-        "在不改变本轮教学动作、不擅自改变课堂流程的前提下，可以自然回应学生刚才的表达，并用必要的承接语让对话连贯。"
-        "只有确实有助于完成本轮目标时才追问；遵守指令要求的问题数量，不额外堆叠问题。"
+    system = (
+        "你是当前这节课的 AI 教师。课程、教材和章节由【课堂背景】与【本轮指令】提供的内容决定。"
+        "你只负责当前单节课的问答与引导，不规划整个学期，也不向学生谈论跨课次的进度。\n\n"
+        "【角色与目标】学生问什么，就先把什么回答清楚；同时指出学生答案中的误区，并补上正确的理解。"
+        "不要用连续提问代替讲解。学生不懂时，先给他一小段知识讲解作为台阶，再提出下一步问题——"
+        "既不直接一次性倾倒完整答案，也不机械地反复追问。\n\n"
+        "【本轮指令】以【本轮指令】为教学目标和流程边界，不要逐字复述指令或把它说成生硬的话术。"
+        "在不改变本轮教学动作、不擅自改变课堂流程的前提下，自然回应学生刚才的表达，并用承接语让对话连贯。"
         + fact_rule
-        + "【课堂背景】仅用于理解课程和学生情况，不要照读或提及背景材料。"
-        "绝对不要向学生提及任何系统内部情况：保存/写盘/落盘、失败/报错/错误/error/异常、"
-        "日志/记录、评分/星级/掌握档案、模型/接口/网络等技术细节。"
-        "即使这类问题确实发生，也只当作没发生，继续正常上课，绝不把这些字眼说给学生。"
-        "要求：中文口语，通常1-3句；需要解释时可适当展开。表达具体、友好、自然，不写标题、不用 Markdown、不加括号注释。",
+        + "\n\n【每轮回答顺序】按需组织，可删去暂时不需要的步骤，但不能只提问、不回答：\n"
+        "1. 直接回应学生的问题或回答；\n"
+        "2. 用当前课程的术语给出准确定义或结论；\n"
+        "3. 解释原因、过程或推导；\n"
+        "4. 给出一个最小例子；\n"
+        "5. 必要时给出一个反例；\n"
+        "6. 指出学生答案中正确、错误和缺失的部分；\n"
+        "7. 最多再问一个确认或推进问题。\n\n"
+        "【提问限制】每轮最多问一个问题；学生明显答不上来时，不要接着问同类问题，"
+        "先给知识讲解作为台阶，再问一个更小的问题。禁止用“你再想想”“你觉得呢”这类空话拖延讲解。"
+        "不要为了追问而追问——讲新知识时讲解与提问比例约为 9:1，复习或查缺补漏时约为 7:3。\n\n"
+        "【WAIT-WHAT 重讲协议】当学生表示没听懂、没跟上，或回答明显偏离问题时："
+        "1. 停止原来的提问；2. 用一句话说明上一段原本要讲什么；"
+        "3. 退回到一个更简单的前置概念，用短句、主动语态重新讲解，一句只表达一个意思；"
+        "4. 使用当前课程统一的术语和符号；5. 给一个具体例子，必要时再给一个反例；"
+        "6. 讲清后再给一个最小的问题请学生尝试；7. 学生仍不确定时，给更细的台阶继续教，"
+        "而不是一次性公布全部答案。WAIT-WHAT 是先降低难度再重新讲一遍，不是换一种方式继续追问。\n\n"
+        "【纠错格式】学生回答后，按顺序纠正：1. 你答对的部分是什么；2. 你答错或不准确的部分是什么；"
+        "3. 更准确的表述是什么；4. 你为什么会形成这个误区；5. 下次遇到这类问题应先看什么。"
+        "评价回答内容，不评价学生人格；温和、具体、诚实，不把未覆盖的内容说成错误。\n\n"
+        "【通用讲解方式】按问题类型自然调整：概念（定义、边界、例子、反例、相近概念的区别）、"
+        "数学（目标、条件、推导、结论、常见错误）、代码（目标、输入输出、数据流、示例、错误原因）、"
+        "文科（观点、证据、解释逻辑、其他解释、结论限制）、实验（目的、变量、步骤、现象、结论、误差来源）。"
+        "不要把一门课的术语带到另一门课；同一词在不同课程含义不同时，以当前课程教材为准。\n\n"
+        "【资料来源】优先使用【课堂背景】中的课件、教材与教师说明；资料没有提供时可给通用解释，"
+        "但要说明“这是通用解释，最终以本节课资料为准”；无法确定答案时明确说明缺少什么条件，不得编造课程内容。\n\n"
+        "【系统与输出边界】绝对不要向学生提及任何系统内部情况：保存/写盘/落盘、失败/报错/错误/error/异常、"
+        "日志/记录、评分/星级/掌握档案、模型/接口/网络等技术细节；即使这类问题确实发生，也只当作没发生，继续正常上课。"
+        "【课堂背景】仅用于理解课程和学生情况，不要照读或提及背景材料。"
+        "输出要求：中文口语，通常 1–3 句；需要解释时按上面的顺序适当展开；表达具体、友好、自然；"
+        "不写标题、不用 Markdown、不加括号注释。"
+    )
+    return llm_chat(
+        system,
         (f"【课堂背景】\n{background}\n\n" if background else "")
         + f"当前阶段：{STAGE_NAMES.get(phase, phase)}（已进行 {elapsed:.0f}/{budget:.0f} 分钟）\n"
         f"【本轮指令】\n{directive}\n\n"
@@ -1297,8 +1206,12 @@ def teach(state: ClassroomState) -> dict:
     plan = state.get("lesson_plan") or {}
 
     updates: dict = {"attempts": state.get("attempts", 0)}
+    if msg.strip():
+        # 累积整课对话，供下课前的 LLM 掌握度评定使用（见 _assess_mastery_with_llm）
+        updates["dialogue_log"] = [{"role": "student", "text": msg}]
     plain = ""
     directive = ""
+    decision_turn = None   # 复述/探究「学生作答」轮：由 LLM 判定推进/留守（见下方第二层）
     # 心跳轮默认静默；只有下面明确置 True 的分支（讲到新段落 / 抛出新一问）才开口。
     # 否则每隔几秒就重复一句"很好，我们接着往下讲"，课堂上没法听。
     tick = bool(state.get("tick_only"))
@@ -1411,147 +1324,81 @@ def teach(state: ClassroomState) -> dict:
         idx = state.get("q_index", 0)
         lines: list[str] = [wrap_line] if wrap_line else []
         dl: list[str] = []                      # 给 LLM 的指令分段
-        hold_recap_question = False
-        hold_deep_question = False
-
         if pending and msg.strip():
-            # 学生回答了上一轮挂起的问题 → 反馈
+            # 学生回答了上一轮挂起的问题 → 反馈 + 判定推进/留守
             kp = pending["kp_id"]
-            hits, total = match_evidence(kp, msg)
             updates["current_target"] = kp
+            attempt = state.get("attempts", 0) + 1
 
-            if phase == "recap_discussion":
-                # ── 复述阶段：状态驱动 ──────────────────────────────
-                # 状态 → 策略查 rules/interaction/RECAP-GUIDE.md（老师可改，不用动代码）。
-                # 表里查不到就回落到下面的内置措辞，行为不会比原来差。
-                state_name = judge_state(hits, total)
-                guide = recap_guide().get(state_name) or {}
-                action = guide.get("动作") or ""
+            # 深层探究：超过 5 轮仍在讨论的问题做记录（确定性记账，与判定无关）
+            notes = [dict(item) for item in (state.get("unresolved_question_notes") or [])]
+            tracked_note = next((
+                item for item in reversed(notes)
+                if item.get("phase") == phase
+                and item.get("kp_id") == kp
+                and item.get("question") == pending["question"]
+                and item.get("status") == "继续引导中"
+            ), None)
+            if phase == "deep_inquiry" and attempt > MAX_DEEP_INQUIRY_ATTEMPTS and tracked_note is None:
+                tracked_note = {
+                    "phase": phase,
+                    "kp_id": kp,
+                    "question": pending["question"],
+                    "attempts": attempt,
+                    "status": "继续引导中",
+                    "note": "对话超过 5 轮，已记录并继续用递进提示引导",
+                    "recorded_at": state.get("now"),
+                }
+                notes.append(tracked_note)
+            elif tracked_note is not None:
+                tracked_note["attempts"] = attempt
+            if tracked_note is not None:
+                updates["unresolved_question_notes"] = notes
 
-                # 连续未命中：只在「有证据表但一组都没命中」时累加。
-                # 没有证据表不算失败 —— 那是这道题没有评定标准，不是学生的错。
-                streak = state.get("miss_streak", 0)
-                if total and hits == 0:
-                    streak += 1
-                elif hits:
-                    streak = 0
-                updates["miss_streak"] = streak
-
-                if state_name == STATE_NO_RUBRIC:
-                    # 没有证据表：不下判定。措辞上也不能像在否定学生 ——
-                    # 旧的 else 分支把这种情况和"答错了"混在一起，会一直说"再想想"。
-                    lines.append("嗯，我们换个角度说说看。")
-                    dl.append(action or "按通用方式追问一层，别用否定的措辞。")
-                elif state_name == STATE_CLEAR:
-                    lines.append("很好，说得很完整！")
-                    dl.append(f"学生刚才答得完整。{action}")
-                    updates["attempts"] = 0
-                elif state_name == STATE_PARTIAL:
-                    attempt = state.get("attempts", 0) + 1
-                    updates["attempts"] = attempt
-                    hold_recap_question = True
-                    scaffold = _recap_scaffold(kp, attempt, partial=True, state=state)
-                    lines.append(scaffold)
-                    dl.append(
-                        f"学生已经答出一部分，先肯定已说对的内容。当前是第 {attempt} 次引导。"
-                        f"{action}\n{scaffold}\n只围绕当前题的这个小步骤继续引导，不要提出队列中的下一题。"
-                    )
-                else:                                   # STATE_BLANK
-                    attempt = state.get("attempts", 0) + 1
-                    updates["attempts"] = attempt
-                    hold_recap_question = True
-                    scaffold = _recap_scaffold(kp, attempt, partial=False, state=state)
-                    lines.append(scaffold)
-                    dl.append(
-                        f"学生暂时没答出来。当前是第 {attempt} 次引导。{action}\n{scaffold}\n"
-                        "一次只引导当前这个小步骤，并请学生尝试回答；不要公布队列中的下一题，也不要把对话直接推进到下一题。"
-                    )
-            else:
-                # ── 深层探究：记录超过 5 轮仍在讨论的问题，但继续保留当前题，
-                # 通过递进脚手架帮助学生自己推导，不自动公布答案或切幕。 ──
-                attempt = state.get("attempts", 0) + 1
-                resolved = (bool(total) and hits == total) or _deep_answer_has_depth(msg)
-                notes = [dict(item) for item in (state.get("unresolved_question_notes") or [])]
-                tracked_note = next((
-                    item for item in reversed(notes)
-                    if item.get("phase") == phase
-                    and item.get("kp_id") == kp
-                    and item.get("question") == pending["question"]
-                    and item.get("status") == "继续引导中"
-                ), None)
-                if attempt > MAX_DEEP_INQUIRY_ATTEMPTS and tracked_note is None:
-                    tracked_note = {
-                        "phase": phase,
-                        "kp_id": kp,
-                        "question": pending["question"],
-                        "attempts": attempt,
-                        "status": "继续引导中",
-                        "note": "对话超过 5 轮，已记录并继续用递进提示引导",
-                        "recorded_at": state.get("now"),
-                    }
-                    notes.append(tracked_note)
-                elif tracked_note is not None:
-                    tracked_note["attempts"] = attempt
-
-                if tracked_note is not None and resolved:
-                    tracked_note["status"] = "已由学生推导"
-                    tracked_note["student_solution"] = msg
-                    tracked_note["resolved_at"] = state.get("now")
-                    tracked_note["note"] = "超过 5 轮后继续引导，学生已自行推导"
-                if len(notes) != len(state.get("unresolved_question_notes") or []) or tracked_note is not None:
-                    updates["unresolved_question_notes"] = notes
-
-                if resolved and attempt >= 2:
-                    if total and hits == total:
-                        lines.append("你已经把这个想法展开了，我们带着这个结论继续看下一题。")
-                        dl.append("简短肯定学生的推理或例子，过渡到队列中的下一题。")
-                    else:
-                        lines.append("你的解释已经说清了关键原因，我们继续看下一题。")
-                        dl.append("简短肯定学生的推理，过渡到队列中的下一题。")
-                    updates["attempts"] = 0
-                else:
-                    updates["attempts"] = attempt
-                    hold_deep_question = True
-                    if _is_nonanswer(msg):
-                        scaffold = _deep_inquiry_scaffold(kp, pending["question"], attempt)
-                        if tracked_note is not None and attempt == MAX_DEEP_INQUIRY_ATTEMPTS + 1:
-                            lines.append("这道题我已经记下来了，我们继续拆小一步，一起把思路推出来。\n" + scaffold)
-                        else:
-                            lines.append(scaffold)
-                        dl.append(
-                            f"学生暂时没有给出实质回答（当前第 {attempt} 次回应）。{scaffold}\n"
-                            "若已超过 5 次，问题已记录；继续留在当前题，用一个更细的小问题帮助学生自己推导。不要公布完整答案、不要提出队列中的下一题，也不要切换环节。"
-                        )
-                    else:
-                        lines.append("我们再沿着这个问题往下想一步。" + ("这道题我已经记下来了。" if tracked_note is not None and attempt == MAX_DEEP_INQUIRY_ATTEMPTS + 1 else ""))
-                        dl.append(
-                            f"学生的观点是：{msg}\n先回应其中一个具体点，再围绕原因、依据或例子追问一个小问题。"
-                            f"当前是第 {attempt} 次回应。当前问题还未解决，继续留在本题；若已超过 5 次，问题已记录。不要公布完整答案、提出下一题或切换环节。"
-                        )
             if wrap:
                 # 预算耗尽收尾：不再抛下一问，留给下一幕/下节课
                 updates["pending_question"] = None
+                updates["attempts"] = 0
                 lines.append("时间到了，这个问题我们先收在这里。")
                 dl.append("本阶段时间到了，简短收尾。**绝对不要再提新问题**。")
-            elif hold_recap_question or hold_deep_question:
-                # 当前题仍在引导中：保留题目及索引，下一轮继续同一道题。
-                updates["pending_question"] = pending
-                updates["q_index"] = idx
-                updates["current_question"] = pending["question"]
             else:
+                # ── 答没答上交给 LLM 判定，不再写死关键词表 ──────────
+                # 骨架只备「兜底文案（默认推进）」与「判定指令」；推进/留守的
+                # 落盘等 LLM 返回后再做（见 _apply_question_decision）。
                 nxt = queue[idx + 1] if idx + 1 < len(queue) else None
-                updates["q_index"] = idx + 1
-                updates["pending_question"] = nxt
-                updates["attempts"] = 0
+                decision_turn = {
+                    "phase": phase, "kp": kp, "attempt": attempt,
+                    "pending": pending, "idx": idx, "nxt": nxt,
+                    "tracked_note": tracked_note, "notes": notes,
+                    "msg": msg, "now": state.get("now"),
+                }
+                lines.append("嗯，我们来看看你的说法。")
                 if nxt:
-                    lead = "下一问：" if hits and total and hits == total else "这个我们先放一放，继续："
-                    lines.append(f"{lead}{nxt['question']}")
-                    dl.append(f"接着提出下一问：{nxt['question']}")
+                    lines.append(f"这个我们先放一放，继续：{nxt['question']}")
                 else:
                     lines.append("这一阶段的问题就到这里。")
-                    dl.append("本阶段问题已全部问完，做简短过渡。")
-            if not wrap:
-                updates["current_question"] = (updates.get("pending_question") or pending).get("question")
+                hint = _hint(kp, state)
+                if phase == "recap_discussion":
+                    dl.append(
+                        f"当前是复述阶段的第 {attempt} 次回应。当前问题：{pending['question']}\n"
+                        f"可参考的引导线索：{hint}\n"
+                        "判断学生是否用自己的话回应了当前问题（哪怕不完整、有错也算“答了”；"
+                        "只有明确表示答不上来才算“没答”）。\n"
+                        + (f"若“答了”，按纠错格式反馈后自然过渡到下一题：{nxt['question']}。\n"
+                           if nxt else "若“答了”，按纠错格式反馈后收束本阶段。\n")
+                        + "若“没答”，留在当前题，先给一小段知识讲解作台阶，再请学生尝试；"
+                          "逐级增加帮助，但不要公布完整答案、不要提出下一题。"
+                    )
+                else:
+                    dl.append(
+                        f"当前是深层探究的第 {attempt} 次回应。当前问题：{pending['question']}\n"
+                        f"可参考的引导线索：{hint}\n"
+                        "判断学生是否已经说清了关键原因或推导过程。\n"
+                        + (f"若说清了，简短肯定其推理后过渡到下一题：{nxt['question']}。\n"
+                           if nxt else "若说清了，简短肯定其推理后收束本阶段。\n")
+                        + "若还没说清，留在当前题，围绕原因、依据或例子追问一个小问题；"
+                          "逐级缩小问题，但不要公布完整答案、不要提出下一题、也不要切换环节。"
+                    )
         elif pending:
             # 心跳没有新的学生回答时，不得把它计作一次尝试或推进题目。
             updates["pending_question"] = pending
@@ -1624,6 +1471,25 @@ def teach(state: ClassroomState) -> dict:
         updates["llm_used"] = False
         return updates
 
+    # ── 复述/探究「学生作答」：先让 LLM 判定「答没答」，再按判定推进或留守 ──
+    if decision_turn is not None:
+        if llm_available():
+            reply, advance = _polish_question_turn(state, directive)
+            if reply is not None:
+                updates["reply_text"] = reply
+                updates["llm_used"] = True
+                _apply_question_decision(updates, decision_turn, advance)
+                return updates
+            # 判定/解析失败：走确定性兜底（默认推进）
+            updates["reply_text"] = plain
+            updates["llm_used"] = False
+            _apply_question_decision(updates, decision_turn, True)
+            return updates
+        updates["reply_text"] = NO_LLM_NOTICE
+        updates["llm_used"] = False
+        _apply_question_decision(updates, decision_turn, True)
+        return updates
+
     # ── 第二层：LLM 只负责把指令变成自然语言（可失败）──
     if llm_available():
         polished = llm_polish(state, directive)
@@ -1637,170 +1503,101 @@ def teach(state: ClassroomState) -> dict:
     return updates
 
 
-def _recap_scaffold(
-    kp_id: str, attempt: int, partial: bool, state: ClassroomState | None = None
-) -> str:
-    """复述阶段逐级增加支架；未达证据标准前保持当前题，不抛出下一题。"""
-    if kp_id == "KP-002":
-        if partial:
-            if attempt <= 1:
-                return "你已经抓住了其中一个环节。另一个环节是谁负责？可以按“作业进入内存”和“就绪进程获得 CPU”这两步来想。"
-            if attempt == 2:
-                return "作业调入内存由高级调度负责；就绪进程获得 CPU 由低级调度负责。课程还提到中级调度通过对换来做内存平衡。你试着把这三者的分工说清楚。"
-            return "完整地说，外存作业调入内存是高级调度（作业调度），就绪进程被选上 CPU 是低级调度（进程调度），中级调度负责对换和内存平衡。请你用自己的话把三者分工说一遍。"
-        if attempt <= 1:
-            return "我们拆成两步。先看第一步：外存中的作业被调入内存，这一步属于哪一级调度？"
-        if attempt == 2:
-            return "第一步叫高级调度（也叫作业调度）。接着看第二步：内存中的就绪进程由哪一级调度选上 CPU？"
-        return "我把相关分工连起来：高级调度（作业调度）把作业调入内存，低级调度（进程调度）从就绪队列选择进程上 CPU；中级调度通过对换做内存平衡。你试着用自己的话说清这三者的分工。"
-    if kp_id == "KP-004":
-        if attempt <= 1:
-            return "先只看 SJF：如果短作业不断到来，长作业可能会遇到什么情况？"
-        if attempt == 2:
-            return "长作业可能一直排不上，形成饥饿。再看 HRRN：等待时间变长，会怎样影响它的响应比或优先级？"
-        return "关键是两点：SJF 可能让长作业长期得不到服务；HRRN 把等待时间计入响应比，让等得久的作业优先级逐渐提高。请你用自己的话说说这层关系。"
-    if kp_id == "KP-003":
-        if attempt <= 1:
-            return "先从“周转时间”开始：它从作业提交开始，算到哪个时刻结束？"
-        if attempt == 2:
-            return "周转时间到作业完成为止。再看等待时间和响应时间：一个关注在就绪队列里等了多久，另一个关注首次获得 CPU 的时刻。你试着分别说清它们。"
-        return "可以按三个终点记：提交到完成是周转时间；在就绪队列中的等待是等待时间；提交到第一次获得 CPU 是响应时间。请你对照这三个终点复述一遍。"
-    if kp_id == "KP-005":
-        if attempt <= 1:
-            return "先抓住判断标准：A 正在运行时，B 到来后，A 会不会立刻被打断？这取决于调度方式是否允许什么操作？"
-        if attempt == 2:
-            return "允许打断当前运行进程就叫抢占。再想一个触发条件：时间片用完或更高优先级进程到来时，系统会怎么做？"
-        return "要看当前进程能否被打断：能被打断是抢占式；不能打断、等它主动结束或阻塞再切换，是非抢占式。你用 A、B 的例子判断一下。"
-    if kp_id == "KP-006":
-        if attempt <= 1:
-            return "先从 RR 想起：轮到一个进程运行时，它最多能连续使用 CPU 多久？"
-        if attempt == 2:
-            return "RR 使用时间片，时间片用完就切换。再看多级反馈队列：进程会根据运行表现发生什么变化？"
-        return "RR 通过时间片轮转提高响应性；多级反馈队列会根据进程行为在队列间调整位置，不需要预先知道运行时间。请你概括这两个特点。"
+def _apply_question_decision(updates: dict, d: dict, advance: bool) -> None:
+    """把 LLM 的「推进 / 留守」判定落到状态机上。
 
-    hint = _hint(kp_id, state)
-    if attempt <= 1:
-        return (f"你已经说到一部分了。我们先聚焦缺的关键点：{hint}"
-                if partial else f"我们先拆小一步：{hint} 先说说其中一个关键词是什么意思。")
-    if attempt == 2:
-        return (f"再用一个小例子帮助你补全：{hint} 你试着把缺的部分说出来。"
-                if partial else f"先抓住一个关键点：{hint} 你能试着举个相关的小例子吗？")
-    return (f"我把缺的关键点解释清楚：{hint} 请你把完整思路用自己的话复述一遍。"
-            if partial else f"我先结合刚才的课程内容把这个概念解释清楚：{hint} 然后请你用自己的话复述关键点。")
+    - 推进：清空 attempts，题目游标前进到下一题；探究阶段若此前有「超过 5 轮」
+      的记录，标记为已由学生推导。
+    - 留守：attempts 累加，题目与游标保持不变，下一轮继续同一道题。
+    """
+    if advance:
+        updates["attempts"] = 0
+        if d["phase"] == "deep_inquiry" and d["tracked_note"] is not None:
+            note = d["tracked_note"]
+            note["status"] = "已由学生推导"
+            note["student_solution"] = d["msg"]
+            note["resolved_at"] = d["now"]
+            note["note"] = "超过 5 轮后继续引导，学生已自行推导"
+            updates["unresolved_question_notes"] = d["notes"]
+        updates["q_index"] = d["idx"] + 1
+        updates["pending_question"] = d["nxt"]
+    else:
+        updates["attempts"] = d["attempt"]
+        updates["pending_question"] = d["pending"]
+        updates["q_index"] = d["idx"]
+    updates["current_question"] = (updates.get("pending_question") or d["pending"]).get("question")
 
 
-def _is_nonanswer(text: str) -> bool:
-    """识别空输入、明确卡住或请求提示；不把开放式的非标准答案判成答错。"""
-    normalized = re.sub(r"[\s，。！？、,.!?；;：:‘’“”\"'…]+", "", str(text or ""))
-    if not normalized:
-        return True
-    exact = {
-        "不知道", "我不知道", "真的不知道", "不太知道", "不清楚", "我不清楚",
-        "不会", "我不会", "没想法", "没有想法", "没思路", "没有思路",
-        "答不上来", "不知道怎么说", "我不知道怎么说", "能给个提示吗",
-        "给点提示", "提示一下", "帮我提示一下", "不懂", "我不懂",
-    }
-    return normalized in exact or (
-        len(normalized) <= 10
-        and normalized.endswith(("不知道", "不清楚", "不会", "没思路", "没有思路", "答不上来", "不懂"))
+def _polish_question_turn(state: ClassroomState, directive: str) -> tuple[str | None, bool | None]:
+    """复述/探究阶段：让 LLM 判定「答没答上」并给出回应。
+
+    返回 (reply, advance)。reply=None 表示未接上或解析失败，由调用方走确定性兜底；
+    advance 只在 reply 有效时才有意义：True=推进下一题，False=留守本题继续引导。
+
+    取代原先写死的 _is_nonanswer / _deep_answer_has_depth 关键词表：把自然语言
+    当关键词匹配既脆又漏（“我忘了”漏判导致上下文对不上），这里改成 LLM 依据
+    对话自己判断，只回一个结构化信号，编排层照它走。
+    """
+    phase = state.get("host_phase")
+    elapsed = state.get("stage_elapsed_minutes", 0.0)
+    budget = state.get("stage_budget_minutes", 0.0)
+    background = (state.get("assembled_prompt") or "").strip()
+    system = (
+        "你是当前这节课的 AI 教师。学生回答了上一轮你提出的问题，"
+        "请判断他有没有给出实质性回答，并给出回应。\n"
+        "判断标准：只要学生用自己的话回应了问题（哪怕不完整、有错误），就算“答了”；"
+        "只有像“不知道”“忘了”“不会”这类明确表示答不上来，才算“没答”。\n"
+        "回应要求：先点出学生说对的部分，再补缺失或纠正不准确处，给出更准确的表述；"
+        "“没答”时先给一小段知识讲解作台阶，再请学生尝试，不要一次性公布完整答案。\n"
+        "只输出 JSON：{\"reply\": \"你要对学生说的话\", \"advance\": true 或 false}\n"
+        "advance=true 表示已实质性作答、可推进到下一题；false 表示没答上、留在本题继续引导。"
     )
-
-
-def _deep_answer_has_depth(text: str) -> bool:
-    """识别开放回答中的最低限度推理/举例证据，避免只用关键词误判探究题。"""
-    content = re.sub(r"\s+", "", str(text or ""))
-    links = ("因为", "所以", "由于", "导致", "如果", "例如", "比如", "举例", "相比", "从而", "这样会", "为了")
-    return len(content) >= 18 and any(link in content for link in links)
-
-
-def _deep_inquiry_scaffold(kp_id: str, question: str, attempt: int) -> str:
-    """探究阶段的渐进式提示：逐层缩小问题，不直接代替学生得出结论。"""
-    if kp_id == "KP-004":
-        if attempt <= 1:
-            return "先从一个具体情形想：如果短作业不断到来，队列里的长作业会发生什么？"
-        if attempt == 2:
-            return "如果这种情况持续，长作业最担心的是什么？试着用一个词描述它一直等不到服务的状态。"
-        if attempt == 3:
-            return "HRRN 的响应比可以写成（等待时间＋服务时间）/服务时间。先不急着下结论：等待时间变大时，分子会怎样变化？"
-        if attempt == 4:
-            return "我们代入两个数试试：甲已等 8 个单位、还需运行 2 个单位；乙刚等 1 个单位、也需运行 2 个单位。分别按公式算响应比，哪个更高？"
-        if attempt % 2:
-            return "把刚才算出的响应比和 SJF 只看运行时间的规则对照一下：HRRN 多考虑了哪个因素？这个因素怎样影响长时间等待的作业？"
-        return "再换个角度：如果作业每多等一会儿，它在公式中的哪个量会变化？你预测这个变化会让它更容易还是更难被选中？"
-    if kp_id == "KP-002":
-        if attempt <= 1:
-            return "先把它放进一个生活场景：如果你在奶茶店排队，哪种叫号方式会让人觉得更快？"
-        if attempt == 2:
-            return "假设一位顾客先来但订单复杂，后来的人只买一件。你会先服务谁？说说你最想优先保障什么。"
-        if attempt == 3:
-            return "如果总是优先处理简单订单，最早来的复杂订单可能会怎样？你会用什么办法避免它一直等？"
-        if attempt % 2:
-            return "把你提出的规则放到另一种场景里：如果同时有很多短任务和一个长任务，哪一方会受影响？"
-        return "请试着只改变一个条件：如果等待时间越长越应该被照顾，你会怎么修改刚才的叫号规则？"
-    if kp_id == "KP-005":
-        if attempt <= 1:
-            return "先观察 A 正在运行、B 刚到达这个场景：什么条件下操作系统有理由打断 A？"
-        if attempt == 2:
-            return "再想一个具体触发事件：时间片用完或 B 更紧急时，系统可能采取什么动作？"
-        if attempt == 3:
-            return "如果系统一直不打断 A，B 可能要等多久？如果频繁打断，又会付出什么代价？"
-        if attempt % 2:
-            return "假设 A 只差一点就完成，而 B 是交互任务刚到达。你会考虑哪些因素来决定是否切换？"
-        return "换一种情况：如果 B 是紧急任务，和 B 只是普通后台任务相比，你会怎样调整是否打断 A 的判断？为什么？"
-    if kp_id == "KP-003":
-        if attempt <= 1:
-            return "先想这三个指标分别想回答什么问题：任务总共花多久、排队等多久、多久能第一次得到响应？"
-        if attempt == 2:
-            return "拿一个作业举例：提交、进入就绪队列、第一次拿到 CPU、最终完成。你会怎样用这些时刻区分三个指标？"
-        if attempt == 3:
-            return "设作业 0 分钟提交、3 分钟首次拿到 CPU、10 分钟完成，中间在就绪队列等了 5 分钟。你先分别指出三个指标的起止时刻。"
-        if attempt % 2:
-            return "如果只看总完成时间，能不能看出用户是否很快得到第一次反馈？你用刚才的时间线解释一下。"
-        return "再假设两个作业完成时间相同，但一个很早就首次获得 CPU。你觉得哪个指标能体现这个差异？"
-    if kp_id == "KP-006":
-        if attempt <= 1:
-            return "先想象一个交互系统：用户点击后，为什么希望每个进程都能较快轮到 CPU？"
-        if attempt == 2:
-            return "如果一个进程一直占着 CPU，其他进程会遇到什么？你会怎样限制它连续运行的时间？"
-        if attempt == 3:
-            return "如果每个进程用完一小段时间就暂时让出 CPU，交互体验会怎样变化？这种切换有没有代价？"
-        if attempt % 2:
-            return "有的进程常常很快让出 CPU，有的会一直用满时间片。系统能否根据这种行为调整它们后续获得 CPU 的机会？你会怎么设计？"
-        return "如果系统事先不知道任务长短，但能观察它每次是否用满时间片，你会如何利用这个信息安排之后的队列？"
-    if attempt <= 1:
-        return f"先从题目里的一个具体情形开始想：{question} 你觉得这里最先发生了什么？"
-    if attempt == 2:
-        return "再往下一步看它背后的原因或机制：什么条件导致了这个结果？可以用一个例子说明。"
-    if attempt % 2:
-        return f"换一个更小的场景想想：{question} 哪个条件变化会让结果不同？"
-    return f"试着反过来推：如果你认为的原因不存在，结果会有什么不同？题目是“{question}”，说说你的推理过程。"
+    user = (
+        (f"【课堂背景】\n{background}\n\n" if background else "")
+        + f"当前阶段：{STAGE_NAMES.get(phase, phase)}（已进行 {elapsed:.0f}/{budget:.0f} 分钟）\n"
+        f"【本轮指令】\n{directive}\n\n"
+        f"学生刚才说：{state.get('student_message', '') or '（未发言）'}\n\n"
+        "直接输出 JSON。"
+    )
+    raw = llm_chat(system, user)
+    if not raw:
+        return None, None
+    try:
+        body = raw.strip()
+        start, end = body.find("{"), body.rfind("}")
+        if start == -1 or end <= start:
+            return None, None
+        parsed = json.loads(body[start:end + 1])
+        reply = parsed.get("reply")
+        advance = parsed.get("advance")
+        if not isinstance(reply, str) or not reply.strip():
+            return None, None
+        if not isinstance(advance, bool):
+            return None, None
+        return reply.strip(), advance
+    except (ValueError, TypeError):
+        return None, None
 
 
 def _hint(kp_id: str, state: ClassroomState | None = None) -> str:
     from apps.integration import prompt_context
 
-    # 平台链路：提示语由已发布知识点提供（含 misconceptions），优先于下面写死的表
+    # 平台链路：提示语由已发布知识点提供（含 misconceptions），优先于通用提示
     if state:
         platform_hint = prompt_context.hint(state.get("lesson_plan") or {}, kp_id)
         if platform_hint:
             return platform_hint
-    hints = {
-        "KP-002": "想一想：作业是谁调进内存的？变成进程之后，又是谁决定它上 CPU？",
-        "KP-003": "三个指标各有一个起点和一个终点，注意区分“第一次拿到 CPU”和“做完”。",
-        "KP-004": "如果一直有短作业进来，长作业会怎样？HRRN 的响应比是怎么算的？",
-        "KP-005": "关键是“正在运行的进程会不会被打断”，想想什么事件会触发打断。",
-        "KP-006": "RR 拿什么换响应速度？多级反馈队列为什么不用预先知道进程长度？",
-    }
-    return hints.get(kp_id, "再从定义出发想一想。")
+    return "结合刚才讲过的内容，从它的定义和作用出发想一想，并举一个例子。"
 
 
 def judge_mastery(state: ClassroomState) -> dict:
-    """按 MASTERY-STAR-RULES.md 判星级（确定性）。
+    """记录本轮的掌握证据。
 
     - guided_learning：讲过即记 1 星（已接触）
-    - recap_discussion：零散要点 2 星 / 完整复述 3 星
-    - deep_inquiry：说出机制 4 星
-    - 星级只升不降；证据来自学生话语的关键词组匹配。
+    - recap_discussion / deep_inquiry：不再用写死关键词判星级。星级由
+      下课前的 LLM 依据知识点与学生对话综合评定（见 _assess_mastery_with_llm）；
+      这里只记录学生原话，供 stage_snapshots / 学情导出 / LLM 判定使用。
+    - 星级只升不降。
     """
     phase = state.get("host_phase")
     msg = state.get("student_message", "")
@@ -1838,22 +1635,13 @@ def judge_mastery(state: ClassroomState) -> dict:
 
     elif phase in ("recap_discussion", "deep_inquiry"):
         kp = state.get("current_target")
-        if kp:
-            hits, total = match_evidence(kp, msg)
-            if total:
-                if phase == "recap_discussion":
-                    new_stars = 3 if hits == total else (2 if hits > 0 else 0)
-                else:
-                    new_stars = 4 if hits == total else 0
-                if new_stars:
-                    ev = f"学生原话：「{msg[:60]}」"
-                    bump(kp, new_stars, "dialogue", ev)
-                    evidence.append(f"{kp}: 命中 {hits}/{total} 组证据")
-                    if hits == total:
-                        if kp in unresolved:
-                            unresolved.remove(kp)
-                        if kp not in mastered:
-                            mastered.append(kp)
+        if kp and msg.strip():
+            # 不判星级，只留证据：学生原话 + 本轮阶段。
+            evidence.append(f"{kp}: 学生原话「{msg[:60]}」")
+            kp_meta[kp] = {
+                "last_source": "dialogue", "last_stage": phase,
+                "last_evidence": msg, "updated_at": now,
+            }
 
     return {
         "mastery_updates": updates,
@@ -1905,16 +1693,8 @@ def judge_advance(state: ClassroomState) -> dict:
     if elapsed < state.get("min_stage_minutes", 2.0):
         return {"target_phase": None, "advance_reason": "未达最短幕时长"}
 
-    if state.get("advance_when") == "evidence" and state.get("unresolved"):
-        return {"target_phase": None, "advance_reason": "尚有未关闭目标（evidence 模式）"}
-
-    if state.get("turn_evidence") and not state.get("unresolved"):
-        if (
-            state.get("on_evidence_reached") == "advance"
-            and state.get("advance_when") in ("evidence", "either")
-        ):
-            return {"target_phase": _next_phase(state), "advance_reason": "证据充分"}
-
+    # 关键词证据匹配已删（星级改由下课前的 LLM 综合评定），
+    # 切幕不再按「证据充分」触发，统一按时间预算推进。
     if elapsed >= budget:
         mode = state.get("on_budget_exhausted", "wrap_up")
         if mode == "force_advance":
@@ -1959,8 +1739,11 @@ def advance_stage(state: ClassroomState) -> dict:
     if state.get("external_event") == EVENT_END_LESSON:
         rest = []   # 主动下课：跳过剩余阶段，直接进 ending
     if not rest:
-        # 总结要算上本幕（deep_inquiry）刚拍的这条快照
-        remark, gen = _ending_remark(state, snapshot)
+        # 总结要算上本幕（deep_inquiry）刚拍的这条快照。
+        # 下课前的掌握度评定：交给 LLM 依据整课对话综合判定（取代写死关键词），
+        # 再用评定后的星级写总结，并把更新带进 out 供会话层落盘。
+        kp_stars, mastery_updates = _assess_mastery_with_llm(state)
+        remark, gen = _ending_remark({**state, "kp_stars": kp_stars}, snapshot)
         out = {
             "host_phase": "ending",
             "remaining_stages": [],
@@ -1975,6 +1758,8 @@ def advance_stage(state: ClassroomState) -> dict:
             "mastered": [],
             "unresolved": [],
             "unresolved_question_notes": state.get("unresolved_question_notes") or [],
+            "kp_stars": kp_stars,
+            "mastery_updates": mastery_updates,
             "reply_text": (reply + "\n\n" + remark).strip(),
             "advance_reason": state.get("advance_reason"),
             "llm_used": gen,
@@ -2041,6 +1826,94 @@ def advance_stage(state: ClassroomState) -> dict:
     return out
 
 
+def _assess_mastery_with_llm(state: ClassroomState) -> tuple[dict[str, int], list[dict]]:
+    """下课前的掌握度评定：让 LLM 依据整课对话与知识点综合判定星级。
+
+    取代原先写死的 EVIDENCE_GROUPS 关键词匹配。返回 (新的 kp_stars, mastery_updates)。
+    - 只升不降；LLM 未接入、无对话、或调用失败时原样返回，不影响下课。
+    - 输出格式为 {kp_id: 1~4 的整数星级}，解析失败直接忽略。
+    """
+    kp_stars = dict(state.get("kp_stars") or {})
+    dialogue = state.get("dialogue_log") or []
+    if not dialogue or not llm_available():
+        return kp_stars, []
+
+    # 本课涉及的知识点：已记星级的 + 未关闭目标 + 计划/段落里声明的，去重保序。
+    # 这样视频讲解模式（不逐段 bump 1 星）里的知识点也不会漏评。
+    kp_ids = list(dict.fromkeys(
+        list(kp_stars.keys()) + list(state.get("unresolved") or [])
+    ))
+    plan = state.get("lesson_plan") or {}
+    for kp in plan.get("knowledge_points") or []:
+        kid = kp.get("id") or kp.get("kp_id")
+        if kid:
+            kp_ids.append(str(kid))
+    from apps.integration import prompt_context
+    if prompt_context.is_platform_plan(plan):
+        segments = plan.get("segments", [])
+    else:
+        lesson = load_lesson(state.get("lesson_id") or "")
+        segments = lesson[1] if lesson else []
+    for seg in segments:
+        for kid in seg.get("knowledge_point_ids") or []:
+            kp_ids.append(str(kid))
+    kp_ids = list(dict.fromkeys(kp_ids))
+    if not kp_ids:
+        return kp_stars, []
+
+    lesson_id = state.get("lesson_id")
+    kp_lines = "\n".join(f"- {kp}：{kp_title(kp, lesson_id)}" for kp in kp_ids)
+    dialogue_lines = "\n".join(
+        f"{'学生' if d.get('role') == 'student' else 'AI'}：{d.get('text')}"
+        for d in dialogue
+    )
+    system = (
+        "你是教学评估助手。根据学生在课堂对话中的实际表现，为每个知识点评定掌握星级。"
+        "星级含义：1=已接触、2=初步理解、3=理解中、4=接近掌握。"
+        "只依据对话中的证据评定；对话里没有体现的知识点保持原星级或评为 1 星，不要凭空拔高。"
+        "只返回 JSON 对象：键为知识点编号，值为 1~4 的整数。"
+    )
+    raw = llm_chat(
+        system,
+        f"本课知识点：\n{kp_lines}\n\n课堂对话：\n{dialogue_lines}\n\n"
+        "请为每个知识点给出星级，只输出 JSON。",
+    )
+    if not raw:
+        return kp_stars, []
+
+    # 容错：只取第一个 { 到最后一个 } 之间的 JSON，忽略前后多余文字。
+    try:
+        body = raw.strip()
+        start, end = body.find("{"), body.rfind("}")
+        if start == -1 or end <= start:
+            return kp_stars, []
+        parsed = json.loads(body[start:end + 1])
+        if not isinstance(parsed, dict):
+            return kp_stars, []
+    except (ValueError, TypeError):
+        return kp_stars, []
+
+    updates: list[dict] = []
+    now = state.get("now")
+    for kp_id in kp_ids:
+        val = parsed.get(kp_id)
+        if isinstance(val, bool) or not isinstance(val, (int, float)):
+            continue
+        new_stars = max(1, min(4, int(val)))
+        old = kp_stars.get(kp_id, 0)
+        if new_stars > old:
+            kp_stars[kp_id] = new_stars
+            updates.append({
+                "kp_id": kp_id, "old_stars": old, "new_stars": new_stars,
+                "old_status": STAR_STATUS.get(old, "未检测"),
+                "new_status": STAR_STATUS[new_stars],
+                "source": "llm-assessed", "stage": "ending",
+                "evidence": "LLM 依据课堂对话综合评定",
+                "occurred_at": now,
+            })
+    return kp_stars, updates
+
+
 def _ending_remark(state: ClassroomState, pending_snapshot: dict | None) -> tuple[str, bool]:
     """下课那句话。能用模型就说人话，不能用就退回模板。
 
@@ -2101,9 +1974,12 @@ def write_state(state: ClassroomState) -> dict:
 
 
 def format_reply(state: ClassroomState) -> dict:
-    """组装最终回复与播报标记。"""
+    """组装最终回复与播报标记，并把 AI 本轮的话追加进整课对话记录。"""
     reply = state.get("reply_text", "")
-    return {"reply_text": reply, "speech_kind": "auto" if reply else "none"}
+    out = {"reply_text": reply, "speech_kind": "auto" if reply else "none"}
+    if reply:
+        out["dialogue_log"] = [{"role": "ai", "text": reply}]
+    return out
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -2224,6 +2100,7 @@ def initial_state(session_id: str, student_id: str = "student-001",
         "kp_stars": {},
         "kp_meta": {},
         "stage_snapshots": [],
+        "dialogue_log": [],
         "reply_text": "",
         "speech_kind": "none",
         "advance_reason": None,
