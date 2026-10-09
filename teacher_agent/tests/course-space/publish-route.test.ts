@@ -25,48 +25,89 @@ const baseArtifact = {
 };
 
 function artifact(partial: Partial<CourseArtifactRecord>): CourseArtifactRecord {
-  return { id: 'artifact-1', status: 'approved', citations: [], ...baseArtifact, ...partial } as CourseArtifactRecord;
+  return {
+    id: 'artifact-1',
+    status: 'approved',
+    citations: [],
+    ...baseArtifact,
+    ...partial,
+  } as CourseArtifactRecord;
 }
 
-const request = new NextRequest('http://localhost/api/course-space/course-a/publish', { method: 'POST' });
+const request = new NextRequest('http://localhost/api/course-space/course-a/publish', {
+  method: 'POST',
+});
 
 describe('course publish route', () => {
   beforeEach(() => {
     vi.resetAllMocks();
     storage.saveKnowledgePackage.mockImplementation(async (pkg) => pkg);
     storage.saveCourseArtifact.mockImplementation(async (a) => a);
-    storage.updateServerCourse.mockImplementation(async (_id, update) => update({ id: 'course-a', status: 'active' }));
+    storage.updateServerCourse.mockImplementation(async (_id, update) =>
+      update({ id: 'course-a', status: 'active' }),
+    );
   });
 
   it('rejects publishing when the course does not exist', async () => {
     storage.readServerCourse.mockResolvedValue(null);
-    expect((await publish(request, { params: Promise.resolve({ courseId: 'course-a' }) })).status).toBe(404);
+    expect(
+      (await publish(request, { params: Promise.resolve({ courseId: 'course-a' }) })).status,
+    ).toBe(404);
   });
 
-  it('rejects publishing without approved artifacts', async () => {
-    storage.readServerCourse.mockResolvedValue({ id: 'course-a', teacherId: 'teacher-001', status: 'draft' });
-    storage.listCourseArtifacts.mockResolvedValue([artifact({ status: 'review' })]);
+  it('opens an empty course without publishing teacher drafts', async () => {
+    storage.readServerCourse.mockResolvedValue({
+      id: 'course-a',
+      teacherId: 'teacher-001',
+      status: 'draft',
+    });
+    storage.listCourseArtifacts.mockResolvedValue([
+      artifact({ status: 'review' }),
+      artifact({ id: 'approved', status: 'approved' }),
+    ]);
+    storage.listKnowledgePackages.mockResolvedValue([]);
     const response = await publish(request, { params: Promise.resolve({ courseId: 'course-a' }) });
-    expect(response.status).toBe(409);
-    expect((await response.json()).error).toContain('没有审核通过');
+    expect(response.status).toBe(201);
+    expect((await response.json()).knowledgePackage.entries).toEqual([]);
+    expect(storage.saveCourseArtifact).not.toHaveBeenCalled();
   });
 
-  it('rejects approved text artifacts without citations', async () => {
-    storage.readServerCourse.mockResolvedValue({ id: 'course-a', teacherId: 'teacher-001', status: 'draft' });
-    storage.listCourseArtifacts.mockResolvedValue([artifact({ classroomId: undefined, citations: [] })]);
+  it('includes only explicit publications, including on subsequent course publication', async () => {
+    storage.readServerCourse.mockResolvedValue({
+      id: 'course-a',
+      teacherId: 'teacher-001',
+      status: 'active',
+    });
+    storage.listCourseArtifacts.mockResolvedValue([
+      artifact({ id: 'legacy', status: 'published' }),
+      artifact({ id: 'private', status: 'approved' }),
+      artifact({
+        id: 'public',
+        status: 'published',
+        classVisible: true,
+        classPublicationId: 'CLS-A-1',
+      }),
+    ]);
+    storage.listKnowledgePackages.mockResolvedValue([]);
     const response = await publish(request, { params: Promise.resolve({ courseId: 'course-a' }) });
-    expect(response.status).toBe(409);
-    expect((await response.json()).error).toContain('缺少来源引用');
+    expect((await response.json()).knowledgePackage.entries).toHaveLength(1);
+    expect(storage.saveCourseArtifact).not.toHaveBeenCalled();
   });
 
   it('publishes interactive courseware without citations under the canonical course id', async () => {
     // Platform UUID entry point resolving to a legacy course id.
-    storage.readServerCourse.mockResolvedValue({ id: 'legacyCourse1', teacherId: 'teacher-001', status: 'draft' });
+    storage.readServerCourse.mockResolvedValue({
+      id: 'legacyCourse1',
+      teacherId: 'teacher-001',
+      status: 'draft',
+    });
     storage.listCourseArtifacts.mockResolvedValue([
       artifact({ courseId: 'legacyCourse1', classroomId: 'classroom-1', citations: [] }),
     ]);
     storage.listKnowledgePackages.mockResolvedValue([]);
-    const response = await publish(request, { params: Promise.resolve({ courseId: 'uuid-entry' }) });
+    const response = await publish(request, {
+      params: Promise.resolve({ courseId: 'uuid-entry' }),
+    });
     expect(response.status).toBe(201);
     const body = await response.json();
     expect(body.knowledgePackage.courseId).toBe('legacyCourse1');
@@ -75,7 +116,11 @@ describe('course publish route', () => {
   });
 
   it('inserts the successor package before superseding the previous one', async () => {
-    storage.readServerCourse.mockResolvedValue({ id: 'course-a', teacherId: 'teacher-001', status: 'active' });
+    storage.readServerCourse.mockResolvedValue({
+      id: 'course-a',
+      teacherId: 'teacher-001',
+      status: 'active',
+    });
     storage.listCourseArtifacts.mockResolvedValue([
       artifact({ courseId: 'course-a', classroomId: 'classroom-1' }),
     ]);

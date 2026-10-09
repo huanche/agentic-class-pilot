@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { NextRequest } from 'next/server';
+import { readFileSync } from 'node:fs';
 
 const mocks = vi.hoisted(() => ({
   isServerConfiguredProvider: vi.fn(() => false),
@@ -138,7 +139,7 @@ describe('POST /api/extract-document', () => {
     });
   });
 
-  it('returns actionable 422 diagnostics when DOCX requires unconfigured MinerU', async () => {
+  it('returns local Word diagnostics for invalid DOCX without requiring a cloud key', async () => {
     const res = await postExtractDocument({
       file: new File(['not really docx'], 'lesson.docx', {
         type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
@@ -151,8 +152,20 @@ describe('POST /api/extract-document', () => {
       success: false,
       errorCode: 'INVALID_REQUEST',
     });
-    expect(json.error).toContain('DOCX extraction requires a configured MinerU document extractor');
-    expect(json.error).toContain('self-hosted MinerU base URL or a MinerU Cloud API key');
+    expect(json.error).toContain('Word 材料无法读取');
+    expect(json.error).not.toContain('MinerU');
+  });
+
+  it('extracts a real DOC locally without a configured PDF provider', async () => {
+    const bytes = readFileSync(new URL('../fixtures/word/legacy-text.doc', import.meta.url));
+    const res = await postExtractDocument({
+      file: new File([new Uint8Array(bytes)], '教学进度.doc', { type: 'application/msword' }),
+    });
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.data.text).toContain('This is a test of reviewing');
+    expect(json.data.metadata.parser).toBe('local-word');
+    expect(mocks.parseWithMinerUCloud).not.toHaveBeenCalled();
   });
 
   it('allows MinerU Cloud PDF extraction with an API key and no base URL', async () => {

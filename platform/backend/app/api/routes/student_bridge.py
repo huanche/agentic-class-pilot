@@ -28,6 +28,7 @@ from app.core.config import settings
 from app.models import Enrollment
 from app.services.browser_sessions import user_for_cookie
 from app.services.course_access import get_accessible_course
+from app.services.course_publication import require_published_course
 
 router = APIRouter(tags=["student-bridge"])
 
@@ -83,6 +84,7 @@ def _latest_publication(session: SessionDep, course_id: uuid.UUID) -> dict | Non
     row = session.execute(
         text("SELECT p.payload->>'version', p.payload->>'id' FROM teacher.mentra_knowledge_packages p "
              "JOIN teacher_course_link l ON l.external_course_id = p.course_id "
+             "JOIN teacher.mentra_courses c ON c.id=p.course_id AND c.status='active' "
              "WHERE l.course_id=:id AND p.status='published' ORDER BY p.version DESC LIMIT 1"),
         {"id": course_id}).first()
     if not row:
@@ -95,7 +97,8 @@ def _published_classroom(session: SessionDep, course_id: uuid.UUID) -> str | Non
         text("SELECT c.id FROM teacher.mentra_classrooms c "
              "JOIN teacher.mentra_course_artifacts a ON a.payload->>'classroomId' = c.id "
              "JOIN teacher_course_link l ON l.external_course_id = a.course_id "
-             "WHERE l.course_id=:id AND a.payload->>'classPublicationId' IS NOT NULL "
+             "JOIN teacher.mentra_courses course ON course.id=a.course_id AND course.status='active' "
+             "WHERE l.course_id=:id AND a.status='published' AND a.payload->>'classVisible'='true' AND a.payload->>'classPublicationId' IS NOT NULL "
              "ORDER BY (a.payload->>'classPublishedAt')::bigint DESC NULLS LAST LIMIT 1"),
         {"id": course_id}).first()
     return row[0] if row else None
@@ -117,6 +120,7 @@ def _resolve_launch_context(session: SessionDep, payload: dict) -> None:
         {"c": course_id, "u": user_id}).first()
     if not enrolled:
         raise HTTPException(403, "Launch token no longer matches an active enrollment")
+    require_published_course(session, uuid.UUID(course_id))
 
 
 @router.post("/internal/student/authorize")
@@ -184,7 +188,52 @@ def _published_package_payload(session: SessionDep, course_id: uuid.UUID) -> dic
              "WHERE l.course_id = :id AND p.status = 'published' "
              "ORDER BY p.version DESC LIMIT 1"),
         {"id": course_id}).first()
-    return row[0] if row else None
+    if not row:
+        return None
+    require_published_course(session, course_id)
+    package = dict(row[0])
+    # Resolve the current explicit publications, never legacy bulk-published entries.
+    package["entries"] = published_course_entries(session, course_id)
+    return package
+
+
+def published_course_entries(session: SessionDep, course_id: uuid.UUID) -> list[dict]:
+    row = session.execute(text(
+        "SELECT c.payload FROM teacher.mentra_courses c "
+        "JOIN teacher_course_link l ON l.external_course_id=c.id "
+        "WHERE l.course_id=:id AND c.status='active'"), {"id": course_id}).first()
+    if not row:
+        return []
+    course = row[0] or {}
+    def visible(item):
+        return item.get("classVisible") is True and bool(item.get("classPublicationId"))
+    entries = []
+    for artifact_row in session.execute(text(
+        "SELECT a.payload FROM teacher.mentra_course_artifacts a "
+        "JOIN teacher_course_link l ON l.external_course_id=a.course_id "
+        "WHERE l.course_id=:id AND a.status='published' "
+        "AND a.payload->>'classVisible'='true' AND a.payload->>'classPublicationId' IS NOT NULL "
+        "ORDER BY a.created_at, a.id"), {"id": course_id}).all():
+        item = artifact_row[0]
+        if visible(item):
+            entries.append({"id": item["id"], "title": item.get("title", ""),
+                            "content": item.get("content", ""), "citations": item.get("citations", []),
+                            "scope": item.get("scope"), "kind": "artifact",
+                            "publicationId": item["classPublicationId"]})
+    for module in course.get("modules", []):
+        for lesson in module.get("lessons", []):
+            for item in lesson.get("files", []):
+                if visible(item):
+                    entries.append({"id": item["id"], "title": item.get("title", ""),
+                                    "content": item.get("content", ""), "kind": "lesson-file",
+                                    "scope": {"type": "lesson", "lessonId": lesson["id"]},
+                                    "publicationId": item["classPublicationId"]})
+    for item in course.get("materials", []):
+        if visible(item):
+            entries.append({"id": item["id"], "title": item.get("name", ""), "content": "",
+                            "kind": "material", "publicationId": item["classPublicationId"],
+                            "url": f"{settings.TEACHER_PUBLIC_URL.rstrip('/')}/api/course-space/{course['id']}/materials/{item['id']}"})
+    return entries
 
 
 def _classroom_view(session: SessionDep, classroom_id: str) -> dict:
@@ -227,7 +276,7 @@ def _published_lessons(session: SessionDep, course_id: uuid.UUID,
              "FROM teacher.mentra_course_artifacts a "
              "JOIN teacher_course_link l ON l.external_course_id = a.course_id "
              "WHERE l.course_id=:id AND a.status='published' "
-             "AND a.payload->>'classPublicationId' IS NOT NULL "
+             "AND a.payload->>'classVisible'='true' AND a.payload->>'classPublicationId' IS NOT NULL "
              "AND a.payload->>'classroomId' IS NOT NULL "
              "ORDER BY (a.payload->>'classPublishedAt')::bigint ASC NULLS LAST, a.created_at ASC"),
         {"id": course_id}).all()
@@ -253,7 +302,11 @@ def _grounding_context(session: SessionDep, course_id: uuid.UUID) -> dict:
     for row in session.execute(
         text("SELECT e.payload->'chunks' FROM teacher.mentra_material_extractions e "
              "JOIN teacher_course_link l ON l.external_course_id = e.course_id "
-             "WHERE l.course_id = :id"), {"id": course_id}).fetchall():
+             "JOIN teacher.mentra_courses c ON c.id=e.course_id "
+             "WHERE l.course_id = :id AND c.status='active' AND EXISTS ("
+             "SELECT 1 FROM jsonb_array_elements(c.payload->'materials') m "
+             "WHERE m->>'id'=e.material_id AND m->>'classVisible'='true' "
+             "AND m->>'classPublicationId' IS NOT NULL)"), {"id": course_id}).fetchall():
         for chunk in (row[0] or [])[:6]:
             text_value = (chunk or {}).get("text", "")
             if text_value.strip():

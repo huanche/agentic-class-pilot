@@ -43,15 +43,18 @@ export default function ArtifactReviewPage() {
     const data = await response.json();
     if (!response.ok || data.success === false) return setMessage(data.error || '保存失败');
     setArtifact(data.artifact);
-    setMessage(action === 'approve' ? '审核通过，已进入发布候选集。' : '修改已保存。');
+    setMessage(action === 'approve' ? '审核通过。点击发布此文件后学生才可见。' : '修改已保存。');
   };
   const publish = async () => {
-    const response = await fetch(`/api/course-space/${courseId}/publish`, { method: 'POST' });
+    const response = await fetch(`/api/course-space/${courseId}/artifacts/${artifactId}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ action: 'activate' }),
+    });
     const data = await response.json();
+    if (response.ok && data.artifact) setArtifact(data.artifact);
     setMessage(
-      response.ok && data.success !== false
-        ? `知识包 v${data.knowledgePackage.version} 已发布。`
-        : data.error || '发布失败',
+      response.ok && data.success !== false ? '该文件已发布，学生可见。' : data.error || '发布失败',
     );
   };
   const source = searchParams.get('from');
@@ -118,7 +121,7 @@ export default function ArtifactReviewPage() {
                 <Button onClick={() => void review('approve')}>审核通过</Button>
                 <Button variant="secondary" onClick={() => void publish()}>
                   <PackageCheck className="mr-2 size-4" />
-                  发布审核后的知识包
+                  发布此文件
                 </Button>
               </div>
             </div>

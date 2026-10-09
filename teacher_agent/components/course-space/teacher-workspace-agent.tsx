@@ -56,17 +56,25 @@ export function TeacherWorkspaceAgent({
 }: {
   course: CourseSpace;
   activeScope: CourseArtifactJob['scope'];
-  onGenerate: (type: CourseArtifactType, scope?: CourseArtifactJob['scope'], entry?: 'lecturer-ppt') => void;
+  onGenerate: (
+    type: CourseArtifactType,
+    scope?: CourseArtifactJob['scope'],
+    entry?: 'lecturer-ppt',
+    instruction?: string,
+  ) => void;
   onOperationComplete?: () => void | Promise<void>;
   onOpenKnowledgeGraph?: () => void;
   embedded?: boolean;
   externalPrompt?: { id: number; text: string; attachments?: ScreenshotAttachment[] };
 }) {
   const router = useRouter();
-  const initialMessage = useMemo<Message>(() => ({
-    role: 'assistant',
-    content: `你好，我是“${course.title}”的课程操作智能体。课程材料、结构、知识图谱与中间产物已作为插件接入。我可以按你的要求启动教学大纲、教学计划、课件、讲稿、习题和评分量规工作，也可以创建、移动或删除课程文件。生成任务会直接进入标准生成—审核—可视化流程；结构变更与删除操作会先提交计划供你确认。`,
-  }), [course.title]);
+  const initialMessage = useMemo<Message>(
+    () => ({
+      role: 'assistant',
+      content: `你好，我是“${course.title}”的课程操作智能体。课程材料、结构、知识图谱与中间产物已作为插件接入。我可以按你的要求启动教学大纲、教学计划、课件、讲稿、习题和评分量规工作，也可以创建、移动或删除课程文件。生成任务会直接进入标准生成—审核—可视化流程；结构变更与删除操作会先提交计划供你确认。`,
+    }),
+    [course.title],
+  );
   const [sessionId, setSessionId] = useState(() => `teacher-${course.id}-default`);
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [messages, setMessages] = useState<Message[]>([
@@ -91,12 +99,14 @@ export function TeacherWorkspaceAgent({
   const webSearchProvider = WEB_SEARCH_PROVIDERS[webSearchProviderId];
   const webSearchAvailable = Boolean(
     webSearchProvider &&
-      isWebSearchProviderConfigured(webSearchProvider, webSearchProvidersConfig[webSearchProviderId]),
+    isWebSearchProviderConfigured(webSearchProvider, webSearchProvidersConfig[webSearchProviderId]),
   );
   const conversationEndRef = useRef<HTMLDivElement>(null);
   const loadSessions = useCallback(async () => {
-    const response = await fetch(`/api/course-space/${course.id}/agent?list=1`, { cache: 'no-store' });
-    const data = await response.json() as { sessions?: SessionSummary[] };
+    const response = await fetch(`/api/course-space/${course.id}/agent?list=1`, {
+      cache: 'no-store',
+    });
+    const data = (await response.json()) as { sessions?: SessionSummary[] };
     if (response.ok) setSessions(data.sessions ?? []);
   }, [course.id]);
   const workingLocation = useMemo(() => {
@@ -185,11 +195,13 @@ export function TeacherWorkspaceAgent({
       const response = await requestTeacherAgentTurn({
         courseId: course.id,
         modelConfig: getCurrentModelConfig(),
-        webSearch: webSearch ? {
-          providerId: webSearchProviderId,
-          providerConfig: webSearchProvidersConfig[webSearchProviderId],
-          baiduSubSources,
-        } : undefined,
+        webSearch: webSearch
+          ? {
+              providerId: webSearchProviderId,
+              providerConfig: webSearchProvidersConfig[webSearchProviderId],
+              baiduSubSources,
+            }
+          : undefined,
         body: {
           sessionId,
           message: content,
@@ -206,7 +218,11 @@ export function TeacherWorkspaceAgent({
       if (responsePlan && openDraft(responsePlan)) {
         setMessages([
           ...next,
-          { role: 'assistant', content: '已形成备课计划，正在打开草稿确认与审核页面。', plan: responsePlan },
+          {
+            role: 'assistant',
+            content: '已形成备课计划，正在打开草稿确认与审核页面。',
+            plan: responsePlan,
+          },
         ]);
         setAttachments([]);
         setMode('课程操作智能体');
@@ -236,7 +252,12 @@ export function TeacherWorkspaceAgent({
           operation.dispatch === 'artifact-workflow' &&
           operation.plan.action?.type === 'generate-artifact'
         )
-          onGenerate(operation.plan.action.artifactType, operation.plan.action.scope);
+          onGenerate(
+            operation.plan.action.artifactType,
+            operation.plan.action.scope,
+            undefined,
+            operation.plan.action.instruction,
+          );
         else await onOperationComplete?.();
       }
       setMessages([...next, { role: 'assistant', content: responseText, plan: responsePlan }]);
@@ -295,7 +316,12 @@ export function TeacherWorkspaceAgent({
         ),
       );
       if (data.dispatch === 'artifact-workflow' && data.plan.action?.type === 'generate-artifact')
-        onGenerate(data.plan.action.artifactType, data.plan.action.scope);
+        onGenerate(
+          data.plan.action.artifactType,
+          data.plan.action.scope,
+          undefined,
+          data.plan.action.instruction,
+        );
       else await onOperationComplete?.();
     } catch (error) {
       setMessages((items) => [
@@ -317,23 +343,27 @@ export function TeacherWorkspaceAgent({
     setAttachments([]);
   };
   return (
-    <div className={`flex h-full flex-col overflow-hidden rounded-2xl border border-slate-200/80 bg-white/90 shadow-sm backdrop-blur-xl ${embedded ? 'min-h-0' : 'min-h-[600px]'}`}>
-      {!embedded && <div className="flex items-center justify-between border-b border-slate-100 bg-white/80 px-5 py-4">
-        <div className="flex items-center gap-3">
-          <div className="rounded-xl bg-gradient-to-br from-[#B00055]/15 to-[#B00055]/5 p-2.5 text-[#B00055]">
-            <Bot className="size-5" />
+    <div
+      className={`flex h-full flex-col overflow-hidden rounded-2xl border border-slate-200/80 bg-white/90 shadow-sm backdrop-blur-xl ${embedded ? 'min-h-0' : 'min-h-[600px]'}`}
+    >
+      {!embedded && (
+        <div className="flex items-center justify-between border-b border-slate-100 bg-white/80 px-5 py-4">
+          <div className="flex items-center gap-3">
+            <div className="rounded-xl bg-gradient-to-br from-[#B00055]/15 to-[#B00055]/5 p-2.5 text-[#B00055]">
+              <Bot className="size-5" />
+            </div>
+            <div>
+              <h3 className="font-semibold">备课工作智能体</h3>
+              <p className="text-xs text-muted-foreground">
+                DeepSeek Harness · 课程材料、结构、知识图谱与产物已连接
+              </p>
+            </div>
           </div>
-          <div>
-            <h3 className="font-semibold">备课工作智能体</h3>
-            <p className="text-xs text-muted-foreground">
-              DeepSeek Harness · 课程材料、结构、知识图谱与产物已连接
-            </p>
-          </div>
+          <span className="rounded-full border border-emerald-100 bg-emerald-50 px-2.5 py-1 text-[11px] text-emerald-700">
+            {mode}
+          </span>
         </div>
-        <span className="rounded-full border border-emerald-100 bg-emerald-50 px-2.5 py-1 text-[11px] text-emerald-700">
-          {mode}
-        </span>
-      </div>}
+      )}
       <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-b border-slate-100 bg-[#fff8fb] px-5 py-3 text-xs">
         <div className="flex min-w-0 items-center gap-2 text-slate-700">
           <FolderOpen className="size-4 shrink-0 text-[#B00055]" />
@@ -351,209 +381,345 @@ export function TeacherWorkspaceAgent({
       <div className="flex min-h-0 flex-1">
         <aside className="flex w-64 shrink-0 flex-col border-r border-slate-100 bg-slate-50/80">
           <div className="border-b border-slate-100 p-3">
-            <Button type="button" variant="outline" className="w-full justify-start rounded-xl bg-white" onClick={startNewSession}>
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full justify-start rounded-xl bg-white"
+              onClick={startNewSession}
+            >
               <MessageSquarePlus className="mr-2 size-4 text-[#B00055]" />
               新备课会话
             </Button>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto p-2">
-            <p className="px-2 pb-2 pt-1 text-[10px] font-medium uppercase tracking-[.14em] text-slate-400">历史会话</p>
+            <p className="px-2 pb-2 pt-1 text-[10px] font-medium uppercase tracking-[.14em] text-slate-400">
+              历史会话
+            </p>
             <div className="space-y-1">
               {sessions.map((session) => (
-                <button key={session.id} type="button" onClick={() => setSessionId(session.id)} className={`flex w-full items-start gap-2 rounded-xl px-3 py-2.5 text-left transition ${sessionId === session.id ? 'bg-[#B00055]/10 text-[#8F0046]' : 'text-slate-600 hover:bg-white hover:text-slate-900'}`}>
+                <button
+                  key={session.id}
+                  type="button"
+                  onClick={() => setSessionId(session.id)}
+                  className={`flex w-full items-start gap-2 rounded-xl px-3 py-2.5 text-left transition ${sessionId === session.id ? 'bg-[#B00055]/10 text-[#8F0046]' : 'text-slate-600 hover:bg-white hover:text-slate-900'}`}
+                >
                   <MessageSquare className="mt-0.5 size-3.5 shrink-0" />
                   <span className="min-w-0">
-                    <span className="block truncate text-xs font-medium">{session.title || '新备课会话'}</span>
-                    <span className="mt-1 block text-[10px] text-slate-400">{new Date(session.updatedAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                    <span className="block truncate text-xs font-medium">
+                      {session.title || '新备课会话'}
+                    </span>
+                    <span className="mt-1 block text-[10px] text-slate-400">
+                      {new Date(session.updatedAt).toLocaleString('zh-CN', {
+                        month: 'numeric',
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                    </span>
                   </span>
                 </button>
               ))}
-              {!sessions.length && <p className="px-3 py-5 text-xs leading-5 text-slate-400">发送第一条消息后，会话将保存在这里。</p>}
+              {!sessions.length && (
+                <p className="px-3 py-5 text-xs leading-5 text-slate-400">
+                  发送第一条消息后，会话将保存在这里。
+                </p>
+              )}
             </div>
           </div>
         </aside>
         <div className="flex min-w-0 flex-1 flex-col">
-      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto bg-[radial-gradient(circle_at_top_left,rgba(176,0,85,0.06),transparent_38%),#fbfcfe] p-5">
-        {messages.map((message, index) => (
-          <div
-            key={index}
-            className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
-          >
-            <div className={`max-w-[86%] ${message.role === 'user' ? '' : 'space-y-2'}`}>
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto bg-[radial-gradient(circle_at_top_left,rgba(176,0,85,0.06),transparent_38%),#fbfcfe] p-5">
+            {messages.map((message, index) => (
               <div
-                className={`whitespace-pre-wrap rounded-2xl px-4 py-3 text-sm leading-6 ${message.role === 'user' ? 'rounded-br-md bg-[#B00055] text-white shadow-sm' : 'rounded-bl-md border border-slate-200 bg-white text-slate-700 shadow-sm'}`}
+                key={index}
+                className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
               >
-                {message.content}
-              </div>
-              {message.plan && (
-                <div className="rounded-2xl border border-[#B00055]/15 bg-white p-4 shadow-sm">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="font-semibold text-slate-900">{message.plan.title}</p>
-                      <p className="mt-1 text-xs leading-5 text-slate-500">
-                        {message.plan.summary}
-                      </p>
-                    </div>
-                    <span className="shrink-0 rounded-full bg-[#B00055]/8 px-2 py-1 text-[10px] text-[#B00055]">
-                      {message.plan.status === 'planned'
-                        ? '待执行'
-                        : message.plan.status === 'completed'
-                          ? '已完成'
-                          : '已暂停'}
-                    </span>
+                <div className={`max-w-[86%] ${message.role === 'user' ? '' : 'space-y-2'}`}>
+                  <div
+                    className={`whitespace-pre-wrap rounded-2xl px-4 py-3 text-sm leading-6 ${message.role === 'user' ? 'rounded-br-md bg-[#B00055] text-white shadow-sm' : 'rounded-bl-md border border-slate-200 bg-white text-slate-700 shadow-sm'}`}
+                  >
+                    {message.content}
                   </div>
-                  <div className="mt-3 space-y-2">
-                    {message.plan.steps.map((step) => (
-                      <div key={step.id} className="flex items-center gap-2 text-xs text-slate-600">
-                        {step.status === 'completed' ? (
-                          <CheckCircle2 className="size-4 text-emerald-500" />
-                        ) : (
-                          <Circle
-                            className={`size-4 ${step.status === 'blocked' ? 'text-amber-500' : 'text-slate-300'}`}
-                          />
-                        )}
-                        <span>{step.label}</span>
-                        <code className="ml-auto text-[10px] text-slate-400">{step.tool}</code>
+                  {message.plan && (
+                    <div className="rounded-2xl border border-[#B00055]/15 bg-white p-4 shadow-sm">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="font-semibold text-slate-900">{message.plan.title}</p>
+                          <p className="mt-1 text-xs leading-5 text-slate-500">
+                            {message.plan.summary}
+                          </p>
+                        </div>
+                        <span className="shrink-0 rounded-full bg-[#B00055]/8 px-2 py-1 text-[10px] text-[#B00055]">
+                          {message.plan.status === 'planned'
+                            ? '待执行'
+                            : message.plan.status === 'completed'
+                              ? '已完成'
+                              : '已暂停'}
+                        </span>
                       </div>
-                    ))}
-                  </div>
-                  {message.plan.result && (
-                    <p className="mt-3 rounded-xl bg-slate-50 p-3 text-xs leading-5 text-slate-700">
-                      {message.plan.result}
-                    </p>
-                  )}
-                  {(message.plan.requiresConfirmation ||
-                    (message.plan.action?.type === 'create-lesson-files' && message.plan.action.populateContent)) &&
-                    message.plan.status === 'planned' && (
-                    <Button
-                      size="sm"
-                      variant={
-                        message.plan.action?.type.startsWith('delete') ? 'destructive' : 'default'
-                      }
-                      className="mt-3 rounded-full"
-                      onClick={() => void executePlan(index, message.plan!)}
-                    >
-                      <Play className="mr-1 size-3.5" />
-                      {message.plan.action?.type.startsWith('delete') ? '确认删除' :
-                        message.plan.action?.type === 'create-lesson-files' && message.plan.action.populateContent
-                          ? '打开草稿审核' : '确认执行'}
-                    </Button>
+                      <div className="mt-3 space-y-2">
+                        {message.plan.steps.map((step) => (
+                          <div
+                            key={step.id}
+                            className="flex items-center gap-2 text-xs text-slate-600"
+                          >
+                            {step.status === 'completed' ? (
+                              <CheckCircle2 className="size-4 text-emerald-500" />
+                            ) : (
+                              <Circle
+                                className={`size-4 ${step.status === 'blocked' ? 'text-amber-500' : 'text-slate-300'}`}
+                              />
+                            )}
+                            <span>{step.label}</span>
+                            <code className="ml-auto text-[10px] text-slate-400">{step.tool}</code>
+                          </div>
+                        ))}
+                      </div>
+                      {message.plan.result && (
+                        <p className="mt-3 rounded-xl bg-slate-50 p-3 text-xs leading-5 text-slate-700">
+                          {message.plan.result}
+                        </p>
+                      )}
+                      {(message.plan.requiresConfirmation ||
+                        (message.plan.action?.type === 'create-lesson-files' &&
+                          message.plan.action.populateContent)) &&
+                        message.plan.status === 'planned' && (
+                          <Button
+                            size="sm"
+                            variant={
+                              message.plan.action?.type.startsWith('delete')
+                                ? 'destructive'
+                                : 'default'
+                            }
+                            className="mt-3 rounded-full"
+                            onClick={() => void executePlan(index, message.plan!)}
+                          >
+                            <Play className="mr-1 size-3.5" />
+                            {message.plan.action?.type.startsWith('delete')
+                              ? '确认删除'
+                              : message.plan.action?.type === 'create-lesson-files' &&
+                                  message.plan.action.populateContent
+                                ? '打开草稿审核'
+                                : '确认执行'}
+                          </Button>
+                        )}
+                    </div>
                   )}
                 </div>
-              )}
-            </div>
-          </div>
-        ))}
-        {loading && (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <LoaderCircle className="size-4 animate-spin" />
-            正在形成操作计划或调用课程工具…
-          </div>
-        )}
-        <div ref={conversationEndRef} />
-      </div>
-      <div className="border-t border-slate-100 bg-white/90 p-4">
-        {!embedded && <div className="mb-3 flex flex-wrap gap-2">
-          {actions.map((item) => (
-              <button key={item.type} onClick={() => onGenerate(item.type)} className="rounded-full border border-[#B00055]/20 bg-[#B00055]/5 px-3 py-1.5 text-xs text-[#B00055] hover:bg-[#B00055]/10">{item.label}</button>
-            ))}
-        </div>}
-        {attachments.length > 0 && (
-          <div className="mb-2 flex flex-wrap gap-2">
-            {attachments.map((attachment, index) => (
-              <div
-                key={`${attachment.name}-${index}`}
-                className="relative overflow-hidden rounded-xl border border-[#B00055]/15 bg-white p-1 shadow-sm"
-              >
-                <img
-                  src={attachment.dataUrl}
-                  alt={attachment.name}
-                  className="h-16 w-24 rounded-lg object-cover"
-                />
-                <button
-                  type="button"
-                  aria-label={`移除截图 ${attachment.name}`}
-                  onClick={() =>
-                    setAttachments((items) => items.filter((_, itemIndex) => itemIndex !== index))
-                  }
-                  className="absolute right-1 top-1 rounded-full bg-slate-900/70 p-1 text-white"
-                >
-                  <X className="size-3" />
-                </button>
               </div>
             ))}
+            {loading && (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <LoaderCircle className="size-4 animate-spin" />
+                正在形成操作计划或调用课程工具…
+              </div>
+            )}
+            <div ref={conversationEndRef} />
           </div>
-        )}
-        <div className="overflow-hidden rounded-2xl border border-[#B00055]/20 bg-slate-50/75 shadow-sm transition focus-within:border-[#B00055]/40 focus-within:ring-2 focus-within:ring-[#B00055]/10">
-          <textarea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onPaste={(event) => {
-              const images = Array.from(event.clipboardData.items)
-                .filter((item) => item.kind === 'file' && item.type.startsWith('image/'))
-                .map((item) => item.getAsFile())
-                .filter((file): file is File => Boolean(file));
-              if (!images.length) return;
-              event.preventDefault();
-              addImageFiles(images);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                void send();
-              }
-            }}
-            className="min-h-24 w-full resize-none bg-transparent px-4 pb-2 pt-4 text-sm leading-6 outline-none"
-            placeholder="例如：把第一周内容移到第二周、删除空课时文件夹，或生成本周课件…"
-          />
-          <div className="flex flex-wrap items-center gap-2 px-3 pb-3">
-            <button type="button" onClick={() => { setSettingsSection('providers'); setSettingsOpen(true); }} className="inline-flex h-8 max-w-40 items-center gap-1.5 rounded-full border border-violet-200 bg-violet-50 px-2.5 text-xs font-medium text-violet-700" title="选择语言模型与推理设置（兼容模式生效；平台个人配置和阶段路由优先）">
-              <Brain className="size-3.5" />
-              <span className="truncate">{currentModelId || '选择模型'}</span>
-            </button>
-            <span className="h-4 w-px bg-slate-200" />
-            <label className="grid size-8 shrink-0 cursor-pointer place-items-center rounded-full border border-slate-200 bg-white text-slate-500 hover:border-[#B00055]/30 hover:text-[#B00055]" title="上传或粘贴截图">
-              <ImagePlus className="size-3.5" />
-              <input type="file" accept="image/png,image/jpeg,image/webp" multiple className="sr-only" onChange={(event) => { addImageFiles(Array.from(event.target.files ?? [])); event.target.value = ''; }}/>
-            </label>
-            <button type="button" aria-pressed={webSearch} onClick={() => {
-              if (webSearch) { setWebSearch(false); return; }
-              if (!webSearchAvailable) { setSettingsSection('web-search'); setSettingsOpen(true); return; }
-              setWebSearch(true);
-            }} className={`grid size-8 place-items-center rounded-full border ${webSearch ? 'border-violet-300 bg-violet-100 text-violet-700' : 'border-slate-200 bg-white text-slate-400'}`} title={webSearch ? '关闭网页检索' : webSearchAvailable ? '开启网页检索' : '配置网页检索服务'}>
-              <Globe2 className="size-3.5" />
-            </button>
-            <button type="button" onClick={() => { setSettingsSection(undefined); setSettingsOpen(true); }} className="grid size-8 place-items-center rounded-full border border-slate-200 bg-white text-slate-500" title="模型与语音设置">
-              <Settings className="size-3.5" />
-            </button>
-            <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
-              <button type="button" onClick={() => onGenerate('lesson-courseware', activeScope, 'lecturer-ppt')} className="inline-flex h-8 items-center gap-1.5 rounded-full border border-[#B00055]/25 bg-[#B00055]/5 px-3 text-xs font-medium text-[#B00055] hover:bg-[#B00055]/10">
-                <Presentation className="size-3.5" />讲师 PPT
-              </button>
-              <button type="button" onClick={onOpenKnowledgeGraph} className="inline-flex h-8 items-center gap-1.5 rounded-full border border-[#B00055]/25 bg-[#B00055]/5 px-3 text-xs font-medium text-[#B00055] hover:bg-[#B00055]/10">
-                <Brain className="size-3.5" />知识图谱
-              </button>
-              <InteractiveModeButton pressed={deepInteraction} label="深度交互" onPressedChange={setDeepInteraction} />
-              <SpeechButton size="md" disabled={loading} continuous onInterimTranscription={(text) => setInput((current) => { if (voiceInputBaseRef.current === null) voiceInputBaseRef.current = current; const base = voiceInputBaseRef.current; return `${base}${base.trim() ? ' ' : ''}${text}`; })} onTranscription={(text) => setInput((current) => { const base = voiceInputBaseRef.current; voiceInputBaseRef.current = null; const stableBase = base ?? current; return `${stableBase}${stableBase.trim() ? ' ' : ''}${text}`; })} className="size-8 rounded-full hover:bg-white hover:text-[#B00055]" />
-              <Button size="icon" className="size-9 shrink-0 rounded-full" disabled={loading || !input.trim()} onClick={() => void send()} title="发送消息">
-                <Send className="size-4" />
-              </Button>
+          <div className="border-t border-slate-100 bg-white/90 p-4">
+            {!embedded && (
+              <div className="mb-3 flex flex-wrap gap-2">
+                {actions.map((item) => (
+                  <button
+                    key={item.type}
+                    onClick={() => onGenerate(item.type)}
+                    className="rounded-full border border-[#B00055]/20 bg-[#B00055]/5 px-3 py-1.5 text-xs text-[#B00055] hover:bg-[#B00055]/10"
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            )}
+            {attachments.length > 0 && (
+              <div className="mb-2 flex flex-wrap gap-2">
+                {attachments.map((attachment, index) => (
+                  <div
+                    key={`${attachment.name}-${index}`}
+                    className="relative overflow-hidden rounded-xl border border-[#B00055]/15 bg-white p-1 shadow-sm"
+                  >
+                    <img
+                      src={attachment.dataUrl}
+                      alt={attachment.name}
+                      className="h-16 w-24 rounded-lg object-cover"
+                    />
+                    <button
+                      type="button"
+                      aria-label={`移除截图 ${attachment.name}`}
+                      onClick={() =>
+                        setAttachments((items) =>
+                          items.filter((_, itemIndex) => itemIndex !== index),
+                        )
+                      }
+                      className="absolute right-1 top-1 rounded-full bg-slate-900/70 p-1 text-white"
+                    >
+                      <X className="size-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="overflow-hidden rounded-2xl border border-[#B00055]/20 bg-slate-50/75 shadow-sm transition focus-within:border-[#B00055]/40 focus-within:ring-2 focus-within:ring-[#B00055]/10">
+              <textarea
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onPaste={(event) => {
+                  const images = Array.from(event.clipboardData.items)
+                    .filter((item) => item.kind === 'file' && item.type.startsWith('image/'))
+                    .map((item) => item.getAsFile())
+                    .filter((file): file is File => Boolean(file));
+                  if (!images.length) return;
+                  event.preventDefault();
+                  addImageFiles(images);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    void send();
+                  }
+                }}
+                className="min-h-24 w-full resize-none bg-transparent px-4 pb-2 pt-4 text-sm leading-6 outline-none"
+                placeholder="例如：把第一周内容移到第二周、删除空课时文件夹，或生成本周课件…"
+              />
+              <div className="flex flex-wrap items-center gap-2 px-3 pb-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSettingsSection('providers');
+                    setSettingsOpen(true);
+                  }}
+                  className="inline-flex h-8 max-w-40 items-center gap-1.5 rounded-full border border-violet-200 bg-violet-50 px-2.5 text-xs font-medium text-violet-700"
+                  title="选择语言模型与推理设置（兼容模式生效；平台个人配置和阶段路由优先）"
+                >
+                  <Brain className="size-3.5" />
+                  <span className="truncate">{currentModelId || '选择模型'}</span>
+                </button>
+                <span className="h-4 w-px bg-slate-200" />
+                <label
+                  className="grid size-8 shrink-0 cursor-pointer place-items-center rounded-full border border-slate-200 bg-white text-slate-500 hover:border-[#B00055]/30 hover:text-[#B00055]"
+                  title="上传或粘贴截图"
+                >
+                  <ImagePlus className="size-3.5" />
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp"
+                    multiple
+                    className="sr-only"
+                    onChange={(event) => {
+                      addImageFiles(Array.from(event.target.files ?? []));
+                      event.target.value = '';
+                    }}
+                  />
+                </label>
+                <button
+                  type="button"
+                  aria-pressed={webSearch}
+                  onClick={() => {
+                    if (webSearch) {
+                      setWebSearch(false);
+                      return;
+                    }
+                    if (!webSearchAvailable) {
+                      setSettingsSection('web-search');
+                      setSettingsOpen(true);
+                      return;
+                    }
+                    setWebSearch(true);
+                  }}
+                  className={`grid size-8 place-items-center rounded-full border ${webSearch ? 'border-violet-300 bg-violet-100 text-violet-700' : 'border-slate-200 bg-white text-slate-400'}`}
+                  title={
+                    webSearch
+                      ? '关闭网页检索'
+                      : webSearchAvailable
+                        ? '开启网页检索'
+                        : '配置网页检索服务'
+                  }
+                >
+                  <Globe2 className="size-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSettingsSection(undefined);
+                    setSettingsOpen(true);
+                  }}
+                  className="grid size-8 place-items-center rounded-full border border-slate-200 bg-white text-slate-500"
+                  title="模型与语音设置"
+                >
+                  <Settings className="size-3.5" />
+                </button>
+                <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => onGenerate('lesson-courseware', activeScope, 'lecturer-ppt')}
+                    className="inline-flex h-8 items-center gap-1.5 rounded-full border border-[#B00055]/25 bg-[#B00055]/5 px-3 text-xs font-medium text-[#B00055] hover:bg-[#B00055]/10"
+                  >
+                    <Presentation className="size-3.5" />
+                    讲师 PPT
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onOpenKnowledgeGraph}
+                    className="inline-flex h-8 items-center gap-1.5 rounded-full border border-[#B00055]/25 bg-[#B00055]/5 px-3 text-xs font-medium text-[#B00055] hover:bg-[#B00055]/10"
+                  >
+                    <Brain className="size-3.5" />
+                    知识图谱
+                  </button>
+                  <InteractiveModeButton
+                    pressed={deepInteraction}
+                    label="深度交互"
+                    onPressedChange={setDeepInteraction}
+                  />
+                  <SpeechButton
+                    size="md"
+                    disabled={loading}
+                    continuous
+                    onInterimTranscription={(text) =>
+                      setInput((current) => {
+                        if (voiceInputBaseRef.current === null) voiceInputBaseRef.current = current;
+                        const base = voiceInputBaseRef.current;
+                        return `${base}${base.trim() ? ' ' : ''}${text}`;
+                      })
+                    }
+                    onTranscription={(text) =>
+                      setInput((current) => {
+                        const base = voiceInputBaseRef.current;
+                        voiceInputBaseRef.current = null;
+                        const stableBase = base ?? current;
+                        return `${stableBase}${stableBase.trim() ? ' ' : ''}${text}`;
+                      })
+                    }
+                    className="size-8 rounded-full hover:bg-white hover:text-[#B00055]"
+                  />
+                  <Button
+                    size="icon"
+                    className="size-9 shrink-0 rounded-full"
+                    disabled={loading || !input.trim()}
+                    onClick={() => void send()}
+                    title="发送消息"
+                  >
+                    <Send className="size-4" />
+                  </Button>
+                </div>
+              </div>
             </div>
+            <p className="mt-2 text-[11px] text-muted-foreground">
+              麦克风开启后会边听边显示文字，再次点击停止 · 可上传或 Ctrl+V 粘贴截图 · Enter 发送
+            </p>
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              模型设置用于兼容模式，平台个人模型配置与阶段路由优先；Harness
+              使用独立模型配置。网页检索结果可用于两种模式。
+            </p>
           </div>
         </div>
-        <p className="mt-2 text-[11px] text-muted-foreground">
-          麦克风开启后会边听边显示文字，再次点击停止 · 可上传或 Ctrl+V 粘贴截图 · Enter 发送
-        </p>
-        <p className="mt-1 text-[11px] text-muted-foreground">
-          模型设置用于兼容模式，平台个人模型配置与阶段路由优先；Harness 使用独立模型配置。网页检索结果可用于两种模式。
-        </p>
       </div>
-        </div>
-      </div>
-      <SettingsDialog open={settingsOpen} onOpenChange={(open) => {
-        setSettingsOpen(open);
-        if (!open) setSettingsSection(undefined);
-      }} initialSection={settingsSection} />
+      <SettingsDialog
+        open={settingsOpen}
+        onOpenChange={(open) => {
+          setSettingsOpen(open);
+          if (!open) setSettingsSection(undefined);
+        }}
+        initialSection={settingsSection}
+      />
     </div>
   );
 }
