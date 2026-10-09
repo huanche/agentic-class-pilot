@@ -138,10 +138,8 @@ def main() -> int:
         print("LLM：未配置（三个 AGENT_LLM_* 变量缺任一）→ teach 全程走降级脚本")
         print("  配好后重跑即可看到 [AI] 标记。")
 
-    print("\n落盘文件已更新：")
-    for p in ("runtime/DIALOGUE-LOG.md", "runtime/data/mastery-state.json",
-              "runtime/data/mastery-history.json", "runtime/data/dialogue-log.json"):
-        print(f"  - {p} ({Path(p).stat().st_size} bytes)")
+    print("\n说明：本地临时落盘（DIALOGUE-LOG.md / mastery-*.json）已移除，")
+    print("  学习数据由会话层写库；独立 demo 只在内存里跑，不生成 runtime 小文件。")
     return 0
 
 

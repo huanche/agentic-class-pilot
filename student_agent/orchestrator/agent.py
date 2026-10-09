@@ -113,6 +113,9 @@ def llm_available() -> bool:
 # 诊断计数：实测时用，能立刻看出"到底调没调成功"
 LLM_DIAG: dict = {"calls": 0, "ok": 0, "failed": 0, "last_error": None}
 
+# 未接入 LLM 时不再用写死的模板假装上课，而是明确告知当前无法对话。
+NO_LLM_NOTICE = "当前没有接入 AI 模型，无法进行对话。请先在平台的模型设置里配置好模型后再试。"
+
 
 def llm_chat(system: str, user: str) -> str | None:
     """调 OpenAI 兼容端点。失败时**不静默**——写诊断并打日志。
@@ -604,7 +607,7 @@ class ClassroomState(TypedDict):
     # ── 证据与掌握 ──
     turn_evidence: list[str]
     mastery_updates: list[dict]
-    kp_stars: dict[str, int]          # 运行中的星级（落盘到 mastery-state.json）
+    kp_stars: dict[str, int]          # 运行中的星级（平台会话由会话层写 student.knowledge_mastery）
     kp_meta: dict[str, dict]          # 各 KP 的 last_source/stage/evidence
     stage_snapshots: Annotated[list[dict], operator.add]
 
@@ -854,18 +857,22 @@ def load_plan(state: ClassroomState) -> dict:
     enabled = [s for s in plan["stages"] if s.get("enabled")]
     policy = plan["advance_policy"]
 
-    # 星级基线：读**该学生自己的**档案（runtime/students/<id>/mastery-state.json）。
-    # 不读共享文件——那会让上一个学生的星级渗进下一个学生的新会话。
-    # 同一学生跨课次则正常延续（学期内掌握度连续，这是设计意图）。
+    # 星级基线：平台会话从 student schema 读该学生的掌握度（跨课次延续）。
+    # 非平台会话没有 userId，无从落库，基线为空（每节课从 0 星起）。
     kp_stars: dict[str, int] = {}
     try:
-        ms = json.loads(
-            (_student_dir(state) / "mastery-state.json").read_text(encoding="utf-8")
-        )
-        for kp, rec in (ms.get("knowledge_points") or {}).items():
-            kp_stars[kp] = int(rec.get("stars", 0))
+        ctx = state.get("platform") or {}
+        if ctx.get("userId"):
+            from apps.integration import config as _cfg
+            from apps.integration import persistence as _persist
+            if not _cfg.demo_mode():
+                kp_stars = _persist.read_mastery(
+                    user_id=str(ctx["userId"]),
+                    course_id=ctx.get("courseId") or "",
+                    publication_id=ctx.get("publicationId") or "",
+                )
     except Exception:
-        pass
+        kp_stars = {}
 
     return {
         "lesson_plan": plan,
@@ -1268,7 +1275,7 @@ def stage_opening(state: ClassroomState, next_phase: str) -> tuple[str, bool]:
         goal = "接下来请看本节课的讲解视频，看完我们再一起复述和讨论"
     plain = f"好，我们进入「{name}」。{goal}。"
     if not llm_available():
-        return plain, False
+        return NO_LLM_NOTICE, False
     polished = llm_chat(
         "你是一名课堂智能体。用一两句话自然宣布进入下一个教学环节。"
         "中文口语，不要用 Markdown，不要提具体几分钟。",
@@ -1630,7 +1637,7 @@ def teach(state: ClassroomState) -> dict:
             updates["llm_used"] = True
             return updates
 
-    updates["reply_text"] = plain
+    updates["reply_text"] = NO_LLM_NOTICE if not llm_available() else plain
     updates["llm_used"] = False
     return updates
 
@@ -2026,9 +2033,10 @@ def advance_stage(state: ClassroomState) -> dict:
             out["pending_question"] = queue[0]
             out["current_question"] = queue[0]["question"]
             out["unresolved"] = [q["kp_id"] for q in queue]
-            out["reply_text"] = (
-                out["reply_text"] + f"\n\n先来第一问：{queue[0]['question']}"
-            )
+            if llm_available():
+                out["reply_text"] = (
+                    out["reply_text"] + f"\n\n先来第一问：{queue[0]['question']}"
+                )
     if snapshot:
         out["stage_snapshots"] = [snapshot]
     return out
@@ -2042,7 +2050,7 @@ def _ending_remark(state: ClassroomState, pending_snapshot: dict | None) -> tupl
     """
     plain = _ending_summary(state, pending_snapshot=pending_snapshot)
     if not llm_available():
-        return plain, False
+        return NO_LLM_NOTICE, False
     stars = state.get("kp_stars") or {}
     detail = "、".join(
         f"{kp_title(kp, state.get('lesson_id'))} {v} 星"
@@ -2084,164 +2092,13 @@ def _ending_summary(state: ClassroomState, pending_snapshot: dict | None = None)
 
 
 def write_state(state: ClassroomState) -> dict:
-    """落盘（规范第 3 节）：DIALOGUE-LOG.md + dialogue-log.json +
-    mastery-state.json + mastery-history.json（追加，不覆盖历史）。"""
-    try:
-        _write_dialogue_log(state)
-        # 心跳轮不进对话流水：一节课上百次心跳会把流水撑满空记录，学情导出全是噪音。
-        # 而掌握档案是幂等覆盖写的，重复写没有副作用。
-        if not state.get("tick_only"):
-            _append_dialogue_json(state)
-        _write_mastery_state(state)
-        _append_mastery_history(state)
-    except Exception as e:  # 落盘失败不阻断教学，也绝不能把内部报错说给学生听
-        # 只留痕到服务端日志，不动 reply_text —— 否则 "[warn] 落盘失败" 会原样
-        # 出现在老师对学生的回复里，把内部状态泄露给课堂。
-        print(f"[落盘失败] {type(e).__name__}: {e}", file=sys.stderr)
-    return {}
+    """持久化已迁到会话层：学习数据（消息/掌握度/事件/报告）由
+    apps.integration.persistence 写 student schema，不再写本地文件。
 
-
-def _write_dialogue_log(state: ClassroomState) -> None:
-    question_notes = "\n".join(
-        f"- [{note.get('phase')}] {note.get('question')}（状态：{note.get('status', '继续引导中')}；{note.get('note')}；学生推导：{note.get('student_solution', '尚未推导出来')}）"
-        for note in (state.get("unresolved_question_notes") or [])
-    ) or "（无）"
-    content = f"""# DIALOGUE-LOG
-
-## 会话状态
-- student_id: {state.get('student_id')}
-- lesson_id: {state.get('lesson_id')}
-- speaker: {state.get('speaker')}
-
-### 编排器
-- host_phase: {state.get('host_phase')}
-- active_segment_id: {state.get('active_segment_id') or '无'}
-- now: {state.get('now')}
-- lesson_started_at: {state.get('lesson_started_at') or '无'}
-- stage_started_at: {state.get('stage_started_at') or '无'}
-- stage_elapsed_minutes: {state.get('stage_elapsed_minutes')}
-- lesson_elapsed_minutes: {state.get('lesson_elapsed_minutes')}
-- stage_budget_minutes: {state.get('stage_budget_minutes')}
-- remaining_stages: {state.get('remaining_stages') or '无'}
-- advance_reason: {state.get('advance_reason') or '无'}
-
-### 教学
-- phase: {STAGE_NAMES.get(state.get('host_phase'), state.get('host_phase'))}
-- current_target: {state.get('current_target') or '无'}
-- current_question: {state.get('current_question') or '无'}
-- attempts: {state.get('attempts', 0)}
-- mastered: {state.get('mastered') or '无'}
-- unresolved: {state.get('unresolved') or '无'}
-
-### 已记录的探究问题
-{question_notes}
-
-### 学生
-- student_status: {state.get('student_status')}
-
-## 本轮证据
-{(chr(10) + '- ').join(state.get('turn_evidence') or ['（无）'])}
-
-## 下次重点
-- {state.get('unresolved') and '继续追问未关闭目标：' + '、'.join(state['unresolved']) or '无'}
-"""
-    (ROOT / "runtime/DIALOGUE-LOG.md").write_text(content, encoding="utf-8")
-
-
-def _append_dialogue_json(state: ClassroomState) -> None:
-    path = ROOT / "runtime/data/dialogue-log.json"
-    data = json.loads(path.read_text(encoding="utf-8"))
-    data["student_id"] = state.get("student_id")
-    data["session_id"] = state.get("session_id")
-    notes = data.setdefault("unresolved_question_notes", [])
-    existing_notes = {
-        (item.get("phase"), item.get("kp_id"), item.get("question"), item.get("recorded_at")): item
-        for item in notes if isinstance(item, dict)
-    }
-    for item in state.get("unresolved_question_notes") or []:
-        key = (item.get("phase"), item.get("kp_id"), item.get("question"), item.get("recorded_at"))
-        if key in existing_notes:
-            existing_notes[key].update(item)
-        else:
-            notes.append(item)
-            existing_notes[key] = item
-    data["messages"].append({
-        "turn_at": state.get("now"),
-        "phase": state.get("host_phase"),
-        "speaker": state.get("speaker"),
-        "current_question": state.get("current_question"),
-        "student_message": state.get("student_message", ""),
-        "reply_text": state.get("reply_text", ""),
-        "advance_reason": state.get("advance_reason"),
-    })
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-
-
-def _student_dir(state: ClassroomState) -> Path:
-    """每个学生一个目录（runtime/students/<student_id>/），掌握档案按学生隔离。
-
-    ⚠️ 2026-09-21 实测中招：星级基线曾读共享的 runtime/data/mastery-state.json，
-    导致上一个学生的星级渗进下一个学生的新会话。学生档案必须按 student_id 分开。
+    这个节点保留为占位——图拓扑（judge_advance/advance_stage → write_state →
+    format_reply）依赖它，现在它什么都不做。
     """
-    raw = str(state.get("student_id") or "default")
-    safe = re.sub(r"[^\w\-.]", "_", raw)
-    return ROOT / "runtime" / "students" / safe
-
-
-def _write_mastery_state(state: ClassroomState) -> None:
-    d = _student_dir(state)
-    d.mkdir(parents=True, exist_ok=True)
-    path = d / "mastery-state.json"
-    data: dict = {"student_id": state.get("student_id"),
-                  "updated_at": None, "knowledge_points": {}}
-    if path.is_file():
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            pass
-    data["student_id"] = state.get("student_id")
-    data["updated_at"] = state.get("now")
-    kps = data.get("knowledge_points") or {}
-    for kp, stars in (state.get("kp_stars") or {}).items():
-        meta = (state.get("kp_meta") or {}).get(kp, {})
-        rec = kps.get(kp) or {"assessment_status": "未考核"}
-        rec.update({
-            "kp_id": kp,
-            "stars": stars,
-            "status": STAR_STATUS.get(stars, "未检测"),
-            "last_source": meta.get("last_source", rec.get("last_source", "dialogue")),
-            "last_stage": meta.get("last_stage", rec.get("last_stage")),
-            "last_evidence": meta.get("last_evidence", rec.get("last_evidence")),
-            "updated_at": state.get("now"),
-        })
-        kps[kp] = rec
-    data["knowledge_points"] = kps
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-
-
-def _append_mastery_history(state: ClassroomState) -> None:
-    d = _student_dir(state)
-    d.mkdir(parents=True, exist_ok=True)
-    path = d / "mastery-history.json"
-    hist: list = []
-    if path.is_file():
-        try:
-            hist = json.loads(path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            hist = []
-    existing_changes = sum(1 for h in hist if h.get("type") == "mastery_change")
-    for i, upd in enumerate(state.get("mastery_updates") or [], start=1):
-        hist.append({
-            "type": "mastery_change",
-            "history_id": f"mh-{existing_changes + i:03d}",
-            "student_id": state.get("student_id"),
-            **upd,
-        })
-    # 快照按条数去重：state 里累计的快照数多于文件里已有的 → 补写新增部分
-    existing_snaps = sum(1 for h in hist if h.get("type") == "stage_snapshot")
-    for snap in (state.get("stage_snapshots") or [])[existing_snaps:]:
-        hist.append(snap)
-    path.write_text(json.dumps(hist, ensure_ascii=False, indent=2), encoding="utf-8")
+    return {}
 
 
 def format_reply(state: ClassroomState) -> dict:

@@ -173,6 +173,22 @@ def upsert_mastery(session_key: str, user_id: str, course_id: str,
         connection.commit()
 
 
+def read_mastery(user_id: str, course_id: str, publication_id: str) -> Dict[str, int]:
+    """学生在某课程/发布版下各知识点的星级（新会话基线，跨课次延续）。
+
+    只 SELECT 不写；读不到（库未配置 / 无记录）由调用方兜底为空。
+    """
+    if config.demo_mode():
+        return {}
+    with _db() as connection:
+        rows = connection.execute(
+            "SELECT knowledge_point_id, stars FROM student.knowledge_mastery "
+            "WHERE user_id = %s AND course_id = %s AND publication_id = %s",
+            (user_id, course_id, publication_id),
+        ).fetchall()
+    return {str(r[0]): int(r[1]) for r in rows}
+
+
 def upsert_report(session_key: str, user_id: str, course_id: str,
                   publication_id: str, payload: dict) -> None:
     """课后报告：session_key 主键，重复下课覆盖为最新。"""

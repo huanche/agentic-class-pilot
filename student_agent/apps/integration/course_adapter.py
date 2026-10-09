@@ -190,6 +190,10 @@ def load_plan_for_session(state) -> Optional[dict]:
         for kp in context.evaluation.knowledge_points
     ]
 
+    # 有课堂（classroom）的课才用「整段视频替代讲解」；纯文本课（无课堂）由 AI 逐段讲解，
+    # 否则讲解阶段会静默等一个并不存在的 video，学生只能卡在开场白。
+    delivery = "video" if (selected and selected.classroom) else "narration"
+
     def segment_knowledge_ids(segment) -> List[str]:
         haystack = f"{segment.title}\n{segment.content}".lower()
         matched = []
@@ -214,7 +218,7 @@ def load_plan_for_session(state) -> Optional[dict]:
         "title": selected.title if selected else context.course_title,
         "total_minutes": total_minutes,
         "stages": [
-            {"id": "guided_learning", "name": "讲解", "enabled": True, "delivery": "video",
+            {"id": "guided_learning", "name": "讲解", "enabled": True, "delivery": delivery,
              "minutes": max(10, total_minutes // 2), "advance_when": "evidence"},
             {"id": "recap_discussion", "name": "复述讨论", "enabled": True,
              "minutes": max(5, total_minutes // 4), "advance_when": "either"},
