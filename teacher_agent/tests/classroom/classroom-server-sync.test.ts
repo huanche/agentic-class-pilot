@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   canSyncClassroomSnapshot,
+  createClassroomSnapshotSyncQueue,
   syncClassroomSnapshot,
 } from '@/lib/classroom/classroom-server-sync';
 import type { Scene, Stage } from '@/lib/types/stage';
@@ -9,12 +10,12 @@ const stage = { id: 'classroom-1', name: 'Lesson' } as Stage;
 const scenes = [{ id: 'scene-1', stageId: stage.id, type: 'slide' }] as Scene[];
 
 describe('classroom server sync', () => {
-  it('only syncs a complete non-empty snapshot for the current classroom', () => {
+  it('syncs partial and complete non-empty snapshots for the current classroom', () => {
     expect(canSyncClassroomSnapshot(stage.id, { stage, scenes, generationComplete: true })).toBe(
       true,
     );
     expect(canSyncClassroomSnapshot(stage.id, { stage, scenes, generationComplete: false })).toBe(
-      false,
+      true,
     );
     expect(canSyncClassroomSnapshot('another', { stage, scenes, generationComplete: true })).toBe(
       false,
@@ -22,6 +23,48 @@ describe('classroom server sync', () => {
     expect(canSyncClassroomSnapshot(stage.id, { stage, scenes: [], generationComplete: true })).toBe(
       false,
     );
+  });
+
+  it('serializes writes and keeps the newest generated page list', async () => {
+    vi.useFakeTimers();
+    try {
+      let releaseFirst!: () => void;
+      const firstWrite = new Promise<void>((resolve) => { releaseFirst = resolve; });
+      const send = vi.fn().mockReturnValueOnce(firstWrite).mockResolvedValue(undefined);
+      const queue = createClassroomSnapshotSyncQueue(send, undefined, 10);
+      const twoPages = { stage, scenes: [...scenes, { ...scenes[0], id: 'scene-2' }] };
+      const threePages = { stage, scenes: [...twoPages.scenes, { ...scenes[0], id: 'scene-3' }] };
+
+      queue.enqueue({ stage, scenes });
+      await vi.advanceTimersByTimeAsync(10);
+      queue.enqueue(twoPages);
+      queue.enqueue(threePages);
+      await vi.advanceTimersByTimeAsync(10);
+      expect(send).toHaveBeenCalledTimes(1);
+      releaseFirst();
+      await vi.advanceTimersByTimeAsync(10);
+      expect(send).toHaveBeenCalledTimes(2);
+      expect(send).toHaveBeenLastCalledWith(threePages);
+      queue.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('retries a failed save with the latest snapshot', async () => {
+    vi.useFakeTimers();
+    try {
+      const send = vi.fn().mockRejectedValueOnce(new Error('offline')).mockResolvedValue(undefined);
+      const queue = createClassroomSnapshotSyncQueue(send, undefined, 10);
+      queue.enqueue({ stage, scenes });
+      await vi.advanceTimersByTimeAsync(10);
+      expect(send).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(send).toHaveBeenCalledTimes(2);
+      queue.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('posts the full stage and scene list to classroom storage', async () => {

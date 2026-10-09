@@ -25,7 +25,7 @@ import {
 import { isIncompleteEnhancedScene } from '@/lib/learning-skills/enhanced-courseware-quality';
 import {
   canSyncClassroomSnapshot,
-  syncClassroomSnapshot,
+  createClassroomSnapshotSyncQueue,
 } from '@/lib/classroom/classroom-server-sync';
 
 const log = createLogger('Classroom');
@@ -50,6 +50,7 @@ export default function ClassroomDetailPage() {
   const [error, setError] = useState<string | null>(null);
 
   const generationStartedRef = useRef(false);
+  const snapshotSyncRef = useRef<ReturnType<typeof createClassroomSnapshotSyncQueue> | null>(null);
 
   const { generateRemaining, retrySingleOutline, stop } = useSceneGenerator({
     onComplete: () => {
@@ -140,24 +141,25 @@ export default function ClassroomDetailPage() {
     };
   }, [classroomId, loadClassroom, stop]);
 
-  // Course-space generation intentionally enters the classroom after the first
-  // scene so the teacher can start reviewing immediately. The remaining scenes
-  // are generated in this page and persisted to IndexedDB by the stage store.
-  // Mirror the completed snapshot back to the server as well: student players
-  // load the server copy and otherwise remain pinned to the first scene that was
-  // attached during generation-preview. Keeping this effect active after
-  // completion also publishes later teacher edits to the same classroom body.
+  useEffect(() => {
+    const queue = createClassroomSnapshotSyncQueue(undefined, (syncError) =>
+      log.error('[Classroom] Failed to sync classroom; retrying:', syncError),
+    );
+    snapshotSyncRef.current = queue;
+    return () => {
+      queue.dispose();
+      snapshotSyncRef.current = null;
+    };
+  }, [classroomId]);
+
+  // Course-space generation enters after the first scene. Save each new scene
+  // to the server as it arrives, as well as subsequent teacher edits; the
+  // student player reads this server copy rather than browser IndexedDB.
   useEffect(() => {
     if (loading || error || playerOnlyEmbed) return;
     const snapshot = { stage: syncStage, scenes: syncScenes, generationComplete };
     if (!canSyncClassroomSnapshot(classroomId, snapshot)) return;
-
-    const timeout = window.setTimeout(() => {
-      void syncClassroomSnapshot({ stage: snapshot.stage, scenes: snapshot.scenes }).catch(
-        (syncError) => log.error('[Classroom] Failed to sync completed classroom:', syncError),
-      );
-    }, 500);
-    return () => window.clearTimeout(timeout);
+    snapshotSyncRef.current?.enqueue({ stage: snapshot.stage, scenes: snapshot.scenes });
   }, [classroomId, error, generationComplete, loading, playerOnlyEmbed, syncScenes, syncStage]);
 
   // Auto-resume generation for pending outlines
