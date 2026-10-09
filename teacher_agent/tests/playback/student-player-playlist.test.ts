@@ -13,16 +13,20 @@ const scenes = [
 ];
 
 describe('student player playlist', () => {
-  it('advances to the next slide while skipping activity scenes', () => {
-    expect(nextStudentPlaybackSlide(scenes, 'slide-1')?.id).toBe('slide-2');
+  it('advances through activity scenes in lesson order', () => {
+    expect(nextStudentPlaybackSlide(scenes, 'slide-1')?.id).toBe('quiz-1');
+    expect(nextStudentPlaybackSlide(scenes, 'quiz-1')?.id).toBe('interactive-1');
+    expect(nextStudentPlaybackSlide(scenes, 'interactive-1')?.id).toBe('slide-2');
   });
 
-  it('does not expose an activity scene as the next video page', () => {
-    expect(nextStudentPlaybackSlide(scenes, 'quiz-1')?.id).toBe('slide-2');
+  it('includes the final activity', () => {
+    expect(nextStudentPlaybackSlide(scenes, 'slide-2')?.id).toBe('pbl-1');
+    expect(nextStudentPlaybackSlide(scenes, 'pbl-1')).toBeUndefined();
   });
 
-  it('ends after the final slide even when activities follow it', () => {
+  it('ends only after the final scene', () => {
     expect(isFinalStudentPlaybackSlide(scenes, 'slide-1')).toBe(false);
-    expect(isFinalStudentPlaybackSlide(scenes, 'slide-2')).toBe(true);
+    expect(isFinalStudentPlaybackSlide(scenes, 'slide-2')).toBe(false);
+    expect(isFinalStudentPlaybackSlide(scenes, 'pbl-1')).toBe(true);
   });
 });

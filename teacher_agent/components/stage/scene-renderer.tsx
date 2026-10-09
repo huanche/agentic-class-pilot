@@ -10,6 +10,7 @@ import { PBLRenderer } from '../scene-renderers/pbl-renderer';
 interface SceneRendererProps {
   readonly scene: Scene;
   readonly mode: StageMode;
+  readonly studentPlayer?: boolean;
 }
 
 /**
@@ -17,7 +18,7 @@ interface SceneRendererProps {
  * directly as a top-level takeover — SceneRenderer is only on the playback
  * path, so it does not branch on `mode === 'edit'`.
  */
-export function SceneRenderer({ scene, mode }: SceneRendererProps) {
+export function SceneRenderer({ scene, mode, studentPlayer }: SceneRendererProps) {
   const renderer = useMemo(() => {
     switch (scene.type) {
       case 'slide':
@@ -31,6 +32,7 @@ export function SceneRenderer({ scene, mode }: SceneRendererProps) {
             questions={scene.content.questions}
             sceneId={scene.id}
             stageId={scene.stageId}
+            studentPlayer={studentPlayer}
           />
         );
       case 'interactive':
@@ -42,7 +44,7 @@ export function SceneRenderer({ scene, mode }: SceneRendererProps) {
       default:
         return <div>Unknown scene type</div>;
     }
-  }, [scene, mode]);
+  }, [scene, mode, studentPlayer]);
 
   return <div className="w-full h-full">{renderer}</div>;
 }
