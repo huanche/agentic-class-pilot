@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  isAutoPlayedStudentScene,
   isFinalStudentPlaybackSlide,
   nextStudentPlaybackSlide,
 } from '@/lib/playback/student-player-playlist';
@@ -13,6 +14,13 @@ const scenes = [
 ];
 
 describe('student player playlist', () => {
+  it('auto-plays narrated slides and scripted demos, but waits for quiz answers', () => {
+    expect(isAutoPlayedStudentScene(scenes[0])).toBe(true);
+    expect(isAutoPlayedStudentScene(scenes[2])).toBe(true);
+    expect(isAutoPlayedStudentScene(scenes[1])).toBe(false);
+    expect(isAutoPlayedStudentScene(scenes[4])).toBe(false);
+  });
+
   it('advances through activity scenes in lesson order', () => {
     expect(nextStudentPlaybackSlide(scenes, 'slide-1')?.id).toBe('quiz-1');
     expect(nextStudentPlaybackSlide(scenes, 'quiz-1')?.id).toBe('interactive-1');

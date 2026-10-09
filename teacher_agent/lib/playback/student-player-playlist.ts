@@ -2,6 +2,11 @@ import type { Scene } from '@/lib/types/stage';
 
 type PlaylistScene = Pick<Scene, 'id' | 'type'>;
 
+/** Narrated slides and scripted widget demos run without learner input. */
+export function isAutoPlayedStudentScene(scene: PlaylistScene): boolean {
+  return scene.type === 'slide' || scene.type === 'interactive';
+}
+
 /** Return the next scene in the complete student lesson. */
 export function nextStudentPlaybackSlide(
   scenes: readonly PlaylistScene[],
