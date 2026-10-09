@@ -16,6 +16,7 @@ import { ClassroomCompletePageConnected } from '@/components/scene-renderers/cla
 interface CanvasAreaProps extends CanvasToolbarProps {
   readonly currentScene: Scene | null;
   readonly mode: StageMode;
+  readonly studentPlayer?: boolean;
   readonly hideToolbar?: boolean;
   readonly isPendingScene?: boolean;
   readonly isCourseComplete?: boolean;
@@ -28,6 +29,7 @@ export function CanvasArea({
   currentSceneIndex,
   scenesCount,
   mode,
+  studentPlayer,
   engineState,
   isLiveSession,
   isSoftClosing,
@@ -117,7 +119,7 @@ export function CanvasArea({
           {currentScene && !whiteboardOpen && (
             <div className="absolute inset-0">
               <SceneProvider>
-                <SceneRenderer scene={currentScene} mode={mode} />
+                <SceneRenderer scene={currentScene} mode={mode} studentPlayer={studentPlayer} />
               </SceneProvider>
             </div>
           )}

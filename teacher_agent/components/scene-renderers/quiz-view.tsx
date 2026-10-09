@@ -18,6 +18,7 @@ import { useI18n } from '@/lib/hooks/use-i18n';
 import { getCurrentModelConfig } from '@/lib/utils/model-config';
 import { createLogger } from '@/lib/logger';
 import { useStageStore } from '@/lib/store';
+import { postPlayerHostEvent } from '@/lib/integration/player-host-events';
 
 const log = createLogger('QuizView');
 import type { QuizQuestion } from '@/lib/types/stage';
@@ -51,6 +52,7 @@ interface QuizViewProps {
   readonly questions: QuizQuestion[];
   readonly sceneId: string;
   readonly stageId: string;
+  readonly studentPlayer?: boolean;
 }
 
 const QuizMathText = memo(function QuizMathText({
@@ -697,7 +699,7 @@ function ScoreBanner({
 
 // ─── Main Component ─────────────────────────────────────────────────────────
 
-export function QuizView({ questions, sceneId, stageId }: QuizViewProps) {
+export function QuizView({ questions, sceneId, stageId, studentPlayer }: QuizViewProps) {
   const { t, locale } = useI18n();
 
   const [phase, setPhase] = useState<Phase>('not_started');
@@ -882,14 +884,16 @@ export function QuizView({ questions, sceneId, stageId }: QuizViewProps) {
   // requiring a teacher click.
   useEffect(() => {
     if (phase !== 'reviewing') return;
+    if (studentPlayer) postPlayerHostEvent('SCENE_COMPLETED', sceneId);
     const timer = window.setTimeout(() => {
       const store = useStageStore.getState();
       const index = store.scenes.findIndex((scene) => scene.id === sceneId);
       const next = store.scenes[index + 1];
       if (next) store.setCurrentSceneId(next.id);
+      else if (studentPlayer) postPlayerHostEvent('PLAYBACK_ENDED', sceneId);
     }, 3000);
     return () => window.clearTimeout(timer);
-  }, [phase, sceneId]);
+  }, [phase, sceneId, studentPlayer]);
 
   const handleRetry = useCallback(async () => {
     if (!attemptId || retrying) return;

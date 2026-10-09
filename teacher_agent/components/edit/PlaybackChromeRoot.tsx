@@ -142,7 +142,8 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
     const emittedCompletionRef = useRef<string | null>(null);
 
     useEffect(() => {
-      if (!playbackCompleted || !currentScene) return;
+      if (!playbackCompleted || !currentScene || (videoOnly && currentScene.type !== 'slide'))
+        return;
       const completionKey = `${currentScene.id}:${currentPlaybackActionIndex ?? -1}`;
       if (emittedCompletionRef.current === completionKey) return;
       emittedCompletionRef.current = completionKey;
@@ -368,20 +369,6 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
     const sceneEpochRef = useRef(0);
     // When true, the next engine init will auto-start playback (for auto-play scene advance)
     const autoStartRef = useRef(false);
-
-    // The student video phase is a lecture playlist. Assessment and project
-    // scenes belong to the later interactive learning phases, so they must not
-    // become invisible blockers inside the chrome-free player embed.
-    useEffect(() => {
-      if (!videoOnly || !currentScene || currentScene.type === 'slide') return;
-      const nextSlide = nextStudentPlaybackSlide(scenes, currentScene.id);
-      if (nextSlide) {
-        autoStartRef.current = true;
-        setCurrentSceneId(nextSlide.id);
-      } else {
-        setPlaybackCompleted(true);
-      }
-    }, [currentScene, scenes, setCurrentSceneId, videoOnly]);
 
     // Discussion buffer-level pause state (distinct from soft-pause which aborts SSE)
     const [isDiscussionPaused, setIsDiscussionPaused] = useState(false);
@@ -893,7 +880,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
             }
             // Auto-play: advance to next scene after a short pause
             const { autoPlayLecture } = useSettingsStore.getState();
-            if (videoOnly || autoPlayLecture) {
+            if (videoOnly ? currentScene.type === 'slide' : autoPlayLecture) {
               const plannedSeconds = getSceneDurationSeconds(currentScene, stage, scenes);
               // The student player is a media playlist, not a paced teacher
               // presentation. Once narration ends, move on immediately rather
@@ -1033,7 +1020,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
     // Interactive HTML scenes advance when their accumulated PLAYING time is
     // exhausted. Pausing freezes both the display and the transition.
     useEffect(() => {
-      if (!currentScene || currentScene.type !== 'interactive') return;
+      if (videoOnly || !currentScene || currentScene.type !== 'interactive') return;
       const durationSeconds = getSceneDurationSeconds(currentScene, stage, scenes);
       if (sceneElapsedSeconds < durationSeconds) return;
       engineRef.current?.stop();
@@ -1044,7 +1031,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
         autoStartRef.current = true;
         store.setCurrentSceneId(next.id);
       }
-    }, [currentScene, sceneElapsedSeconds, scenes, stage]);
+    }, [currentScene, sceneElapsedSeconds, scenes, stage, videoOnly]);
 
     /**
      * Handle discussion SSE — POST /api/chat and push events to engine
@@ -1526,23 +1513,46 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
                 surface the presentation toggle as a floating control once
                 playback starts. Completion events auto-exit fullscreen (see
                 the completion effect) so the host flow's next stage shows. */}
-            {videoOnlyPlaybackStarted && (
-              <button
-                type="button"
-                onClick={togglePresentation}
-                title={isPresenting ? t('stage.exitFullscreen') : t('stage.fullscreen')}
-                aria-label={isPresenting ? t('stage.exitFullscreen') : t('stage.fullscreen')}
-                className="absolute bottom-4 right-4 z-30 rounded-full bg-slate-950/70 p-2.5 text-white shadow-lg backdrop-blur-md transition-colors hover:bg-slate-900"
-              >
-                {isPresenting ? (
-                  <Minimize2 className="h-5 w-5" />
-                ) : (
-                  <Maximize2 className="h-5 w-5" />
+            {(videoOnlyPlaybackStarted ||
+              (videoOnly && currentScene && currentScene.type !== 'slide')) && (
+              <div className="absolute bottom-4 right-4 z-30 flex items-center gap-2">
+                {currentScene && currentScene.type !== 'slide' && currentScene.type !== 'quiz' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const nextScene = nextStudentPlaybackSlide(scenes, currentScene.id);
+                      postPlayerHostEvent('SCENE_COMPLETED', currentScene.id);
+                      emittedCompletionRef.current = `${currentScene.id}:${currentPlaybackActionIndex ?? -1}`;
+                      if (nextScene) {
+                        autoStartRef.current = true;
+                        void gatedSceneSwitch(nextScene.id);
+                      } else {
+                        postPlayerHostEvent('PLAYBACK_ENDED', currentScene.id);
+                      }
+                    }}
+                    className="rounded-full bg-slate-950/80 px-4 py-2.5 text-sm font-medium text-white shadow-lg backdrop-blur-md hover:bg-slate-900"
+                  >
+                    下一页 →
+                  </button>
                 )}
-              </button>
+                <button
+                  type="button"
+                  onClick={togglePresentation}
+                  title={isPresenting ? t('stage.exitFullscreen') : t('stage.fullscreen')}
+                  aria-label={isPresenting ? t('stage.exitFullscreen') : t('stage.fullscreen')}
+                  className="rounded-full bg-slate-950/70 p-2.5 text-white shadow-lg backdrop-blur-md transition-colors hover:bg-slate-900"
+                >
+                  {isPresenting ? (
+                    <Minimize2 className="h-5 w-5" />
+                  ) : (
+                    <Maximize2 className="h-5 w-5" />
+                  )}
+                </button>
+              </div>
             )}
             <CanvasArea
               currentScene={currentScene}
+              studentPlayer={videoOnly}
               currentSceneIndex={currentSceneIndex}
               scenesCount={totalScenesCount}
               mode={mode}
