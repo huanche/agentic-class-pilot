@@ -42,6 +42,10 @@ import {
   getCourseDurationSeconds,
   getSceneDurationSeconds,
 } from '@/lib/playback/timing-display';
+import {
+  isFinalStudentPlaybackSlide,
+  nextStudentPlaybackSlide,
+} from '@/lib/playback/student-player-playlist';
 import type { AudioIndicatorState } from '@/components/roundtable/audio-indicator';
 import type { Action, DiscussionAction, SpeechAction } from '@/lib/types/action';
 import { cn } from '@/lib/utils';
@@ -94,7 +98,10 @@ interface PlaybackChromeRootProps {
  * the engine wind down cleanly.
  */
 export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackChromeRootProps>(
-  function PlaybackChromeRoot({ onRetryOutline, canEnterProMode, onEnterProMode, videoOnly, hidePlaybackTiming }, ref) {
+  function PlaybackChromeRoot(
+    { onRetryOutline, canEnterProMode, onEnterProMode, videoOnly, hidePlaybackTiming },
+    ref,
+  ) {
     const { t } = useI18n();
     const {
       mode,
@@ -140,14 +147,17 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
       if (emittedCompletionRef.current === completionKey) return;
       emittedCompletionRef.current = completionKey;
       postPlayerHostEvent('SCENE_COMPLETED', currentScene.id);
-      if (scenes.findIndex((scene) => scene.id === currentScene.id) === scenes.length - 1) {
+      const isFinalPlaybackScene = videoOnly
+        ? isFinalStudentPlaybackSlide(scenes, currentScene.id)
+        : scenes.findIndex((scene) => scene.id === currentScene.id) === scenes.length - 1;
+      if (isFinalPlaybackScene) {
         postPlayerHostEvent('PLAYBACK_ENDED', currentScene.id);
       }
       // Player-only embed: the host student flow advances to its next stage
       // on this event — leave fullscreen so the follow-up UI is visible.
       // Gated on videoOnly: a presenting teacher must not be kicked out of
       // presentation fullscreen at every scene boundary.
-      if (videoOnly && document.fullscreenElement) {
+      if (videoOnly && isFinalPlaybackScene && document.fullscreenElement) {
         void document.exitFullscreen().catch(() => {});
       }
     }, [currentPlaybackActionIndex, currentScene, playbackCompleted, scenes, videoOnly]);
@@ -358,6 +368,21 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
     const sceneEpochRef = useRef(0);
     // When true, the next engine init will auto-start playback (for auto-play scene advance)
     const autoStartRef = useRef(false);
+
+    // The student video phase is a lecture playlist. Assessment and project
+    // scenes belong to the later interactive learning phases, so they must not
+    // become invisible blockers inside the chrome-free player embed.
+    useEffect(() => {
+      if (!videoOnly || !currentScene || currentScene.type === 'slide') return;
+      const nextSlide = nextStudentPlaybackSlide(scenes, currentScene.id);
+      if (nextSlide) {
+        autoStartRef.current = true;
+        setCurrentSceneId(nextSlide.id);
+      } else {
+        setPlaybackCompleted(true);
+      }
+    }, [currentScene, scenes, setCurrentSceneId, videoOnly]);
+
     // Discussion buffer-level pause state (distinct from soft-pause which aborts SSE)
     const [isDiscussionPaused, setIsDiscussionPaused] = useState(false);
 
@@ -870,28 +895,35 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
             const { autoPlayLecture } = useSettingsStore.getState();
             if (videoOnly || autoPlayLecture) {
               const plannedSeconds = getSceneDurationSeconds(currentScene, stage, scenes);
-              const transitionDelayMs = Math.max(
-                250,
-                (plannedSeconds - sceneElapsedSecondsRef.current) * 1000,
-              );
+              // The student player is a media playlist, not a paced teacher
+              // presentation. Once narration ends, move on immediately rather
+              // than padding the slide to its lesson-plan duration.
+              const transitionDelayMs = videoOnly
+                ? 300
+                : Math.max(250, (plannedSeconds - sceneElapsedSecondsRef.current) * 1000);
               setTimeout(() => {
                 const stageState = useStageStore.getState();
                 if (!videoOnly && !useSettingsStore.getState().autoPlayLecture) return;
                 const allScenes = stageState.scenes;
                 const curId = stageState.currentSceneId;
                 const idx = allScenes.findIndex((s) => s.id === curId);
-                if (idx >= 0 && idx < allScenes.length - 1) {
+                const nextScene = videoOnly
+                  ? nextStudentPlaybackSlide(allScenes, curId)
+                  : allScenes[idx + 1];
+                if (idx >= 0 && nextScene) {
                   const currentScene = allScenes[idx];
                   if (
-                    currentScene.type === 'quiz' ||
-                    currentScene.type === 'interactive' ||
-                    currentScene.type === 'pbl'
+                    !videoOnly &&
+                    (currentScene.type === 'quiz' ||
+                      currentScene.type === 'interactive' ||
+                      currentScene.type === 'pbl')
                   ) {
                     return;
                   }
                   autoStartRef.current = true;
-                  stageState.setCurrentSceneId(allScenes[idx + 1].id);
+                  stageState.setCurrentSceneId(nextScene.id);
                 } else if (
+                  !videoOnly &&
                   idx === allScenes.length - 1 &&
                   stageState.generatingOutlines.length > 0
                 ) {

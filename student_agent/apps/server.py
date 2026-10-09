@@ -1208,6 +1208,7 @@ class EventIn(BaseModel):
     segment_id: str | None = None  # media_done 时可带上刚播完的素材 id（只记录，不强校验）
     scene_id: str | None = None    # 平台播放器报上来的场景 id：学情按场景幂等记进度
     event_id: str | None = None    # 播放器事件 id：同一事件重复上报时幂等
+    final: bool = True             # False 只记单页进度；True 才结束整段视频并推进阶段
 
 
 @app.post("/api/session/{sid}/begin")
@@ -1240,7 +1241,10 @@ def media_done(sid: str, body: EventIn | None = None) -> dict:
     视频播放期间时间照常计入课堂时长；讲解阶段不会因时间预算被切走。
     """
     _running(sid)
-    st = _step(sid, "", "host", tick_only=True, external_event=EVENT_MEDIA_DONE)
+    if body is not None and not body.final:
+        st = _get(sid)["state"]
+    else:
+        st = _step(sid, "", "host", tick_only=True, external_event=EVENT_MEDIA_DONE)
     # 平台链路：记录播放进度（幂等键 = scene/segment），教师端据此看"看到哪了"
     s = _get(sid)
     ctx = s.get("platform") or st.get("platform") or {}

@@ -81,9 +81,6 @@ export default function StudentApp() {
       // 平台播放器适配层：把课堂视频区换成教师端播放器 iframe。
       // 只在平台入口注册 —— 独立态没有 platform lesson，适配器 mount 会抛错。
       registerVideoPlayer(platformPlayerAdapter);
-      import("../platform/playerAdapter.js").catch(function (error) {
-        console.error("播放器适配层加载失败", error);
-      });
       // 平台深链：**先**建立会话并把 hash 指到对应课程的课时列表，**再**加载
       // legacy 应用 —— 它启动即按当前 hash 渲染，空 hash 会先闪一下
       // 「我的课程」页（/app#）再跳到选择课时。会话先行也保证课程接口能带上

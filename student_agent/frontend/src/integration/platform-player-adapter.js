@@ -40,9 +40,11 @@ export const platformPlayerAdapter = {
       if (event.origin !== playerOrigin || event.source !== iframe.contentWindow) return;
       const message = playerMessage(event.data);
       if (!message) return;
-      if ((message.type === "PLAYBACK_ENDED" || message.type === "CLASSROOM_COMPLETED") && !ended) {
+      if (message.type === "SCENE_COMPLETED" && context.onSceneCompleted) {
+        context.onSceneCompleted(message.sceneId, message.eventId);
+      } else if ((message.type === "PLAYBACK_ENDED" || message.type === "CLASSROOM_COMPLETED") && !ended) {
         ended = true;
-        // 透传场景/事件 id：平台侧按场景幂等记进度，适配器边界丢了这个信息就补不回来
+        // Only the whole-playback event advances the student learning phase.
         context.onEnded(message.sceneId, message.eventId);
       } else if (message.type === "PLAYER_ERROR" && context.onError) {
         context.onError(new Error(message.message || "播放器运行失败"));

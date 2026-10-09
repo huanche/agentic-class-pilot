@@ -134,12 +134,13 @@ export function sendMessage(sessionId, text) {
     .then(normalizeTurn);
 }
 
-export function notifyMediaDone(sessionId, sceneId, eventId) {
+export function notifyMediaDone(sessionId, sceneId, eventId, final) {
   /* 带上场景/事件 id：平台侧按 (session, scene) 幂等记播放进度。
      缺省时不传，后端退化成"整段完成"（"__complete__"）。 */
   return request("POST", sessionUrl(sessionId, "/media/done"), {
     scene_id: sceneId || undefined,
-    event_id: eventId || undefined
+    event_id: eventId || undefined,
+    final: final !== false
   }).then(normalizeTurn);
 }
 

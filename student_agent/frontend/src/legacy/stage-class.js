@@ -234,6 +234,13 @@ export function createStage(ctx) {
         classroomId: lesson && lesson.classroomId,
         video: data || null,
         startSeconds: first && typeof first.startSeconds === "number" ? first.startSeconds : 0,
+        onSceneCompleted: function (sceneId, eventId) {
+          if (request !== playbackRequest || isReplay) return;
+          // Persist per-slide progress without advancing out of the video phase.
+          notifyMediaDone(ctx.sessionId, sceneId, eventId, false).catch(function (error) {
+            console.warn("记录页面播放进度失败", error);
+          });
+        },
         onEnded: function (sceneId, eventId) {
           if (request !== playbackRequest || isReplay) return;
           notifyVideoEnd("ended", sceneId, eventId);

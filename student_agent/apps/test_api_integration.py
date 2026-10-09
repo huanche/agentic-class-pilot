@@ -77,6 +77,32 @@ class StudentApiIntegrationTest(unittest.TestCase):
         self.assertEqual(discussion_reply.json()["phase"], "class_discussion")
         self.assertEqual(discussion_reply.json()["status"], "running")
 
+    def test_scene_completion_records_progress_without_ending_video(self) -> None:
+        lesson_id = self.client.get(
+            "/api/student/courses").json()["courses"][0]["lessons"][0]["lessonId"]
+        self.client.post("/api/session/start", json={
+            "session_id": self.sid, "lesson_id": lesson_id})
+        begun = self.client.post(f"/api/session/{self.sid}/begin").json()
+
+        page = self.client.post(
+            f"/api/session/{self.sid}/media/done",
+            json={"scene_id": "slide-1", "event_id": "scene-1", "final": False},
+        )
+
+        self.assertEqual(page.status_code, 200)
+        self.assertEqual(page.json()["phase"], begun["phase"])
+        self.assertEqual(
+            self.client.get(f"/api/session/{self.sid}/state").json()["phase"],
+            begun["phase"],
+        )
+
+        ended = self.client.post(
+            f"/api/session/{self.sid}/media/done",
+            json={"scene_id": "slide-2", "event_id": "playback-ended", "final": True},
+        )
+        self.assertEqual(ended.status_code, 200)
+        self.assertEqual(ended.json()["phase"], "recap_discussion")
+
     def test_a_stopped_session_is_not_written_back(self) -> None:
         """停课之后，正在跑的那一轮不能把会话再落盘一次。
 
