@@ -181,34 +181,29 @@ export function createStage(ctx) {
     videoEndNotified = true;
 
     var status = $("video-player-status");
-    var skipBtn = $("btn-skip-video");
 
     /* ⚠️ 这一轮服务端要**现场让模型生成老师的下一句话**，实测 20–35 秒
        （平台态更慢：每轮要带上 1 万多字的已发布课程上下文）。
-       期间必须禁用按钮并写明在等什么 —— 否则看起来就是"点了没反应"，
-       用户会反复点击，而幂等守卫会让后续点击完全静默。 */
+       视频播完后没有可点的按钮了，这里靠状态文字告诉学生在等什么；
+       幂等守卫会挡掉重复通知。 */
     status.textContent = how === "ended"
       ? "视频已播完，正在请老师准备下一环节…（约需 20–30 秒）"
       : "已通知老师，正在准备下一环节…（约需 20–30 秒）";
-    if (skipBtn) { skipBtn.disabled = true; skipBtn.textContent = "老师准备中…"; }
 
     notifyMediaDone(ctx.sessionId, sceneId, eventId).then(function (res) {
       if (res && res.message && res.message.text && !ctx.replySeenByPoll(res)) {
         appendMessage("ai", res.message.text);
       }
       ctx.applyServerTurn(res);
-      if (skipBtn) { skipBtn.disabled = false; skipBtn.textContent = "视频已结束，继续"; }
     }).catch(function (err) {
-      status.textContent = "通知失败：" + err.message + "（可再点一次重试）";
+      status.textContent = "通知失败：" + err.message;
       ctx.toast("通知失败：" + err.message);
       videoEndNotified = false;   /* 允许重试 */
-      if (skipBtn) { skipBtn.disabled = false; skipBtn.textContent = "视频已结束，继续"; }
     });
   }
 
   function startVideo(replay) {
     replayMode = replay === true;
-    $("btn-skip-video").hidden = replayMode;
     $("btn-exit-replay").hidden = !replayMode;
     showPane("video");
     ctx.setStatus(replayMode ? "课程回放" : "教学视频");
@@ -268,10 +263,6 @@ export function createStage(ctx) {
         location.hash = ctx.getReviewHash();
       });
       $("btn-start").addEventListener("click", startLesson);
-
-      $("btn-skip-video").addEventListener("click", function () {
-        notifyVideoEnd("manual");
-      });
 
       composer.addEventListener("submit", function (e) {
         e.preventDefault();

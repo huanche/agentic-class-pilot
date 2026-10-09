@@ -19,6 +19,11 @@ export function createStage(ctx) {
   var nextBtn = $("summary-next");
   var busy = false;
 
+  /* 「进入下一阶段」按钮的对话时长门槛：这一幕至少对话 2 分钟才放行，
+     避免学生还没复述几句就急着往下跳。 */
+  var stageStartedAt = 0;
+  var MIN_DIALOGUE_MS = 2 * 60 * 1000;
+
   function updateCount() {
     count.textContent = input.value.length + " / 600";
     count.classList.toggle("is-near", input.value.length > 510);
@@ -64,9 +69,14 @@ export function createStage(ctx) {
 
   /* 手动推进到下一幕。
      正常情况下切幕由后端的 judge_advance 决定（证据够了 / 预算耗尽），
-     这个按钮是**测试用**的：不用等那几分钟就能往下走。
+     这个按钮是测试用的快捷入口，但这一幕的对话至少得满 2 分钟才放行。
      它不影响对话式复述本身 —— 点不点都能接着复述。 */
   function goNext() {
+    /* 对话没满 2 分钟时拦住：提示继续对话，而不是直接推进。 */
+    if (Date.now() - stageStartedAt < MIN_DIALOGUE_MS) {
+      ctx.toast("请继续对话");
+      return;
+    }
     nextBtn.disabled = true;
     advanceStage(ctx.sessionId).then(function (res) {
       ctx.applyServerTurn(res);
@@ -90,6 +100,7 @@ export function createStage(ctx) {
       updateCount();
     },
     enter: function (stage, turn) {
+      stageStartedAt = Date.now();
       if (turn && turn.message && turn.message.text) {
         appendChatMessage(log, "ai", turn.message.text);
       }
@@ -105,6 +116,7 @@ export function createStage(ctx) {
       input.disabled = false;
       busy = false;
       nextBtn.disabled = false;
+      stageStartedAt = 0;
       updateCount();
     }
   };

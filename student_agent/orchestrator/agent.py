@@ -1125,21 +1125,14 @@ def host_event(state: ClassroomState) -> dict:
     phase = state.get("host_phase")
     plan = state.get("lesson_plan") or {}
     if phase == "intro":
-        enabled = [s for s in plan.get("stages", []) if s.get("enabled")]
-        agenda = "，".join(
-            f"{STAGE_NAMES.get(s['id'], s['id'])}{s['minutes']}分钟" for s in enabled
-        )
+        title = plan.get("lesson_title") or plan.get("title") or "今天的课程"
         lead = (
-            "这节课的讲解部分是一段视频，看完我们再一起复述和深入讨论。"
+            "这节课先看一段讲解视频，看完之后我们一起复述一遍，"
+            "再结合实际想一想，这个知识能解决什么实际问题。"
             if stage_delivery(state) == "video" else
-            "我会根据你的掌握情况调整节奏——听懂了我们就往前走，没听透我会多问几句。"
+            "讲完之后我们一起复述一遍，再结合实际想一想，这个知识能解决什么实际问题。"
         )
-        reply = (
-            f"上课！今天我们讲「{plan.get('lesson_title') or plan.get('title') or '今天的课程'}」，"
-            f"共 {plan.get('total_minutes')} 分钟。\n"
-            f"流程：{agenda}。\n"
-            f"{lead}"
-        )
+        reply = f"上课！今天我们讲「{title}」。{lead}"
         return {"reply_text": reply, "student_status": "active"}
     if phase == "ending":
         return {"reply_text": "这节课就到这里，下课！"}

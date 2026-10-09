@@ -1,14 +1,13 @@
-/* 深入思考：题目与反馈均由后端依据当前 host_phase 生成。 */
+/* 深入思考：题目与反馈均由后端依据当前 host_phase 生成。
+   这一幕没有「进入下一阶段」按钮，由后端按证据/时间预算自动推进到收尾。 */
 import { $, appendChatMessage, showTyping } from "./ui.js";
-import { sendMessage, advanceStage } from "./api.js";
+import { sendMessage } from "./api.js";
 
 export function createStage(ctx) {
   var log = $("reflect-log");
   var form = $("reflect-composer");
   var input = $("reflect-input");
   var submitBtn = $("reflect-submit");
-  var actions = $("reflect-actions");
-  var nextBtn = $("reflect-next");
   var busy = false;
 
   function updateSubmit() {
@@ -31,7 +30,6 @@ export function createStage(ctx) {
         appendChatMessage(log, "ai", res.message.text);
       }
       ctx.applyServerTurn(res);
-      if (res.hostPhase === "deep_inquiry") actions.hidden = false;
     }).catch(function (err) {
       stopTyping();
       row.remove();
@@ -59,19 +57,6 @@ export function createStage(ctx) {
         event.preventDefault();
         submit();
       });
-      nextBtn.addEventListener("click", function () {
-        nextBtn.disabled = true;
-        advanceStage(ctx.sessionId).then(function (res) {
-          if (res.message.text && !ctx.replySeenByPoll(res)) {
-            appendChatMessage(log, "ai", res.message.text);
-          }
-          ctx.applyServerTurn(res);
-          if (ctx.getPhase() === "deep_inquiry") nextBtn.disabled = false;
-        }).catch(function (err) {
-          nextBtn.disabled = false;
-          ctx.toast("发送失败：" + err.message);
-        });
-      });
       updateSubmit();
     },
     enter: function (stage, turn) {
@@ -89,9 +74,7 @@ export function createStage(ctx) {
       busy = false;
       input.value = "";
       input.disabled = false;
-      nextBtn.disabled = false;
       form.hidden = false;
-      actions.hidden = true;
       updateSubmit();
     }
   };

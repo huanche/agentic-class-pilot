@@ -498,7 +498,6 @@ function openReplayRoute() {
   showView(VIEWS.class);
   setStage("video");
   setStatus("课程回放");
-  $("btn-skip-video").hidden = true;
   $("btn-exit-replay").hidden = false;
   $("video-player-status").textContent = "正在加载课程…";
   var requestedHash = location.hash;
