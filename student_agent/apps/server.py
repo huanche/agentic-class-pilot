@@ -1143,8 +1143,27 @@ def start(body: StartIn) -> dict:
         else:
             lesson_id = platform_context["courseId"]
 
-    # 先校验再动注册表，非法 id 不该留下任何痕迹（_path 里还有一道兜底）
-    sid = _safe_sid(body.session_id) if body.session_id else f"cls-{uuid.uuid4().hex[:8]}"
+    # 先校验再动注册表，非法 id 不该留下任何痕迹（_path 里还有一道兜底）。
+    # 平台态刷新/重开浏览器不带 session_id：续用该生该课（同课堂）最近的
+    # 未结束会话，否则每次进入都新建会话把课时进度清零、僵尸行堆积。
+    # 续用前用 _restore 预检课时绑定，绑定对不上（文件丢了/换了课时不带
+    # classroom 的边角）就不续，走新建，不触发下面的 409。
+    resumed_sid = None
+    if not body.session_id and platform_context:
+        try:
+            from apps.integration import persistence
+            candidate = persistence.latest_running_session(
+                user_id=str(platform_context["userId"]),
+                course_id=str(platform_context["courseId"]),
+                classroom_id=platform_context.get("classroomId"))
+            if candidate:
+                restored = _restore(candidate)
+                if restored and restored.get("lesson_id") in (None, lesson_id):
+                    resumed_sid = candidate
+        except Exception as exc:
+            print(f"[persistence] 查找可续会话失败: {exc}")
+    sid = _safe_sid(body.session_id) if body.session_id else (
+        _safe_sid(resumed_sid) if resumed_sid else f"cls-{uuid.uuid4().hex[:8]}")
     created = False
     with _REGISTRY_LOCK:
         if sid not in SESSIONS:
@@ -1165,6 +1184,18 @@ def start(body: StartIn) -> dict:
                     SESSIONS[sid]["learning_context"] = learning_context.model_dump()
             created = restored is None
         s = SESSIONS[sid]
+    if created and platform_context:
+        # 真新建了会话（没有可续的，或换了课时）：把同形的旧"进行中"会话
+        # 收尾 —— 它们是刷新遗留的僵尸，只会虚增教师端的会话计数。
+        try:
+            from apps.integration import persistence
+            persistence.finish_stale_sessions(
+                user_id=str(platform_context["userId"]),
+                course_id=str(platform_context["courseId"]),
+                classroom_id=platform_context.get("classroomId"),
+                exclude_sid=sid)
+        except Exception as exc:
+            print(f"[persistence] 收尾旧会话失败: {exc}")
     st = s["state"]
     if st.get("lesson_id") not in (None, lesson_id):
         raise HTTPException(409, "该会话属于另一节课")

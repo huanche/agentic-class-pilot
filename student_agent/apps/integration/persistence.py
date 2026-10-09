@@ -106,6 +106,48 @@ def finish_session(session_key: str) -> None:
         connection.commit()
 
 
+def latest_running_session(user_id: str, course_id: str,
+                           classroom_id: Optional[str] = None) -> Optional[str]:
+    """该生该课（同课堂）最近的未结束会话，供刷新/重开浏览器续用。
+
+    平台入口不带 session_id 时靠它续课，否则每次进入都新建会话，
+    课时进度清零、"进行中"僵尸行堆积。按 classroom 同形匹配：课时会话
+    和课程入口会话互不串。取不到返回 None。
+    """
+    if config.demo_mode():
+        return None
+    with _db() as connection:
+        row = connection.execute(
+            "SELECT session_key FROM student.student_sessions "
+            "WHERE user_id = %s AND course_id = %s AND ended_at IS NULL "
+            "AND ((classroom_id = %s) OR (classroom_id IS NULL AND %s IS NULL)) "
+            "ORDER BY last_active_at DESC LIMIT 1",
+            (user_id, course_id, classroom_id, classroom_id)).fetchone()
+    return row[0] if row else None
+
+
+def finish_stale_sessions(user_id: str, course_id: str,
+                          classroom_id: Optional[str] = None,
+                          exclude_sid: str = "") -> None:
+    """收尾同形旧"进行中"会话（exclude_sid 除外）。
+
+    确需新建会话（没有可续的，或换了课时）时调用 —— 旧行是刷新遗留的
+    僵尸，只会虚增教师端的会话计数。语义对齐前端 shouldRenewSession：
+    换了新窗口/新课时才换会话。
+    """
+    if config.demo_mode():
+        return
+    with _db() as connection:
+        connection.execute(
+            "UPDATE student.student_sessions "
+            "SET ended_at = COALESCE(ended_at, now()), last_active_at = now() "
+            "WHERE user_id = %s AND course_id = %s AND ended_at IS NULL "
+            "AND session_key <> %s "
+            "AND ((classroom_id = %s) OR (classroom_id IS NULL AND %s IS NULL))",
+            (user_id, course_id, exclude_sid, classroom_id, classroom_id))
+        connection.commit()
+
+
 def upsert_message(session_key: str, user_id: str, course_id: str,
                    publication_id: str, seq: int, role: str,
                    phase: str | None, content: str) -> None:
