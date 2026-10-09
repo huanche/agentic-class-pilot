@@ -242,6 +242,19 @@ describe('fetchClassroomFromApi at the server-media boundary', () => {
     return fetchClassroomFromApi('stage-1', undefined, deps);
   }
 
+  it('loads the read-only player without downloading every narration clip first', async () => {
+    const requests = stubNetwork();
+    const { fetchClassroomForPlayer } = await import('@/lib/classroom/load-classroom');
+
+    const result = await fetchClassroomForPlayer('stage-1');
+
+    expect(result).not.toBeNull();
+    expect(JSON.stringify(result)).toContain(AUDIO_URL);
+    expect(requests).not.toContain(AUDIO_URL);
+    const { getDocumentStore } = await import('@/lib/document-store');
+    expect(await getDocumentStore({ store: deps.store }).loadDocument('stage-1')).toBeNull();
+  });
+
   it('converts real server image/video transport URLs and dangling audio pairs at the boundary', async () => {
     stubNetwork();
     const result = await fetchApi();

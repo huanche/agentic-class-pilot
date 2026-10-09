@@ -19,6 +19,7 @@ import { useAgentRegistry } from '@/lib/orchestration/registry/store';
 import {
   applyClassroomStageAndScenes,
   defaultClassroomLoadDeps,
+  fetchClassroomForPlayer,
   runClassroomLoad,
 } from '@/lib/classroom/load-classroom';
 import { isIncompleteEnhancedScene } from '@/lib/learning-skills/enhanced-courseware-quality';
@@ -80,12 +81,18 @@ export default function ClassroomDetailPage() {
         loadFromStorage,
         getCurrentStage: () => useStageStore.getState().stage,
         fetchClassroom: (id, shouldConvert, replaceExisting) =>
-          defaultClassroomLoadDeps.fetchClassroom(id, shouldConvert, {}, replaceExisting),
+          playerOnlyEmbed
+            ? fetchClassroomForPlayer(id)
+            : defaultClassroomLoadDeps.fetchClassroom(id, shouldConvert, {}, replaceExisting),
         applyFallbackScenes: (args) =>
           defaultClassroomLoadDeps.applyFallbackScenes({
             ...args,
             isCurrent,
-            applyStageAndScenes: applyClassroomStageAndScenes,
+            applyStageAndScenes: (stage, scenes, options) =>
+              applyClassroomStageAndScenes(stage, scenes, {
+                ...options,
+                persist: !playerOnlyEmbed,
+              }),
           }),
         loadRestoredMediaTasks: defaultClassroomLoadDeps.loadRestoredMediaTasks,
         applyRestoredMediaTasks: defaultClassroomLoadDeps.applyRestoredMediaTasks,
@@ -101,7 +108,7 @@ export default function ClassroomDetailPage() {
         log,
       });
     },
-    [classroomId, embeddedCourseWorkspace, loadFromStorage, preferServerClassroom],
+    [classroomId, embeddedCourseWorkspace, loadFromStorage, playerOnlyEmbed, preferServerClassroom],
   );
 
   useEffect(() => {
@@ -155,7 +162,7 @@ export default function ClassroomDetailPage() {
 
   // Auto-resume generation for pending outlines
   useEffect(() => {
-    if (loading || error || generationStartedRef.current) return;
+    if (loading || error || playerOnlyEmbed || generationStartedRef.current) return;
 
     const state = useStageStore.getState();
     const { outlines, scenes, stage, generationComplete } = state;
@@ -259,7 +266,7 @@ export default function ClassroomDetailPage() {
         log.warn('[Classroom] Media generation resume error:', err);
       });
     }
-  }, [loading, error, generateRemaining]);
+  }, [loading, error, generateRemaining, playerOnlyEmbed]);
 
   return (
     <ThemeProvider>

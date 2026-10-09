@@ -339,6 +339,14 @@ export async function fetchClassroomFromApi(
   }
 }
 
+/** The read-only student embed streams narration from audioUrl on demand. */
+export async function fetchClassroomForPlayer(classroomId: string): Promise<ClassroomPayload | null> {
+  const res = await fetch(`/api/classroom?id=${encodeURIComponent(classroomId)}`);
+  if (!res.ok) return null;
+  const json = (await res.json()) as { success?: boolean; classroom?: ClassroomPayload };
+  return json.success && json.classroom ? json.classroom : null;
+}
+
 export function applyClassroomStageAndScenes(
   stage: Stage,
   scenes: readonly Scene[],
