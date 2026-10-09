@@ -24,6 +24,9 @@ export const platformPlayerAdapter = {
     iframe.src = embedUrl;
     iframe.title = "课程播放器";
     iframe.allow = "autoplay; fullscreen";
+    // Legacy boolean attribute alongside the allow list — Safari and older
+    // engines only grant iframe fullscreen through allowfullscreen.
+    iframe.setAttribute("allowfullscreen", "true");
     iframe.referrerPolicy = "same-origin";
     iframe.style.width = "100%";
     iframe.style.height = "min(72vh, 760px)";

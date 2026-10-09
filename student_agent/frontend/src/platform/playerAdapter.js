@@ -52,10 +52,14 @@ var platformPlayer = {
     iframe.style.width = "100%";
     iframe.style.height = "100%";
     iframe.style.border = "none";
+    // Fullscreen needs both spellings: allowfullscreen is the legacy boolean
+    // attribute (honored by Safari), and the allow list must also name
+    // fullscreen or browsers honoring the permissions-policy list deny the
+    // in-iframe requestFullscreen call.
     iframe.setAttribute("allowfullscreen", "true");
     // Let the embedded teacher player start audio without a direct click
     // inside the iframe (browsers block play() in iframes without this).
-    iframe.setAttribute("allow", "autoplay; encrypted-media");
+    iframe.setAttribute("allow", "autoplay; encrypted-media; fullscreen");
     iframe.setAttribute("title", "课程播放器");
 
     var status = document.getElementById("video-player-status");

@@ -58,7 +58,7 @@ import {
   AlertDialogAction,
   AlertDialogCancel,
 } from '@/components/ui/alert-dialog';
-import { AlertTriangle } from 'lucide-react';
+import { AlertTriangle, Maximize2, Minimize2 } from 'lucide-react';
 import { VisuallyHidden } from 'radix-ui';
 
 /**
@@ -143,7 +143,14 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
       if (scenes.findIndex((scene) => scene.id === currentScene.id) === scenes.length - 1) {
         postPlayerHostEvent('PLAYBACK_ENDED', currentScene.id);
       }
-    }, [currentPlaybackActionIndex, currentScene, playbackCompleted, scenes]);
+      // Player-only embed: the host student flow advances to its next stage
+      // on this event — leave fullscreen so the follow-up UI is visible.
+      // Gated on videoOnly: a presenting teacher must not be kicked out of
+      // presentation fullscreen at every scene boundary.
+      if (videoOnly && document.fullscreenElement) {
+        void document.exitFullscreen().catch(() => {});
+      }
+    }, [currentPlaybackActionIndex, currentScene, playbackCompleted, scenes, videoOnly]);
     const [liveSpeech, setLiveSpeech] = useState<string | null>(null); // From buffer (discussion/QA)
     const [speechProgress, setSpeechProgress] = useState<number | null>(null); // StreamBuffer reveal progress (0–1)
     const [discussionTrigger, setDiscussionTrigger] = useState<TriggerEvent | null>(null);
@@ -1389,6 +1396,11 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
       }
     })();
 
+    // Player-only embed: playback has begun (or sits paused mid-course) —
+    // the floating fullscreen toggle is meaningful from this point on.
+    const videoOnlyPlaybackStarted =
+      videoOnly && (engineMode === 'playing' || engineMode === 'paused' || engineMode === 'live');
+
     // Build discussion request for Roundtable ProactiveCard from trigger
     const discussionRequest: DiscussionAction | null = discussionTrigger
       ? {
@@ -1476,6 +1488,25 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
                 className="absolute left-1/2 top-1/2 z-40 -translate-x-1/2 -translate-y-1/2 rounded-full bg-slate-950/85 px-6 py-3 text-sm font-medium text-white shadow-xl backdrop-blur-md transition-colors hover:bg-slate-900"
               >
                 🔊 点击开启声音
+              </button>
+            )}
+            {/* Fullscreen toggle — player-only embeds render no toolbar, so
+                surface the presentation toggle as a floating control once
+                playback starts. Completion events auto-exit fullscreen (see
+                the completion effect) so the host flow's next stage shows. */}
+            {videoOnlyPlaybackStarted && (
+              <button
+                type="button"
+                onClick={togglePresentation}
+                title={isPresenting ? t('stage.exitFullscreen') : t('stage.fullscreen')}
+                aria-label={isPresenting ? t('stage.exitFullscreen') : t('stage.fullscreen')}
+                className="absolute bottom-4 right-4 z-30 rounded-full bg-slate-950/70 p-2.5 text-white shadow-lg backdrop-blur-md transition-colors hover:bg-slate-900"
+              >
+                {isPresenting ? (
+                  <Minimize2 className="h-5 w-5" />
+                ) : (
+                  <Maximize2 className="h-5 w-5" />
+                )}
               </button>
             )}
             <CanvasArea

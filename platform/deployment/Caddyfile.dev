@@ -1,0 +1,95 @@
+# Local unified gateway for the 8088 topology — same routes as Caddyfile.local
+# but bound to localhost:8088 instead of the production domain. Untracked dev
+# helper; launchers (dev-3200-platform.ps1 / dev-8000-platform.ps1) and the
+# platform .env PUBLIC_URLs point here.
+http://localhost:8088 {
+  encode zstd gzip
+
+  handle /teacher {
+    redir * / 302
+  }
+  handle_path /teacher/* {
+    reverse_proxy host.docker.internal:3200
+  }
+  handle /student-agent/app {
+    redir * /app?{query} 302
+  }
+  handle /app* {
+    reverse_proxy host.docker.internal:8000
+  }
+
+  handle /_next/* {
+    reverse_proxy host.docker.internal:3200
+  }
+  handle /avatars/* {
+    reverse_proxy host.docker.internal:3200
+  }
+  handle /mentra-icon.svg {
+    redir * /brand-mark.png 302
+  }
+  handle /brand-mark.png {
+    redir * /app/brand-mark.png 302
+  }
+  handle /icon.svg {
+    redir * /brand-mark.png 302
+  }
+  handle /favicon.ico {
+    redir * /brand-mark.png 302
+  }
+  handle /apple-icon.png {
+    redir * /brand-mark.png 302
+  }
+  handle /mentra-logo.svg {
+    redir * /brand-mark.png 302
+  }
+  handle /logo-horizontal.png {
+    reverse_proxy host.docker.internal:3200
+  }
+  handle /teacher-workspace* {
+    reverse_proxy host.docker.internal:3200
+  }
+  handle /course-space* {
+    reverse_proxy host.docker.internal:3200
+  }
+  handle /classroom-player* {
+    reverse_proxy host.docker.internal:3200
+  }
+  handle /classes* {
+    reverse_proxy host.docker.internal:3200
+  }
+  handle /settings* {
+    reverse_proxy host.docker.internal:3200
+  }
+  handle /classroom* {
+    reverse_proxy host.docker.internal:3200
+  }
+  handle /prepare* {
+    reverse_proxy host.docker.internal:3200
+  }
+  handle /review* {
+    reverse_proxy host.docker.internal:3200
+  }
+  handle /generation-preview* {
+    reverse_proxy host.docker.internal:3200
+  }
+
+  handle /api/v1/* {
+    reverse_proxy host.docker.internal:8080
+  }
+  handle /api/session/* {
+    reverse_proxy host.docker.internal:8000
+  }
+  handle /api/student/* {
+    reverse_proxy host.docker.internal:8000
+  }
+  handle /api/lesson* {
+    reverse_proxy host.docker.internal:8000
+  }
+  handle /api/* {
+    reverse_proxy host.docker.internal:3200
+  }
+
+  handle {
+    reverse_proxy host.docker.internal:8080
+  }
+}
