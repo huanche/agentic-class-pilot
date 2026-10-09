@@ -1,7 +1,12 @@
 import { type NextRequest } from 'next/server';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
-import { platformCourseMembers } from '@/lib/server/platform-course-members';
+import { platformCourseRoster } from '@/lib/server/platform-course-members';
+import {
+  fetchStudentLearningSummaries,
+  type StudentLearningSummary,
+} from '@/lib/server/student-learning-data';
 import { listCourseArtifacts, readServerCourse } from '@/lib/server/course-space-storage';
+import type { CourseStudentLearningState } from '@/lib/course-space/types';
 
 export const dynamic = 'force-dynamic';
 
@@ -101,20 +106,68 @@ export async function GET(request: Request, context: { params: Promise<{ courseI
         scope: { type: 'lesson' as const, lessonId: item.lessonId },
       })),
     ].sort((a, b) => (b.activatedAt ?? 0) - (a.activatedAt ?? 0)),
-    // Platform enrollment is the roster source of truth. The local field only
-    // remains as a standalone/demo fallback until student progress is migrated.
-    students: (await platformCourseMembers(request as NextRequest, courseId).catch(() => undefined))?.map((member) => {
-      // 平台学情同步（PUT students）写入的 classStudents 优先于空白名单状态，
-      // 否则授课管理永远显示「未开始 0%」。
-      const synced = (course.classStudents ?? []).find((item) => item.studentId === member.studentId);
-      return synced ?? {
+  });
+  // Platform enrollment is the roster source of truth; learning state is
+  // aggregated live from the student schema on every request — no push
+  // mirror, no classStudents fallback (standalone mode keeps the local field).
+  const roster = await platformCourseRoster(request as NextRequest, courseId).catch(() => undefined);
+  const memberIds = (roster?.members ?? []).map((member) => member.studentId);
+  const summaries = roster?.platformCourseId
+    ? await fetchStudentLearningSummaries(roster.platformCourseId, memberIds).catch(
+        (error: unknown) => {
+          console.warn('[classes] 学习数据实时聚合失败，按未开始显示:', error);
+          return new Map<string, StudentLearningSummary>();
+        },
+      )
+    : new Map<string, StudentLearningSummary>();
+  // 可学课时总数：已发布且带 classroom 的课件数（与平台 progress 的口径一致，
+  // 没有课堂的课件学生进不去，不算课时）。
+  const totalLessons = artifacts.filter((item) => Boolean(item.classroomUrl)).length;
+  const now = Date.now();
+  const DAY_MS = 86_400_000;
+  const students: CourseStudentLearningState[] = (roster?.members ?? []).map((member) => {
+    const summary = summaries.get(member.studentId);
+    if (!summary) {
+      return {
         studentId: member.studentId,
         name: member.name,
+        email: member.email,
         status: 'not-started' as const,
         progress: 0,
         completedResourceIds: [],
         lastActiveAt: member.enrolledAt ? Date.parse(member.enrolledAt) : 0,
       };
-    }) ?? course.classStudents ?? [],
+    }
+    const learnedLessons = Math.min(summary.learnedLessons, Math.max(totalLessons, 0));
+    const progress = totalLessons > 0 ? Math.min(100, Math.round((learnedLessons / totalLessons) * 100)) : 0;
+    const daysSinceActive = summary.lastActiveAt > 0 ? (now - summary.lastActiveAt) / DAY_MS : Number.POSITIVE_INFINITY;
+    const daysSinceEnrolled = member.enrolledAt && Number.isFinite(Date.parse(member.enrolledAt))
+      ? (now - Date.parse(member.enrolledAt)) / DAY_MS
+      : Number.POSITIVE_INFINITY;
+    const status: CourseStudentLearningState['status'] =
+      totalLessons > 0 && learnedLessons >= totalLessons
+        ? 'completed'
+        : (learnedLessons === 0 && daysSinceEnrolled > 7) || daysSinceActive > 7
+          ? 'needs-attention'
+          : 'learning';
+    return {
+      studentId: member.studentId,
+      name: member.name,
+      email: member.email,
+      status,
+      progress,
+      completedResourceIds: [],
+      lastActiveAt: summary.lastActiveAt || (member.enrolledAt ? Date.parse(member.enrolledAt) : 0),
+      learnedLessons,
+      totalLessons,
+      sessionCount: summary.sessionCount,
+      endedCount: summary.endedCount,
+    };
+  });
+  // 教师先看到需要干预的学生：需要关注 → 学习中 → 未开始 → 已完成，同级按最近活跃。
+  const statusOrder = { 'needs-attention': 0, learning: 1, 'not-started': 2, completed: 3 } as const;
+  students.sort((a, b) => statusOrder[a.status] - statusOrder[b.status] || (b.lastActiveAt ?? 0) - (a.lastActiveAt ?? 0));
+  return apiSuccess({
+    students,
   });
 }

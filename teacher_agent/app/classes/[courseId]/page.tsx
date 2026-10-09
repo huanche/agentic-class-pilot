@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { CourseEnrollment } from '@/components/platform/course-enrollment';
+import { platformLearningDataUrl } from '@/lib/integration/platform-links';
 import type { CourseModule, CourseStudentLearningState } from '@/lib/course-space/types';
 
 type ClassResource = {
@@ -56,6 +57,13 @@ const statusLabel: Record<CourseStudentLearningState['status'], string> = {
   learning: '学习中',
   completed: '已完成',
   'needs-attention': '需要关注',
+};
+
+const statusBadgeClass: Record<CourseStudentLearningState['status'], string> = {
+  'not-started': 'bg-slate-100 text-slate-600',
+  learning: 'bg-blue-50 text-blue-700',
+  completed: 'bg-emerald-50 text-emerald-700',
+  'needs-attention': 'bg-red-50 text-red-600',
 };
 
 function PublishedResourceRow({ resource }: { resource: ClassResource }) {
@@ -300,11 +308,32 @@ export default function ClassDetailPage() {
             <div className="flex items-center gap-2">
               <Users className="size-5 text-[#B00055]" />
               <h2 className="text-lg font-semibold">学生与学习状态</h2>
+              <span className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-500">
+                {detail.students.length} 人
+              </span>
             </div>
-            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-500">
-              {detail.students.length} 人
-            </span>
+            <a
+              href={platformLearningDataUrl()}
+              target="_blank"
+              rel="noreferrer"
+              className="text-xs font-medium text-[#B00055] hover:text-[#8F0046]"
+            >
+              查看学习明细 →
+            </a>
           </div>
+          {detail.students.length > 0 && (
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]">
+              {(['needs-attention', 'learning', 'not-started', 'completed'] as const).map((status) => {
+                const count = detail.students.filter((student) => student.status === status).length;
+                if (!count) return null;
+                return (
+                  <span key={status} className={`rounded-full px-2.5 py-1 ${statusBadgeClass[status]}`}>
+                    {statusLabel[status]} {count}
+                  </span>
+                );
+              })}
+            </div>
+          )}
           {detail.students.length === 0 ? (
             <div className="mt-6 rounded-2xl border border-dashed p-10 text-center">
               <Bot className="mx-auto size-10 text-slate-300" />
@@ -320,14 +349,11 @@ export default function ClassDetailPage() {
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="font-medium">{student.name}</p>
-                      <p className="text-[11px] text-slate-400">
-                        {student.studentNumber || student.studentId} ·{' '}
-                        {student.className || '当前班级'}
-                      </p>
+                      {student.email && (
+                        <p className="text-[11px] text-slate-400">{student.email}</p>
+                      )}
                     </div>
-                    <span
-                      className={`rounded-full px-2.5 py-1 text-[11px] ${student.status === 'needs-attention' ? 'bg-red-50 text-red-600' : student.status === 'completed' ? 'bg-emerald-50 text-emerald-700' : 'bg-blue-50 text-blue-700'}`}
-                    >
+                    <span className={`rounded-full px-2.5 py-1 text-[11px] ${statusBadgeClass[student.status]}`}>
                       {statusLabel[student.status]}
                     </span>
                   </div>
@@ -343,9 +369,6 @@ export default function ClassDetailPage() {
                   <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-slate-500">
                     {typeof student.totalLessons === 'number' && student.totalLessons > 0 && (
                       <span>已学 {student.learnedLessons ?? 0}/{student.totalLessons} 节</span>
-                    )}
-                    {typeof student.sessionCount === 'number' && student.sessionCount > 0 && (
-                      <span>会话 {student.sessionCount} 次 · 完成 {student.endedCount ?? 0}</span>
                     )}
                     {!!student.stars && <span className="text-amber-500">知识点 ★ {student.stars}</span>}
                     {!!student.lastActiveAt && (

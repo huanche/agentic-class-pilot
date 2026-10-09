@@ -13,6 +13,19 @@ export async function platformCourseMembers(
   request: NextRequest,
   courseId: string,
 ): Promise<PlatformMember[] | undefined> {
+  return (await platformCourseRoster(request, courseId))?.members;
+}
+
+export type PlatformRoster = {
+  members: PlatformMember[];
+  /** 平台解析后的课程 UUID（legacy nanoid 课程也在此归一）；学情聚合 SQL 用它查 student schema。 */
+  platformCourseId?: string;
+};
+
+export async function platformCourseRoster(
+  request: NextRequest,
+  courseId: string,
+): Promise<PlatformRoster | undefined> {
   if (!isPlatformAuthEnabled()) return undefined;
   const teacherId = resolveTeacherId(request, undefined);
   if (!teacherId) throw new Error('请先登录平台');
@@ -26,9 +39,9 @@ export async function platformCourseMembers(
       cache: 'no-store', redirect: 'error', signal: AbortSignal.timeout(5000),
     },
   );
-  const data = await response.json() as { detail?: string; members?: PlatformMember[] };
+  const data = await response.json() as { detail?: string; members?: PlatformMember[]; courseId?: string };
   if (!response.ok) throw new Error(data.detail || '读取学生名单失败');
-  return data.members ?? [];
+  return { members: data.members ?? [], platformCourseId: data.courseId };
 }
 
 export async function platformCourseMembersResponse(request: NextRequest, courseId: string) {

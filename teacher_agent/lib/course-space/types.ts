@@ -106,6 +106,8 @@ export interface CourseStudentLearningState {
   studentId: string;
   name: string;
   studentNumber?: string;
+  /** 平台账号邮箱（花名册带回，替代显示无意义的 UUID）。 */
+  email?: string;
   className?: string;
   status: 'not-started' | 'learning' | 'completed' | 'needs-attention';
   progress: number;
