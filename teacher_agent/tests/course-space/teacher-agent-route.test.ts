@@ -116,9 +116,22 @@ describe('teacher agent route', () => {
     expect(mocks.getPlatformUserModelConfigForRequest).toHaveBeenCalledWith(req);
     expect(mocks.runTeacherWorkspaceAgent.mock.calls[0]?.[0].modelConfig).toEqual({
       platformOverrides: {
-        modelString: 'openai/platform-model', apiKey: 'platform-key', baseUrl: 'https://platform.example/v1',
+        modelString: 'openai:platform-model', apiKey: 'platform-key', baseUrl: 'https://platform.example/v1',
       },
       thinkingConfig: { effort: 'high' },
+    });
+  });
+
+  it('routes a teacher DeepSeek key through the compatible provider adapter', async () => {
+    mocks.getPlatformUserModelConfigForRequest.mockResolvedValue({
+      llm: { model: 'deepseek-v4-pro', apiKey: 'platform-key', baseUrl: 'https://api.deepseek.com/v1' },
+    });
+    const response = await POST(request({}), context);
+    expect(response.status).toBe(200);
+    expect(mocks.runTeacherWorkspaceAgent.mock.calls[0]?.[0].modelConfig.platformOverrides).toEqual({
+      modelString: 'deepseek:deepseek-v4-pro',
+      apiKey: 'platform-key',
+      baseUrl: 'https://api.deepseek.com/v1',
     });
   });
 

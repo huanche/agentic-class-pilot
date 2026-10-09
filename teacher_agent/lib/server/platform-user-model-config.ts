@@ -100,8 +100,14 @@ export function llmOverrideFromConfig(
 ): { modelString: string; apiKey: string; baseUrl?: string } | undefined {
   const llm = config?.llm;
   if (!llm?.apiKey || !llm.model) return undefined;
+  // DeepSeek requires the provider's chat-completions adapter. The native
+  // OpenAI adapter uses the Responses endpoint, which DeepSeek does not expose.
+  const providerId =
+    llm.model.startsWith('deepseek-') || /^https?:\/\/api\.deepseek\.com(?:[:/]|$)/i.test(llm.baseUrl || '')
+      ? 'deepseek'
+      : 'openai';
   return {
-    modelString: `openai/${llm.model}`,
+    modelString: `${providerId}:${llm.model}`,
     apiKey: llm.apiKey,
     baseUrl: llm.baseUrl || undefined,
   };

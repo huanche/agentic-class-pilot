@@ -183,7 +183,8 @@ export function planTeacherWorkspaceOperation(
     const populateContent =
       /生成|具体内容|根据课程材料|完善|填写|写入/u.test(normalized) &&
       !/(?:创建|建立|添加)(?:空白|空的?|结构化)?(?:文件|文件夹|目录)/u.test(normalized);
-    const scopedLessonId = !start && currentScope?.type === 'lesson' ? currentScope.lessonId : undefined;
+    const scopedLessonId =
+      !start && currentScope?.type === 'lesson' ? currentScope.lessonId : undefined;
     const targets = course.modules
       .flatMap((module) => module.lessons)
       .filter((lesson) => {
@@ -483,14 +484,14 @@ export function planTeacherWorkspaceOperation(
     ? { type: 'lesson', lessonId: requestedLesson.lesson.id }
     : targetModule
       ? { type: 'module', moduleId: targetModule.id }
-      : currentScope ?? { type: 'course' };
+      : (currentScope ?? { type: 'course' });
   action.instruction = normalized;
   const scopeTitle = requestedLesson?.lesson.title ?? targetModule?.title;
   return {
     id,
     kind: 'generate-artifact',
     title: `生成${action.label}`,
-    summary: `${scopeTitle ? `范围：${scopeTitle}；` : ''}进入标准生成—审核—发布工作流。`,
+    summary: `${scopeTitle ? `范围：${scopeTitle}；` : ''}${action.artifactType === 'lesson-courseware' ? '先生成课件大纲供教师审阅，确认后进入 OpenMAIC 课件生成与审核。' : '进入标准生成—审核—发布工作流。'}`,
     requiresConfirmation: false,
     status: 'planned',
     action,

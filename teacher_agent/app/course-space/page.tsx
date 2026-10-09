@@ -496,10 +496,66 @@ export default function CourseSpacePage() {
     }
   };
 
+  const launchChatCoursewareFlow = async (
+    scope: CourseArtifactJob['scope'],
+    instruction?: string,
+  ) => {
+    if (!selected) return;
+    const scopeName =
+      scope.type === 'course'
+        ? selected.title
+        : scope.type === 'module'
+          ? selected.modules.find((item) => item.id === scope.moduleId)?.title || selected.title
+          : selected.modules
+              .flatMap((item) => item.lessons)
+              .find((item) => item.id === scope.lessonId)?.title || selected.title;
+    const profile = useUserProfileStore.getState();
+    const sourceMaterials = selected.materials
+      .filter((item) => item.status === 'ready')
+      .slice(0, 6);
+    const sourceSections = await Promise.all(
+      sourceMaterials.map(async (material) => {
+        try {
+          const { extraction } = await api<{ extraction: CourseMaterialExtraction }>(
+            await fetch(`/api/course-space/${selected.id}/materials/${material.id}/extraction`, {
+              cache: 'no-store',
+            }),
+          );
+          return `【${material.name}】\n${extraction.text.slice(0, 12000)}`;
+        } catch {
+          return '';
+        }
+      }),
+    );
+    const requirement = instruction?.trim() || `请为“${scopeName}”生成课时 PPT / 互动课件。`;
+    sessionStorage.setItem(
+      'generationSession',
+      JSON.stringify({
+        sessionId: nanoid(),
+        requirements: {
+          requirement: `${requirement}\n\n课程：${selected.title}；当前课时范围：${scopeName}。请先生成可供教师审阅的课件大纲，再根据确认的大纲制作课件。`,
+          userNickname: profile.nickname || undefined,
+          userBio: profile.bio || undefined,
+          webSearch: false,
+          interactiveMode: false,
+        },
+        pdfText: sourceSections.filter(Boolean).join('\n\n').slice(0, 60000),
+        pdfImages: [],
+        imageStorageIds: [],
+        sceneOutlines: undefined,
+        currentStep: 'generating',
+        previewPhase: 'preparing',
+        courseSpaceContext: { courseId: selected.id, scope },
+      }),
+    );
+    router.push('/generation-preview');
+  };
+
   const requestGeneration = async (
     requestedType: CourseArtifactType,
     requestedScope?: CourseArtifactJob['scope'],
     entry?: 'lecturer-ppt',
+    instruction?: string,
   ) => {
     const artifactTypes = [requestedType];
     if (!selected) return;
@@ -515,6 +571,14 @@ export default function CourseSpacePage() {
     const includesCourseware = artifactTypes.includes('lesson-courseware');
     if (entry === 'lecturer-ppt') {
       setCoursewareSourceOpen(true);
+      return;
+    }
+    if (includesCourseware) {
+      try {
+        await launchChatCoursewareFlow(scope, instruction);
+      } catch (error) {
+        setMessage(error instanceof Error ? error.message : String(error));
+      }
       return;
     }
     const backgroundArtifacts = artifactTypes;
@@ -534,9 +598,11 @@ export default function CourseSpacePage() {
         await refresh(selected.id);
       }
       {
-        setMessage(includesCourseware
-          ? '已创建 AI 互动课件生成任务。生成结果须经教师审核、激活后才能用于授课。'
-          : `已创建 ${jobCount} 个后台任务。生成结果必须经过教师审核后才能发布。`);
+        setMessage(
+          includesCourseware
+            ? '已创建 AI 互动课件生成任务。生成结果须经教师审核、激活后才能用于授课。'
+            : `已创建 ${jobCount} 个后台任务。生成结果必须经过教师审核后才能发布。`,
+        );
         if (createdJob) router.push(`/course-space/${selected.id}/jobs/${createdJob.id}`);
       }
     } catch (error) {
@@ -731,7 +797,9 @@ export default function CourseSpacePage() {
                       course={selected}
                       activeScope={activeScope}
                       embedded
-                      onGenerate={(type, scope, entry) => void requestGeneration(type, scope, entry)}
+                      onGenerate={(type, scope, entry, instruction) =>
+                        void requestGeneration(type, scope, entry, instruction)
+                      }
                       onOperationComplete={() => refresh(selected.id)}
                       onOpenKnowledgeGraph={() =>
                         router.push(
@@ -753,17 +821,19 @@ export default function CourseSpacePage() {
           </div>
         )}
       </div>
-      {coursewareSourceOpen && selected && <CoursewareSourceDialog
-        key={selected.id}
-        course={selected}
-        onCancel={() => setCoursewareSourceOpen(false)}
-        onSelect={async (material) => {
-          await refresh(selected.id);
-          setCoursewareMaterialId(material.id);
-          setCoursewareSourceOpen(false);
-          setCoursewareModeOpen(true);
-        }}
-      />}
+      {coursewareSourceOpen && selected && (
+        <CoursewareSourceDialog
+          key={selected.id}
+          course={selected}
+          onCancel={() => setCoursewareSourceOpen(false)}
+          onSelect={async (material) => {
+            await refresh(selected.id);
+            setCoursewareMaterialId(material.id);
+            setCoursewareSourceOpen(false);
+            setCoursewareModeOpen(true);
+          }}
+        />
+      )}
       <CoursewareModeDialog
         open={coursewareModeOpen}
         onOpenChange={setCoursewareModeOpen}

@@ -823,6 +823,7 @@ function GenerationPreviewContent() {
         const userOpenedReviewEarly = outlineReviewIntentRef.current;
         const shouldReviewOutlines =
           Boolean(currentSession.conversionMode) ||
+          Boolean(currentSession.courseSpaceContext) ||
           currentSession.sourceType === 'pptx-structured-import' ||
           useSettingsStore.getState().reviewOutlineEnabled ||
           userOpenedReviewEarly;
@@ -1318,20 +1319,6 @@ function GenerationPreviewContent() {
         if (!classroomSnapshot.stage || classroomSnapshot.scenes.length === 0) {
           throw new Error('课件场景尚未生成，无法保存到当前课程');
         }
-        const persistResponse = await fetch('/api/classroom', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({
-            stage: classroomSnapshot.stage,
-            scenes: classroomSnapshot.scenes,
-          }),
-        });
-        if (!persistResponse.ok) {
-          const result = (await persistResponse.json().catch(() => undefined)) as
-            | { error?: string; message?: string }
-            | undefined;
-          throw new Error(result?.error || result?.message || '课件本体保存失败，请重试');
-        }
         const response = await fetch(`/api/course-space/${courseId}/classrooms/attach`, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
@@ -1339,6 +1326,8 @@ function GenerationPreviewContent() {
             classroomId: stage.id,
             title: courseTitle || stage.name,
             scope,
+            stage: classroomSnapshot.stage,
+            scenes: classroomSnapshot.scenes,
           }),
         });
         if (!response.ok) {
@@ -1381,7 +1370,11 @@ function GenerationPreviewContent() {
     clearOutlineReviewTimer();
     outlineReviewIntentRef.current = false;
     sessionStorage.removeItem('generationSession');
-    router.push('/');
+    router.push(
+      session?.courseSpaceContext
+        ? `/teacher-workspace?workspace=${encodeURIComponent(session.courseSpaceContext.courseId)}`
+        : '/',
+    );
   };
 
   // Triggered when the user clicks the streaming outline card mid-stream.
@@ -1620,7 +1613,7 @@ function GenerationPreviewContent() {
         >
           <Button variant="ghost" size="sm" onClick={goBackToHome} disabled={isConfirmingOutlines}>
             <ArrowLeft className="size-4 mr-2" />
-            {t('generation.backToHome')}
+            {session.courseSpaceContext ? '返回教师工作区' : t('generation.backToHome')}
           </Button>
         </motion.div>
 
@@ -1669,11 +1662,15 @@ function GenerationPreviewContent() {
               onConfirm={handleConfirmOutlines}
               onBack={handleBackFromOutlineReview}
               backLabel={session.pptContentDraft ? '返回修改提取内容' : undefined}
-              alwaysReview={reviewOutlineEnabled}
+              alwaysReview={reviewOutlineEnabled || Boolean(session.courseSpaceContext)}
               onAlwaysReviewChange={setReviewOutlineEnabled}
               isLoading={isConfirmingOutlines}
               isStreaming={isOutlineStreaming}
-              onCollapse={session.conversionMode ? undefined : handleCollapseEditor}
+              onCollapse={
+                session.conversionMode || session.courseSpaceContext
+                  ? undefined
+                  : handleCollapseEditor
+              }
               targetDurationMinutes={previewTargetMinutes}
             />
           </motion.div>
@@ -1705,7 +1702,7 @@ function GenerationPreviewContent() {
       >
         <Button variant="ghost" size="sm" onClick={goBackToHome}>
           <ArrowLeft className="size-4 mr-2" />
-          {t('generation.backToHome')}
+          {session.courseSpaceContext ? '返回教师工作区' : t('generation.backToHome')}
         </Button>
       </motion.div>
 

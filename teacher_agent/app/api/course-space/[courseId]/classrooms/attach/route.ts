@@ -8,7 +8,12 @@ import {
   updateServerCourse,
 } from '@/lib/server/course-space-storage';
 import type { CourseArtifactJob, CourseArtifactRecord } from '@/lib/course-space/types';
-import { readClassroom } from '@/lib/server/classroom-storage';
+import {
+  buildRequestOrigin,
+  persistClassroom,
+  readClassroom,
+} from '@/lib/server/classroom-storage';
+import type { Stage, Scene } from '@/lib/types/stage';
 
 type ClassroomInput = { id: string; title?: string };
 
@@ -31,8 +36,11 @@ export async function POST(req: NextRequest, context: { params: Promise<{ course
     scope?: CourseArtifactJob['scope'];
     moduleTitle?: string;
     lessonTitle?: string;
+    stage?: Stage;
+    scenes?: Scene[];
   };
-  const classrooms = body.classrooms ?? (body.classroomId ? [{ id: body.classroomId, title: body.title }] : []);
+  const classrooms =
+    body.classrooms ?? (body.classroomId ? [{ id: body.classroomId, title: body.title }] : []);
   if (classrooms.length === 0 || classrooms.some((item) => !isSafeId(item.id))) {
     return apiError('INVALID_REQUEST', 400, '课堂标识无效');
   }
@@ -46,33 +54,69 @@ export async function POST(req: NextRequest, context: { params: Promise<{ course
     if (!lesson) {
       const now = Date.now();
       lesson = {
-        id: nanoid(10), moduleId: courseModule.id, title: body.lessonTitle.trim(),
-        order: courseModule.lessons.length + 1, objectives: [], materialIds: [],
-        createdAt: now, updatedAt: now,
+        id: nanoid(10),
+        moduleId: courseModule.id,
+        title: body.lessonTitle.trim(),
+        order: courseModule.lessons.length + 1,
+        objectives: [],
+        materialIds: [],
+        createdAt: now,
+        updatedAt: now,
       };
       const lessonToAdd = lesson;
       savedCourse = await updateServerCourse(canonicalId, (current) => ({
         ...current,
-        modules: current.modules.map((item) => item.id === courseModule.id
-          ? { ...item, lessons: [...item.lessons, lessonToAdd], updatedAt: now }
-          : item),
+        modules: current.modules.map((item) =>
+          item.id === courseModule.id
+            ? { ...item, lessons: [...item.lessons, lessonToAdd], updatedAt: now }
+            : item,
+        ),
       }));
     }
     scope = { type: 'lesson', lessonId: lesson.id };
   }
   scope ??= { type: 'course' };
 
-  const scopeExists = scope.type === 'course'
-    || (scope.type === 'module' && savedCourse.modules.some((item) => item.id === scope.moduleId))
-    || (scope.type === 'lesson' && savedCourse.modules.some((item) => item.lessons.some((lesson) => lesson.id === scope.lessonId)));
+  const scopeExists =
+    scope.type === 'course' ||
+    (scope.type === 'module' && savedCourse.modules.some((item) => item.id === scope.moduleId)) ||
+    (scope.type === 'lesson' &&
+      savedCourse.modules.some((item) =>
+        item.lessons.some((lesson) => lesson.id === scope.lessonId),
+      ));
   if (!scopeExists) return apiError('INVALID_REQUEST', 400, '归档位置不属于当前课程');
 
   const existing = await listCourseArtifacts(canonicalId);
+  if (body.stage || body.scenes) {
+    if (
+      classrooms.length !== 1 ||
+      !body.stage ||
+      !Array.isArray(body.scenes) ||
+      body.scenes.length === 0 ||
+      body.stage.id !== classrooms[0].id
+    ) {
+      return apiError('INVALID_REQUEST', 400, '课件本体与课堂标识不一致');
+    }
+    if (
+      (await readClassroom(classrooms[0].id)) &&
+      !existing.some((item) => item.classroomId === classrooms[0].id)
+    ) {
+      return apiError('INVALID_REQUEST', 409, '课堂标识已被其他课件占用');
+    }
+    await persistClassroom(
+      { id: classrooms[0].id, stage: body.stage, scenes: body.scenes },
+      buildRequestOrigin(req),
+    );
+  }
   const now = Date.now();
   const artifacts: CourseArtifactRecord[] = [];
   for (const classroom of classrooms) {
-    if (!await readClassroom(classroom.id)) {
-      return apiError('INVALID_REQUEST', 404, `课堂 ${classroom.id} 的课件本体不存在，不能建立悬空产物索引`);
+    if (!(await readClassroom(classroom.id))) {
+      return apiError(
+        'INVALID_REQUEST',
+        404,
+        `课堂 ${classroom.id} 的课件本体不存在，不能建立悬空产物索引`,
+      );
     }
     const duplicate = existing.find((item) => item.classroomId === classroom.id);
     if (duplicate) {
@@ -81,23 +125,25 @@ export async function POST(req: NextRequest, context: { params: Promise<{ course
       continue;
     }
     const title = classroom.title?.trim() || `${savedCourse.title}｜互动课件`;
-    artifacts.push(await saveCourseArtifact({
-      id: nanoid(14),
-      jobId: `attached_${nanoid(10)}`,
-      teacherId: savedCourse.teacherId,
-      courseId: canonicalId,
-      scope,
-      type: 'lesson-courseware',
-      title,
-      content: `互动课件已归档到当前课程。\n\n课堂地址：/classroom/${classroom.id}`,
-      htmlContent: `<h1>${title.replace(/[<>&"']/g, '')}</h1><p>互动课件已归档到当前课程。</p>`,
-      status: 'review',
-      citations: [],
-      classroomId: classroom.id,
-      classroomUrl: `/classroom/${classroom.id}`,
-      createdAt: now,
-      updatedAt: now,
-    }));
+    artifacts.push(
+      await saveCourseArtifact({
+        id: nanoid(14),
+        jobId: `attached_${nanoid(10)}`,
+        teacherId: savedCourse.teacherId,
+        courseId: canonicalId,
+        scope,
+        type: 'lesson-courseware',
+        title,
+        content: `互动课件已归档到当前课程。\n\n课堂地址：/classroom/${classroom.id}`,
+        htmlContent: `<h1>${title.replace(/[<>&"']/g, '')}</h1><p>互动课件已归档到当前课程。</p>`,
+        status: 'review',
+        citations: [],
+        classroomId: classroom.id,
+        classroomUrl: `/classroom/${classroom.id}`,
+        createdAt: now,
+        updatedAt: now,
+      }),
+    );
   }
 
   return apiSuccess({ course: savedCourse, artifacts, scope });
