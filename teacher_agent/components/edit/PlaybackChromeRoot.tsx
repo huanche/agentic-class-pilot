@@ -868,7 +868,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
             }
             // Auto-play: advance to next scene after a short pause
             const { autoPlayLecture } = useSettingsStore.getState();
-            if (autoPlayLecture) {
+            if (videoOnly || autoPlayLecture) {
               const plannedSeconds = getSceneDurationSeconds(currentScene, stage, scenes);
               const transitionDelayMs = Math.max(
                 250,
@@ -876,7 +876,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
               );
               setTimeout(() => {
                 const stageState = useStageStore.getState();
-                if (!useSettingsStore.getState().autoPlayLecture) return;
+                if (!videoOnly && !useSettingsStore.getState().autoPlayLecture) return;
                 const allScenes = stageState.scenes;
                 const curId = stageState.currentSceneId;
                 const idx = allScenes.findIndex((s) => s.id === curId);
