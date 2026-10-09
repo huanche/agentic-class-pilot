@@ -147,7 +147,6 @@ export default function CourseOverviewPage() {
   const latestJob = jobs[0];
   const foundationReady =
     stats.ready > 0 && stats.has('course-outline') && stats.has('lesson-courseware');
-  const approvedCount = artifacts.filter((item) => item.status === 'approved').length;
   const statusItems = [
     {
       title: '课程材料',
@@ -244,7 +243,9 @@ export default function CourseOverviewPage() {
                 </Button>
                 <Button
                   className="rounded-xl bg-[#B00055] hover:bg-[#8F0046]"
-                  disabled={publishing || approvedCount === 0}
+                  disabled={
+                    publishing || course.status === 'active' || course.status === 'archived'
+                  }
                   onClick={() => void publishCourse()}
                 >
                   {publishing ? (
@@ -252,11 +253,7 @@ export default function CourseOverviewPage() {
                   ) : (
                     <PackageCheck className="mr-2 size-4" />
                   )}
-                  {course.status === 'active'
-                    ? approvedCount > 0
-                      ? '更新发布'
-                      : '已发布课程'
-                    : '发布课程'}
+                  {course.status === 'active' ? '已发布课程' : '发布课程'}
                 </Button>
               </div>
             </div>

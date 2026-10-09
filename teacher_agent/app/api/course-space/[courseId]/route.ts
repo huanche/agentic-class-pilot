@@ -35,8 +35,49 @@ export async function PUT(req: NextRequest, context: { params: Promise<{ courseI
   // (long-lived workspace tab). Publication state and the platform-synced
   // roster are server-owned: a stale save must never flip a published course
   // back to draft or drop the active knowledge package link.
+  // Structural saves cannot publish files or overwrite released lesson content.
+  const existingFiles = new Map(
+    existing.modules
+      .flatMap((m) => m.lessons ?? [])
+      .flatMap((l) => l.files ?? [])
+      .map((f) => [f.id, f]),
+  );
+  const materials = body.materials.map((item) => {
+    const saved = existing.materials.find((m) => m.id === item.id);
+    return {
+      ...item,
+      classVisible: saved?.classVisible ?? false,
+      classPublicationId: saved?.classPublicationId,
+      classPublishedAt: saved?.classPublishedAt,
+      activatedAt: saved?.activatedAt,
+    };
+  });
+  const modules = body.modules.map((module) => ({
+    ...module,
+    ...(module.lessons
+      ? {
+          lessons: module.lessons.map((lesson) => ({
+            ...lesson,
+            files: lesson.files?.map((file) => {
+              const saved = existingFiles.get(file.id);
+              return saved?.classPublicationId
+                ? saved
+                : {
+                    ...file,
+                    classVisible: false,
+                    classPublicationId: undefined,
+                    classPublishedAt: undefined,
+                  };
+            }),
+          })),
+        }
+      : {}),
+  }));
   const merged: CourseSpace = {
     ...body,
+    materials,
+    modules,
+    activeKnowledgeGraphVersion: existing.activeKnowledgeGraphVersion,
     status: existing.status,
     activeKnowledgePackageId: existing.activeKnowledgePackageId,
     classStudents: existing.classStudents,

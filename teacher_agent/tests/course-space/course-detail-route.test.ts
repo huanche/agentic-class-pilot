@@ -25,7 +25,16 @@ const existingCourse = {
   teacherId: 'teacher-001',
   status: 'active',
   activeKnowledgePackageId: 'pkg-v1',
-  classStudents: [{ studentId: 's1', name: '学生一', status: 'learning', progress: 40, completedResourceIds: [], lastActiveAt: 1 }],
+  classStudents: [
+    {
+      studentId: 's1',
+      name: '学生一',
+      status: 'learning',
+      progress: 40,
+      completedResourceIds: [],
+      lastActiveAt: 1,
+    },
+  ],
   title: '已发布课程',
   modules: [],
   materials: [],
@@ -54,7 +63,12 @@ describe('course detail route', () => {
   it('keeps server-owned publication state when a stale client copy is saved', async () => {
     storage.readServerCourse.mockResolvedValue(existingCourse);
     // A long-lived workspace tab that never saw the publish.
-    const staleCopy = { ...existingCourse, status: 'draft', activeKnowledgePackageId: undefined, classStudents: undefined };
+    const staleCopy = {
+      ...existingCourse,
+      status: 'draft',
+      activeKnowledgePackageId: undefined,
+      classStudents: undefined,
+    };
     const response = await PUT(putRequest(staleCopy), context);
     expect(response.status).toBe(200);
     const saved = storage.saveServerCourse.mock.calls[0][0];
@@ -71,6 +85,51 @@ describe('course detail route', () => {
     const saved = storage.saveServerCourse.mock.calls[0][0];
     expect(saved.title).toBe('改名');
     expect(saved.modules).toEqual([{ id: 'm1' }]);
+  });
+
+  it('preserves published lesson content and rejects publication metadata from structural saves', async () => {
+    const released = {
+      id: 'f1',
+      lessonId: 'l1',
+      content: 'released',
+      classVisible: true,
+      classPublicationId: 'CLS-F-1',
+    };
+    storage.readServerCourse.mockResolvedValue({
+      ...existingCourse,
+      materials: [{ id: 'mat1', classVisible: true, classPublicationId: 'CLS-M-1' }],
+      modules: [{ id: 'm1', lessons: [{ id: 'l1', files: [released] }] }],
+    });
+    const response = await PUT(
+      putRequest({
+        ...existingCourse,
+        materials: [
+          { id: 'mat1' },
+          { id: 'mat2', classVisible: true, classPublicationId: 'forged' },
+        ],
+        modules: [
+          {
+            id: 'm1',
+            lessons: [
+              {
+                id: 'l1',
+                files: [
+                  { id: 'f1', content: 'stale draft' },
+                  { id: 'f2', classVisible: true, classPublicationId: 'forged' },
+                ],
+              },
+            ],
+          },
+        ],
+      }),
+      context,
+    );
+    expect(response.status).toBe(200);
+    const saved = storage.saveServerCourse.mock.calls[0][0];
+    expect(saved.materials[0].classPublicationId).toBe('CLS-M-1');
+    expect(saved.materials[1].classPublicationId).toBeUndefined();
+    expect(saved.modules[0].lessons[0].files[0]).toEqual(released);
+    expect(saved.modules[0].lessons[0].files[1].classVisible).toBe(false);
   });
 
   it('rejects a course id that does not match the canonical id', async () => {

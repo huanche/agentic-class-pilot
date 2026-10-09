@@ -643,7 +643,6 @@ export default function CourseSpacePage() {
                 )}
               </div>
             </div>
-
             <CourseWorkspaceExplorer
               course={selected}
               artifacts={artifacts}

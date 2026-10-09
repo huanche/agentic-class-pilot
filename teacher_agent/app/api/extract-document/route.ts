@@ -20,6 +20,7 @@ import { normalizeDocumentMimeType, SUPPORTED_MEDIA_MIME_TYPES } from '@/lib/doc
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { validateUrlForSSRF } from '@/lib/server/ssrf-guard';
+import { extractWordText } from '@/lib/server/word-text-extractor';
 
 const log = createLogger('Extract Document');
 const MAX_EXTRACT_DOCUMENT_FILE_SIZE_BYTES = 50 * 1024 * 1024;
@@ -150,6 +151,29 @@ export async function POST(req: NextRequest) {
           MAX_EXTRACT_DOCUMENT_FILE_SIZE_BYTES / 1024 / 1024,
         )}MB.`,
       );
+    }
+
+    // Prefer local Word extraction unless a caller explicitly requests a cloud
+    // provider (or supplies credentials for the existing cloud OCR flow).
+    const isWord =
+      mimeType === 'application/msword' ||
+      mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    if (
+      isWord &&
+      (!preferredProviderId || preferredProviderId === 'unpdf') &&
+      !apiKey &&
+      !baseUrl
+    ) {
+      try {
+        const data = await extractWordText(Buffer.from(await documentFile.arrayBuffer()), fileName);
+        return apiSuccess({ data: { ...data, metadata: { ...data.metadata!, mimeType } } });
+      } catch (error) {
+        return apiError(
+          'INVALID_REQUEST',
+          422,
+          error instanceof Error ? error.message : 'Word 材料解析失败',
+        );
+      }
     }
 
     // Media (audio/video) takes the media extraction path → MediaArtifact,

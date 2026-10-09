@@ -10,9 +10,13 @@ import {
 } from '@/lib/server/course-space-storage';
 import { extractPptxText } from '@/lib/server/pptx-text-extractor';
 import { extractLegacyPptText } from '@/lib/server/ppt-text-extractor';
+import { extractWordText } from '@/lib/server/word-text-extractor';
 
 function replaceUnpairedSurrogates(value: string): string {
-  return value.replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, '\uFFFD');
+  return value.replace(
+    /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g,
+    '\uFFFD',
+  );
 }
 
 /** PostgreSQL JSONB rejects escaped, unpaired surrogates emitted by some PDF extractors. */
@@ -20,12 +24,21 @@ export function sanitizeParsedContent(parsed: ParsedPdfContent): ParsedPdfConten
   return {
     ...parsed,
     text: replaceUnpairedSurrogates(parsed.text),
-    layout: parsed.layout?.map((item) => ({ ...item, content: replaceUnpairedSurrogates(item.content) })),
-    formulas: parsed.formulas?.map((formula) => ({ ...formula, latex: replaceUnpairedSurrogates(formula.latex) })),
+    layout: parsed.layout?.map((item) => ({
+      ...item,
+      content: replaceUnpairedSurrogates(item.content),
+    })),
+    formulas: parsed.formulas?.map((formula) => ({
+      ...formula,
+      latex: replaceUnpairedSurrogates(formula.latex),
+    })),
   };
 }
 
-export function splitIntoPageChunks(materialId: string, parsed: ParsedPdfContent): CourseMaterialChunk[] {
+export function splitIntoPageChunks(
+  materialId: string,
+  parsed: ParsedPdfContent,
+): CourseMaterialChunk[] {
   const byPage = new Map<number, string[]>();
   for (const item of parsed.layout ?? []) {
     const page = Math.max(1, item.page || 1);
@@ -81,18 +94,30 @@ export async function parseStoredCourseMaterial(input: {
     const bytes = await readCourseMaterialBytes(material);
     let parsed: ParsedPdfContent;
     const lowerName = material.name.toLowerCase();
-    if (lowerName.endsWith('.pptx')) {
+    if (/\.docx?$/i.test(lowerName)) {
+      parsed = await extractWordText(bytes, material.name);
+    } else if (lowerName.endsWith('.pptx')) {
       parsed = await extractPptxText(bytes, material.name);
     } else if (lowerName.endsWith('.ppt')) {
       parsed = await extractLegacyPptText(bytes, material.name);
     } else {
       const form = new FormData();
-      form.append('file', new File([new Uint8Array(bytes)], material.name, { type: material.mimeType }));
+      form.append(
+        'file',
+        new File([new Uint8Array(bytes)], material.name, { type: material.mimeType }),
+      );
       const internal = internalTeacherRequest(input.baseUrl, course.teacherId);
       const response = await fetch(`${internal.baseUrl}/api/extract-document`, {
-        method: 'POST', body: form, headers: internal.headers, redirect: 'error',
+        method: 'POST',
+        body: form,
+        headers: internal.headers,
+        redirect: 'error',
       });
-      const payload = (await response.json()) as { success: boolean; data?: ParsedPdfContent; error?: string };
+      const payload = (await response.json()) as {
+        success: boolean;
+        data?: ParsedPdfContent;
+        error?: string;
+      };
       if (!response.ok || !payload.success || !payload.data) {
         throw new Error(payload.error || `材料解析失败（HTTP ${response.status}）`);
       }
@@ -121,6 +146,7 @@ export async function parseStoredCourseMaterial(input: {
           ? {
               ...item,
               status: 'ready',
+              error: undefined,
               pageCount: extraction.pageCount,
               parser: extraction.parser,
               extractedAt: Date.now(),

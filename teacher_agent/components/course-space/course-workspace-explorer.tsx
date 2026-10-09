@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   BookOpen,
   ChevronDown,
@@ -166,6 +167,8 @@ export function CourseWorkspaceExplorer({
   const [savingStructure, setSavingStructure] = useState(false);
   const [treeMessage, setTreeMessage] = useState('');
   const [folderMenu, setFolderMenu] = useState<FolderMenu>();
+  const [newFolder, setNewFolder] = useState<{ kind: 'module' | 'lesson'; moduleId?: string }>();
+  const [newFolderTitle, setNewFolderTitle] = useState('');
   const [dropTargetId, setDropTargetId] = useState('');
   const initializedFromArtifacts = useRef(false);
   const explorerRef = useRef<HTMLDivElement>(null);
@@ -333,34 +336,45 @@ export function CourseWorkspaceExplorer({
       setActivating(false);
     }
   };
-  const addModule = async () => {
-    const title = window.prompt('请输入新模块名称');
-    if (!title?.trim()) return;
+  const addModule = async (title: string) => {
+    if (course.modules.some((module) => module.title.trim() === title.trim())) {
+      setTreeMessage(`“${title.trim()}”已经存在，请使用其他模块名称。`);
+      return;
+    }
     const now = Date.now();
     const moduleId = nanoid(10);
-    await onCourseChange({
-      ...course,
-      updatedAt: now,
-      modules: [
-        ...course.modules,
-        {
-          id: moduleId,
-          courseId: course.id,
-          title: title.trim(),
-          order: course.modules.length + 1,
-          objectives: [],
-          lessons: [],
-          createdAt: now,
-          updatedAt: now,
-        },
-      ],
-    });
-    setExpanded((items) => new Set(items).add(moduleId));
-    selectScope({ type: 'module', moduleId });
+    setSavingStructure(true);
+    setTreeMessage('');
+    try {
+      await onCourseChange({
+        ...course,
+        updatedAt: now,
+        modules: [
+          ...course.modules,
+          {
+            id: moduleId,
+            courseId: course.id,
+            title: title.trim(),
+            order: course.modules.length + 1,
+            objectives: [],
+            lessons: [],
+            createdAt: now,
+            updatedAt: now,
+          },
+        ],
+      });
+      setExpanded((items) => new Set(items).add(moduleId));
+      selectScope({ type: 'module', moduleId });
+      setNewFolder(undefined);
+      setNewFolderTitle('');
+      setTreeMessage(`已创建模块“${title.trim()}”。`);
+    } catch (error) {
+      setTreeMessage(`创建模块失败：${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setSavingStructure(false);
+    }
   };
-  const addLesson = async (moduleId: string) => {
-    const title = window.prompt('请输入课时文件夹名称，例如“第1周”');
-    if (!title?.trim()) return;
+  const addLesson = async (moduleId: string, title: string) => {
     const target = course.modules.find((item) => item.id === moduleId);
     if (!target) return;
     if (target.lessons.some((lesson) => lesson.title.trim() === title.trim())) {
@@ -400,6 +414,8 @@ export function CourseWorkspaceExplorer({
       setExpanded((items) => new Set(items).add(moduleId));
       setExpandedLessons((items) => new Set(items).add(lessonId));
       selectScope({ type: 'lesson', lessonId });
+      setNewFolder(undefined);
+      setNewFolderTitle('');
       setTreeMessage(`已创建文件夹“${title.trim()}”。`);
     } catch (error) {
       setTreeMessage(`创建文件夹失败：${error instanceof Error ? error.message : String(error)}`);
@@ -584,7 +600,11 @@ export function CourseWorkspaceExplorer({
             <button
               title="添加模块"
               aria-label="添加模块"
-              onClick={() => void addModule()}
+              onClick={() => {
+                setNewFolder({ kind: 'module' });
+                setNewFolderTitle('');
+              }}
+              disabled={savingStructure}
               className="grid size-7 shrink-0 place-items-center rounded-lg border bg-white text-[#B00055] hover:bg-[#B00055]/5"
             >
               <Plus className="size-3.5" />
@@ -683,7 +703,10 @@ export function CourseWorkspaceExplorer({
                   <button
                     title={`在“${module.title}”下添加课时文件夹`}
                     aria-label={`在“${module.title}”下添加课时文件夹`}
-                    onClick={() => void addLesson(module.id)}
+                    onClick={() => {
+                      setNewFolder({ kind: 'lesson', moduleId: module.id });
+                      setNewFolderTitle('');
+                    }}
                     disabled={savingStructure}
                     className="mr-1 grid size-6 shrink-0 place-items-center rounded-md text-slate-400 opacity-60 hover:bg-[#B00055]/10 hover:text-[#B00055] group-hover/module:opacity-100"
                   >
@@ -1067,6 +1090,65 @@ export function CourseWorkspaceExplorer({
           </div>
         </section>
       </div>
+      {newFolder &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/35 p-4"
+            role="presentation"
+            onMouseDown={(event) => {
+              if (event.target === event.currentTarget && !savingStructure) setNewFolder(undefined);
+            }}
+          >
+            <form
+              role="dialog"
+              aria-modal="true"
+              aria-label={newFolder.kind === 'module' ? '创建模块' : '创建课时文件夹'}
+              className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl"
+              onSubmit={(event) => {
+                event.preventDefault();
+                const title = newFolderTitle.trim();
+                if (!title || savingStructure) return;
+                if (newFolder.kind === 'module') void addModule(title);
+                else if (newFolder.moduleId) void addLesson(newFolder.moduleId, title);
+              }}
+            >
+              <h3 className="text-base font-semibold text-slate-900">
+                {newFolder.kind === 'module' ? '创建模块' : '创建课时文件夹'}
+              </h3>
+              <input
+                autoFocus
+                value={newFolderTitle}
+                onChange={(event) => setNewFolderTitle(event.target.value)}
+                maxLength={100}
+                placeholder={newFolder.kind === 'module' ? '例如：课件' : '例如：第1周'}
+                className="mt-4 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-[#B00055]"
+              />
+              {treeMessage && (
+                <p className="mt-2 text-xs text-rose-600" role="alert">
+                  {treeMessage}
+                </p>
+              )}
+              <div className="mt-5 flex justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={savingStructure}
+                  onClick={() => setNewFolder(undefined)}
+                >
+                  取消
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={!newFolderTitle.trim() || savingStructure}
+                  className="bg-[#B00055] hover:bg-[#8F0046]"
+                >
+                  {savingStructure ? '创建中…' : '创建'}
+                </Button>
+              </div>
+            </form>
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }

@@ -1876,9 +1876,25 @@ function GenerationPreviewContent() {
                 animate={{ opacity: 1, y: 0 }}
                 className="w-full max-w-xs"
               >
-                <Button size="lg" variant="outline" className="w-full h-12" onClick={goBackToHome}>
-                  {t('generation.goBackAndRetry')}
-                </Button>
+                <div className="space-y-2">
+                  {error.includes(t('generation.sceneGenerateAuthFailed')) && (
+                    <Button
+                      size="lg"
+                      className="w-full h-12"
+                      onClick={() => router.push('/settings')}
+                    >
+                      前往模型配置
+                    </Button>
+                  )}
+                  <Button
+                    size="lg"
+                    variant="outline"
+                    className="w-full h-12"
+                    onClick={goBackToHome}
+                  >
+                    {t('generation.goBackAndRetry')}
+                  </Button>
+                </div>
               </motion.div>
             ) : isOutlineReady ? null : !isComplete ? (
               <motion.div

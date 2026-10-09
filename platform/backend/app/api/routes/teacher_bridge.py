@@ -15,7 +15,7 @@ from sqlalchemy import text
 from app.api.deps import CurrentUser, SessionDep, TeacherUser
 from app.core.config import settings
 from app.models import Course
-from app.api.routes.student_bridge import _published_classroom
+from app.api.routes.student_bridge import _published_classroom, _published_package_payload
 from app.services.browser_sessions import user_for_cookie
 from app.services.course_access import get_accessible_course, get_owned_course
 
@@ -186,6 +186,19 @@ def _authorize_teacher_request(body: TeacherAuthorization, session: SessionDep,
     # which they are currently enrolled. All editing and generation routes
     # remain teacher-only below.
     if user.role == "student" and body.method in {"GET", "HEAD", "OPTIONS"}:
+        # A resource URL is readable only after explicit publication in an enrolled active course.
+        if parts[:2] == ["api", "course-space"] and len(parts) == 5 and parts[3] == "materials":
+            row = session.execute(text(
+                "SELECT c.payload FROM teacher.mentra_courses c "
+                "JOIN teacher_course_link l ON l.external_course_id=c.id "
+                "JOIN enrollment e ON e.course_id=l.course_id "
+                "WHERE (c.id=:ref OR l.course_id::text=:ref) AND e.student_id=:uid AND c.status='active'"
+            ), {"ref": parts[2], "uid": user.id}).first()
+            material = next((m for m in (row[0].get("materials", []) if row else [])
+                             if m.get("id") == parts[4]), None)
+            if not material or material.get("classVisible") is not True or not material.get("classPublicationId"):
+                raise HTTPException(403, "Student may only read enrolled published materials")
+            return {"userId": str(user.id), "role": user.role, "isAdmin": False}
         classroom_id: str | None = None
         if parts[:1] in (["classroom-player"], ["classroom"]) and len(parts) > 1:
             classroom_id = parts[1]
@@ -212,7 +225,15 @@ def _authorize_teacher_request(body: TeacherAuthorization, session: SessionDep,
                 text("SELECT 1 FROM enrollment WHERE course_id=:course AND student_id=:student"),
                 {"course": platform_course_id, "student": user.id},
             ).first()
-            if not enrolled or _published_classroom(session, platform_course_id) != classroom_id:
+            published = session.execute(text(
+                "SELECT 1 FROM teacher.mentra_course_artifacts a "
+                "JOIN teacher_course_link l ON l.external_course_id=a.course_id "
+                "JOIN teacher.mentra_courses c ON c.id=a.course_id "
+                "WHERE l.course_id=:cid AND c.status='active' AND a.status='published' "
+                "AND a.payload->>'classVisible'='true' AND a.payload->>'classPublicationId' IS NOT NULL "
+                "AND a.payload->>'classroomId'=:rid"
+            ), {"cid": platform_course_id, "rid": classroom_id}).first()
+            if not enrolled or not published:
                 raise HTTPException(403, "Student may only view an enrolled published classroom")
             return {"userId": str(user.id), "role": user.role, "isAdmin": False}
     if user.role != "teacher" and not user.is_superuser:
@@ -327,7 +348,7 @@ def published_content(course_id: uuid.UUID, session: SessionDep, user: CurrentUs
     # Reading a published knowledge package does not require a player. Keep
     # this separate from Classroom availability so students see real material
     # while the teacher is still preparing interactive courseware.
-    return {"knowledgePackage": row[0] if row else None,
+    return {"knowledgePackage": _published_package_payload(session, course_id) if row else None,
             "classroomAvailable": bool(_published_classroom(session, course_id))}
 
 
