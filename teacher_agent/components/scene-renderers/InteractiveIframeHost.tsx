@@ -30,7 +30,11 @@ import { useStageStore } from '@/lib/store';
  * (gone → hidden, never unmounted), so the document is preserved for a
  * zero-reload return.
  */
-export function InteractiveIframeHost() {
+export function InteractiveIframeHost({
+  studentPlayer = false,
+}: {
+  readonly studentPlayer?: boolean;
+}) {
   const entries = useInteractiveIframePool((s) => s.entries);
   const activeSceneId = useInteractiveIframePool((s) => s.activeSceneId);
   const reset = useInteractiveIframePool((s) => s.reset);
@@ -68,6 +72,7 @@ export function InteractiveIframeHost() {
           sceneId={sceneId}
           entry={entry}
           visible={entry.owner !== null && sceneId === activeSceneId}
+          studentPlayer={studentPlayer}
         />
       ))}
     </>,
@@ -79,6 +84,7 @@ interface PooledIframeProps {
   readonly sceneId: string;
   readonly entry: IframePoolEntry;
   readonly visible: boolean;
+  readonly studentPlayer: boolean;
 }
 
 /**
@@ -98,7 +104,7 @@ interface PooledIframeProps {
  * works correctly with a null origin because the host sends with
  * targetOrigin='*'.
  */
-function PooledIframe({ sceneId, entry, visible }: PooledIframeProps) {
+function PooledIframe({ sceneId, entry, visible, studentPlayer }: PooledIframeProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const registerIframe = useWidgetIframeStore((s) => s.registerIframe);
   const automaticDemo = useStageStore(
@@ -168,7 +174,9 @@ function PooledIframe({ sceneId, entry, visible }: PooledIframeProps) {
     zIndex: 1,
     // visibility (not display) — display:none can drop the document on re-show.
     visibility: shown ? 'visible' : 'hidden',
-    pointerEvents: shown && !automaticDemo ? 'auto' : 'none',
+    // Keep teacher presentation click-through, but let student viewers try
+    // the demo themselves while its scripted actions are playing.
+    pointerEvents: shown && (studentPlayer || !automaticDemo) ? 'auto' : 'none',
   };
 
   return (
