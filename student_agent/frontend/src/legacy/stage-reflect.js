@@ -1,14 +1,21 @@
 /* 深入思考：题目与反馈均由后端依据当前 host_phase 生成。
-   这一幕没有「进入下一阶段」按钮，由后端按证据/时间预算自动推进到收尾。 */
+   正常情况下由后端按证据/时间预算自动推进到收尾；
+   底下那个「结束本节课」按钮是快捷出口：至少对话 2 分钟才放行，直接下课。 */
 import { $, appendChatMessage, showTyping } from "./ui.js";
-import { sendMessage } from "./api.js";
+import { sendMessage, endLesson } from "./api.js";
 
 export function createStage(ctx) {
   var log = $("reflect-log");
   var form = $("reflect-composer");
   var input = $("reflect-input");
   var submitBtn = $("reflect-submit");
+  var endBtn = $("reflect-end");
   var busy = false;
+
+  /* 「结束本节课」按钮的对话时长门槛：这一幕至少对话 2 分钟才放行，
+     避免学生还没思考几句就急着下课。 */
+  var stageStartedAt = 0;
+  var MIN_DIALOGUE_MS = 2 * 60 * 1000;
 
   function updateSubmit() {
     submitBtn.disabled = busy || input.value.trim().length < 2;
@@ -43,6 +50,25 @@ export function createStage(ctx) {
     });
   }
 
+  /* 主动结束本节课（跳过剩余阶段直接下课）。
+     正常情况下下课由后端的 judge_advance 决定（预算耗尽），
+     这个按钮是快捷出口，但这一幕至少对话 2 分钟才放行。 */
+  function end() {
+    if (Date.now() - stageStartedAt < MIN_DIALOGUE_MS) {
+      ctx.toast("请继续对话");
+      return;
+    }
+    endBtn.disabled = true;
+    endLesson(ctx.sessionId).then(function (res) {
+      ctx.applyServerTurn(res);
+      // 后端仍留在深入思考（没真正下课）→ 放开按钮，学生可以接着说
+      if (ctx.getPhase() === "deep_inquiry") endBtn.disabled = false;
+    }).catch(function (err) {
+      endBtn.disabled = false;
+      ctx.toast("结束失败：" + err.message);
+    });
+  }
+
   return {
     mount: function () {
       input.maxLength = 600;
@@ -57,9 +83,11 @@ export function createStage(ctx) {
         event.preventDefault();
         submit();
       });
+      endBtn.addEventListener("click", end);
       updateSubmit();
     },
     enter: function (stage, turn) {
+      stageStartedAt = Date.now();
       if (!log.children.length && turn && turn.message && turn.message.text) {
         appendChatMessage(log, "ai", turn.message.text);
       }
@@ -75,6 +103,8 @@ export function createStage(ctx) {
       input.value = "";
       input.disabled = false;
       form.hidden = false;
+      endBtn.disabled = false;
+      stageStartedAt = 0;
       updateSubmit();
     }
   };

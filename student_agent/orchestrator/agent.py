@@ -70,6 +70,7 @@ STAR_STATUS = {1: "已接触", 2: "初步理解", 3: "理解中", 4: "接近掌�
 EVENT_BEGIN = "begin"            # 课堂开始
 EVENT_MEDIA_DONE = "media_done"  # 一段视频/素材播放完成
 EVENT_NEXT_STAGE = "next_stage"  # 老师按"下一环节"，强制切幕
+EVENT_END_LESSON = "end_lesson"  # 老师按"结束本节课"，直接下课（跳过剩余阶段）
 
 
 def stage_delivery(state: ClassroomState) -> str:
@@ -577,6 +578,7 @@ class ClassroomState(TypedDict):
     #   begin        —— 课堂开始，等价于"起课铃"
     #   media_done   —— 一段讲解视频/素材播放完成
     #   next_stage   —— 老师按"下一环节"，无条件切幕
+    #   end_lesson   —— 老师按"结束本节课"，直接下课（跳过剩余阶段）
     # 每轮由会话层显式传值覆盖（None = 本轮无事件），不清空的话会渗进下一轮判定。
     segment_cursor: int            # 讲解阶段段落游标：时间到 +1，视频播完也 +1
     played_media: list[dict]       # 已播完的素材 [{"segment_id", "at"}]，给学情导出用
@@ -1304,7 +1306,7 @@ def teach(state: ClassroomState) -> dict:
 
     # 老师按「下一环节」：本轮 teach 不说话，由 advance_stage 的开场白接管。
     # 否则会拼出"刚抛出一个问题、下一秒又宣布换环节"的缝合怪回复。
-    if state.get("external_event") == EVENT_NEXT_STAGE:
+    if state.get("external_event") in (EVENT_NEXT_STAGE, EVENT_END_LESSON):
         return {"reply_text": "", "llm_used": False,
                 "attempts": state.get("attempts", 0)}
 
@@ -1879,6 +1881,8 @@ def judge_advance(state: ClassroomState) -> dict:
     ev = state.get("external_event")
     if ev == EVENT_NEXT_STAGE:
         return {"target_phase": _next_phase(state), "advance_reason": "老师按了「下一环节」"}
+    if ev == EVENT_END_LESSON:
+        return {"target_phase": "ending", "advance_reason": "老师按了「结束本节课」"}
     if ev == EVENT_MEDIA_DONE and phase == "guided_learning":
         # 素材放完就往前走：还有段落 → 讲下一段（在 teach 里推进游标）；
         # 已是最后一段（游标越界）→ 素材讲完了，进入下一环节。
@@ -1952,6 +1956,8 @@ def advance_stage(state: ClassroomState) -> dict:
 
     # 2) 取下一幕
     rest = list(state.get("remaining_stages") or [])
+    if state.get("external_event") == EVENT_END_LESSON:
+        rest = []   # 主动下课：跳过剩余阶段，直接进 ending
     if not rest:
         # 总结要算上本幕（deep_inquiry）刚拍的这条快照
         remark, gen = _ending_remark(state, snapshot)
@@ -2111,7 +2117,7 @@ def route_after_classify(state: ClassroomState) -> str:
 
     是否真的开口由 teach 判断——没新内容就静默（reply_text 为空）。
     """
-    if state.get("external_event") in (EVENT_MEDIA_DONE, EVENT_NEXT_STAGE):
+    if state.get("external_event") in (EVENT_MEDIA_DONE, EVENT_NEXT_STAGE, EVENT_END_LESSON):
         return "teach"
     if state.get("tick_only"):
         return "teach"

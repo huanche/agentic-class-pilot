@@ -36,7 +36,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "orchestrator"))
 
 from agent import (  # noqa: E402
-    EVENT_BEGIN, EVENT_MEDIA_DONE, EVENT_NEXT_STAGE,
+    EVENT_BEGIN, EVENT_MEDIA_DONE, EVENT_NEXT_STAGE, EVENT_END_LESSON,
     STAGE_NAMES, STAR_STATUS, build_graph, initial_state, is_uploaded_lesson,
     kp_title, lesson_source_label, list_lesson_ids, load_lesson,
     run_turn_stateless, safe_lesson_id, save_lesson, validate_plan,
@@ -61,7 +61,7 @@ FRONTEND_OUT_DIR = ROOT / "frontend" / "out"
 # 会话状态 → 此刻前端该显示哪些按钮（前端照着这个渲染，不要自己猜能不能按）
 ACTIONS = {
     "idle": ["begin"],                                  # 已进教室，等老师点「开始上课」
-    "running": ["message", "media_done", "next_stage", "stop"],
+    "running": ["message", "media_done", "next_stage", "end", "stop"],
     "ended": ["export"],
 }
 
@@ -1296,16 +1296,39 @@ def stage_next(sid: str, body: EventIn | None = None) -> dict:
     }
 
 
+@app.post("/api/session/{sid}/end")
+def end_lesson(sid: str, body: EventIn | None = None) -> dict:
+    """★ 结束本节课。学生/老师按「结束本节课」时调，直接进 ending（跳过剩余阶段）。
+
+    对应深入思考等阶段的「结束本节课」按钮。是否已满最短幕时长由前端按钮挡一道
+    （与复述阶段「进入下一阶段」按钮同款 2 分钟门槛），后端无条件下课。
+    """
+    _running(sid)
+    st = _step(sid, "", "host", tick_only=True, external_event=EVENT_END_LESSON)
+    return {
+        "ok": True,
+        "reply_text": st.get("reply_text", ""),
+        "phase": st.get("host_phase"),
+        "phase_name": STAGE_NAMES.get(st.get("host_phase"), st.get("host_phase")),
+        "status": st.get("lesson_status"),
+        "current_question": st.get("current_question"),
+        "total": len(_get(sid)["messages"]),
+        "available_actions": ACTIONS[st.get("lesson_status", "running")],
+    }
+
+
 @app.post("/api/session/{sid}/event")
 def event(sid: str, body: EventIn) -> dict:
-    """统一事件入口。前端只对接这一个也行：{"type": "begin"|"media_done"|"next_stage"}。"""
+    """统一事件入口。前端只对接这一个也行：{"type": "begin"|"media_done"|"next_stage"|"end_lesson"}。"""
     if body.type == "begin":
         return begin(sid)
     if body.type == "media_done":
         return media_done(sid, body)
     if body.type == "next_stage":
         return stage_next(sid, body)
-    raise HTTPException(400, f"未知事件类型：{body.type}（可选 begin / media_done / next_stage）")
+    if body.type == "end_lesson":
+        return end_lesson(sid, body)
+    raise HTTPException(400, f"未知事件类型：{body.type}（可选 begin / media_done / next_stage / end_lesson）")
 
 
 @app.post("/api/session/{sid}/message")

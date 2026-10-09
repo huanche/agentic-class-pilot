@@ -148,6 +148,11 @@ export function advanceStage(sessionId) {
     .then(normalizeTurn);
 }
 
+export function endLesson(sessionId) {
+  return request("POST", sessionUrl(sessionId, "/end"), {})
+    .then(normalizeTurn);
+}
+
 export function fetchSessionState(sessionId) {
   return request("GET", sessionUrl(sessionId, "/state")).then(function (state) {
     return {
