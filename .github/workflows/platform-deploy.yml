@@ -1,0 +1,103 @@
+name: platform-deploy
+
+# Platform (backend + frontend) deployment: PRs to main that touch platform/**
+# get a build-only check (bun install + frontend build) so breakage surfaces
+# before merge. Pushes to main additionally deploy: the frontend is built on
+# the runner (the server has no bun — matching the established manual flow of
+# building the vite bundle off-server and uploading it), then SSH runs the
+# server-side script: ff-only pull -> uv sync -> alembic upgrade -> swap
+# frontend bundle -> restart agentic-platform, with health check + automatic
+# rollback (see platform/scripts/server-deploy-platform.sh).
+#
+# Reuses the teacher-deploy secrets:
+#   SERVER_HOST     43.132.155.8
+#   SERVER_SSH_KEY  dedicated ed25519 private key (github-actions-teacher-deploy)
+#
+# One-time server prerequisites:
+#   - uv at ~/.local/bin/uv (backend dep sync)
+#   - sudoers: ubuntu ALL=(ALL) NOPASSWD: /bin/systemctl restart agentic-platform
+#
+# With this workflow all three deployables are automated on main:
+# teacher_agent/** -> teacher-deploy, student_agent/** -> student-deploy,
+# platform/** -> platform-deploy.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'platform/**'
+      - '.github/workflows/platform-deploy.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'platform/**'
+      - '.github/workflows/platform-deploy.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: platform-deploy
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Build frontend (vite -> backend/app/frontend)
+        working-directory: platform
+        run: |
+          bun install --frozen-lockfile
+          bun run --filter frontend build
+
+      - name: Package frontend bundle
+        run: tar czf frontend-bundle.tgz -C platform/backend/app/frontend .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frontend-bundle
+          path: frontend-bundle.tgz
+          retention-days: 1
+
+  deploy:
+    # PR builds stop after the build check; only main pushes / manual runs deploy.
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: frontend-bundle
+
+      - name: Deploy to production server
+        env:
+          SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+        run: |
+          set -euo pipefail
+          printf '%s\n' "$SERVER_SSH_KEY" > /tmp/deploy_key
+          chmod 600 /tmp/deploy_key
+          SCP="scp -i /tmp/deploy_key -o StrictHostKeyChecking=accept-new"
+          SSH="ssh -i /tmp/deploy_key -o StrictHostKeyChecking=accept-new ubuntu@$SERVER_HOST"
+
+          # Upload the server-side deploy script (strip CR in case of CRLF checkout)
+          # and the frontend bundle built by the build job.
+          $SCP platform/scripts/server-deploy-platform.sh \
+            "ubuntu@$SERVER_HOST:/tmp/server-deploy-platform.sh"
+          $SSH "sed -i 's/\r$//' /tmp/server-deploy-platform.sh"
+          $SCP frontend-bundle.tgz "ubuntu@$SERVER_HOST:/tmp/platform-frontend-bundle.tgz"
+
+          $SSH "bash /tmp/server-deploy-platform.sh '$GITHUB_SHA' /tmp/platform-frontend-bundle.tgz"
+
+      # Informational only — the authoritative gate is the server-side health
+      # check + rollback in server-deploy-platform.sh.
+      - name: Verify public endpoint
+        run: |
+          sleep 5
+          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 \
+            https://agenticclasspilot.com/health || true)
+          echo "public /health -> $code"
