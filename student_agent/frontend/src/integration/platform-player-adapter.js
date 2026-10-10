@@ -29,8 +29,10 @@ export const platformPlayerAdapter = {
     iframe.setAttribute("allowfullscreen", "true");
     iframe.referrerPolicy = "same-origin";
     iframe.style.width = "100%";
-    iframe.style.height = "min(72vh, 760px)";
-    iframe.style.minHeight = "480px";
+    // Match the host slot: a taller iframe was clipped by its 16:9 parent,
+    // hiding the embedded player's bottom controls and trapping scroll.
+    iframe.style.height = "100%";
+    iframe.style.minHeight = "0";
     iframe.style.border = "0";
     iframe.style.borderRadius = "16px";
     iframe.style.background = "#fff";

@@ -170,6 +170,13 @@ export function createStage(ctx) {
   var playbackRequest = 0;
   var replayMode = false;
 
+  function setPlayerStatus(message) {
+    var status = $("video-player-status");
+    status.textContent = message;
+    status.hidden = !message;
+    status.parentElement.hidden = !message && $("btn-exit-replay").hidden;
+  }
+
   function destroyPlayer() {
     playbackRequest++;
     if (playerHandle) playerHandle.destroy();
@@ -180,15 +187,13 @@ export function createStage(ctx) {
     if (replayMode || videoEndNotified) return;
     videoEndNotified = true;
 
-    var status = $("video-player-status");
-
     /* ⚠️ 这一轮服务端要**现场让模型生成老师的下一句话**，实测 20–35 秒
        （平台态更慢：每轮要带上 1 万多字的已发布课程上下文）。
        视频播完后没有可点的按钮了，这里靠状态文字告诉学生在等什么；
        幂等守卫会挡掉重复通知。 */
-    status.textContent = how === "ended"
+    setPlayerStatus(how === "ended"
       ? "视频已播完，正在请老师准备下一环节…（约需 20–30 秒）"
-      : "已通知老师，正在准备下一环节…（约需 20–30 秒）";
+      : "已通知老师，正在准备下一环节…（约需 20–30 秒）");
 
     notifyMediaDone(ctx.sessionId, sceneId, eventId).then(function (res) {
       if (res && res.message && res.message.text && !ctx.replySeenByPoll(res)) {
@@ -196,7 +201,7 @@ export function createStage(ctx) {
       }
       ctx.applyServerTurn(res);
     }).catch(function (err) {
-      status.textContent = "通知失败：" + err.message;
+      setPlayerStatus("通知失败：" + err.message);
       ctx.toast("通知失败：" + err.message);
       videoEndNotified = false;   /* 允许重试 */
     });
@@ -215,7 +220,7 @@ export function createStage(ctx) {
     var request = playbackRequest;
     var isReplay = replayMode;
     var requestedLessonId = ctx.lessonId;
-    $("video-player-status").textContent = "正在准备播放器…";
+    setPlayerStatus("正在准备播放器…");
 
     fetchLessonVideo(requestedLessonId).then(function (data) {
       if (request !== playbackRequest || ctx.lessonId !== requestedLessonId) return;
@@ -248,16 +253,14 @@ export function createStage(ctx) {
         onError: function (error) {
           if (request !== playbackRequest) return;
           var message = error && error.message ? error.message : String(error || "未知错误");
-          $("video-player-status").textContent = "播放器错误：" + message;
+          setPlayerStatus("播放器错误：" + message);
           ctx.toast("播放器错误：" + message);
         }
       });
-      $("video-player-status").textContent = playerHandle.mounted
-        ? "播放器已接入"
-        : "等待接入外部视频播放器";
+      setPlayerStatus(playerHandle.mounted ? "" : "等待接入外部视频播放器");
     }).catch(function (err) {
       if (request !== playbackRequest) return;
-      $("video-player-status").textContent = "视频信息获取失败：" + err.message;
+      setPlayerStatus("视频信息获取失败：" + err.message);
     });
   }
 
@@ -334,7 +337,7 @@ export function createStage(ctx) {
 
       destroyPlayer();
       $("video-player-slot").replaceChildren();
-      $("video-player-status").textContent = "等待接入外部视频播放器";
+      setPlayerStatus("等待接入外部视频播放器");
 
       showPane("idle");
     },

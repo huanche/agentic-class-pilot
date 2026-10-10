@@ -712,7 +712,21 @@ body::before {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  flex: 1;
+  flex: none;
+}
+
+/* Keep the embedded player near the top and let the page scroll when needed. */
+#view-class:has(.stage--video:not([hidden])) {
+  gap: 12px;
+  padding-top: 14px;
+}
+#view-class .stage--video {
+  flex: none;
+  min-height: auto;
+}
+#view-class .stage--video .video-player-slot {
+  width: min(100%, 1080px, max(320px, calc((100dvh - 150px) * 1.77778)));
+  max-width: 1080px;
 }
 
 /* 业务方播放器只挂载到这个容器，项目不创建原生 video 元素。 */
