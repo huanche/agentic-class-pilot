@@ -500,6 +500,8 @@ function openReplayRoute() {
   setStatus("课程回放");
   $("btn-exit-replay").hidden = false;
   $("video-player-status").textContent = "正在加载课程…";
+  $("video-player-status").hidden = false;
+  $("video-player-status").parentElement.hidden = false;
   var requestedHash = location.hash;
   var requestedLessonId = currentLessonId;
   fetchLesson(requestedLessonId).then(function (data) {

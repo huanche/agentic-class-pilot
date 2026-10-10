@@ -1234,9 +1234,8 @@ def teach(state: ClassroomState) -> dict:
 
     # ── 第一层：确定性编排骨架（永远执行）──
     if phase == "guided_learning":
-        # ── 视频讲解模式：一整段视频替代 AI 讲解 ──
-        # AI 全程不出讲解词；唯一要做的事：视频播完那一刻把段落游标推满
-        # （judge_advance 看到"素材全部播完"会切进下一环节）。
+        # ── 视频讲解模式：视频负责主讲，AI 回答学生主动提出的问题 ──
+        # 视频播完才推进段落游标；提问不改变播放进度和阶段。
         if stage_delivery(state) == "video":
             if state.get("external_event") == EVENT_MEDIA_DONE:
                 segs = _segments(plan)
@@ -1246,8 +1245,19 @@ def teach(state: ClassroomState) -> dict:
                     for s in segs
                 ]
                 updates["played_media"] = list(state.get("played_media") or []) + played
-            updates["reply_text"] = ""
-            updates["llm_used"] = False
+            if msg.strip() and state.get("speaker") == "student" and not tick:
+                directive = (
+                    "学生正在观看本课视频前的引导阶段，刚主动提出问题。"
+                    "直接回答这个问题；只依据课堂背景中的本课已发布内容，"
+                    "信息不足时坦诚说明并引导学生在视频中留意相关内容。"
+                    "不要代替视频完整讲课，不要要求切换阶段或宣称视频已经播放完。"
+                )
+                polished = llm_polish(state, directive) if llm_available() else None
+                updates["reply_text"] = polished.strip() if polished else NO_LLM_NOTICE
+                updates["llm_used"] = bool(polished)
+            else:
+                updates["reply_text"] = ""
+                updates["llm_used"] = False
             return updates
 
         cursor = _next_cursor(plan, state, elapsed)
