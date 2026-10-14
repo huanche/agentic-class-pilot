@@ -740,6 +740,7 @@ export class PlaybackEngine {
         break;
       }
 
+      case 'reveal':
       case 'play_video':
       case 'wb_open':
       case 'wb_draw_text':
