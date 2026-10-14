@@ -7,6 +7,7 @@ import type { EditableSlideCanvasWithUIProps } from '@openmaic/editor/ui';
 
 const state = vi.hoisted(() => ({
   rendererEnabled: true,
+  playbackHiddenElementIds: [] as string[],
   pickTarget: null as unknown,
   lastRendererProps: undefined as EditableSlideCanvasWithUIProps | undefined,
   legacyCanvasRenders: 0,
@@ -120,7 +121,7 @@ vi.mock('@/lib/store/canvas', () => ({
   useCanvasStore: {
     use: {
       activeElementIdList: () => ['text-1'],
-      hiddenElementIdList: () => [],
+      hiddenElementIdList: () => state.playbackHiddenElementIds,
       editingElementId: () => 'text-1',
       pickTarget: () => state.pickTarget,
       setActiveElementIdList: () => state.setActiveElementIdList,
@@ -142,6 +143,7 @@ import { SlideCanvas } from '@/components/edit/surfaces/slide/SlideCanvas';
 
 beforeEach(() => {
   state.rendererEnabled = true;
+  state.playbackHiddenElementIds = [];
   state.pickTarget = null;
   state.lastRendererProps = undefined;
   state.legacyCanvasRenders = 0;
@@ -154,6 +156,15 @@ beforeEach(() => {
 });
 
 describe('slide editor renderer feature flag', () => {
+  it('keeps timeline-hidden elements visible and editable in the authoring canvas', () => {
+    state.playbackHiddenElementIds = ['text-1'];
+    renderToStaticMarkup(createElement(SlideCanvas));
+
+    expect(state.lastRendererProps?.slide.elements).toContainEqual(content.canvas.elements[0]);
+    expect(state.lastRendererProps?.hiddenElementIds ?? []).toEqual([]);
+    expect(state.playbackHiddenElementIds).toEqual(['text-1']);
+  });
+
   it('uses the renderer editor host bridge when enabled', () => {
     const markup = renderToStaticMarkup(createElement(SlideCanvas));
 

@@ -21,7 +21,6 @@ export function RendererEditorCanvas() {
   const content = useResolvedSlideContent();
   const slide = useResolvedSlide(content.canvas);
   const activeElementIds = useCanvasStore.use.activeElementIdList();
-  const hiddenElementIds = useCanvasStore.use.hiddenElementIdList();
   const editingElementId = useCanvasStore.use.editingElementId();
   const pickTarget = useCanvasStore.use.pickTarget();
   const setActiveElementIdList = useCanvasStore.use.setActiveElementIdList();
@@ -76,6 +75,8 @@ export function RendererEditorCanvas() {
     [locale, pickTarget, translateEditor],
   );
 
+  // Authoring shows every element, including future timeline reveals.
+  // Playback visibility stays in the canvas store for the player alone.
   return (
     <EditableSlideCanvasWithUI
       slide={slide}
@@ -86,7 +87,6 @@ export function RendererEditorCanvas() {
       onTransaction={applyTransaction}
       onScaleChange={setCanvasScale}
       elementIdPrefix={EDITABLE_ELEMENT_ID_PREFIX}
-      hiddenElementIds={hiddenElementIds}
       insertToolbarPlacement="top"
       snapping
     />
