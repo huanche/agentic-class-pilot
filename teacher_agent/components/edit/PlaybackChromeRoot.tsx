@@ -34,6 +34,7 @@ import {
   saveActionResumePosition,
 } from '@/lib/playback/action-resume';
 import { loadCursor, saveCursor, type PlaybackCursor } from '@/lib/playback/cursor';
+import { studentPlaybackStorageId } from '@/lib/playback/student-storage';
 import { ActionEngine } from '@/lib/action/engine';
 import { createAudioPlayer } from '@/lib/utils/audio-player';
 import { useDiscussionTTS } from '@/lib/hooks/use-discussion-tts';
@@ -278,6 +279,13 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
     const pendingCursorRef = useRef<{ stageId: string; cursor: PlaybackCursor } | null>(null);
     const stageRef = useRef<HTMLDivElement>(null);
     const [studentControlsTarget, setStudentControlsTarget] = useState<Element | null>(null);
+    const restoredStageRef = useRef<string | null>(null);
+    const playbackStorageId = useMemo(() => {
+      const id = stage?.id ?? currentScene?.stageId ?? '';
+      return videoOnly && typeof window !== 'undefined'
+        ? studentPlaybackStorageId(id, window.location.search)
+        : id;
+    }, [stage?.id, currentScene?.stageId, videoOnly]);
     // Guard to prevent double flash when manual stop triggers onDiscussionEnd
     const manualStopRef = useRef(false);
 
@@ -336,8 +344,8 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
     );
 
     const actionResumeStorageKey = useMemo(
-      () => getActionResumeStorageKey(stage?.id ?? currentScene?.stageId),
-      [currentScene?.stageId, stage?.id],
+      () => getActionResumeStorageKey(playbackStorageId),
+      [playbackStorageId],
     );
 
     const saveSceneResumePosition = useCallback(
@@ -654,6 +662,22 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
     useEffect(() => {
       let cancelled = false;
       const initializeScene = async () => {
+        // Restore the page before initializing or persisting the default first
+        // page. A new tab and iframe remount must retain the learner's place.
+        if (videoOnly && playbackStorageId && restoredStageRef.current !== playbackStorageId) {
+          const cursor = await loadCursor(playbackStorageId).catch(() => null);
+          if (cancelled) return;
+          restoredStageRef.current = playbackStorageId;
+          if (
+            cursor &&
+            scenes.some((scene) => scene.id === cursor.sceneId) &&
+            cursor.sceneId !== currentScene?.id
+          ) {
+            activeSceneIdRef.current = cursor.sceneId;
+            setCurrentSceneId(cursor.sceneId);
+            return;
+          }
+        }
         const previousSceneId = activeSceneIdRef.current;
         if (previousSceneId && previousSceneId !== currentScene?.id) {
           saveSceneResumePosition(previousSceneId, currentPlaybackActionIndexRef.current);
@@ -685,7 +709,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
               )
             : { actionIndex: 0, position: null };
         let savedResumeActionIndex = sessionResumeCursor.actionIndex;
-        const playbackStageId = stage?.id ?? currentScene?.stageId;
+        const playbackStageId = playbackStorageId;
         if (currentScene && playbackStageId && !sessionResumeCursor.position) {
           try {
             const cursor = await loadCursor(playbackStageId);
@@ -730,6 +754,15 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
           engineRef.current = null;
           setEngineMode('idle');
           activeSceneIdRef.current = currentSceneId;
+          // Quizzes have no lecture engine, so they cannot publish onProgress.
+          // Persist their page too, replacing any pending cursor from the slide.
+          if (videoOnly && currentScene && playbackStageId) {
+            scheduleCursorSave(playbackStageId, {
+              sceneId: currentScene.id,
+              actionIndex: 0,
+              updatedAt: new Date().toISOString(),
+            });
+          }
 
           return;
         }
@@ -963,10 +996,19 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
           (async () => {
             if (currentScene && chatAreaRef.current) {
               const sessionId = await chatAreaRef.current.startLecture(currentScene.id);
+              if (cancelled || engineRef.current !== engine) {
+                await chatAreaRef.current.endSession(sessionId);
+                return;
+              }
               lectureSessionIdRef.current = sessionId;
               lectureActionCounterRef.current = 0;
             }
-            engine.start();
+            if (cancelled || engineRef.current !== engine) return;
+            if (savedResumeActionIndex > 0 && engine.canJumpToAction(savedResumeActionIndex)) {
+              await engine.jumpToAction(savedResumeActionIndex, { autoplay: true });
+            } else {
+              engine.start();
+            }
           })();
         } else {
           // Load saved playback state and restore position (but never auto-play).
@@ -988,9 +1030,10 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
       void initializeScene();
       return () => {
         cancelled = true;
+        engineRef.current?.stop();
       };
       // eslint-disable-next-line react-hooks/exhaustive-deps -- Only re-run when scene changes, functions are stable refs
-    }, [currentScene]);
+    }, [currentScene, playbackStorageId]);
 
     // Cleanup on unmount
     useEffect(() => {
@@ -1508,13 +1551,15 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
             }}
             suppressHydrationWarning
           >
-            {currentScene && !hidePlaybackTiming && (
-              <div className="pointer-events-none absolute left-1/2 top-3 z-30 -translate-x-1/2 rounded-full border border-white/60 bg-slate-950/75 px-4 py-2 text-xs font-medium text-white shadow-lg backdrop-blur-md">
-                本页 {formatPlaybackDuration(currentSceneRemainingSeconds)}
-                <span className="mx-2 text-white/35">｜</span>
-                课程剩余 {formatPlaybackDuration(courseRemainingSeconds)}
-              </div>
-            )}
+            {currentScene &&
+              !(videoOnly && currentScene.type === 'quiz') &&
+              !hidePlaybackTiming && (
+                <div className="pointer-events-none absolute left-1/2 top-3 z-30 -translate-x-1/2 rounded-full border border-white/60 bg-slate-950/75 px-4 py-2 text-xs font-medium text-white shadow-lg backdrop-blur-md">
+                  本页 {formatPlaybackDuration(currentSceneRemainingSeconds)}
+                  <span className="mx-2 text-white/35">｜</span>
+                  课程剩余 {formatPlaybackDuration(courseRemainingSeconds)}
+                </div>
+              )}
             {/* Autoplay unlock — the engine parked on a line the browser
               refuses to start without an in-frame gesture (student embeds
               have no other control to click). The click itself is the
@@ -1522,7 +1567,10 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
             {audioBlocked && (
               <button
                 type="button"
-                onClick={() => engineRef.current?.retryBlockedAudio()}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  engineRef.current?.retryBlockedAudio();
+                }}
                 className="absolute left-1/2 top-1/2 z-40 -translate-x-1/2 -translate-y-1/2 rounded-full bg-slate-950/85 px-6 py-3 text-sm font-medium text-white shadow-xl backdrop-blur-md transition-colors hover:bg-slate-900"
               >
                 🔊 点击开启声音

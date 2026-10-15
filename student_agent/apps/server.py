@@ -1197,6 +1197,8 @@ def start(body: StartIn) -> dict:
         "ok": True,
         "session_id": sid,
         "status": st.get("lesson_status"),
+        "platform": {key: value for key, value in (platform_context or st.get("platform") or {}).items()
+                     if key in ("userId", "courseId", "publicationId", "publicationVersion")},
         "phase": st.get("host_phase"),
         "available_actions": ACTIONS[st.get("lesson_status", "idle")],
         "reply_text": "",

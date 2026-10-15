@@ -24,7 +24,7 @@ const log = createLogger('QuizView');
 import type { QuizQuestion } from '@/lib/types/stage';
 import { SpeechButton } from '@/components/audio/speech-button';
 import { gradeChoiceQuestions, isShortAnswer, type QuestionResult } from '@/lib/quiz/grading';
-import { renderQuizMathText } from '@/lib/quiz/math-text';
+import { renderQuizContent } from '@/lib/quiz/content';
 import { writeDraftRecovery } from '@/lib/quiz/persistence';
 import {
   createQuizAttemptWriter,
@@ -64,14 +64,31 @@ const QuizMathText = memo(function QuizMathText({
   className?: string;
   allowDisplayMode?: boolean;
 }) {
-  const segments = useMemo(() => renderQuizMathText(text), [text]);
+  const segments = useMemo(() => renderQuizContent(text), [text]);
   if (segments.length === 1 && segments[0].type === 'text') {
-    return <span className={className}>{segments[0].value}</span>;
+    return (
+      <span className={cn('whitespace-pre-wrap break-words', className)}>{segments[0].value}</span>
+    );
   }
 
   return (
-    <span className={className}>
+    <span className={cn('whitespace-pre-wrap break-words', className)}>
       {segments.map((segment, index) => {
+        if (segment.type === 'code') {
+          return (
+            <code
+              key={index}
+              className={cn(
+                'font-mono text-[0.95em]',
+                segment.block
+                  ? 'my-3 block overflow-x-auto whitespace-pre rounded-lg bg-slate-100 p-3 text-slate-900 dark:bg-slate-950 dark:text-slate-100'
+                  : 'rounded bg-slate-100 px-1 dark:bg-slate-800',
+              )}
+            >
+              {segment.value}
+            </code>
+          );
+        }
         if (segment.type === 'text') {
           return <span key={index}>{segment.value}</span>;
         }
@@ -805,21 +822,24 @@ export function QuizView({ questions, sceneId, stageId, studentPlayer }: QuizVie
     void handleSubmit();
   }, [currentQuestionIndex, handleSubmit, questions.length]);
 
-  // Every question owns an independent one-minute decision window. Missing
-  // answers remain absent and are graded as zero; the final timeout submits
-  // the attempt automatically.
+  // Keep the existing one-minute limit. Advancing is an effect, never a
+  // state-updater side effect: React can invoke updaters more than once.
+  const advanceQuestionRef = useRef(advanceQuestion);
+  advanceQuestionRef.current = advanceQuestion;
   useEffect(() => {
     if (phase !== 'answering') return;
+    const deadline = Date.now() + 60_000;
+    setRemainingSeconds(60);
     const timer = window.setInterval(() => {
-      setRemainingSeconds((seconds) => {
-        if (seconds > 1) return seconds - 1;
+      const remaining = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+      setRemainingSeconds(remaining);
+      if (remaining === 0) {
         window.clearInterval(timer);
-        window.setTimeout(advanceQuestion, 0);
-        return 0;
-      });
+        advanceQuestionRef.current();
+      }
     }, 1000);
     return () => window.clearInterval(timer);
-  }, [phase, currentQuestionIndex, advanceQuestion]);
+  }, [phase, currentQuestionIndex]);
 
   // When entering grading phase, grade choice questions locally + call API for short-answer
   useEffect(() => {

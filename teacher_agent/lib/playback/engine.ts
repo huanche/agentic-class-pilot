@@ -36,10 +36,7 @@ import type {
 import type { AudioPlayer } from '@/lib/utils/audio-player';
 import type { LegacySpeechAction } from '@/lib/media/convert-legacy-asset-refs';
 import { ActionEngine } from '@/lib/action/engine';
-import {
-  resolvePlaybackCursor,
-  estimateSpeechDurationMs,
-} from '@/lib/choreography';
+import { resolvePlaybackCursor, estimateSpeechDurationMs } from '@/lib/choreography';
 import {
   canJumpWithinReconstructablePrefix,
   isWhiteboardPlaybackAction,
@@ -94,6 +91,7 @@ export class PlaybackEngine {
    * replays it.
    */
   private audioBlocked = false;
+  private audioLoading = false;
   // Browser-native TTS state (Web Speech API)
   private browserTTSActive: boolean = false;
   private browserTTSChunks: string[] = []; // sentence-level chunks for sequential playback
@@ -250,10 +248,12 @@ export class PlaybackEngine {
   /** playing → paused | live → paused (abort SSE, truncate, topic pending) */
   pause(): void {
     if (this.mode === 'playing') {
+      const wasLoadingAudio = this.audioLoading;
+      this.audioLoading = false;
       this.invalidatePlaybackGeneration();
       // Pausing while parked on a blocked line: step back so resume() replays
       // that line instead of silently skipping past it.
-      if (this.audioBlocked) {
+      if (this.audioBlocked || wasLoadingAudio) {
         this.actionIndex = Math.max(0, this.actionIndex - 1);
       }
       // Cancel pending timers
@@ -280,8 +280,11 @@ export class PlaybackEngine {
           this.browserTTSPausedChunks = this.browserTTSChunks.slice(this.browserTTSChunkIndex);
           window.speechSynthesis?.cancel();
           // Note: cancel fires onerror('canceled'), which we ignore (see playBrowserTTSChunk)
-        } else if (this.audioPlayer.isPlaying()) {
+        } else {
+          // pause must also invalidate an unresolved fetch/play request. It may
+          // not have created an audio element yet, so isPlaying() is insufficient.
           this.audioPlayer.pause();
+          if (wasLoadingAudio) this.audioPlayer.stop();
         }
       }
     } else if (this.mode === 'live') {
@@ -349,6 +352,7 @@ export class PlaybackEngine {
 
   /** → idle */
   stop(): void {
+    this.audioLoading = false;
     this.invalidatePlaybackGeneration();
     if (this.audioBlocked) {
       this.audioBlocked = false;
@@ -662,12 +666,14 @@ export class PlaybackEngine {
         // which would hang playback on that slide.
         const hasText = !!speechAction.text.trim();
 
+        this.audioLoading = true;
         this.audioPlayer
           // The legacy URL of an unconverted pair rides along as the
           // fallback of last resort; converted documents carry no audioUrl.
           .play(speechAction.audioId || '', (speechAction as LegacySpeechAction).audioUrl)
           .then((audioStarted) => {
             if (!this.isCurrentGeneration(generation)) return;
+            this.audioLoading = false;
             if (audioStarted && this.audioBlocked) {
               this.audioBlocked = false;
               this.callbacks.onAudioUnblocked?.();
@@ -695,6 +701,7 @@ export class PlaybackEngine {
           })
           .catch((err) => {
             if (!this.isCurrentGeneration(generation)) return;
+            this.audioLoading = false;
             if (err instanceof Error && err.name === 'NotAllowedError') {
               // Autoplay policy: the audio exists but this frame may not start
               // it without a gesture. Park on the line and surface the

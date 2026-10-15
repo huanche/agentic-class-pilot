@@ -276,12 +276,17 @@ def _published_lessons(session: SessionDep, course_id: uuid.UUID,
              "FROM teacher.mentra_course_artifacts a "
              "JOIN teacher_course_link l ON l.external_course_id = a.course_id "
              "WHERE l.course_id=:id AND a.status='published' "
-             "AND a.payload->>'classVisible'='true' AND a.payload->>'classPublicationId' IS NOT NULL "
-             "AND a.payload->>'classroomId' IS NOT NULL "
+             "AND a.payload->>'classVisible'='true' AND coalesce(a.payload->>'classPublicationId', '') <> '' "
+             "AND coalesce(a.payload->>'classroomId', '') NOT IN ('', 'none') "
              "ORDER BY (a.payload->>'classPublishedAt')::bigint ASC NULLS LAST, a.created_at ASC"),
         {"id": course_id}).all()
     lessons = []
-    for order, row in enumerate(rows, start=1):
+    seen_classrooms = set()
+    for row in rows:
+        if row[2] in seen_classrooms:
+            continue
+        seen_classrooms.add(row[2])
+        order = len(lessons) + 1
         classroom = _classroom_view(session, row[2])
         classroom["playbackToken"] = _issue_playback_grant(user_id, course_id, row[2])
         lessons.append({
@@ -493,21 +498,32 @@ class LearningProgressReport(BaseModel):
 
 def _course_learning_progress(session, user_id: uuid.UUID, course_id: uuid.UUID) -> dict:
     """Real per-course classroom progress from the student schema only."""
-    total_row = session.execute(
-        text("SELECT count(*) FROM teacher.mentra_course_artifacts a "
-             "JOIN teacher_course_link l ON l.external_course_id = a.course_id "
-             "WHERE l.course_id=:id AND a.status='published' "
-             "AND a.payload->>'classroomId' IS NOT NULL"),
-        {"id": str(course_id)}).first()
-    total = int(total_row[0]) if total_row else 0
-    learned_row = session.execute(
-        text("SELECT count(DISTINCT classroom_id), max(last_active_at), count(*) "
-             "FROM student.student_sessions "
-             "WHERE user_id=:u AND course_id=:c"),
-        {"u": str(user_id), "c": str(course_id)}).first()
-    learned = int(learned_row[0]) if learned_row and learned_row[0] else 0
-    last_active = learned_row[1] if learned_row else None
-    session_count = int(learned_row[2]) if learned_row else 0
+    # Numerator and denominator use the same visible published classrooms.
+    # Opening the course catalog creates a session too; it is not learning.
+    row = session.execute(text("""
+        WITH published AS (
+            SELECT DISTINCT a.payload->>'classroomId' AS classroom_id
+            FROM teacher.mentra_course_artifacts a
+            JOIN teacher_course_link l ON l.external_course_id = a.course_id
+            WHERE l.course_id=:c AND a.status='published'
+              AND a.payload->>'classVisible'='true'
+              AND coalesce(a.payload->>'classPublicationId', '') <> ''
+              AND coalesce(a.payload->>'classroomId', '') NOT IN ('', 'none')
+        )
+        SELECT (SELECT count(*) FROM published),
+               count(DISTINCT CASE WHEN s.classroom_id IN (SELECT classroom_id FROM published)
+                 AND EXISTS (
+                   SELECT 1 FROM student.learning_events e
+                   WHERE e.session_key=s.session_key AND e.user_id=s.user_id AND e.course_id=s.course_id
+                     AND e.event_type IN ('lesson_began', 'student_message', 'media_done', 'lesson_ended')
+                 ) THEN s.classroom_id END),
+               max(s.last_active_at), count(*)
+        FROM student.student_sessions s WHERE s.user_id=:u AND s.course_id=:c
+    """), {"u": str(user_id), "c": str(course_id)}).first()
+    total = int(row[0] or 0) if row else 0
+    learned = int(row[1] or 0) if row else 0
+    last_active = row[2] if row else None
+    session_count = int(row[3] or 0) if row else 0
     ended_row = session.execute(
         text("SELECT count(*) FROM student.student_sessions "
              "WHERE user_id=:u AND course_id=:c AND ended_at IS NOT NULL"),

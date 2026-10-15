@@ -22,6 +22,7 @@ export default function StudentApp() {
   const [ready, setReady] = useState(false);
   // 平台深链入口（URL 带 launch_token）：跳过登录门，身份以令牌为准
   const [platformEntry, setPlatformEntry] = useState(false);
+  const [bootError, setBootError] = useState("");
 
   const handleAuth = useCallback((student, courses) => {
     setGate(Array.isArray(courses) && courses.length ? "app" : "enroll");
@@ -86,8 +87,7 @@ export default function StudentApp() {
       // 「我的课程」页（/app#）再跳到选择课时。会话先行也保证课程接口能带上
       // sessionId（learning_context 靠它定位）。
       import("../legacy/api.js").then((api) => {
-        return api.startSession({ timeScale: 1 }).then((result) => {
-          try { sessionStorage.setItem("__studentSessionId", result.sessionId); } catch (e) {}
+        return api.initializePlatformSession().then((result) => {
           if (window.location.hash !== "") return; // 用户带着具体课时链接进来，别覆盖
           // 平台链路用会话的 learning_context 取课程，不用本系统的学生账号接口
           return api.fetchSessionCourses(result.sessionId).then((courses) => {
@@ -99,7 +99,7 @@ export default function StudentApp() {
         });
       }).then(bootLegacy).catch((error) => {
         console.error("平台课程初始化失败", error);
-        bootLegacy(); // 会话建立失败也别白屏 —— 退回 legacy 自身的错误提示
+        if (active) setBootError(error.message || "课程暂时无法载入");
       });
     } else {
       bootLegacy();
@@ -124,6 +124,14 @@ export default function StudentApp() {
 
   if (gate === "auth") {
     return <StudentLogin onDone={handleAuth} />;
+  }
+
+  if (bootError) {
+    return <main className="entry-error" role="alert">
+      <h1>暂时无法进入课程</h1><p>{bootError}</p>
+      <button type="button" onClick={() => window.location.reload()}>重试</button>
+      <a href="/student">返回平台课程列表</a>
+    </main>;
   }
 
   if (gate === "enroll") {

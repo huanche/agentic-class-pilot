@@ -10,10 +10,11 @@
    ═══════════════════════════════════════════════════════════ */
 
 import { $, visibleRoot, showToast } from "./ui.js";
+import { shouldRenewSession, studentStorageScope } from "./session-continuity.js";
 
 import {
   fetchLesson, fetchStudentCourses, startSession,
-  fetchSessionState, fetchSessionMessages, stopSession
+  fetchSessionState, fetchSessionMessages
 } from "./api.js";
 import { uiOf, labelOf, isKnown } from "./phases.js";
 import { createStage as createClassStage } from "./stage-class.js";
@@ -28,7 +29,7 @@ import { createStage as createDoneStage } from "./stage-done.js";
    会话与课时
    ═══════════════════════════════════════════════════════════ */
 
-/* 刷新时恢复正在进行的课堂；已经结束或长期中断的课堂自动换新会话。 */
+/* 刷新时恢复正在进行的课堂；已经结束的课堂重新学习时创建新会话。 */
 var SESSION_KEY = "ai-learn.sessionId.";
 
 function createSessionId() {
@@ -38,13 +39,14 @@ function createSessionId() {
 }
 
 function saveSessionId(lessonId, value) {
-  try { localStorage.setItem(SESSION_KEY + lessonId, value); } catch (e) { /* 忽略 */ }
+  try { localStorage.setItem(SESSION_KEY + studentStorageScope() + "." + lessonId, value); } catch (e) { /* 忽略 */ }
   return value;
 }
 
 function loadSessionId(lessonId) {
   try {
-    var saved = localStorage.getItem(SESSION_KEY + lessonId);
+    var saved = localStorage.getItem(SESSION_KEY + studentStorageScope() + "." + lessonId) ||
+      localStorage.getItem(SESSION_KEY + lessonId); // Migrate only after start verifies its owner.
     if (saved) return saved;
   } catch (e) { /* 隐私模式下不可用 */ }
   var fresh = createSessionId();
@@ -54,35 +56,6 @@ function loadSessionId(lessonId) {
 
 function renewSessionId(lessonId) {
   return saveSessionId(lessonId, createSessionId());
-}
-
-/* 「这一页是刚打开的，还是刷新出来的？」
-
-   用来区分老师关掉命令行窗口重新启动（= 该从头上新课），
-   和学生按了下 F5（= 不该把上到一半的课清掉）。
-
-   **不能靠时间判断**：关窗再启动通常也在两分钟以内，和刷新没差别。
-   sessionStorage 正好是那个中介 —— 它能挺过 F5，但关掉标签页/窗口就没了。 */
-var continuedPageSession = (function () {
-  try {
-    if (window.sessionStorage.getItem("ai-learn.page-open")) return true;
-    window.sessionStorage.setItem("ai-learn.page-open", "1");
-    return false;
-  } catch (e) {
-    // 隐私模式读不到 sessionStorage —— 保守当成刷新，宁可留着课也别误清
-    return true;
-  }
-})();
-
-function shouldRenewSession(state) {
-  if (!state || state.status === "ended") return true;
-  // 没在上课（idle）：不用换，也顺带避开"刚建好的新会话又被换掉"
-  if (state.status !== "running") return false;
-  // 正在上课 + 这一页是新开的窗口 → 新的一节课
-  if (!continuedPageSession) return true;
-  if (!state.updated_at) return false;
-  var updated = Date.parse(state.updated_at);
-  return Number.isFinite(updated) && Date.now() - updated > 2 * 60 * 1000;
 }
 
 var sessionId = "";
@@ -179,13 +152,13 @@ function availableLessons(course) {
 }
 
 function lessonEndedFlag(lessonId) {
-  try { return localStorage.getItem("ai-learn.lessonEnded." + lessonId) === "1"; }
+  try { return localStorage.getItem("ai-learn.lessonEnded." + studentStorageScope() + "." + lessonId) === "1"; }
   catch (e) { return false; }
 }
 
 function markLessonEnded(lessonId) {
   if (!lessonId) return;
-  try { localStorage.setItem("ai-learn.lessonEnded." + lessonId, "1"); } catch (e) {}
+  try { localStorage.setItem("ai-learn.lessonEnded." + studentStorageScope() + "." + lessonId, "1"); } catch (e) {}
 }
 
 /* 平台态入口标识：与 api.js 的 launchToken() 同源（该函数未导出） */
@@ -289,9 +262,15 @@ function selectLesson(course, item) {
 
 var replayRouteActive = false;
 var replayRouteRequest = 0;
+var classroomRouteActive = false;
 
 function renderRoute() {
   var route = parseHash();
+  if (classroomRouteActive && route.name !== "class") {
+    var owner = owners[currentStage];
+    if (owner && owner.leave) owner.leave();
+  }
+  classroomRouteActive = route.name === "class";
   replayRouteRequest++;
   if (replayRouteActive && classStage) classStage.leave();
   replayRouteActive = false;
@@ -386,6 +365,8 @@ function ctxFor() {
 /* 立即切换界面。只改显示，不碰任何进度概念 */
 function setStage(name, turn) {
   if (!PANE[name]) return;
+  var previousOwner = owners[currentStage];
+  if (previousOwner && previousOwner !== owners[name] && previousOwner.leave) previousOwner.leave();
   currentStage = name;
 
   Object.keys(PANE).forEach(function (key) {
@@ -445,10 +426,13 @@ function deliverServerMessage(message) {
 function pollSession() {
   var route = parseHash();
   if (route.name !== "class" || !sessionId) return;
+  var requestedSession = sessionId;
+  var requestedLesson = currentLessonId;
   Promise.all([
     fetchSessionState(sessionId),
     fetchSessionMessages(sessionId, messageCursor)
   ]).then(function (values) {
+    if (sessionId !== requestedSession || currentLessonId !== requestedLesson || parseHash().name !== "class") return;
     var state = values[0];
     var feed = values[1];
     applyServerTurn(state);
@@ -530,6 +514,7 @@ function openLessonRoute() {
     }
     /* 再进来时保留进度，只恢复所处阶段 */
     setStage(currentStage);
+    if (currentStage === "video") classStage.resumeVideo();
     $("btn-start").disabled = false;
     return;
   }
@@ -539,17 +524,25 @@ function openLessonRoute() {
   $("btn-start").disabled = true;   /* 课程没到位不让开课 */
 
   var requestedLessonId = currentLessonId;
+  var requestedCourseId = currentCourseId;
+  var requestedSessionId = sessionId;
+  function stillCurrent() { return currentLessonId === requestedLessonId && currentCourseId === requestedCourseId && sessionId === requestedSessionId; }
   Promise.all([
     fetchLesson(requestedLessonId),
-    fetchSessionState(sessionId).catch(function (error) {
-      if (error.status !== 404) throw error;
+    startSession({ sessionId: sessionId, lessonId: requestedLessonId }).catch(function (error) {
+      if (error.status !== 409 || !stillCurrent()) throw error;
+      // A legacy device key may belong to another account. Never stop or read
+      // that session: create a distinct one using the authenticated entry.
+      sessionId = requestedSessionId = renewSessionId(requestedLessonId);
       return startSession({ sessionId: sessionId, lessonId: requestedLessonId });
+    }).then(function (result) {
+      if (!stillCurrent()) return result;
+      sessionId = requestedSessionId = saveSessionId(requestedLessonId, result.sessionId || sessionId);
+      return fetchSessionState(sessionId);
     }).then(function (state) {
+      if (!stillCurrent()) return state;
       if (!shouldRenewSession(state)) return state;
-      // 换新会话之前先把旧的停掉：后端为它复活的心跳线程否则会一直跑到下课，
-      // 在后台把这场"没人上的课"的学情写进这个学生的档案。
-      stopSession(sessionId).catch(function () { /* 停不掉也别挡住上课 */ });
-      sessionId = renewSessionId(requestedLessonId);
+      sessionId = requestedSessionId = renewSessionId(requestedLessonId);
       hostPhase = null;
       messageCursor = 0;
       resetClassroom();
@@ -558,7 +551,7 @@ function openLessonRoute() {
   ]).then(function (values) {
     var data = values[0];
     var session = values[1];
-    if (currentLessonId !== requestedLessonId) return;
+    if (!stillCurrent()) return;
     lesson = data;
     classStage.renderLesson(data);
     $("class-title").textContent = data.chapter + " " + data.title;
@@ -568,7 +561,7 @@ function openLessonRoute() {
     startPolling();
     pollSession();
   }).catch(function (err) {
-    if (currentLessonId !== requestedLessonId) return;
+    if (!stillCurrent()) return;
     $("lesson-eyebrow").textContent = "课程";
     $("lesson-title").textContent = "载入失败";
     $("lesson-summary").textContent = err.message;

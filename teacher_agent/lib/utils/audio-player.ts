@@ -46,6 +46,9 @@ export class AudioPlayer {
    * its supersession is noticed.
    */
   private fetchAbort: AbortController | null = null;
+  private endedListener: (() => void) | null = null;
+  private activeAudio = false;
+  private sourceGeneration = 0;
 
   /** Abort the in-flight legacy narration fetch, if one exists. */
   private abortLegacyFetch(): void {
@@ -66,12 +69,16 @@ export class AudioPlayer {
     if (this.blobUrl === blobUrl) this.blobUrl = null;
   }
 
-  private stopAudioElement(): void {
+  private stopAudioElement(keepElement = false): void {
+    this.sourceGeneration += 1;
     if (this.audio) {
       this.audio.pause();
       this.audio.currentTime = 0;
-      this.audio = null;
+      if (this.endedListener) this.audio.removeEventListener?.('ended', this.endedListener);
+      if (!keepElement) this.audio = null;
     }
+    this.endedListener = null;
+    this.activeAudio = false;
     // Stop or replacement before natural end must not leak the fetched
     // narration: the element is dropped here, so its URL is released with it.
     this.releaseBlobUrl(this.blobUrl);
@@ -138,11 +145,14 @@ export class AudioPlayer {
       }
 
       // Stop current playback
-      this.stopAudioElement();
+      this.stopAudioElement(true);
       if (requestToken !== this.requestToken) return false;
 
       // Create audio element
-      this.audio = new Audio();
+      // Keep the media element that the learner unlocked. Replacing it for
+      // every sentence can require another gesture in Safari / embedded views.
+      this.audio ??= new Audio();
+      this.activeAudio = true;
 
       // Set audio source
       const blobUrl = blob ? URL.createObjectURL(blob) : undefined;
@@ -156,10 +166,15 @@ export class AudioPlayer {
       this.audio.playbackRate = this.playbackRate;
 
       // Set ended callback
-      this.audio.addEventListener('ended', () => {
+      const currentAudio = this.audio;
+      const sourceGeneration = this.sourceGeneration;
+      this.endedListener = () => {
+        if (this.sourceGeneration !== sourceGeneration || this.audio !== currentAudio) return;
+        this.activeAudio = false;
         this.releaseBlobUrl(blobUrl);
         this.onEndedCallback?.();
-      });
+      };
+      this.audio.addEventListener('ended', this.endedListener);
 
       // Play. If play() rejects (autoplay policy, decode error, interrupted
       // load) the 'ended' listener never fires, so revoke the blob URL here to
@@ -167,6 +182,7 @@ export class AudioPlayer {
       try {
         await this.audio.play();
       } catch (playError) {
+        if (this.sourceGeneration === sourceGeneration) this.activeAudio = false;
         this.releaseBlobUrl(blobUrl);
         throw playError;
       }
@@ -188,6 +204,7 @@ export class AudioPlayer {
    */
   public pause(): void {
     this.requestToken += 1;
+    this.abortLegacyFetch();
     if (this.audio && !this.audio.paused) {
       this.audio.pause();
     }
@@ -201,7 +218,7 @@ export class AudioPlayer {
     // Cancel a still-fetching legacy narration instead of waiting for it to
     // settle: the play was superseded and its result is unwanted.
     this.abortLegacyFetch();
-    this.stopAudioElement();
+    this.stopAudioElement(true);
     // Note: onEndedCallback intentionally NOT cleared here because play()
     // calls stop() internally — clearing would break the callback chain.
     // Stale callbacks are harmless: engine mode check prevents processNext().
@@ -231,7 +248,7 @@ export class AudioPlayer {
    * Used to decide whether to resume playback or skip to the next line
    */
   public hasActiveAudio(): boolean {
-    return this.audio !== null;
+    return this.activeAudio;
   }
 
   /**
@@ -290,6 +307,7 @@ export class AudioPlayer {
    */
   public destroy(): void {
     this.stop();
+    this.stopAudioElement();
     this.onEndedCallback = null;
   }
 }

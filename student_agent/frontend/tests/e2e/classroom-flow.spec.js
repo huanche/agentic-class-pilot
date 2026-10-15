@@ -16,7 +16,7 @@ function freshNumber() {
 
 /** 注册一个新学生并用课程码加入课程，停在应用可用状态。 */
 async function registerAndJoin(page, number) {
-  await page.goto("/");
+  await page.goto("/app/");
   await expect(page.locator(".login__card")).toBeVisible();
 
   await page.getByRole("button", { name: "注册", exact: true }).click();
@@ -100,41 +100,37 @@ test("waiting for the AI shows the typing dots, and they go away when it answers
   await expect(page.locator("#reflect-log [data-typing]")).toHaveCount(1);
 });
 
-test("关掉窗口重开是一节新课，按 F5 不是", async ({ page, context }) => {
-  // 这两件事在时间上分不出来（关窗再启动通常也在两分钟以内），
-  // 靠 sessionStorage 区分：它能挺过 F5，但关掉标签页/窗口就清空。
-  const KEY = "ai-learn.sessionId.ch3-process-scheduling";
+test("刷新和新标签页都保留进行中的课堂", async ({ page, context }) => {
 
   await registerAndJoin(page, freshNumber());
   await page.getByRole("button", { name: /操作系统/ }).click();
   await page.locator(".week-tile").click();
   await page.locator('[data-goto="class"]').click();
   await page.locator("#btn-start").click();
-  await page.getByRole("button", { name: /开始播放教学视频/ }).click();
-  await page.locator("#btn-skip-video").click();
-  await expect(page.locator("#stage-summary")).toBeVisible();
+  await expect(page.getByRole("button", { name: /开始播放教学视频/ })).toBeVisible();
 
+  const KEY = await page.evaluate(() => Object.keys(localStorage).find(key =>
+    key.startsWith("ai-learn.sessionId.") && key.endsWith(".ch3-process-scheduling")));
   const before = await page.evaluate((k) => localStorage.getItem(k), KEY);
   expect(before).toBeTruthy();
 
   // 同一页刷新 → 学生上到一半的课不能丢
   await page.reload();
-  await page.waitForTimeout(2000);
+  await expect(page.getByRole("button", { name: /开始播放教学视频/ })).toBeVisible();
   expect(await page.evaluate((k) => localStorage.getItem(k), KEY)).toBe(before);
 
-  // 关掉窗口、重新开一个 → 从头开始
+  // 关掉窗口、重新开一个 → 保留同一课堂
   await page.close();
   const reopened = await context.newPage();
-  await reopened.goto("/");
+  await reopened.goto("/app/");
   await expect(reopened.locator(".join-fab")).toBeVisible();
   await reopened.getByRole("button", { name: /操作系统/ }).click();
   await reopened.locator(".week-tile").click();
   await reopened.locator('[data-goto="class"]').click();
-  await reopened.waitForTimeout(2000);
+  await expect(reopened.getByRole("button", { name: /开始播放教学视频/ })).toBeVisible();
 
-  expect(await reopened.evaluate((k) => localStorage.getItem(k), KEY)).not.toBe(before);
-  await expect(reopened.locator("#btn-start")).toBeVisible();       // 回到「开始上课」
-  await expect(reopened.locator("#stage-summary")).toBeHidden();    // 不再是复述界面
+  expect(await reopened.evaluate((k) => localStorage.getItem(k), KEY)).toBe(before);
+  await expect(reopened.locator("#stage-chat")).toBeVisible();
 });
 
 test("student can move through all classroom stages without ending on first discussion message", async ({ page }) => {

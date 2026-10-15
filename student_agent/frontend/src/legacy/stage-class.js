@@ -210,7 +210,8 @@ export function createStage(ctx) {
   function startVideo(replay) {
     replayMode = replay === true;
     $("btn-exit-replay").hidden = !replayMode;
-    showPane("video");
+    if (ctx.showStage) ctx.showStage("video");
+    else showPane("video");
     ctx.setStatus(replayMode ? "课程回放" : "教学视频");
 
     videoEndNotified = false;     /* 重进视频页时重置 */
@@ -343,6 +344,7 @@ export function createStage(ctx) {
     },
 
     startReplay: function () { startVideo(true); },
+    resumeVideo: function () { if (!playerHandle) startVideo(false); },
     renderLesson: renderLesson
   };
 }

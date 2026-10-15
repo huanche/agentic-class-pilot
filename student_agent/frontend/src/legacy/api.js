@@ -39,7 +39,8 @@ export function normalizeTurn(result) {
     currentQuestion: result.current_question || null,
     stars: result.stars || {},
     total: typeof result.total === "number" ? result.total : null,
-    availableActions: result.available_actions || []
+    availableActions: result.available_actions || [],
+    platform: result.platform || null
   };
 }
 
@@ -115,14 +116,74 @@ function currentStudentId() {
 }
 
 export function startSession(payload) {
-  return request("POST", "/api/session/start", {
+  var body = {
     session_id: payload.sessionId,
     student_id: payload.studentId || currentStudentId() || "student-001",
     lesson_id: payload.lessonId || "",
     time_scale: payload.timeScale || 1,
     /* 平台深链：带上 launch token 时后端以令牌为准，上面的 student_id 会被忽略 */
     launch_token: launchToken() || undefined
-  }).then(normalizeTurn);
+  };
+  return request("POST", "/api/session/start", body).catch(function (error) {
+    if (error.status !== 401 || !body.launch_token) throw error;
+    // A launch token is intentionally short-lived. Renew through the platform,
+    // which rechecks the login cookie, enrollment and current publication.
+    return renewLaunchToken().then(function (token) {
+      return request("POST", "/api/session/start", { ...body, launch_token: token });
+    });
+  }).then(function (result) {
+    if (result.platform) {
+      try { sessionStorage.setItem("__studentPlatform", JSON.stringify(result.platform)); } catch (error) {}
+    }
+    return normalizeTurn(result);
+  });
+}
+
+var renewingToken = null;
+function renewLaunchToken() {
+  if (renewingToken) return renewingToken;
+  var courseId = "";
+  // Only a routing hint. Neither decoded token fields nor URL values authorize
+  // anything: the platform endpoint and the subsequent start both verify access.
+  try {
+    var encoded = launchToken().split(".")[0].replace(/-/g, "+").replace(/_/g, "/");
+    courseId = JSON.parse(atob(encoded.padEnd(Math.ceil(encoded.length / 4) * 4, "="))).cid || "";
+  } catch (error) {}
+  if (!courseId) {
+    var match = window.location.hash.match(/^#\/(?:course|lesson|class|review|replay)\/([^/]+)/);
+    if (match) courseId = decodeURIComponent(match[1]);
+  }
+  if (!/^[a-f0-9-]{36}$/i.test(courseId)) return Promise.reject(new Error("课程入口已过期，请返回平台重新进入学习"));
+  renewingToken = fetch("/api/v1/courses/" + encodeURIComponent(courseId) + "/student-workspace", {
+    method: "POST", credentials: "include"
+  }).then(async function (response) {
+    var result = await response.json();
+    if (!response.ok || !result.launchToken) {
+      var error = new Error(result.detail || "登录已过期，请返回平台重新登录");
+      error.status = response.status;
+      throw error;
+    }
+    window.__studentLaunchToken = result.launchToken;
+    try { sessionStorage.setItem("__launch_token", result.launchToken); } catch (error) {}
+    return result.launchToken;
+  }).finally(function () { renewingToken = null; });
+  return renewingToken;
+}
+
+var bootSession = null;
+export function initializePlatformSession() {
+  if (bootSession) return bootSession;
+  bootSession = startSession({ sessionId: currentSessionId() || undefined, timeScale: 1 })
+    .catch(function (error) {
+      // A fresh platform entry can switch courses/accounts. A binding conflict
+      // creates a new catalog session, leaving the old learning session intact.
+      if (error.status === 409) return startSession({ timeScale: 1 });
+      throw error;
+    }).then(function (result) {
+      try { sessionStorage.setItem("__studentSessionId", result.sessionId); } catch (error) {}
+      return result;
+    }).finally(function () { bootSession = null; });
+  return bootSession;
 }
 
 export function beginSession(sessionId) {

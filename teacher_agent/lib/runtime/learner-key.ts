@@ -13,6 +13,7 @@
 import { BrowserKVStore, type KVStore } from '@openmaic/storage';
 
 import { registerRuntimeStorageResetHook, resolveConfiguredLearnerKey } from './config';
+import { studentPlaybackStorageId } from '@/lib/playback/student-storage';
 
 export const LEARNER_KEY_KV_KEY = 'runtime.learnerKey';
 
@@ -90,6 +91,13 @@ export function getLearnerKey(kv?: KVStore): Promise<string> {
       throw error;
     });
     return configuredInFlight;
+  }
+  if (
+    typeof window !== 'undefined' &&
+    new URLSearchParams(window.location.search).get('embedded') === 'player'
+  ) {
+    const scoped = studentPlaybackStorageId('learner', window.location.search);
+    if (scoped !== 'learner') return Promise.resolve(scoped);
   }
   // Concurrent same-bundle callers share one in-flight read/mint. A failure
   // is not cached — a transient storage error must not pin every later call.

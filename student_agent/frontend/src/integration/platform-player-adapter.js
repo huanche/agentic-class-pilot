@@ -1,6 +1,7 @@
 /* Platform player adapter.
    Embeds the single teacher-side player implementation and translates its
    postMessage protocol into the student Agent's stable onEnded callback. */
+import { playbackStorageKey } from "../legacy/session-continuity.js";
 
 function playerMessage(data) {
   if (!data || typeof data !== "object") return null;
@@ -19,7 +20,7 @@ export const platformPlayerAdapter = {
     // ?embedded=player = player-only mode: the embedded classroom player hides
     // its chrome (header, scene sidebar, AI-teacher roundtable, chat panel) and
     // shows just the scene canvas.
-    const embedUrl = url + (url.includes("?") ? "&" : "?") + "embedded=player" + (context.replay ? "&replay=1" : "");
+    const embedUrl = url + (url.includes("?") ? "&" : "?") + "embedded=player&resumeKey=" + encodeURIComponent(playbackStorageKey()) + (context.replay ? "&replay=1" : "");
     const iframe = document.createElement("iframe");
     iframe.src = embedUrl;
     iframe.title = "课程播放器";
