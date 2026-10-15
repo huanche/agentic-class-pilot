@@ -41,6 +41,12 @@ class CourseAdapterTests(unittest.TestCase):
         self.assertEqual(context.lessons[0].segments[0].completion_rule, "discussed")
         self.assertIn("心理沙盘", context.lessons[0].segments[0].content)
 
+    def test_explicit_empty_lesson_catalog_does_not_reuse_course_video(self):
+        payload = dict(self.payload, lessons=[])
+        context = self.adapter.from_platform_payload(payload)
+        self.assertIsNone(context.classroom)
+        self.assertTrue(all(lesson.classroom is None for lesson in context.lessons))
+
     def test_unknown_schema_version_rejected(self):
         payload = dict(self.payload, schemaVersion=99)
         with self.assertRaises(self.adapter.ContextContractError):

@@ -1531,7 +1531,7 @@ def _session_courses_payload(session_id: str = "") -> list:
             "name": context.course_title or context.course_id,
             "summary": context.knowledge_package.summary or "",
             "icon": "◆",
-            "currentWeek": max((lesson.order for lesson in context.lessons), default=1),
+            "currentWeek": max((lesson.week or lesson.order for lesson in context.lessons), default=1),
             "lessons": [],
         })
         seen_lesson_ids = {item["lessonId"] for item in course["lessons"]}
@@ -1541,8 +1541,10 @@ def _session_courses_payload(session_id: str = "") -> list:
             seen_lesson_ids.add(lesson.id)
             course["lessons"].append({
                 "lessonId": lesson.id,
-                "week": lesson.order,
-                "chapter": f"第 {lesson.order} 章",
+                "week": lesson.week or lesson.order,
+                "lessonNumber": lesson.lesson_number,
+                "teachingHours": lesson.teaching_hours,
+                "chapter": f"第 {lesson.week or lesson.order} 周 · 第 {lesson.lesson_number or 1} 次课",
                 "title": lesson.title,
                 "summary": context.knowledge_package.summary or "",
                 "status": "current",
@@ -1584,7 +1586,7 @@ def session_lesson(lessonId: str = "", sessionId: str = "") -> dict:
                 return {
                     "lessonId": lesson.id,
                     "course": context.course_title,
-                    "chapter": "第 1 章",
+                    "chapter": f"第 {lesson.week or lesson.order} 周 · 第 {lesson.lesson_number or 1} 次课",
                     "title": lesson.title,
                     "summary": context.knowledge_package.summary or "",
                     "estimatedMinutes": max(20, 5 * len(lesson.segments)),
@@ -1596,8 +1598,8 @@ def session_lesson(lessonId: str = "", sessionId: str = "") -> dict:
                          "startSeconds": 0, "endSeconds": 0}
                         for seg in lesson.segments
                     ],
-                    "classroomId": context.classroom.id if context.classroom else None,
-                    "playerUrl": context.classroom.player_url if context.classroom else "",
+                    "classroomId": lesson.classroom.id if lesson.classroom else None,
+                    "playerUrl": lesson.classroom.player_url if lesson.classroom else "",
                 }
     raise HTTPException(status_code=404, detail="未找到该课时的学习上下文（请从平台进入）")
 

@@ -57,7 +57,6 @@ function useTeacherItems(): Item[] {
             title: "授课管理",
             path: classTeaching,
             external: true,
-            badge: "教师工作区",
           } as Item,
         ]
       : []),

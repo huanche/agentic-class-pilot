@@ -14,7 +14,8 @@ export async function POST(req: NextRequest, context: { params: Promise<{ course
   if (!(file instanceof File)) return apiError('MISSING_REQUIRED_FIELD', 400, '缺少课程材料');
   if (file.size > MAX_BYTES) return apiError('INVALID_REQUEST', 413, '课程材料不能超过 80MB');
   const material = await storeCourseMaterial({
-    courseId,
+    courseId: course.id,
+    purpose: form.get('purpose') === 'course-outline' ? 'course-outline' : 'course-material',
     teacherId: course.teacherId,
     fileName: file.name,
     mimeType: file.type || 'application/octet-stream',

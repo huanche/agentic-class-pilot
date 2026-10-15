@@ -128,9 +128,6 @@ function TeacherPortal() {
             className="mx-auto block h-auto w-full max-w-3xl object-contain"
           />
           <div className="mx-auto mt-8 max-w-3xl border-t border-[#B00055]/10 pt-8 text-center">
-            <p className="text-sm font-medium text-[#B00055]">
-              教师产品工作空间
-            </p>
             <h1 className="mt-3 text-3xl font-semibold tracking-tight md:text-4xl">
               {user?.full_name || user?.email}，欢迎回来
             </h1>

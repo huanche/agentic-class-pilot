@@ -1,11 +1,10 @@
-import { type NextRequest, NextResponse } from 'next/server';
-import { nanoid } from 'nanoid';
-import { apiError, apiSuccess } from '@/lib/server/api-response';
 import {
-  readCourseMaterialBytes,
-  readServerCourse,
-  updateServerCourse,
-} from '@/lib/server/course-space-storage';
+  publishCourseResource,
+  type PublicationRequest,
+} from '@/lib/server/course-resource-publication';
+import { type NextRequest, NextResponse } from 'next/server';
+import { apiError, apiSuccess } from '@/lib/server/api-response';
+import { readCourseMaterialBytes, readServerCourse } from '@/lib/server/course-space-storage';
 
 export async function GET(
   _req: NextRequest,
@@ -35,33 +34,13 @@ export async function PATCH(
   if (!course?.materials.some((item) => item.id === materialId)) {
     return apiError('INVALID_REQUEST', 404, '课程材料不存在');
   }
-  const body = (await req.json()) as { active?: boolean };
-  const active = body.active === true;
-  const material = course.materials.find((item) => item.id === materialId)!;
-  if (!active) {
-    return apiError('INVALID_REQUEST', 409, '材料发布到班级后不可撤回');
+  const body = (await req.json()) as { active?: boolean; placement?: PublicationRequest };
+  if (body.active !== true) return apiError('INVALID_REQUEST', 409, '材料发布后不可撤回');
+  try {
+    return apiSuccess({
+      material: await publishCourseResource(courseId, 'material', materialId, body.placement!),
+    });
+  } catch (error) {
+    return apiError('INVALID_REQUEST', 409, error instanceof Error ? error.message : '发布失败');
   }
-  if (material.classPublicationId) {
-    return apiSuccess({ material });
-  }
-  if (course.status !== 'active') {
-    return apiError('INVALID_REQUEST', 409, '请先发布课程，再将材料发布到班级');
-  }
-  const now = Date.now();
-  const updated = await updateServerCourse(courseId, (current) => ({
-    ...current,
-    materials: current.materials.map((item) =>
-      item.id === materialId
-        ? {
-            ...item,
-            classVisible: active,
-            activatedAt: now,
-            classPublicationId: `CLS-M-${nanoid(12)}`,
-            classPublishedAt: now,
-            updatedAt: now,
-          }
-        : item,
-    ),
-  }));
-  return apiSuccess({ material: updated.materials.find((item) => item.id === materialId) });
 }

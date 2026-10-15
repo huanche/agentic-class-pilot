@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, ExternalLink, PackageCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { ResourcePublicationDialog } from '@/components/course-space/resource-publication-dialog';
 import { Input } from '@/components/ui/input';
 import { ArtifactHtmlReview } from '@/components/course-space/artifact-html-review';
 import type { CourseArtifactRecord, CourseSpace } from '@/lib/course-space';
@@ -15,6 +16,7 @@ export default function ArtifactReviewPage() {
   const [course, setCourse] = useState<CourseSpace>();
   const [artifact, setArtifact] = useState<CourseArtifactRecord>();
   const [message, setMessage] = useState('');
+  const [publishOpen, setPublishOpen] = useState(false);
   const load = useCallback(async () => {
     const response = await fetch(`/api/course-space/${courseId}`, { cache: 'no-store' });
     const data = await response.json();
@@ -44,18 +46,6 @@ export default function ArtifactReviewPage() {
     if (!response.ok || data.success === false) return setMessage(data.error || '保存失败');
     setArtifact(data.artifact);
     setMessage(action === 'approve' ? '审核通过。点击发布此文件后学生才可见。' : '修改已保存。');
-  };
-  const publish = async () => {
-    const response = await fetch(`/api/course-space/${courseId}/artifacts/${artifactId}`, {
-      method: 'PATCH',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ action: 'activate' }),
-    });
-    const data = await response.json();
-    if (response.ok && data.artifact) setArtifact(data.artifact);
-    setMessage(
-      response.ok && data.success !== false ? '该文件已发布，学生可见。' : data.error || '发布失败',
-    );
   };
   const source = searchParams.get('from');
   const previewUrl = `/course-space/${courseId}/artifacts/${artifactId}/view${
@@ -88,6 +78,33 @@ export default function ArtifactReviewPage() {
           </Button>
         )}
       </header>
+      {publishOpen && course && artifact && (
+        <ResourcePublicationDialog
+          course={course}
+          target={{
+            kind: 'artifact',
+            id: artifact.id,
+            title: artifact.title,
+            lessonId:
+              artifact.publicationPlacement?.lessonId ??
+              (artifact.scope.type === 'lesson' ? artifact.scope.lessonId : undefined),
+            resourceType:
+              artifact.type === 'lesson-courseware'
+                ? 'courseware'
+                : artifact.type === 'course-outline'
+                  ? 'outline'
+                  : artifact.type === 'exercise-set'
+                    ? 'exercise'
+                    : 'material',
+            storageType: artifact.classroomId ? '互动课堂课件' : '教学文档',
+          }}
+          onClose={() => setPublishOpen(false)}
+          onPublished={async () => {
+            await load();
+            setMessage('文件已按确认课时发布，学生可见。');
+          }}
+        />
+      )}
       <section className="mx-auto max-w-6xl p-6">
         {artifact ? (
           <div className="space-y-4">
@@ -119,7 +136,7 @@ export default function ArtifactReviewPage() {
                   保存修改
                 </Button>
                 <Button onClick={() => void review('approve')}>审核通过</Button>
-                <Button variant="secondary" onClick={() => void publish()}>
+                <Button variant="secondary" onClick={() => setPublishOpen(true)}>
                   <PackageCheck className="mr-2 size-4" />
                   发布此文件
                 </Button>

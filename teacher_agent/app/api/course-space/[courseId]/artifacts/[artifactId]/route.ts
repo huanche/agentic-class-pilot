@@ -1,5 +1,8 @@
+import {
+  publishCourseResource,
+  type PublicationRequest,
+} from '@/lib/server/course-resource-publication';
 import { type NextRequest } from 'next/server';
-import { nanoid } from 'nanoid';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import {
   readCourseArtifact,
@@ -27,37 +30,21 @@ export async function PATCH(
     return apiError('INVALID_REQUEST', 404, '待审核产物不存在');
   }
   const body = (await req.json()) as {
+    placement?: PublicationRequest;
     content?: string;
     reviewerNote?: string;
     action?: 'save' | 'approve' | 'activate' | 'deactivate';
   };
   if (body.action === 'activate' || body.action === 'deactivate') {
-    const active = body.action === 'activate';
-    if (!active) {
+    if (body.action === 'deactivate')
       return apiError('INVALID_REQUEST', 409, '产物发布到班级后不可撤回');
+    try {
+      return apiSuccess({
+        artifact: await publishCourseResource(courseId, 'artifact', artifactId, body.placement!),
+      });
+    } catch (error) {
+      return apiError('INVALID_REQUEST', 409, error instanceof Error ? error.message : '发布失败');
     }
-    if (course.status !== 'active') {
-      return apiError('INVALID_REQUEST', 409, '请先发布课程，再将产物发布到班级');
-    }
-    if (artifact.classPublicationId) {
-      return apiSuccess({ artifact });
-    }
-    const publishedAt = Date.now();
-    const updated = await saveCourseArtifact({
-      ...artifact,
-      status: 'published',
-      approvedAt: artifact.approvedAt ?? publishedAt,
-      classVisible: true,
-      activatedAt: publishedAt,
-      classPublicationId: `CLS-A-${nanoid(12)}`,
-      classPublishedAt: publishedAt,
-      updatedAt: publishedAt,
-    });
-    await updateCourseJobIfPresent(artifact.jobId, {
-      status: 'approved',
-      message: '教师确认并发布到 Class 通道',
-    });
-    return apiSuccess({ artifact: updated });
   }
   if (artifact.status === 'published') {
     return apiError('INVALID_REQUEST', 409, '已发布产物不可直接修改，请重新生成版本');

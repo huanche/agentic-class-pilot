@@ -1,4 +1,7 @@
-import { nanoid } from 'nanoid';
+import {
+  publishCourseResource,
+  type PublicationRequest,
+} from '@/lib/server/course-resource-publication';
 import { NextResponse, type NextRequest } from 'next/server';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { markdownToArtifactHtml } from '@/lib/course-space/artifact-formats';
@@ -42,32 +45,38 @@ export async function PATCH(
   const course = await readServerCourse(courseId);
   const file = findLessonFile(course, fileId);
   if (!course || !file) return apiError('INVALID_REQUEST', 404, '课时文件不存在');
-  if (course.status !== 'active') return apiError('INVALID_REQUEST', 409, '请先开启 Class 通道');
-  const body = (await request.json().catch(() => null)) as { action?: string } | null;
-  if (body?.action !== 'publish') return apiError('INVALID_REQUEST', 400, '不支持的操作');
-  if (file.classPublicationId) return apiSuccess({ file });
-  const now = Date.now();
-  const publicationId = `CLS-F-${nanoid(12)}`;
-  const updated = await updateServerCourse(courseId, (current) => ({
-    ...current,
-    modules: current.modules.map((module) => ({
-      ...module,
-      lessons: module.lessons.map((lesson) => ({
-        ...lesson,
-        files: lesson.files?.map((item) =>
-          item.id === fileId
-            ? {
-                ...item,
-                status: 'ready',
-                classVisible: true,
-                classPublicationId: publicationId,
-                classPublishedAt: now,
-                updatedAt: now,
-              }
-            : item,
-        ),
+  const body = (await request.json().catch(() => null)) as {
+    action?: string;
+    content?: string;
+    placement?: PublicationRequest;
+  } | null;
+  if (body?.action === 'save' || body?.action === 'approve') {
+    if (file.classPublicationId) return apiError('INVALID_REQUEST', 409, '已发布文件不能直接修改');
+    if (typeof body.content !== 'string' || !body.content.trim())
+      return apiError('INVALID_REQUEST', 400, '内容不能为空');
+    const content = body.content.trim();
+    const status = body.action === 'approve' ? ('ready' as const) : ('draft' as const);
+    const updated = await updateServerCourse(courseId, (current) => ({
+      ...current,
+      updatedAt: Date.now(),
+      modules: current.modules.map((module) => ({
+        ...module,
+        lessons: module.lessons.map((lesson) => ({
+          ...lesson,
+          files: lesson.files?.map((item) =>
+            item.id === fileId ? { ...item, content, status, updatedAt: Date.now() } : item,
+          ),
+        })),
       })),
-    })),
-  }));
-  return apiSuccess({ file: findLessonFile(updated, fileId) });
+    }));
+    return apiSuccess({ file: findLessonFile(updated, fileId) });
+  }
+  if (body?.action !== 'publish') return apiError('INVALID_REQUEST', 400, '不支持的操作');
+  try {
+    return apiSuccess({
+      file: await publishCourseResource(courseId, 'course-file', fileId, body.placement!),
+    });
+  } catch (error) {
+    return apiError('INVALID_REQUEST', 409, error instanceof Error ? error.message : '发布失败');
+  }
 }

@@ -42,10 +42,46 @@ export async function PUT(req: NextRequest, context: { params: Promise<{ courseI
       .flatMap((l) => l.files ?? [])
       .map((f) => [f.id, f]),
   );
+  const publications = await listCourseArtifacts(existing.id);
+  const protectedLessonIds = new Set([
+    ...publications
+      .filter((item) => item.classPublicationId)
+      .flatMap((item) =>
+        item.publicationPlacement?.lessonId
+          ? [item.publicationPlacement.lessonId]
+          : item.scope.type === 'lesson'
+            ? [item.scope.lessonId]
+            : [],
+      ),
+    ...existing.materials
+      .filter((item) => item.classPublicationId && item.publicationPlacement)
+      .map((item) => item.publicationPlacement!.lessonId),
+  ]);
+  const submittedLessons = body.modules.flatMap((module) => module.lessons ?? []);
+  for (const lesson of existing.modules.flatMap((module) => module.lessons)) {
+    if (
+      protectedLessonIds.has(lesson.id) &&
+      !submittedLessons.some((item) => item.id === lesson.id)
+    )
+      return apiError('INVALID_REQUEST', 409, '已确认发布归属的课时不能删除');
+    for (const file of lesson.files ?? [])
+      if (
+        file.classPublicationId &&
+        !submittedLessons.some(
+          (item) => item.id === lesson.id && item.files?.some((f) => f.id === file.id),
+        )
+      )
+        return apiError('INVALID_REQUEST', 409, '已发布文件不能通过目录编辑删除或更改课时');
+  }
+  for (const material of existing.materials)
+    if (material.classPublicationId && !body.materials.some((item) => item.id === material.id))
+      return apiError('INVALID_REQUEST', 409, '不能通过目录编辑删除已发布资料');
   const materials = body.materials.map((item) => {
     const saved = existing.materials.find((m) => m.id === item.id);
     return {
       ...item,
+      purpose: saved?.purpose ?? 'course-material',
+      publicationPlacement: saved?.publicationPlacement,
       classVisible: saved?.classVisible ?? false,
       classPublicationId: saved?.classPublicationId,
       classPublishedAt: saved?.classPublishedAt,
@@ -58,12 +94,25 @@ export async function PUT(req: NextRequest, context: { params: Promise<{ courseI
       ? {
           lessons: module.lessons.map((lesson) => ({
             ...lesson,
+            ...(() => {
+              const saved = existing.modules
+                .flatMap((m) => m.lessons)
+                .find((item) => item.id === lesson.id);
+              return saved?.week
+                ? {
+                    week: saved.week,
+                    lessonNumber: saved.lessonNumber,
+                    teachingHours: saved.teachingHours,
+                  }
+                : {};
+            })(),
             files: lesson.files?.map((file) => {
               const saved = existingFiles.get(file.id);
               return saved?.classPublicationId
                 ? saved
                 : {
                     ...file,
+                    publicationPlacement: undefined,
                     classVisible: false,
                     classPublicationId: undefined,
                     classPublishedAt: undefined,
@@ -75,6 +124,7 @@ export async function PUT(req: NextRequest, context: { params: Promise<{ courseI
   }));
   const merged: CourseSpace = {
     ...body,
+    onboarding: existing.onboarding,
     materials,
     modules,
     activeKnowledgeGraphVersion: existing.activeKnowledgeGraphVersion,

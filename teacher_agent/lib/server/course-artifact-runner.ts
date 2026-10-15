@@ -1,3 +1,4 @@
+import { ensureLessonReviewFiles } from './lesson-review-files';
 import { nanoid } from 'nanoid';
 import { callLLM } from '@/lib/ai/llm';
 import { generateClassroom } from '@/lib/server/classroom-generation';
@@ -29,7 +30,10 @@ const labels: Record<CourseArtifactType, string> = {
   'pbl-project': 'PBL 项目',
 };
 
-function scopeTitle(job: CourseArtifactJob, course: NonNullable<Awaited<ReturnType<typeof readServerCourse>>>) {
+function scopeTitle(
+  job: CourseArtifactJob,
+  course: NonNullable<Awaited<ReturnType<typeof readServerCourse>>>,
+) {
   const scope = job.scope;
   if (scope.type === 'course') return course.title;
   if (scope.type === 'module') {
@@ -42,7 +46,10 @@ function scopeTitle(job: CourseArtifactJob, course: NonNullable<Awaited<ReturnTy
   return course.title;
 }
 
-function citationsFor(extractions: CourseMaterialExtraction[], course: NonNullable<Awaited<ReturnType<typeof readServerCourse>>>): PublishedKnowledgeCitation[] {
+function citationsFor(
+  extractions: CourseMaterialExtraction[],
+  course: NonNullable<Awaited<ReturnType<typeof readServerCourse>>>,
+): PublishedKnowledgeCitation[] {
   return extractions.flatMap((extraction) => {
     const material = course.materials.find((item) => item.id === extraction.materialId);
     if (!material) return [];
@@ -60,8 +67,8 @@ function citationsFor(extractions: CourseMaterialExtraction[], course: NonNullab
 function sourceContext(extractions: CourseMaterialExtraction[]) {
   return extractions
     .flatMap((item) =>
-      item.chunks.map((chunk) =>
-        `【来源 material:${item.materialId} page:${chunk.page}】\n${chunk.text}`,
+      item.chunks.map(
+        (chunk) => `【来源 material:${item.materialId} page:${chunk.page}】\n${chunk.text}`,
       ),
     )
     .join('\n\n')
@@ -69,7 +76,8 @@ function sourceContext(extractions: CourseMaterialExtraction[]) {
 }
 
 function artifactInstruction(type: CourseArtifactType) {
-  const common = '必须忠于教师材料，不得虚构来源；使用 Markdown；关键结论后标注 [material:材料ID page:页码]。';
+  const common =
+    '必须忠于教师材料，不得虚构来源；使用 Markdown；关键结论后标注 [material:材料ID page:页码]。';
   const specific: Record<CourseArtifactType, string> = {
     'course-outline': '生成课程目标、模块结构、课时安排、重点难点、评价方式和材料映射。',
     'module-plan': '生成模块目标、先备知识、课时序列、教学活动、形成性评价和作业。',
@@ -113,11 +121,24 @@ function fallbackContent(
 }
 
 export async function runCourseArtifactJob(jobId: string, baseUrl: string) {
-  const job = await updateCourseJob(jobId, { status: 'running', progress: 5, message: '读取课程材料' });
+  const job = await updateCourseJob(jobId, {
+    status: 'running',
+    progress: 5,
+    message: '读取课程材料',
+  });
   try {
     const course = await readServerCourse(job.courseId);
     if (!course) throw new Error('课程不存在');
-    const readyMaterials = course.materials.filter((item) => item.status === 'ready');
+    const lessonScope = job.scope.type === 'lesson' ? job.scope.lessonId : undefined;
+    const lesson = course.modules
+      .flatMap((module) => module.lessons)
+      .find((item) => item.id === lessonScope);
+    const readyMaterials = course.materials.filter(
+      (item) =>
+        item.status === 'ready' &&
+        (job.artifactType !== 'course-outline' || item.purpose !== 'course-outline') &&
+        (!lesson?.materialIds.length || lesson.materialIds.includes(item.id)),
+    );
     if (readyMaterials.length === 0) throw new Error('没有已完成解析的课程材料');
     const extractions = (
       await Promise.all(readyMaterials.map((item) => readMaterialExtraction(item.id)))
@@ -130,11 +151,24 @@ export async function runCourseArtifactJob(jobId: string, baseUrl: string) {
     let degradationMessage: string | undefined;
 
     if (job.artifactType === 'lesson-courseware') {
+      let lessonReviewContext = '';
+      if (job.scope.type === 'lesson') {
+        await updateCourseJob(jobId, { progress: 10, message: '生成课程目标与课程知识点' });
+        await ensureLessonReviewFiles(course.id, job.scope.lessonId);
+        const refreshed = await readServerCourse(course.id);
+        lessonReviewContext =
+          refreshed?.modules
+            .flatMap((module) => module.lessons)
+            .find((item) => item.id === lessonScope)
+            ?.files?.filter((file) => ['lesson-objectives', 'knowledge-points'].includes(file.type))
+            .map((file) => `${file.title}:\n${file.content}`)
+            .join('\n\n') ?? '';
+      }
       await updateCourseJob(jobId, { progress: 20, message: '调用 OpenMAIC 生成互动课件' });
       try {
         const generated = await generateClassroom(
           {
-            requirement: `为“${target}”生成教学课件。${artifactInstruction(job.artifactType)}`,
+            requirement: `为“${target}”生成教学课件。${artifactInstruction(job.artifactType)}\n本次课程目标和知识点，课件需与其一致：\n${lessonReviewContext}`,
             pdfContent: { text: sourceContext(extractions), images: [] },
             enableTTS: true,
             enableImageGeneration: true,
@@ -150,20 +184,37 @@ export async function runCourseArtifactJob(jobId: string, baseUrl: string) {
           },
         );
         artifact = {
-          id: nanoid(14), jobId, teacherId: job.teacherId, courseId: job.courseId,
-          scope: job.scope, type: job.artifactType, title,
+          id: nanoid(14),
+          jobId,
+          teacherId: job.teacherId,
+          courseId: job.courseId,
+          scope: job.scope,
+          type: job.artifactType,
+          title,
           content: `互动课件已生成，共 ${generated.scenesCount} 个场景。\n\n课堂地址：${generated.url}`,
-          status: 'review', citations, classroomId: generated.id, classroomUrl: generated.url,
-          createdAt: Date.now(), updatedAt: Date.now(),
+          status: 'review',
+          citations,
+          classroomId: generated.id,
+          classroomUrl: generated.url,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
         };
       } catch (error) {
         degradationMessage = error instanceof Error ? error.message : String(error);
         artifact = {
-          id: nanoid(14), jobId, teacherId: job.teacherId, courseId: job.courseId,
-          scope: job.scope, type: job.artifactType, title,
+          id: nanoid(14),
+          jobId,
+          teacherId: job.teacherId,
+          courseId: job.courseId,
+          scope: job.scope,
+          type: job.artifactType,
+          title,
           content: fallbackContent(job.artifactType, title, extractions, degradationMessage),
-          status: 'review', citations, reviewerNote: 'OpenMAIC 生成暂时失败，已自动降级为来源草稿。',
-          createdAt: Date.now(), updatedAt: Date.now(),
+          status: 'review',
+          citations,
+          reviewerNote: 'OpenMAIC 生成暂时失败，已自动降级为来源草稿。',
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
         };
       }
     } else {
@@ -181,18 +232,35 @@ export async function runCourseArtifactJob(jobId: string, baseUrl: string) {
           thinkingConfig,
         );
         artifact = {
-          id: nanoid(14), jobId, teacherId: job.teacherId, courseId: job.courseId,
-          scope: job.scope, type: job.artifactType, title, content: result.text.trim(),
-          status: 'review', citations, createdAt: Date.now(), updatedAt: Date.now(),
+          id: nanoid(14),
+          jobId,
+          teacherId: job.teacherId,
+          courseId: job.courseId,
+          scope: job.scope,
+          type: job.artifactType,
+          title,
+          content: result.text.trim(),
+          status: 'review',
+          citations,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
         };
       } catch (error) {
         degradationMessage = error instanceof Error ? error.message : String(error);
         artifact = {
-          id: nanoid(14), jobId, teacherId: job.teacherId, courseId: job.courseId,
-          scope: job.scope, type: job.artifactType, title,
+          id: nanoid(14),
+          jobId,
+          teacherId: job.teacherId,
+          courseId: job.courseId,
+          scope: job.scope,
+          type: job.artifactType,
+          title,
           content: fallbackContent(job.artifactType, title, extractions, degradationMessage),
-          status: 'review', citations, reviewerNote: 'AI 生成暂时失败，已自动降级为来源草稿。',
-          createdAt: Date.now(), updatedAt: Date.now(),
+          status: 'review',
+          citations,
+          reviewerNote: 'AI 生成暂时失败，已自动降级为来源草稿。',
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
         };
       }
     }
@@ -205,12 +273,18 @@ export async function runCourseArtifactJob(jobId: string, baseUrl: string) {
     }
     await saveCourseArtifact(artifact);
     await updateCourseJob(jobId, {
-      status: 'review', progress: 100,
+      status: 'review',
+      progress: 100,
       message: degradationMessage ? '已自动降级为来源草稿，等待教师审核' : '生成完成，等待教师审核',
       artifactId: artifact.id,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    await updateCourseJob(jobId, { status: 'failed', progress: 100, message: '生成失败', error: message });
+    await updateCourseJob(jobId, {
+      status: 'failed',
+      progress: 100,
+      message: '生成失败',
+      error: message,
+    });
   }
 }

@@ -1,3 +1,4 @@
+import { ensureLessonReviewFiles } from '@/lib/server/lesson-review-files';
 import { type NextRequest } from 'next/server';
 import { nanoid } from 'nanoid';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
@@ -146,5 +147,6 @@ export async function POST(req: NextRequest, context: { params: Promise<{ course
     );
   }
 
-  return apiSuccess({ course: savedCourse, artifacts, scope });
+  if (scope.type === 'lesson') await ensureLessonReviewFiles(canonicalId, scope.lessonId);
+  return apiSuccess({ course: await readServerCourse(canonicalId), artifacts, scope });
 }

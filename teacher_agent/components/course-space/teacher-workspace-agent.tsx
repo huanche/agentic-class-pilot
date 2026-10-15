@@ -16,11 +16,16 @@ import {
   Play,
   Presentation,
   Send,
+  Square,
   Settings,
   ShieldCheck,
   X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import {
+  useCourseGenerationTask,
+  isGenerationTaskActive,
+} from '@/lib/store/course-generation-task';
 import { SpeechButton } from '@/components/audio/speech-button';
 import { InteractiveModeButton } from '@/components/generation/interactive-mode-button';
 import { SettingsDialog } from '@/components/settings';
@@ -48,7 +53,7 @@ const actions: Array<{ type: CourseArtifactType; label: string }> = [
 export function TeacherWorkspaceAgent({
   course,
   activeScope,
-  onGenerate,
+  onGenerate: requestGenerate,
   onOperationComplete,
   onOpenKnowledgeGraph,
   embedded = false,
@@ -68,6 +73,37 @@ export function TeacherWorkspaceAgent({
   externalPrompt?: { id: number; text: string; attachments?: ScreenshotAttachment[] };
 }) {
   const router = useRouter();
+  const task = useCourseGenerationTask((state) => state.task);
+  const [serverJobs, setServerJobs] = useState<CourseArtifactJob[]>([]);
+  const activeServerJob = serverJobs.find((job) => ['queued', 'running'].includes(job.status));
+  const generationLocked = isGenerationTaskActive(task) || Boolean(activeServerJob);
+  const onGenerate: typeof requestGenerate = (...args) => {
+    if (!generationLocked) requestGenerate(...args);
+  };
+  const previouslyLocked = useRef(false);
+  useEffect(() => {
+    if (previouslyLocked.current && !generationLocked) void onOperationComplete?.();
+    previouslyLocked.current = generationLocked;
+  }, [generationLocked, onOperationComplete]);
+  useEffect(() => {
+    let active = true;
+    const poll = async () => {
+      try {
+        const response = await fetch(`/api/course-space/${course.id}`, { cache: 'no-store' });
+        if (!response.ok) return;
+        const data = await response.json();
+        if (active) setServerJobs(data.jobs ?? []);
+      } catch {
+        /* Keep the previous state during transient connection failures. */
+      }
+    };
+    void poll();
+    const timer = window.setInterval(() => void poll(), 2500);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [course.id]);
   const initialMessage = useMemo<Message>(
     () => ({
       role: 'assistant',
@@ -186,7 +222,13 @@ export function TeacherWorkspaceAgent({
   };
   const send = async (preset?: string, presetAttachments?: ScreenshotAttachment[]) => {
     const content = (preset ?? input).trim();
-    if (!content || loading) return;
+    if (
+      !content ||
+      loading ||
+      generationLocked ||
+      isGenerationTaskActive(useCourseGenerationTask.getState().task)
+    )
+      return;
     const next = [...messages, { role: 'user' as const, content }];
     setMessages(next);
     setInput('');
@@ -289,7 +331,7 @@ export function TeacherWorkspaceAgent({
     void send(externalPrompt.text, externalPrompt.attachments);
   }, [externalPrompt, loading]); // External prompts are one-shot commands from the shared workbench composer.
   const executePlan = async (messageIndex: number, plan: TeacherOperationPlan) => {
-    if (loading) return;
+    if (loading || generationLocked) return;
     setLoading(true);
     try {
       if (openDraft(plan)) return;
@@ -396,6 +438,48 @@ export function TeacherWorkspaceAgent({
               历史会话
             </p>
             <div className="space-y-1">
+              {(task || activeServerJob) && (
+                <div className="mb-2" role="status" aria-live="polite">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (activeServerJob)
+                        router.push(`/course-space/${course.id}/jobs/${activeServerJob.id}`);
+                      else if (task?.status === 'completed' && task.url) router.push(task.url);
+                      else router.push('/generation-preview');
+                    }}
+                    className="w-full min-w-0 rounded-xl border border-[#B00055]/20 bg-[#fff8fb] px-3 py-2 text-left"
+                  >
+                    <div className="flex items-center gap-2 text-xs font-medium text-[#B00055]">
+                      {generationLocked ? (
+                        <LoaderCircle className="size-3.5 shrink-0 animate-spin" />
+                      ) : (
+                        <CheckCircle2 className="size-3.5" />
+                      )}
+                      <span className="min-w-0 flex-1 truncate">
+                        {activeServerJob ? '教学内容生成任务' : task?.title}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-xs text-slate-600">
+                      {activeServerJob?.message || task?.message}
+                    </p>
+                    <p className="mt-1 text-[10px] text-slate-500">
+                      {activeServerJob
+                        ? `进度 ${activeServerJob.progress}%`
+                        : task?.status === 'completed'
+                          ? '点击查看课件'
+                          : task?.status === 'failed'
+                            ? '点击返回任务重试'
+                            : `阶段 ${task?.step} / ${task?.total} · 点击继续查看`}
+                    </p>
+                    {generationLocked && (
+                      <p className="mt-1 text-[10px] text-[#B00055]">
+                        当前任务结束前，暂不能发起新任务
+                      </p>
+                    )}
+                  </button>
+                </div>
+              )}
               {sessions.map((session) => (
                 <button
                   key={session.id}
@@ -492,6 +576,7 @@ export function TeacherWorkspaceAgent({
                                 : 'default'
                             }
                             className="mt-3 rounded-full"
+                            disabled={loading || generationLocked}
                             onClick={() => void executePlan(index, message.plan!)}
                           >
                             <Play className="mr-1 size-3.5" />
@@ -522,6 +607,7 @@ export function TeacherWorkspaceAgent({
                 {actions.map((item) => (
                   <button
                     key={item.type}
+                    disabled={generationLocked}
                     onClick={() => onGenerate(item.type)}
                     className="rounded-full border border-[#B00055]/20 bg-[#B00055]/5 px-3 py-1.5 text-xs text-[#B00055] hover:bg-[#B00055]/10"
                   >
@@ -650,6 +736,7 @@ export function TeacherWorkspaceAgent({
                 <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
                   <button
                     type="button"
+                    disabled={generationLocked}
                     onClick={() => onGenerate('lesson-courseware', activeScope, 'lecturer-ppt')}
                     className="inline-flex h-8 items-center gap-1.5 rounded-full border border-[#B00055]/25 bg-[#B00055]/5 px-3 text-xs font-medium text-[#B00055] hover:bg-[#B00055]/10"
                   >
@@ -671,7 +758,7 @@ export function TeacherWorkspaceAgent({
                   />
                   <SpeechButton
                     size="md"
-                    disabled={loading}
+                    disabled={loading || generationLocked}
                     continuous
                     onInterimTranscription={(text) =>
                       setInput((current) => {
@@ -693,11 +780,16 @@ export function TeacherWorkspaceAgent({
                   <Button
                     size="icon"
                     className="size-9 shrink-0 rounded-full"
-                    disabled={loading || !input.trim()}
+                    disabled={loading || generationLocked || !input.trim()}
                     onClick={() => void send()}
-                    title="发送消息"
+                    title={generationLocked ? '生成任务进行中，请等待任务结束' : '发送消息'}
+                    aria-label={generationLocked ? '生成任务进行中，暂停发送' : '发送消息'}
                   >
-                    <Send className="size-4" />
+                    {generationLocked ? (
+                      <Square className="size-4 fill-current" />
+                    ) : (
+                      <Send className="size-4" />
+                    )}
                   </Button>
                 </div>
               </div>

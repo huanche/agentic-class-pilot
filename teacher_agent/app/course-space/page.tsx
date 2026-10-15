@@ -19,6 +19,8 @@ import { CourseArtifactGallery } from '@/components/course-space/course-artifact
 import { CourseWorkLocationPicker } from '@/components/course-space/course-work-location-picker';
 import { TeacherWorkspaceAgent } from '@/components/course-space/teacher-workspace-agent';
 import { postSaasHostMessage } from '@/lib/integration/host-bridge';
+import { CourseProgressSummary } from '@/components/course-space/course-progress-summary';
+import type { CourseStatusTarget } from '@/lib/course-space/course-progress';
 import { CourseCenter } from '@/components/course-space/course-center';
 import type { Slide } from '@openmaic/dsl';
 import type * as MaicImport from '@openmaic/importer';
@@ -112,8 +114,13 @@ export default function CourseSpacePage() {
   const [publishingCourse, setPublishingCourse] = useState(false);
   const [workspaceCourseId, setWorkspaceCourseId] = useState<string | null | undefined>();
   const [courseAreaHeight, setCourseAreaHeight] = useState(790);
+  const [statusFocus, setStatusFocus] = useState<CourseStatusTarget & { nonce: number }>();
   const [workbenchHeight, setWorkbenchHeight] = useState(500);
   const selected = courses.find((course) => course.id === selectedId);
+  const needsOnboarding = Boolean(selected?.onboarding && !selected.onboarding.completedAt);
+  useEffect(() => {
+    if (needsOnboarding && selected?.id) router.replace(`/course-space/${selected.id}`);
+  }, [selected?.id, needsOnboarding, router]);
 
   useEffect(() => {
     postSaasHostMessage('TEACHER_WORKSPACE_READY', {
@@ -212,9 +219,7 @@ export default function CourseSpacePage() {
       title: newCourseTitle,
     });
     setNewCourseTitle('');
-    setWorkspaceCourseId(course.id);
-    window.history.replaceState(null, '', `/course-space?workspace=${course.id}`);
-    await refresh(course.id);
+    router.push(`/course-space/${course.id}`);
   };
 
   const saveStructure = async (course: CourseSpace) => {
@@ -626,7 +631,7 @@ export default function CourseSpacePage() {
             variant="ghost"
             size="icon"
             className="rounded-full"
-            onClick={() => router.push(`/course-space/${selected?.id || workspaceCourseId}`)}
+            onClick={() => router.push('/course-space')}
           >
             <ArrowLeft />
           </Button>
@@ -708,8 +713,14 @@ export default function CourseSpacePage() {
                   </Button>
                 )}
               </div>
+              <CourseProgressSummary
+                course={selected}
+                artifacts={artifacts}
+                onFocus={(target) => setStatusFocus({ ...target, nonce: Date.now() })}
+              />
             </div>
             <CourseWorkspaceExplorer
+              focusRequest={statusFocus}
               course={selected}
               artifacts={artifacts}
               height={courseAreaHeight}

@@ -94,7 +94,13 @@ export async function parseStoredCourseMaterial(input: {
     const bytes = await readCourseMaterialBytes(material);
     let parsed: ParsedPdfContent;
     const lowerName = material.name.toLowerCase();
-    if (/\.docx?$/i.test(lowerName)) {
+    if (/\.(txt|md)$/i.test(lowerName)) {
+      parsed = {
+        text: bytes.toString('utf-8'),
+        images: [],
+        metadata: { pageCount: 1, parser: 'local-text' },
+      };
+    } else if (/\.docx?$/i.test(lowerName)) {
       parsed = await extractWordText(bytes, material.name);
     } else if (lowerName.endsWith('.pptx')) {
       parsed = await extractPptxText(bytes, material.name);

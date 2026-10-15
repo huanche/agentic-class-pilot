@@ -232,6 +232,7 @@ def published_course_entries(session: SessionDep, course_id: uuid.UUID) -> list[
         if visible(item):
             entries.append({"id": item["id"], "title": item.get("name", ""), "content": "",
                             "kind": "material", "publicationId": item["classPublicationId"],
+                            "scope": {"type": "lesson", "lessonId": (item.get("publicationPlacement") or {}).get("lessonId")},
                             "url": f"{settings.TEACHER_PUBLIC_URL.rstrip('/')}/api/course-space/{course['id']}/materials/{item['id']}"})
     return entries
 
@@ -269,29 +270,43 @@ def _classroom_view(session: SessionDep, classroom_id: str) -> dict:
 
 def _published_lessons(session: SessionDep, course_id: uuid.UUID,
                        user_id: uuid.UUID) -> list[dict]:
-    """Return every published classroom for the course as a selectable lesson."""
-    rows = session.execute(
-        text("SELECT a.id, a.payload->>'title', a.payload->>'classroomId', "
-             "a.payload->>'classPublishedAt' "
-             "FROM teacher.mentra_course_artifacts a "
-             "JOIN teacher_course_link l ON l.external_course_id = a.course_id "
-             "WHERE l.course_id=:id AND a.status='published' "
-             "AND a.payload->>'classVisible'='true' AND a.payload->>'classPublicationId' IS NOT NULL "
-             "AND a.payload->>'classroomId' IS NOT NULL "
-             "ORDER BY (a.payload->>'classPublishedAt')::bigint ASC NULLS LAST, a.created_at ASC"),
-        {"id": course_id}).all()
-    lessons = []
-    for order, row in enumerate(rows, start=1):
-        classroom = _classroom_view(session, row[2])
-        classroom["playbackToken"] = _issue_playback_grant(user_id, course_id, row[2])
-        lessons.append({
-            "id": f"lesson-{row[0]}",
-            "title": row[1] or classroom["title"] or f"第 {order} 章",
-            "order": order,
-            "publishedAt": int(row[3]) if row[3] else None,
-            "classroom": classroom,
-        })
-    return lessons
+    """Read explicit lesson bindings; never use another lesson's classroom."""
+    course_row = session.execute(text(
+        "SELECT c.payload FROM teacher.mentra_courses c "
+        "JOIN teacher_course_link l ON l.external_course_id=c.id "
+        "WHERE l.course_id=:id AND c.status='active'"), {"id": course_id}).first()
+    if not course_row:
+        return []
+    course = course_row[0] or {}
+    teacher_lessons = {lesson["id"]: lesson for module in course.get("modules", [])
+                       for lesson in module.get("lessons", [])}
+    rows = session.execute(text(
+        "SELECT a.payload FROM teacher.mentra_course_artifacts a "
+        "JOIN teacher_course_link l ON l.external_course_id=a.course_id "
+        "WHERE l.course_id=:id AND a.status='published' "
+        "AND a.payload->>'classVisible'='true' AND a.payload->>'classPublicationId' IS NOT NULL "
+        "AND a.payload->>'classroomId' IS NOT NULL "
+        "ORDER BY (a.payload->>'classPublishedAt')::bigint DESC NULLS LAST, a.created_at DESC, a.id DESC"
+    ), {"id": course_id}).all()
+    selected = {}
+    for row in rows:
+        artifact = row[0]
+        placement = artifact.get("publicationPlacement") or {}
+        scope = artifact.get("scope") or {}
+        lesson_id = placement.get("lessonId") or (scope.get("lessonId") if scope.get("type") == "lesson" else None)
+        if lesson_id not in teacher_lessons or lesson_id in selected:
+            continue
+        lesson = teacher_lessons[lesson_id]
+        classroom = _classroom_view(session, artifact["classroomId"])
+        classroom["playbackToken"] = _issue_playback_grant(user_id, course_id, artifact["classroomId"])
+        selected[lesson_id] = {
+            "id": lesson_id, "title": lesson.get("title") or artifact.get("title"),
+            "order": lesson.get("order", 1), "week": placement.get("week") or lesson.get("week"),
+            "lessonNumber": placement.get("lessonNumber") or lesson.get("lessonNumber"),
+            "teachingHours": placement.get("teachingHours") or lesson.get("teachingHours"),
+            "publishedAt": artifact.get("classPublishedAt"), "classroom": classroom,
+        }
+    return sorted(selected.values(), key=lambda lesson: (lesson.get("week") or 1000, lesson.get("lessonNumber") or lesson["order"], lesson["id"]))
 
 
 def _grounding_context(session: SessionDep, course_id: uuid.UUID) -> dict:
@@ -358,8 +373,8 @@ def student_learning_context(body: LearningContextRequest, session: SessionDep,
         if not package_payload:
             raise HTTPException(409, "课程尚未发布学习内容")
 
-        classroom_id = _published_classroom(session, course_id)
         lessons = _published_lessons(session, course_id, user_id)
+        classroom_id = lessons[0]["classroom"]["id"] if lessons else None
         context = {
             "schemaVersion": SCHEMA_VERSION,
             "userId": str(user_id),

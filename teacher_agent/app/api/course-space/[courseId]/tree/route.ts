@@ -19,10 +19,7 @@ type TreeAction =
       targetLessonId: string;
     };
 
-export async function POST(
-  req: NextRequest,
-  context: { params: Promise<{ courseId: string }> },
-) {
+export async function POST(req: NextRequest, context: { params: Promise<{ courseId: string }> }) {
   const { courseId } = await context.params;
   const body = (await req.json()) as TreeAction;
   const course = await readServerCourse(courseId);
@@ -30,6 +27,43 @@ export async function POST(
 
   const allLessons = course.modules.flatMap((module) => module.lessons);
   const artifacts = await listCourseArtifacts(courseId);
+  const releasedLessons = new Set([
+    ...artifacts
+      .filter((item) => item.classPublicationId)
+      .flatMap((item) =>
+        item.publicationPlacement?.lessonId
+          ? [item.publicationPlacement.lessonId]
+          : item.scope.type === 'lesson'
+            ? [item.scope.lessonId]
+            : [],
+      ),
+    ...course.materials
+      .filter((item) => item.classPublicationId && item.publicationPlacement)
+      .map((item) => item.publicationPlacement!.lessonId),
+    ...allLessons
+      .filter((lesson) => lesson.files?.some((file) => file.classPublicationId))
+      .map((lesson) => lesson.id),
+  ]);
+  if (
+    (body.action === 'delete-lesson' && releasedLessons.has(body.lessonId)) ||
+    (body.action === 'delete-module' &&
+      course.modules
+        .find((module) => module.id === body.moduleId)
+        ?.lessons.some((lesson) => releasedLessons.has(lesson.id)))
+  )
+    return apiError('INVALID_REQUEST', 409, '该课时已有发布文件，不能删除其归属目录');
+  if (body.action === 'move-item') {
+    const item =
+      body.itemKind === 'artifact'
+        ? artifacts.find((item) => item.id === body.itemId)
+        : body.itemKind === 'material'
+          ? course.materials.find((item) => item.id === body.itemId)
+          : allLessons
+              .flatMap((lesson) => lesson.files ?? [])
+              .find((item) => item.id === body.itemId);
+    if (item?.classPublicationId)
+      return apiError('INVALID_REQUEST', 409, '已发布文件不能拖动修改归属，请发布新版本');
+  }
 
   if (body.action === 'delete-lesson') {
     const lesson = allLessons.find((item) => item.id === body.lessonId);
@@ -102,11 +136,17 @@ export async function POST(
           ...lesson,
           materialIds:
             lesson.id === target.id
-              ? [...new Set([...lesson.materialIds.filter((id) => id !== body.itemId), body.itemId])]
+              ? [
+                  ...new Set([
+                    ...lesson.materialIds.filter((id) => id !== body.itemId),
+                    body.itemId,
+                  ]),
+                ]
               : lesson.materialIds.filter((id) => id !== body.itemId),
-          updatedAt: lesson.materialIds.includes(body.itemId) || lesson.id === target.id
-            ? now
-            : lesson.updatedAt,
+          updatedAt:
+            lesson.materialIds.includes(body.itemId) || lesson.id === target.id
+              ? now
+              : lesson.updatedAt,
         })),
       })),
     }));

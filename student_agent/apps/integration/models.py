@@ -72,6 +72,9 @@ class Segment(BaseModel):
 
 
 class Lesson(BaseModel):
+    week: Optional[int] = None
+    lesson_number: Optional[int] = None
+    teaching_hours: Optional[float] = None
     id: str
     title: str
     order: int = 1

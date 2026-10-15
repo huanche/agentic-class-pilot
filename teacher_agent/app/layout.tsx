@@ -1,3 +1,4 @@
+import { GenerationTaskHost } from '@/components/generation/generation-task-host';
 import type { Metadata } from 'next';
 import { GeistSans } from 'geist/font/sans';
 import { GeistMono } from 'geist/font/mono';
@@ -29,8 +30,7 @@ import '@fontsource-variable/inter';
 
 export const metadata: Metadata = {
   title: 'MENTRA',
-  description:
-    'Multi-agent Education Network for Teaching, Reflection & Assessment.',
+  description: 'Multi-agent Education Network for Teaching, Reflection & Assessment.',
 };
 
 export default function RootLayout({
@@ -47,7 +47,10 @@ export default function RootLayout({
         <ThemeProvider>
           <I18nProvider>
             <ServerProvidersInit />
-            <AccessCodeGuard>{children}</AccessCodeGuard>
+            <AccessCodeGuard>
+              {children}
+              <GenerationTaskHost />
+            </AccessCodeGuard>
             <Toaster position="top-center" />
             {/* After the Toaster: this one raises a toast on mount when
                 persistence is already broken, and a toast raised before its

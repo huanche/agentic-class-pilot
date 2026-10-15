@@ -41,7 +41,23 @@ export type CourseLessonFileType =
   | 'exercises'
   | 'assessment-criteria';
 
+export interface CoursePublicationPlacement {
+  lessonId: string;
+  week: number;
+  lessonNumber: number;
+  teachingHours: number;
+  resourceType:
+    | 'courseware'
+    | 'objectives'
+    | 'knowledge-points'
+    | 'outline'
+    | 'exercise'
+    | 'material';
+  confirmedAt: number;
+}
+
 export interface CourseLessonFile {
+  publicationPlacement?: CoursePublicationPlacement;
   id: string;
   lessonId: string;
   type: CourseLessonFileType;
@@ -56,6 +72,9 @@ export interface CourseLessonFile {
 }
 
 export interface CourseLesson {
+  week?: number;
+  lessonNumber?: number;
+  teachingHours?: number;
   id: string;
   moduleId: string;
   title: string;
@@ -68,6 +87,8 @@ export interface CourseLesson {
 }
 
 export interface CourseModule {
+  workspaceKind?: 'week' | 'experiment';
+  week?: number;
   id: string;
   courseId: string;
   title: string;
@@ -79,6 +100,8 @@ export interface CourseModule {
 }
 
 export interface CourseMaterialRecord {
+  purpose?: 'course-material' | 'course-outline';
+  publicationPlacement?: CoursePublicationPlacement;
   id: string;
   teacherId: string;
   courseId: string;
@@ -120,6 +143,7 @@ export interface CourseStudentLearningState {
 }
 
 export interface CourseSpace {
+  onboarding?: { version: 1; step: 1 | 2 | 3; outlineArtifactId?: string; completedAt?: number };
   id: string;
   teacherId: string;
   title: string;
@@ -133,6 +157,8 @@ export interface CourseSpace {
   activeKnowledgePackageId?: string;
   activeKnowledgeGraphVersion?: number;
   curriculum?: {
+    hasLab?: boolean;
+    teachingHoursPerLesson?: number;
     totalWeeks: number;
     lessonsPerWeek: number;
     lessonDurationMinutes?: number;
@@ -284,6 +310,8 @@ export interface CourseMaterialExtraction {
 }
 
 export interface CourseArtifactRecord {
+  sourceMaterialId?: string;
+  publicationPlacement?: CoursePublicationPlacement;
   id: string;
   jobId: string;
   teacherId: string;

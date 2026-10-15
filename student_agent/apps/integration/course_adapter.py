@@ -41,7 +41,14 @@ def from_platform_payload(payload: Dict[str, Any]) -> CourseLearningContext:
         knowledge_package=_package(payload["knowledgePackage"]),
         classroom=_classroom(payload.get("classroom")),
     )
-    context.lessons = _published_lessons(payload.get("lessons"), context) or _lessons(context)
+    if isinstance(payload.get("lessons"), list):
+        context.lessons = _published_lessons(payload["lessons"], context)
+        if not context.lessons:
+            # A course-wide legacy player is not an authorized lesson mapping.
+            context.classroom = None
+            context.lessons = _lessons(context)
+    else:
+        context.lessons = _lessons(context)
     context.evaluation = evaluation_adapter.from_platform_context(payload)
     return context
 
@@ -148,6 +155,9 @@ def _published_lessons(raw_lessons: Any, context: CourseLearningContext) -> List
             id=str(raw["id"]),
             title=str(raw.get("title") or classroom.id),
             order=int(raw.get("order") or index),
+            week=raw.get("week"),
+            lesson_number=raw.get("lessonNumber"),
+            teaching_hours=raw.get("teachingHours"),
             segments=segments,
             classroom=classroom,
         ))

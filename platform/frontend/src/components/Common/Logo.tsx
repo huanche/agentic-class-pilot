@@ -19,7 +19,7 @@ export function Logo({
       {mark}
       <span className="leading-tight group-data-[collapsible=icon]:hidden">
         <span className="block text-base font-semibold tracking-tight text-foreground">AI 教育平台</span>
-        <span className="block text-[11px] font-medium tracking-wide text-muted-foreground">TEACH · LEARN · CREATE</span>
+        <span className="block text-[11px] font-medium tracking-wide text-muted-foreground">Agentic Class Pilot</span>
       </span>
     </span>
   )
