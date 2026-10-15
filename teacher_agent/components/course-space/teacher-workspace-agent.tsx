@@ -71,7 +71,7 @@ export function TeacherWorkspaceAgent({
   const initialMessage = useMemo<Message>(
     () => ({
       role: 'assistant',
-      content: `你好，我是“${course.title}”的课程操作智能体。课程材料、结构、知识图谱与中间产物已作为插件接入。我可以按你的要求启动教学大纲、教学计划、课件、讲稿、习题和评分量规工作，也可以创建、移动或删除课程文件。生成任务会直接进入标准生成—审核—可视化流程；结构变更与删除操作会先提交计划供你确认。`,
+      content: `你好，我可以帮助你准备“${course.title}”的课件、讲稿和习题，也可以整理课程文件。告诉我你要准备哪一课，生成后可预览、修改并发布到班级。`,
     }),
     [course.title],
   );
@@ -80,14 +80,14 @@ export function TeacherWorkspaceAgent({
   const [messages, setMessages] = useState<Message[]>([
     {
       role: 'assistant',
-      content: `你好，我是“${course.title}”的课程操作智能体。课程材料、结构、知识图谱与中间产物已作为插件接入。我可以按你的要求启动教学大纲、教学计划、课件、讲稿、习题和评分量规工作，也可以创建、移动或删除课程文件。生成任务会直接进入标准生成—审核—可视化流程；结构变更与删除操作会先提交计划供你确认。`,
+      content: `你好，我可以帮助你准备“${course.title}”的课件、讲稿和习题，也可以整理课程文件。告诉我你要准备哪一课，生成后可预览、修改并发布到班级。`,
     },
   ]);
   const [input, setInput] = useState('');
   const voiceInputBaseRef = useRef<string | null>(null);
   const [attachments, setAttachments] = useState<ScreenshotAttachment[]>([]);
   const [loading, setLoading] = useState(false);
-  const [mode, setMode] = useState('DeepSeek Harness');
+  const [mode, setMode] = useState('备课助手');
   const [deepInteraction, setDeepInteraction] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<SettingsSection | undefined>();
@@ -265,9 +265,9 @@ export function TeacherWorkspaceAgent({
       setAttachments([]);
       setMode(
         data.mode === 'course-operator'
-          ? '课程操作智能体'
+          ? '备课助手'
           : data.mode === 'deepseek-harness'
-            ? 'DeepSeek Harness'
+            ? '备课助手'
             : '模型兼容模式',
       );
     } catch (error) {
@@ -353,10 +353,8 @@ export function TeacherWorkspaceAgent({
               <Bot className="size-5" />
             </div>
             <div>
-              <h3 className="font-semibold">备课工作智能体</h3>
-              <p className="text-xs text-muted-foreground">
-                DeepSeek Harness · 课程材料、结构、知识图谱与产物已连接
-              </p>
+              <h3 className="font-semibold">备课助手</h3>
+              <p className="text-xs text-muted-foreground">根据课程材料准备教学资源</p>
             </div>
           </div>
           <span className="rounded-full border border-emerald-100 bg-emerald-50 px-2.5 py-1 text-[11px] text-emerald-700">
@@ -705,10 +703,12 @@ export function TeacherWorkspaceAgent({
             <p className="mt-2 text-[11px] text-muted-foreground">
               麦克风开启后会边听边显示文字，再次点击停止 · 可上传或 Ctrl+V 粘贴截图 · Enter 发送
             </p>
-            <p className="mt-1 text-[11px] text-muted-foreground">
-              模型设置用于兼容模式，平台个人模型配置与阶段路由优先；Harness
-              使用独立模型配置。网页检索结果可用于两种模式。
-            </p>
+            <details className="mt-1 text-[11px] text-muted-foreground">
+              <summary className="cursor-pointer">模型设置说明</summary>
+              <p>
+                模型设置用于兼容模式，平台个人模型配置与阶段路由优先；Harness 使用独立模型配置。网页检索结果可用于两种模式。
+              </p>
+            </details>
           </div>
         </div>
       </div>

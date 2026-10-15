@@ -23,6 +23,9 @@ import {
   runClassroomLoad,
 } from '@/lib/classroom/load-classroom';
 import { isIncompleteEnhancedScene } from '@/lib/learning-skills/enhanced-courseware-quality';
+import { migrateScene } from '@/lib/edit/slide-schema';
+import { teacherReturnUrl } from '@/lib/course-space/navigation';
+import Link from 'next/link';
 import {
   canSyncClassroomSnapshot,
   createClassroomSnapshotSyncQueue,
@@ -39,7 +42,7 @@ export default function ClassroomDetailPage() {
   // Player-only embed (student agent iframe): hide all playback chrome so the
   // embedded viewer sees just the scene canvas. See PlaybackChromeRoot.
   const playerOnlyEmbed = searchParams.get('embedded') === 'player';
-  const preferServerClassroom = pathname.startsWith('/classroom-player/');
+  const preferServerClassroom = playerOnlyEmbed || pathname.startsWith('/classroom-player/');
 
   const { loadFromStorage } = useStageStore();
   const syncStage = useStageStore((state) => state.stage);
@@ -77,6 +80,7 @@ export default function ClassroomDetailPage() {
       await runClassroomLoad({
         classroomId,
         preferServerClassroom,
+        readOnly: playerOnlyEmbed,
         loadToken,
         isCurrent,
         loadFromStorage,
@@ -85,8 +89,17 @@ export default function ClassroomDetailPage() {
           playerOnlyEmbed
             ? fetchClassroomForPlayer(id)
             : defaultClassroomLoadDeps.fetchClassroom(id, shouldConvert, {}, replaceExisting),
-        applyFallbackScenes: (args) =>
-          defaultClassroomLoadDeps.applyFallbackScenes({
+        applyFallbackScenes: async (args) => {
+          if (playerOnlyEmbed) {
+            // Server publications are playable without migrating teacher chats,
+            // PBL runtime or assets into this student's browser storage.
+            if (!isCurrent()) return false;
+            applyClassroomStageAndScenes(args.stage, args.scenes.map(migrateScene), {
+              persist: false,
+            });
+            return true;
+          }
+          return defaultClassroomLoadDeps.applyFallbackScenes({
             ...args,
             isCurrent,
             applyStageAndScenes: (stage, scenes, options) =>
@@ -94,7 +107,8 @@ export default function ClassroomDetailPage() {
                 ...options,
                 persist: !playerOnlyEmbed,
               }),
-          }),
+          });
+        },
         loadRestoredMediaTasks: defaultClassroomLoadDeps.loadRestoredMediaTasks,
         applyRestoredMediaTasks: defaultClassroomLoadDeps.applyRestoredMediaTasks,
         discardRestoredMediaTasks: defaultClassroomLoadDeps.discardRestoredMediaTasks,
@@ -109,7 +123,7 @@ export default function ClassroomDetailPage() {
         log,
       });
     },
-    [classroomId, embeddedCourseWorkspace, loadFromStorage, playerOnlyEmbed, preferServerClassroom],
+    [classroomId, loadFromStorage, playerOnlyEmbed, preferServerClassroom],
   );
 
   useEffect(() => {
@@ -274,16 +288,31 @@ export default function ClassroomDetailPage() {
     <ThemeProvider>
       <MediaStageProvider value={classroomId}>
         <div className="h-screen flex flex-col overflow-hidden">
+          {!playerOnlyEmbed && !embeddedCourseWorkspace && (
+            <nav
+              aria-label="课件导航"
+              className="flex shrink-0 items-center justify-between border-b bg-white px-4 py-2 text-sm text-slate-700"
+            >
+              <Link href={teacherReturnUrl(searchParams.get('from'))} className="hover:underline">
+                ← 返回课程
+              </Link>
+              <Link href="/course-space" className="hover:underline">
+                课程中心
+              </Link>
+            </nav>
+          )}
           {loading ? (
             <div className="flex-1 flex items-center justify-center bg-gray-50 dark:bg-gray-900">
               <div className="text-center text-muted-foreground">
-                <p>Loading classroom...</p>
+                <p>正在加载课件…</p>
               </div>
             </div>
           ) : error ? (
             <div className="flex-1 flex items-center justify-center bg-gray-50 dark:bg-gray-900">
               <div className="text-center">
-                <p className="text-destructive mb-4">Error: {error}</p>
+                <p role="alert" className="text-destructive mb-4">
+                  课件加载失败：{error}
+                </p>
                 <button
                   onClick={() => {
                     setError(null);
@@ -292,7 +321,7 @@ export default function ClassroomDetailPage() {
                   }}
                   className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
                 >
-                  Retry
+                  重新加载
                 </button>
               </div>
             </div>

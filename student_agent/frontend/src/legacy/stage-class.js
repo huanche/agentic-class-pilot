@@ -9,7 +9,7 @@
 
 import { $, el, icon, renderInline, scrollToEnd } from "./ui.js";
 import {
-  beginSession, sendMessage, notifyMediaDone, fetchLessonVideo
+  beginSession, sendMessage, notifyMediaDone, fetchLessonVideo, fetchSessionState
 } from "./api.js";
 import { mountVideoPlayer } from "./video-player.js";
 
@@ -25,6 +25,8 @@ export function createStage(ctx) {
 
   var introDone = false;      /* 课程介绍是否讲完（决定要不要显示「播放视频」）*/
   var busy = false;           /* 一次请求进行中 */
+  var introRequest = 0;
+  var recoveryRow = null;
 
   /* ── 子阶段切换 ──────────────────────────────────────── */
 
@@ -104,8 +106,35 @@ export function createStage(ctx) {
     scrollToEnd(chatLog);
   }
 
+  function clearRecovery() {
+    if (recoveryRow) recoveryRow.remove();
+    recoveryRow = null;
+  }
+
+  function receiveTurn(res) {
+    if (!res || res.hostPhase !== "guided_learning" || introDone) return;
+    introDone = true;
+    hideTyping();
+    clearRecovery();
+    appendIntroAction();
+  }
+
+  function showRecovery() {
+    if (recoveryRow || introDone) return;
+    recoveryRow = el("div", "chat-action");
+    var retry = el("button", "btn btn--primary", "检查课堂状态并重试");
+    retry.type = "button";
+    retry.addEventListener("click", function () { startLesson(true); });
+    var back = el("button", "btn", "返回课前信息");
+    back.type = "button";
+    back.addEventListener("click", function () { showPane("idle"); });
+    recoveryRow.appendChild(retry);
+    recoveryRow.appendChild(back);
+    chatLog.appendChild(recoveryRow);
+  }
+
   /* 开课是会话控制事件；学生发言才进入统一 AI 消息接口。 */
-  function startLesson() {
+  function startLesson(recover) {
     if (busy) return;
 
     showPane("chat");
@@ -115,24 +144,35 @@ export function createStage(ctx) {
     if (introDone) return;
 
     busy = true;
+    var request = ++introRequest;
+    var requestedSessionId = ctx.sessionId;
     setComposerEnabled(false);
     showTyping();
 
-    beginSession(ctx.sessionId).then(function (res) {
+    // 超时不代表服务端没开课。重试先读状态，避免重复起课。
+    var pending = recover === true
+      ? fetchSessionState(requestedSessionId).then(function (state) {
+        if (request !== introRequest || requestedSessionId !== ctx.sessionId) return null;
+        return state.status === "idle" ? beginSession(requestedSessionId) : state;
+      })
+      : beginSession(requestedSessionId);
+    pending.then(function (res) {
+      if (request !== introRequest || requestedSessionId !== ctx.sessionId || !res) return;
       hideTyping();
       var text = res && res.message && res.message.text;
       /* 轮询链路可能已把这条开场白带出来了（replySeenByPoll 按 seq 判断），
          两条路径只渲染一次，否则会出现两条相同的 AI 消息 */
       if (text && !ctx.replySeenByPoll(res)) appendMessage("ai", text);
       ctx.applyServerTurn(res);
-      if (res && res.hostPhase === "guided_learning" && !introDone) {
-        introDone = true;
-        appendIntroAction();
-      }
+      receiveTurn(res);
+      if (recover === true && !introDone) showRecovery();
     }).catch(function (err) {
+      if (request !== introRequest || requestedSessionId !== ctx.sessionId || introDone) return;
       hideTyping();
       appendMessage("ai", "上课失败：" + err.message);
+      showRecovery();
     }).finally(function () {
+      if (request !== introRequest || requestedSessionId !== ctx.sessionId) return;
       busy = false;
       setComposerEnabled(true);
     });
@@ -272,7 +312,7 @@ export function createStage(ctx) {
         destroyPlayer();
         location.hash = ctx.getReviewHash();
       });
-      $("btn-start").addEventListener("click", startLesson);
+      $("btn-start").addEventListener("click", function () { startLesson(Boolean(recoveryRow)); });
 
       composer.addEventListener("submit", function (e) {
         e.preventDefault();
@@ -323,9 +363,12 @@ export function createStage(ctx) {
     receiveMessage: function (text) {
       appendMessage("ai", text);
     },
+    receiveTurn: receiveTurn,
 
     /* 换课：清空对话、开场白进度与视频，回到课前 */
     reset: function () {
+      introRequest++;
+      clearRecovery();
       chatLog.innerHTML = "";
       introDone = false;
       busy = false;

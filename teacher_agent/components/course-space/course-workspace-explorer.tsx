@@ -16,9 +16,10 @@ import {
   Sparkles,
   Trash2,
   Upload,
-  Radio,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { ResourceActions } from './resource-actions';
+import { courseWorkspaceUrl, withTeacherReturn } from '@/lib/course-space/navigation';
 import type {
   CourseArtifactJob,
   CourseArtifactRecord,
@@ -85,7 +86,7 @@ function OriginBadge({
           ? 'border-blue-200 bg-blue-50 text-blue-700'
           : 'border-fuchsia-200 bg-fuchsia-50 text-fuchsia-700'
       } ${className}`}
-      title={isTeacher ? '教师上传的原始材料' : 'AI / 智能体生成的教学产物'}
+      title={isTeacher ? '教师上传的原始材料' : 'AI / 智能体生成的教学资源'}
     >
       <Icon className="size-2.5" />
       {isTeacher ? '教师上传' : 'AI生成'}
@@ -124,11 +125,9 @@ function ClassPublicationBadge({
             ? 'cursor-pointer border-[#B00055]/25 bg-white text-[#B00055] hover:bg-[#B00055] hover:text-white'
             : 'border-slate-200 bg-slate-50 text-slate-500'
       }`}
-      title={
-        published ? `已发布到 Class 通道 · 唯一标志 ${publicationId}` : '尚未发布到 Class 通道'
-      }
+      title={published ? '已发布到班级' : '尚未发布到班级'}
     >
-      {published ? `已发布·${publicationId!.slice(-6)}` : '未发布'}
+      {published ? '已发布' : '未发布'}
     </span>
   );
 }
@@ -173,7 +172,7 @@ export function CourseWorkspaceExplorer({
   const initializedFromArtifacts = useRef(false);
   const explorerRef = useRef<HTMLDivElement>(null);
   const [treeWidth, setTreeWidth] = useState(220);
-  const [activating, setActivating] = useState(false);
+  const [, setActivating] = useState(false);
 
   useEffect(() => {
     const saved = Number(window.localStorage.getItem('mentra.course-tree-width'));
@@ -292,10 +291,10 @@ export function CourseWorkspaceExplorer({
       targetFile.material?.classPublicationId ??
       targetFile.courseFile?.classPublicationId;
     if (publicationId) {
-      setTreeMessage(`该资料已发布到班级，唯一标志：${publicationId}。发布后不可撤回。`);
+      setTreeMessage(`该资料已发布到班级，发布编号：${publicationId}。可在预览区取消发布。`);
       return;
     }
-    if (!window.confirm('确认将该文件发布到 Class 通道吗？发布后不可撤回。')) return;
+    if (!window.confirm('确认将该文件发布到班级吗？可在预览区取消发布。')) return;
     const url = targetFile.artifact
       ? `/api/course-space/${course.id}/artifacts/${targetFile.artifact.id}`
       : targetFile.material
@@ -329,7 +328,9 @@ export function CourseWorkspaceExplorer({
         result?.artifact?.classPublicationId ??
         result?.material?.classPublicationId ??
         result?.file?.classPublicationId;
-      setTreeMessage(`已发布到班级${issuedId ? `，唯一标志：${issuedId}` : ''}。发布后不可撤回。`);
+      setTreeMessage(
+        `已发布到班级${issuedId ? `，发布编号：${issuedId}` : ''}。可在预览区取消发布。`,
+      );
     } catch (error) {
       setTreeMessage(error instanceof Error ? error.message : String(error));
     } finally {
@@ -503,7 +504,7 @@ export function CourseWorkspaceExplorer({
         )
       : (lesson?.files?.length ?? 0) + (lesson?.materialIds.length ?? 0);
     const warning = fileCount
-      ? `\n\n其中包含 ${fileCount} 个课程文件；教学产物也会一并删除，原始材料库记录仍保留。`
+      ? `\n\n其中包含 ${fileCount} 个课程文件；教学资源也会一并删除，原始材料库记录仍保留。`
       : '';
     if (!window.confirm(`确认删除${isModule ? '模块' : '课时文件夹'}“${menu.title}”吗？${warning}`))
       return;
@@ -614,7 +615,7 @@ export function CourseWorkspaceExplorer({
             <div className="mb-2 ml-6 max-h-56 space-y-0.5 overflow-y-auto border-l pl-2">
               <div className="flex items-center gap-2 px-2 py-1.5 text-[10px] font-medium text-slate-400">
                 <History className="size-3" />
-                历史教学产物 · {artifacts.length}
+                教学资源 · {artifacts.length}
               </div>
               {artifacts.map((artifact) => (
                 <button
@@ -964,46 +965,42 @@ export function CourseWorkspaceExplorer({
               </p>
             </div>
             <div className="flex items-center gap-2">
-              {(selectedFile?.artifact || selectedFile?.material) && (
-                <Button
-                  size="sm"
-                  variant={
+              {selectedFile && (
+                <ResourceActions
+                  key={selectedFile.id}
+                  courseId={course.id}
+                  kind={
+                    selectedFile.artifact
+                      ? 'artifacts'
+                      : selectedFile.material
+                        ? 'materials'
+                        : 'lesson-files'
+                  }
+                  id={selectedFile.id}
+                  title={selectedFile.title}
+                  published={Boolean(
                     selectedFile.artifact?.classPublicationId ||
-                    selectedFile.material?.classPublicationId
-                      ? 'default'
-                      : 'outline'
-                  }
-                  disabled={
-                    activating ||
-                    course.status !== 'active' ||
-                    Boolean(
-                      selectedFile.artifact?.classPublicationId ||
-                      selectedFile.material?.classPublicationId,
-                    )
-                  }
-                  onClick={() => void publishFileToClass()}
-                  className={
-                    selectedFile.artifact?.classPublicationId ||
-                    selectedFile.material?.classPublicationId
-                      ? 'bg-emerald-600 disabled:opacity-100'
-                      : course.status === 'active'
-                        ? 'border-[#B00055] bg-[#B00055] text-white hover:bg-[#8F0046] hover:text-white'
-                        : ''
-                  }
-                >
-                  <Radio className="mr-1 size-3.5" />
-                  {selectedFile.artifact?.classPublicationId ||
-                  selectedFile.material?.classPublicationId
-                    ? `已发布 · ${(selectedFile.artifact?.classPublicationId ??
-                        selectedFile.material?.classPublicationId)!.slice(-6)}`
-                    : course.status !== 'active'
-                      ? '请先发布课程'
-                      : '发布到班级'}
-                </Button>
+                    selectedFile.material?.classPublicationId ||
+                    selectedFile.courseFile?.classPublicationId,
+                  )}
+                  courseActive={course.status === 'active'}
+                  onChange={onRefresh}
+                  onDeleted={async () => {
+                    setSelectedFileId('');
+                    await onRefresh();
+                  }}
+                />
               )}
               {selectedFile?.artifact?.classroomUrl && (
                 <Button size="sm" variant="outline" asChild>
-                  <a href={selectedFile.artifact.classroomUrl} target="_blank" rel="noreferrer">
+                  <a
+                    href={withTeacherReturn(
+                      selectedFile.artifact.classroomUrl,
+                      courseWorkspaceUrl(course.id),
+                    )}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
                     全屏打开
                     <ExternalLink className="ml-1 size-3.5" />
                   </a>
@@ -1015,7 +1012,7 @@ export function CourseWorkspaceExplorer({
             {selectedFile?.artifact?.classroomUrl ? (
               <iframe
                 title={selectedFile.title}
-                src={`${selectedFile.artifact.classroomUrl}?embedded=course-workspace`}
+                src={`${selectedFile.artifact.classroomUrl}${selectedFile.artifact.classroomUrl.includes('?') ? '&' : '?'}embedded=course-workspace`}
                 className="h-full w-full rounded-xl border bg-white shadow-sm"
               />
             ) : selectedFile?.artifact ? (

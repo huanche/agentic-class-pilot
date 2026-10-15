@@ -10,19 +10,26 @@ import { readCourseKnowledgeGraphFromDatabase } from '@/lib/server/course-space-
 
 export const dynamic = 'force-dynamic';
 
-export async function GET(request: NextRequest, context: { params: Promise<{ courseId: string }> }) {
+export async function GET(
+  request: NextRequest,
+  context: { params: Promise<{ courseId: string }> },
+) {
   const denied = authorizeStudentAgent(request);
   if (denied) return denied;
   const { courseId } = await context.params;
   const course = await readServerCourse(courseId);
-  if (!course || course.status !== 'active') return apiError('INVALID_REQUEST', 404, '已发布课程不存在');
+  if (!course || course.status !== 'active')
+    return apiError('INVALID_REQUEST', 404, '已发布课程不存在');
   const [knowledgePackage, graph, artifacts] = await Promise.all([
-    readPublishedKnowledgePackage(courseId),
-    readCourseKnowledgeGraphFromDatabase(courseId, { publishedOnly: true }),
-    listCourseArtifacts(courseId),
+    readPublishedKnowledgePackage(course.id),
+    readCourseKnowledgeGraphFromDatabase(course.id, { publishedOnly: true }),
+    listCourseArtifacts(course.id),
   ]);
   if (!knowledgePackage) return apiError('INVALID_REQUEST', 404, '课程尚未发布知识包');
-  const publishedArtifacts = artifacts.filter((artifact) => artifact.status === 'published');
+  const publishedArtifacts = artifacts.filter(
+    (artifact) =>
+      artifact.status === 'published' && artifact.classVisible && artifact.classPublicationId,
+  );
   return apiSuccess({
     schemaVersion: '1.0',
     course: {
@@ -41,11 +48,27 @@ export async function GET(request: NextRequest, context: { params: Promise<{ cou
           title: lesson.title,
           order: lesson.order,
           objectives: lesson.objectives,
-          files: (lesson.files ?? []).filter((file) => file.status === 'ready'),
+          files: (lesson.files ?? []).filter(
+            (file) => file.status === 'ready' && file.classVisible && file.classPublicationId,
+          ),
         })),
       })),
     },
-    knowledgePackage,
+    // Package snapshots predate individual withdrawals. Resolve entries from
+    // current publications so revoked content cannot leak through an old package.
+    knowledgePackage: {
+      ...knowledgePackage,
+      entries: publishedArtifacts.map((artifact) => ({
+        id: artifact.id,
+        courseId: course.id,
+        title: artifact.title,
+        content: artifact.content,
+        moduleId: artifact.scope.type === 'module' ? artifact.scope.moduleId : undefined,
+        lessonId: artifact.scope.type === 'lesson' ? artifact.scope.lessonId : undefined,
+        citations: artifact.citations,
+        approvedAt: artifact.approvedAt ?? artifact.classPublishedAt,
+      })),
+    },
     knowledgeGraph: graph,
     artifacts: publishedArtifacts.map((artifact) => ({
       id: artifact.id,

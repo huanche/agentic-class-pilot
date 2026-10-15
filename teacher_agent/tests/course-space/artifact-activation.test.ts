@@ -7,9 +7,10 @@ const storage = vi.hoisted(() => ({
   saveCourseArtifact: vi.fn(),
   saveCourseArtifactFile: vi.fn(),
   updateCourseJobIfPresent: vi.fn(),
+  deleteCourseArtifact: vi.fn(),
 }));
 vi.mock('@/lib/server/course-space-storage', () => storage);
-import { PATCH } from '@/app/api/course-space/[courseId]/artifacts/[artifactId]/route';
+import { PATCH, DELETE } from '@/app/api/course-space/[courseId]/artifacts/[artifactId]/route';
 
 /** Attached courseware artifacts carry a synthetic `attached_*` jobId with no job record. */
 const attachedArtifact = {
@@ -57,7 +58,10 @@ describe('artifact activation', () => {
 
   it('keeps activation idempotent when a publication id already exists', async () => {
     storage.readServerCourse.mockResolvedValue({ id: 'course-a', status: 'active' });
-    storage.readCourseArtifact.mockResolvedValue({ ...attachedArtifact, classPublicationId: 'CLS-A-existing' });
+    storage.readCourseArtifact.mockResolvedValue({
+      ...attachedArtifact,
+      classPublicationId: 'CLS-A-existing',
+    });
 
     const response = await PATCH(patchRequest({ action: 'activate' }), context);
     expect(response.status).toBe(200);
@@ -65,12 +69,38 @@ describe('artifact activation', () => {
     expect(storage.saveCourseArtifact).not.toHaveBeenCalled();
   });
 
-  it('rejects deactivation after publication', async () => {
+  it('withdraws a publication without deleting the editable courseware', async () => {
     storage.readServerCourse.mockResolvedValue({ id: 'course-a', status: 'active' });
-    storage.readCourseArtifact.mockResolvedValue(attachedArtifact);
+    storage.readCourseArtifact.mockResolvedValue({
+      ...attachedArtifact,
+      status: 'published',
+      classVisible: true,
+      classPublicationId: 'CLS-A-existing',
+      classPublishedAt: 1,
+    });
+    storage.saveCourseArtifact.mockImplementation(async (artifact) => artifact);
 
     const response = await PATCH(patchRequest({ action: 'deactivate' }), context);
-    expect(response.status).toBe(409);
+    expect(response.status).toBe(200);
+    const { artifact } = await response.json();
+    expect(artifact).toMatchObject({
+      status: 'approved',
+      classVisible: false,
+      content: 'attached',
+    });
+    expect(artifact.classPublicationId).toBeUndefined();
+    expect(artifact.classPublishedAt).toBeUndefined();
+    expect(storage.deleteCourseArtifact).not.toHaveBeenCalled();
+  });
+
+  it('deletes only an artifact owned by the resolved canonical course', async () => {
+    storage.readServerCourse.mockResolvedValue({ id: 'course-a' });
+    storage.readCourseArtifact.mockResolvedValue({ ...attachedArtifact, courseId: 'other-course' });
+    expect((await DELETE(patchRequest({}), context)).status).toBe(404);
+    expect(storage.deleteCourseArtifact).not.toHaveBeenCalled();
+    storage.readCourseArtifact.mockResolvedValue(attachedArtifact);
+    expect((await DELETE(patchRequest({}), context)).status).toBe(200);
+    expect(storage.deleteCourseArtifact).toHaveBeenCalledWith('artifact-1');
   });
 
   it('requires the course to be published before artifact activation', async () => {

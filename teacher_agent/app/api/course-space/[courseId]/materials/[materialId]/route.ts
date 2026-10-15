@@ -36,32 +36,56 @@ export async function PATCH(
     return apiError('INVALID_REQUEST', 404, '课程材料不存在');
   }
   const body = (await req.json()) as { active?: boolean };
+  if (typeof body.active !== 'boolean')
+    return apiError('INVALID_REQUEST', 400, '请选择发布或取消发布');
   const active = body.active === true;
   const material = course.materials.find((item) => item.id === materialId)!;
-  if (!active) {
-    return apiError('INVALID_REQUEST', 409, '材料发布到班级后不可撤回');
-  }
-  if (material.classPublicationId) {
+  if (active && material.classVisible && material.classPublicationId) {
     return apiSuccess({ material });
   }
-  if (course.status !== 'active') {
+  if (active && course.status !== 'active') {
     return apiError('INVALID_REQUEST', 409, '请先发布课程，再将材料发布到班级');
   }
   const now = Date.now();
-  const updated = await updateServerCourse(courseId, (current) => ({
+  const updated = await updateServerCourse(course.id, (current) => ({
     ...current,
     materials: current.materials.map((item) =>
       item.id === materialId
         ? {
             ...item,
             classVisible: active,
-            activatedAt: now,
-            classPublicationId: `CLS-M-${nanoid(12)}`,
-            classPublishedAt: now,
+            activatedAt: active ? now : undefined,
+            classPublicationId: active ? `CLS-M-${nanoid(12)}` : undefined,
+            classPublishedAt: active ? now : undefined,
             updatedAt: now,
           }
         : item,
     ),
   }));
   return apiSuccess({ material: updated.materials.find((item) => item.id === materialId) });
+}
+
+export async function DELETE(
+  _req: NextRequest,
+  context: { params: Promise<{ courseId: string; materialId: string }> },
+) {
+  const { courseId, materialId } = await context.params;
+  const course = await readServerCourse(courseId);
+  const material = course?.materials.find((item) => item.id === materialId);
+  if (!course || !material) return apiError('INVALID_REQUEST', 404, '课程材料不存在');
+  if (material.status === 'parsing')
+    return apiError('INVALID_REQUEST', 409, '材料正在解析，请完成后再删除');
+  // Detach from the active catalog; retain source bytes for existing citations.
+  await updateServerCourse(course.id, (current) => ({
+    ...current,
+    materials: current.materials.filter((item) => item.id !== materialId),
+    modules: current.modules.map((module) => ({
+      ...module,
+      lessons: module.lessons.map((lesson) => ({
+        ...lesson,
+        materialIds: lesson.materialIds.filter((id) => id !== materialId),
+      })),
+    })),
+  }));
+  return apiSuccess({ deleted: materialId });
 }

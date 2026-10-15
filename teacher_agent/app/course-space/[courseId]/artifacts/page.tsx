@@ -35,7 +35,7 @@ export default function CourseArtifactsPage() {
           <Button
             variant="ghost"
             size="icon"
-            aria-label="返回课程建设概览"
+            aria-label="返回课程概览"
             onClick={() => router.push(`/course-space/${courseId}`)}
           >
             <ArrowLeft />

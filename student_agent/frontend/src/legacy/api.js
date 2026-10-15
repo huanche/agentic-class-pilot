@@ -6,11 +6,22 @@ function request(method, url, body) {
   // credentials: "include" —— 同源托管时行为不变；NEXT_PUBLIC_API_BASE_URL 指向
   // 独立后端（跨域）时也带上会话 Cookie（后端需配 AGENT_CORS_ORIGIN_REGEX 放行）。
   var options = { method: method, headers: {}, credentials: "include" };
+  var controller = new AbortController();
+  options.signal = controller.signal;
+  var timer;
   if (body !== undefined) {
     options.headers["Content-Type"] = "application/json";
     options.body = JSON.stringify(body);
   }
-  return fetch(API_BASE_URL + url, options).then(async function (res) {
+  var deadline = new Promise(function (_, reject) {
+    timer = setTimeout(function () {
+      var failure = new Error("请求超时，请检查课堂状态后重试");
+      failure.code = "REQUEST_TIMEOUT";
+      reject(failure);
+      controller.abort();
+    }, method === "GET" ? 20000 : 120000);
+  });
+  var response = fetch(API_BASE_URL + url, options).then(async function (res) {
     var data = null;
     try { data = await res.json(); } catch (error) { /* 空响应 */ }
     if (!res.ok) {
@@ -21,6 +32,7 @@ function request(method, url, body) {
     }
     return data || {};
   });
+  return Promise.race([response, deadline]).finally(function () { clearTimeout(timer); });
 }
 
 function sessionUrl(sessionId, suffix) {

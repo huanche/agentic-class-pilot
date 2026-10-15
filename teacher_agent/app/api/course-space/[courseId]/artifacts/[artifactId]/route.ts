@@ -7,6 +7,7 @@ import {
   saveCourseArtifact,
   saveCourseArtifactFile,
   updateCourseJobIfPresent,
+  deleteCourseArtifact,
 } from '@/lib/server/course-space-storage';
 import { markdownToArtifactHtml, WORD_ARTIFACT_TYPES } from '@/lib/course-space/artifact-formats';
 import { buildCourseArtifactDocx } from '@/lib/server/course-artifact-docx';
@@ -34,7 +35,16 @@ export async function PATCH(
   if (body.action === 'activate' || body.action === 'deactivate') {
     const active = body.action === 'activate';
     if (!active) {
-      return apiError('INVALID_REQUEST', 409, '产物发布到班级后不可撤回');
+      const updated = await saveCourseArtifact({
+        ...artifact,
+        status: artifact.status === 'published' ? 'approved' : artifact.status,
+        classVisible: false,
+        classPublicationId: undefined,
+        classPublishedAt: undefined,
+        activatedAt: undefined,
+        updatedAt: Date.now(),
+      });
+      return apiSuccess({ artifact: updated });
     }
     if (course.status !== 'active') {
       return apiError('INVALID_REQUEST', 409, '请先发布课程，再将产物发布到班级');
@@ -55,7 +65,7 @@ export async function PATCH(
     });
     await updateCourseJobIfPresent(artifact.jobId, {
       status: 'approved',
-      message: '教师确认并发布到 Class 通道',
+      message: '教师确认并发布到班级',
     });
     return apiSuccess({ artifact: updated });
   }
@@ -96,4 +106,20 @@ export async function PATCH(
     message: approving ? '教师审核通过' : '教师已保存修改，等待批准',
   });
   return apiSuccess({ artifact: updated });
+}
+
+export async function DELETE(
+  _req: NextRequest,
+  context: { params: Promise<{ courseId: string; artifactId: string }> },
+) {
+  const { courseId, artifactId } = await context.params;
+  const [course, artifact] = await Promise.all([
+    readServerCourse(courseId),
+    readCourseArtifact(artifactId),
+  ]);
+  if (!course || !artifact || artifact.courseId !== course.id) {
+    return apiError('INVALID_REQUEST', 404, '教学资源不存在');
+  }
+  await deleteCourseArtifact(artifactId);
+  return apiSuccess({ deleted: artifactId });
 }

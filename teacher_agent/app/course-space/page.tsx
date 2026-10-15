@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { usePathname, useRouter } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { nanoid } from 'nanoid';
 import {
   ArrowLeft,
@@ -89,8 +89,6 @@ function buildLegacyPptDraft(extraction: CourseMaterialExtraction): PptContentDr
 
 export default function CourseSpacePage() {
   const router = useRouter();
-  const pathname = usePathname();
-  const isTeacherV11 = pathname.startsWith('/teacher-workspace');
   const repository = useMemo(() => new ApiCourseSpaceRepository(), []);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const verticalSplitRef = useRef<HTMLDivElement>(null);
@@ -626,6 +624,7 @@ export default function CourseSpacePage() {
             variant="ghost"
             size="icon"
             className="rounded-full"
+            aria-label="返回课程概览"
             onClick={() => router.push(`/course-space/${selected?.id || workspaceCourseId}`)}
           >
             <ArrowLeft />
@@ -634,26 +633,21 @@ export default function CourseSpacePage() {
           <div className="h-7 w-px bg-slate-200" />
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-lg font-semibold">教师课程工作区</h1>
-              <span
-                className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${isTeacherV11 ? 'border-[#B00055]/20 bg-[#B00055]/5 text-[#B00055]' : 'border-slate-200 bg-slate-50 text-slate-500'}`}
-              >
-                教师端 {isTeacherV11 ? 'v1.1' : 'v1.0'}
-              </span>
+              <h1 className="text-lg font-semibold">课程工作台</h1>
             </div>
-            <p className="text-xs text-muted-foreground">课程结构、智能体协作与历史教学产物</p>
+            <p className="text-xs text-muted-foreground">课程结构、智能体协作与教学资源</p>
           </div>
         </div>
         <div className="flex items-center gap-3">
           <Button
             variant="outline"
             className="rounded-full bg-white/70"
-            onClick={() => router.push('/')}
+            onClick={() => router.push('/course-space')}
           >
-            返回品牌首页
+            课程中心
           </Button>
           <div className="rounded-full border bg-white/70 px-3 py-1.5 text-xs text-muted-foreground">
-            默认教师
+            教师端
           </div>
         </div>
       </header>
@@ -672,7 +666,7 @@ export default function CourseSpacePage() {
                   {selected.modules.length} 模块
                 </span>
                 <span className="rounded-full border bg-white px-3 py-1.5">
-                  {artifacts.length} 产物
+                  {artifacts.length} 个资源
                 </span>
                 {latestJob && (
                   <Button
@@ -696,7 +690,7 @@ export default function CourseSpacePage() {
                   ) : (
                     <PackageCheck className="mr-2 size-4" />
                   )}
-                  {selected.status === 'active' ? 'Class 通道已开启' : '开启 Class 通道'}
+                  {selected.status === 'active' ? '课程已发布' : '发布课程'}
                 </Button>
                 {selected.status === 'active' && (
                   <Button
@@ -755,7 +749,7 @@ export default function CourseSpacePage() {
                 <div
                   className="inline-flex rounded-xl bg-slate-100 p-1"
                   role="tablist"
-                  aria-label="教师工作区视图"
+                  aria-label="课程工作台视图"
                 >
                   <button
                     type="button"
@@ -775,7 +769,7 @@ export default function CourseSpacePage() {
                     className={`flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium transition ${workspacePanel === 'artifacts' ? 'bg-white text-[#B00055] shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
                   >
                     <LayoutGrid className="size-4" />
-                    历史产物缩略图
+                    教学资源
                   </button>
                 </div>
                 {workspacePanel === 'generate' ? (
@@ -786,7 +780,7 @@ export default function CourseSpacePage() {
                   />
                 ) : (
                   <p className="text-xs text-muted-foreground">
-                    当前课程共 {artifacts.length} 个教学产物
+                    当前课程共 {artifacts.length} 个教学资源
                   </p>
                 )}
               </div>

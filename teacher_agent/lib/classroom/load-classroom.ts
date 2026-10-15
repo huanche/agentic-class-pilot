@@ -50,6 +50,7 @@ interface AgentLookupResult {
 export interface RunClassroomLoadArgs<TMediaTasks = unknown> {
   classroomId: string;
   preferServerClassroom?: boolean;
+  readOnly?: boolean;
   loadToken: StageSceneLoadToken;
   isCurrent: () => boolean;
   loadFromStorage: (classroomId: string, loadToken: StageSceneLoadToken) => Promise<void>;
@@ -107,6 +108,7 @@ export function resetLegacyAgentFallbackProbes(): void {
 export async function runClassroomLoad<TMediaTasks = unknown>({
   classroomId,
   preferServerClassroom = false,
+  readOnly = false,
   loadToken,
   isCurrent,
   loadFromStorage,
@@ -127,10 +129,18 @@ export async function runClassroomLoad<TMediaTasks = unknown>({
   log,
 }: RunClassroomLoadArgs<TMediaTasks>): Promise<void> {
   try {
-    if (!preferServerClassroom) await loadFromStorage(classroomId, loadToken);
+    let localLoadFailed = false;
+    if (!preferServerClassroom) {
+      try {
+        await loadFromStorage(classroomId, loadToken);
+      } catch (error) {
+        localLoadFailed = true;
+        log.warn('Browser storage unavailable; trying the server classroom:', error);
+      }
+    }
     if (!isCurrent()) return;
 
-    if (preferServerClassroom || !getCurrentStage()) {
+    if (preferServerClassroom || localLoadFailed || getCurrentStage()?.id !== classroomId) {
       log.info('No IndexedDB data, trying server-side storage for:', classroomId);
       // The fetch path converts and commits under the per-stage document lock.
       // Once it returns, the document owns every allocation; a later
@@ -151,18 +161,21 @@ export async function runClassroomLoad<TMediaTasks = unknown>({
           return;
         }
         log.info('Loaded from server-side storage:', classroomId);
-      } else if (preferServerClassroom) {
+      } else {
         setError('无法加载服务器上的课堂内容');
+        return;
       }
     }
 
     if (!isCurrent()) return;
-    const mediaTasks = await loadRestoredMediaTasks(classroomId);
-    if (!isCurrent()) {
-      discardRestoredMediaTasks(mediaTasks);
-      return;
+    if (!readOnly) {
+      const mediaTasks = await loadRestoredMediaTasks(classroomId);
+      if (!isCurrent()) {
+        discardRestoredMediaTasks(mediaTasks);
+        return;
+      }
+      applyRestoredMediaTasks(mediaTasks);
     }
-    applyRestoredMediaTasks(mediaTasks);
 
     // ── Roster hydration: the stage document is the source of truth ──
     // The legacy IndexedDB mirror is consulted as a read-only, per-stage
@@ -186,6 +199,7 @@ export async function runClassroomLoad<TMediaTasks = unknown>({
       stageForRoster?.id === classroomId ? stageForRoster.generatedAgentConfigs : undefined;
     let effectiveConfigs = documentConfigs ?? [];
     if (
+      !readOnly &&
       stageForRoster?.id === classroomId &&
       rosterNeedsLegacyFallback(documentConfigs) &&
       !fruitlessLegacyProbeStageIds.has(classroomId)
@@ -340,7 +354,9 @@ export async function fetchClassroomFromApi(
 }
 
 /** The read-only student embed streams narration from audioUrl on demand. */
-export async function fetchClassroomForPlayer(classroomId: string): Promise<ClassroomPayload | null> {
+export async function fetchClassroomForPlayer(
+  classroomId: string,
+): Promise<ClassroomPayload | null> {
   const res = await fetch(`/api/classroom?id=${encodeURIComponent(classroomId)}`);
   if (!res.ok) return null;
   const json = (await res.json()) as { success?: boolean; classroom?: ClassroomPayload };

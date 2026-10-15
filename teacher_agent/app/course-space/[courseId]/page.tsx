@@ -17,6 +17,8 @@ import {
   Upload,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { ResourceActions } from '@/components/course-space/resource-actions';
+import { resourceStatusLabel } from '@/lib/course-space/labels';
 import type { CourseArtifactJob, CourseArtifactRecord, CourseSpace } from '@/lib/course-space';
 
 const artifactNames: Record<string, string> = {
@@ -110,9 +112,7 @@ export default function CourseOverviewPage() {
       const response = await fetch(`/api/course-space/${courseId}/publish`, { method: 'POST' });
       const data = await response.json();
       if (!response.ok || data.success === false) throw new Error(data.error || '发布课程失败');
-      setPublishMessage(
-        '课程已发布到 Class 通道。只有教师确认发布并激活的生成产物会在班级资料中显示。',
-      );
+      setPublishMessage('课程已发布到班级。只有教师确认发布并激活的生成资源会在班级资料中显示。');
       await load();
     } catch (reason) {
       setPublishMessage(reason instanceof Error ? reason.message : String(reason));
@@ -141,7 +141,12 @@ export default function CourseOverviewPage() {
   if (!course || !stats)
     return (
       <main className="flex min-h-screen items-center justify-center bg-slate-50 text-muted-foreground">
-        {error || '正在读取课程状态…'}
+        <div className="space-y-4 text-center">
+          <p>{error || '正在读取课程状态…'}</p>
+          <Button variant="outline" onClick={() => router.push('/course-space')}>
+            返回课程中心
+          </Button>
+        </div>
       </main>
     );
   const latestJob = jobs[0];
@@ -171,7 +176,7 @@ export default function CourseOverviewPage() {
     {
       title: '课时 PPT / 互动课件',
       done: stats.has('lesson-courseware'),
-      detail: stats.has('lesson-courseware') ? '已有课件产物' : '尚未生成，需要选择课时和来源材料',
+      detail: stats.has('lesson-courseware') ? '已有课件资源' : '尚未生成，需要选择课时和来源材料',
       icon: Presentation,
     },
   ];
@@ -183,18 +188,23 @@ export default function CourseOverviewPage() {
             variant="ghost"
             size="icon"
             className="rounded-full"
+            aria-label="返回课程中心"
             onClick={() => router.push('/course-space')}
           >
             <ArrowLeft />
           </Button>
           <img src="/brand-mark.png" alt="MENTRA" className="size-10" />
           <div>
-            <h1 className="text-lg font-semibold">课程建设概览</h1>
-            <p className="text-xs text-muted-foreground">先检查当前状态，再进入教师课程工作区</p>
+            <h1 className="text-lg font-semibold">课程概览</h1>
+            <p className="text-xs text-muted-foreground">先检查当前状态，再进入课程工作台</p>
           </div>
         </div>
-        <Button variant="outline" className="rounded-full" onClick={() => router.push('/')}>
-          返回首页
+        <Button
+          variant="outline"
+          className="rounded-full"
+          onClick={() => router.push('/course-space')}
+        >
+          课程中心
         </Button>
       </header>
       <section className="mx-auto max-w-7xl px-7 py-8">
@@ -202,7 +212,7 @@ export default function CourseOverviewPage() {
           <div className="flex flex-wrap items-start justify-between gap-6">
             <div>
               <span className="rounded-full bg-white/10 px-3 py-1.5 text-xs">
-                {course.status === 'active' ? '已有发布知识包' : '课程建设中'}
+                {course.status === 'active' ? '课程已发布' : '课程建设中'}
               </span>
               <h2 className="mt-5 text-3xl font-semibold">{course.title}</h2>
               <p className="mt-2 text-sm text-white/65">
@@ -230,7 +240,7 @@ export default function CourseOverviewPage() {
               <div>
                 <h3 className="text-xl font-semibold">当前课程状态</h3>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  系统根据真实材料、结构和已生成产物给出下一步。
+                  系统根据真实材料、结构和已生成资源给出下一步。
                 </p>
               </div>
               <div className="flex shrink-0 items-center gap-2">
@@ -239,7 +249,7 @@ export default function CourseOverviewPage() {
                   onClick={() => router.push(`/course-space?workspace=${course.id}`)}
                 >
                   <Bot className="mr-2 size-4" />
-                  进入教师工作区
+                  进入课程工作台
                 </Button>
                 <Button
                   className="rounded-xl bg-[#B00055] hover:bg-[#8F0046]"
@@ -329,7 +339,7 @@ export default function CourseOverviewPage() {
                     <span>
                       <b className="block">课程基础已就绪</b>
                       <span className="mt-1 block text-xs text-emerald-700/75">
-                        进入工作区继续生成、审核或维护教学产物
+                        进入工作台继续生成、审核或维护教学资源
                       </span>
                     </span>
                     <ChevronRight className="size-4 shrink-0" />
@@ -340,12 +350,12 @@ export default function CourseOverviewPage() {
             <div className="rounded-[26px] border border-white/80 bg-white/90 p-5 shadow-sm">
               <div className="flex items-center gap-2">
                 <PackageCheck className="size-5 text-[#B00055]" />
-                <h3 className="font-semibold">教学产物</h3>
+                <h3 className="font-semibold">教学资源</h3>
               </div>
               <div className="mt-4 flex items-end justify-between">
                 <div>
                   <b className="text-3xl">{artifacts.length}</b>
-                  <p className="text-xs text-muted-foreground">个已生成产物</p>
+                  <p className="text-xs text-muted-foreground">个已生成资源</p>
                 </div>
                 <Button
                   variant="outline"
@@ -353,7 +363,7 @@ export default function CourseOverviewPage() {
                   disabled={!artifacts.length}
                   onClick={() => router.push(`/course-space/${course.id}/artifacts`)}
                 >
-                  查看产物
+                  查看资源
                 </Button>
               </div>
               {latestJob && (
@@ -418,17 +428,28 @@ export default function CourseOverviewPage() {
                       <span
                         className={`rounded-full px-2 py-0.5 text-[10px] ${item.status === 'ready' ? 'bg-emerald-100 text-emerald-700' : item.status === 'failed' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}
                       >
-                        {item.status}
+                        {resourceStatusLabel[item.status] || item.status}
                       </span>
                     </div>
                     <p className="mt-2 text-[11px] text-muted-foreground">
                       {item.pageCount
-                        ? `${item.pageCount} 页 · ${item.parser}`
+                        ? `${item.pageCount} 页`
                         : `${Math.max(1, Math.round(item.size / 1024))} KB`}
                     </p>
                     {item.error && (
                       <p className="mt-2 line-clamp-2 text-[11px] text-red-600">{item.error}</p>
                     )}
+                    <div className="mt-3">
+                      <ResourceActions
+                        courseId={course.id}
+                        kind="materials"
+                        id={item.id}
+                        title={item.name}
+                        published={Boolean(item.classPublicationId)}
+                        courseActive={course.status === 'active'}
+                        onChange={load}
+                      />
+                    </div>
                     {['uploaded', 'failed'].includes(item.status) && (
                       <Button
                         size="sm"

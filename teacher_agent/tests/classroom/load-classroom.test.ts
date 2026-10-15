@@ -163,6 +163,44 @@ beforeEach(() => {
 });
 
 describe('runClassroomLoad', () => {
+  it('falls back to the server when browser storage is unavailable', async () => {
+    const { deps, setStage } = makeDeps();
+    vi.mocked(deps.loadFromStorage).mockRejectedValue(new Error('IndexedDB denied'));
+    vi.mocked(deps.fetchClassroom).mockResolvedValue({
+      stage: makeStage('stage-a'),
+      scenes: [makeScene('scene-a', 'stage-a')],
+    });
+    vi.mocked(deps.applyFallbackScenes).mockImplementation(async ({ stage }) => {
+      setStage(stage);
+      return true;
+    });
+    await runClassroomLoad(deps);
+    expect(deps.fetchClassroom).toHaveBeenCalled();
+    expect(deps.setError).not.toHaveBeenCalled();
+    expect(deps.setLoading).toHaveBeenLastCalledWith(false);
+  });
+
+  it('does not touch private browser media or roster storage for a read-only player', async () => {
+    const { deps, setStage } = makeDeps({ preferServerClassroom: true, readOnly: true });
+    vi.mocked(deps.fetchClassroom).mockResolvedValue({
+      stage: makeStage('stage-a'),
+      scenes: [makeScene('scene-a', 'stage-a')],
+    });
+    vi.mocked(deps.applyFallbackScenes).mockImplementation(async ({ stage }) => {
+      setStage(stage);
+      return true;
+    });
+    vi.mocked(deps.loadRestoredMediaTasks).mockRejectedValue(
+      new Error('browser storage unavailable'),
+    );
+    await runClassroomLoad(deps);
+    expect(deps.loadFromStorage).not.toHaveBeenCalled();
+    expect(deps.loadRestoredMediaTasks).not.toHaveBeenCalled();
+    expect(deps.loadLegacyAgentFallbacks).not.toHaveBeenCalled();
+    expect(deps.setError).not.toHaveBeenCalled();
+    expect(deps.applyGeneratedAgents).toHaveBeenCalled();
+  });
+
   it('keeps the current load token valid when fallback scenes are committed', () => {
     useStageStore.getState().clearStore();
     const loadToken = claimStageSceneLoadToken();

@@ -414,6 +414,9 @@ function applyServerTurn(res) {
     return;
   }
 
+  // 轮询可能先于开课请求返回；同一界面也要补上播放入口。
+  if (classStage && currentStage !== "video") classStage.receiveTurn(res);
+
   if (phase === hostPhase) return;      /* 没变，什么都不做 */
 
   hostPhase = phase;
@@ -442,13 +445,21 @@ function deliverServerMessage(message) {
   if (owner && owner.receiveMessage) owner.receiveMessage(message.text);
 }
 
+var pollInFlight = false;
 function pollSession() {
   var route = parseHash();
-  if (route.name !== "class" || !sessionId) return;
-  Promise.all([
-    fetchSessionState(sessionId),
-    fetchSessionMessages(sessionId, messageCursor)
-  ]).then(function (values) {
+  if (route.name !== "class" || !sessionId || pollInFlight) return;
+  pollInFlight = true;
+  var requestedSessionId = sessionId;
+  var requestedHash = location.hash;
+  Promise.allSettled([
+    fetchSessionState(requestedSessionId),
+    fetchSessionMessages(requestedSessionId, messageCursor)
+  ]).then(function (results) {
+    if (sessionId !== requestedSessionId || location.hash !== requestedHash) return;
+    var failed = results.find(function (result) { return result.status === "rejected"; });
+    if (failed) throw failed.reason;
+    var values = results.map(function (result) { return result.value; });
     var state = values[0];
     var feed = values[1];
     applyServerTurn(state);
@@ -462,6 +473,8 @@ function pollSession() {
     messageCursor = Math.max(messageCursor, feed.total || messageCursor);
   }).catch(function (error) {
     if (error.status !== 404) console.warn("课堂同步失败", error);
+  }).finally(function () {
+    pollInFlight = false;
   });
 }
 
