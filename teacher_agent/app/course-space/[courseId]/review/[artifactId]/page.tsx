@@ -126,6 +126,7 @@ export default function ArtifactReviewPage() {
                 </Button>
                 <ResourceActions
                   courseId={courseId}
+                  course={course ?? undefined}
                   kind="artifacts"
                   id={artifact.id}
                   title={artifact.title}

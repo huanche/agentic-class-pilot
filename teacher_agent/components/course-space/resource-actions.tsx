@@ -1,7 +1,16 @@
 'use client';
 
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { Button } from '@/components/ui/button';
+import type { CourseSpace } from '@/lib/course-space/types';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -23,6 +32,8 @@ export function ResourceActions({
   courseActive,
   onChange,
   onDeleted,
+  course,
+  onMoved,
 }: {
   courseId: string;
   kind: 'artifacts' | 'materials' | 'lesson-files';
@@ -32,10 +43,49 @@ export function ResourceActions({
   courseActive: boolean;
   onChange: () => void | Promise<void>;
   onDeleted?: () => void | Promise<void>;
+  course?: CourseSpace;
+  onMoved?: (lessonId: string) => void | Promise<void>;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [pendingAction, setPendingAction] = useState<'delete' | 'publication' | null>(null);
+  const [moveOpen, setMoveOpen] = useState(false);
+  const [targetLessonId, setTargetLessonId] = useState('');
+  const targetSelectId = useId();
+  const lessons =
+    course?.modules.flatMap((module) =>
+      module.lessons.map((lesson) => ({
+        id: lesson.id,
+        label: `${module.title} / ${lesson.title}`,
+      })),
+    ) ?? [];
+  const move = async () => {
+    if (!targetLessonId || busy) return;
+    setBusy(true);
+    setError('');
+    try {
+      const response = await fetch(`/api/course-space/${encodeURIComponent(courseId)}/tree`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          action: 'move-item',
+          itemKind:
+            kind === 'artifacts' ? 'artifact' : kind === 'materials' ? 'material' : 'course-file',
+          itemId: id,
+          targetLessonId,
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok || result.success === false) throw new Error(result.error || '移动失败');
+      await onChange();
+      await onMoved?.(targetLessonId);
+      setMoveOpen(false);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setBusy(false);
+    }
+  };
   const action = pendingAction === 'delete' ? '删除' : published ? '取消发布' : '发布到班级';
   const consequence =
     pendingAction === 'delete'
@@ -86,6 +136,20 @@ export function ResourceActions({
   };
   return (
     <div className="flex flex-wrap items-center gap-2">
+      {course && (
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={busy}
+          onClick={() => {
+            setError('');
+            setTargetLessonId('');
+            setMoveOpen(true);
+          }}
+        >
+          移动
+        </Button>
+      )}
       <Button
         size="sm"
         variant="outline"
@@ -103,7 +167,7 @@ export function ResourceActions({
       >
         删除
       </Button>
-      {error && (
+      {error && !moveOpen && (
         <span role="alert" className="text-xs text-destructive">
           {error}
         </span>
@@ -129,6 +193,56 @@ export function ResourceActions({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      <Dialog
+        open={moveOpen}
+        onOpenChange={(open) => {
+          if (!busy) setMoveOpen(open);
+        }}
+      >
+        <DialogContent className="max-w-lg" showCloseButton={!busy}>
+          <DialogHeader>
+            <DialogTitle>移动“{title}”</DialogTitle>
+            <DialogDescription>选择本课程中的目标课时。移动后发布状态保持不变。</DialogDescription>
+          </DialogHeader>
+          {lessons.length ? (
+            <div className="grid gap-2">
+              <label htmlFor={targetSelectId}>目标课时</label>
+              <select
+                id={targetSelectId}
+                className="w-full rounded-md border bg-background p-2"
+                value={targetLessonId}
+                disabled={busy}
+                onChange={(event) => {
+                  setTargetLessonId(event.target.value);
+                  setError('');
+                }}
+              >
+                <option value="">请选择课时</option>
+                {lessons.map((lesson) => (
+                  <option key={lesson.id} value={lesson.id}>
+                    {lesson.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : (
+            <p>课程中还没有课时，请先创建课时文件夹。</p>
+          )}
+          {error && (
+            <p role="alert" className="text-sm text-destructive">
+              {error}
+            </p>
+          )}
+          <DialogFooter>
+            <Button variant="outline" disabled={busy} onClick={() => setMoveOpen(false)}>
+              取消
+            </Button>
+            <Button disabled={busy || !targetLessonId} onClick={() => void move()}>
+              {busy ? '正在移动…' : '确认移动'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

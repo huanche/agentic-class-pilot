@@ -442,6 +442,7 @@ export default function CourseOverviewPage() {
                     <div className="mt-3">
                       <ResourceActions
                         courseId={course.id}
+                        course={course}
                         kind="materials"
                         id={item.id}
                         title={item.name}

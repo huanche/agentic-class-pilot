@@ -521,8 +521,20 @@ export function CourseWorkspaceExplorer({
     event.dataTransfer.effectAllowed = 'move';
     event.dataTransfer.setData('application/x-mentra-course-item', JSON.stringify(item));
   };
+  const showMovedFile = (lessonId: string, fileId: string) => {
+    selectScope({ type: 'lesson', lessonId });
+    setSelectedFileId(fileId);
+    const parent = course.modules.find((module) =>
+      module.lessons.some((lesson) => lesson.id === lessonId),
+    );
+    if (parent) setExpanded((items) => new Set(items).add(parent.id));
+    setExpandedLessons((items) => new Set(items).add(lessonId));
+    setTreeMessage('文件已移动到目标课时文件夹。');
+  };
   const dropIntoLesson = async (event: React.DragEvent<HTMLElement>, lessonId: string) => {
     event.preventDefault();
+    setDropTargetId('');
+    if (savingStructure) return;
     const raw = event.dataTransfer.getData('application/x-mentra-course-item');
     if (!raw) return;
     try {
@@ -534,8 +546,7 @@ export function CourseWorkspaceExplorer({
         targetLessonId: lessonId,
       });
       if (succeeded) {
-        setExpandedLessons((items) => new Set(items).add(lessonId));
-        setTreeMessage('文件已移动到目标课时文件夹。');
+        showMovedFile(lessonId, item.id);
       }
     } catch {
       setTreeMessage('拖拽数据无效，请重新操作。');
@@ -969,6 +980,8 @@ export function CourseWorkspaceExplorer({
                 <ResourceActions
                   key={selectedFile.id}
                   courseId={course.id}
+                  course={course}
+                  onMoved={(lessonId) => showMovedFile(lessonId, selectedFile.id)}
                   kind={
                     selectedFile.artifact
                       ? 'artifacts'
