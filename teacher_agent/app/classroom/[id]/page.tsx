@@ -24,6 +24,7 @@ import {
 } from '@/lib/classroom/load-classroom';
 import { isIncompleteEnhancedScene } from '@/lib/learning-skills/enhanced-courseware-quality';
 import { teacherReturnUrl } from '@/lib/course-space/navigation';
+import { resolveClassroomGenerationModelPolicy } from '@/lib/course-space/generation-model-policy';
 import Link from 'next/link';
 import {
   canSyncClassroomSnapshot,
@@ -37,6 +38,7 @@ export default function ClassroomDetailPage() {
   const searchParams = useSearchParams();
   const pathname = usePathname();
   const classroomId = params?.id as string;
+  const returnTo = searchParams.get('from');
   const embeddedCourseWorkspace = searchParams.get('embedded') === 'course-workspace';
   // Player-only embed (student agent iframe): hide all playback chrome so the
   // embedded viewer sees just the scene canvas. See PlaybackChromeRoot.
@@ -211,6 +213,14 @@ export default function ClassroomDetailPage() {
       // Load generation params from sessionStorage (stored by generation-preview before navigating)
       const genParamsStr = sessionStorage.getItem('generationParams');
       const params = genParamsStr ? JSON.parse(genParamsStr) : {};
+      const modelPolicy = resolveClassroomGenerationModelPolicy({
+        persistedPolicy: stage.generationModelPolicy,
+        sessionPreference: params.preferServerModel,
+        embeddedCourseWorkspace,
+        returnTo,
+      });
+      if (stage.generationModelPolicy !== modelPolicy)
+        useStageStore.getState().updateStage({ generationModelPolicy: modelPolicy });
 
       // Reconstruct imageMapping from IndexedDB using pdfImages storageIds
       const storageIds = (params.pdfImages || [])
@@ -245,7 +255,7 @@ export default function ClassroomDetailPage() {
           formulaEnhancedOrders: Array.isArray(params.formulaEnhancedOrders)
             ? params.formulaEnhancedOrders
             : undefined,
-          preferServerModel: params.preferServerModel === true,
+          preferServerModel: modelPolicy === 'server',
           narrationScripts: params.narrationScripts,
         });
       });
@@ -270,7 +280,7 @@ export default function ClassroomDetailPage() {
         log.warn('[Classroom] Media generation resume error:', err);
       });
     }
-  }, [loading, error, generateRemaining, playerOnlyEmbed]);
+  }, [loading, error, generateRemaining, playerOnlyEmbed, embeddedCourseWorkspace, returnTo]);
 
   return (
     <ThemeProvider>

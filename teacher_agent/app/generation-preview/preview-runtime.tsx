@@ -1139,6 +1139,7 @@ function GenerationPreviewContent() {
         expectedAutomaticPages: outlines.filter((page) => page.durationBudget).length,
       };
       stage.videoManifest = buildVideoManifestFromOutlines(outlines);
+      stage.generationModelPolicy = preferServerModel ? 'server' : 'browser';
       store.setStage(stage);
       store.setOutlines(outlines);
 

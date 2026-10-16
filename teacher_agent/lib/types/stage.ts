@@ -44,7 +44,11 @@ export interface StageTiming {
   courseCorrectionAttempts?: number;
 }
 
-export type Stage = DslStage & { timing?: StageTiming };
+export type Stage = DslStage & {
+  timing?: StageTiming;
+  /** Keep the original model source when a classroom resumes in a new tab. */
+  generationModelPolicy?: 'server' | 'browser';
+};
 
 export interface SceneTiming {
   plannedDurationSec?: number;
