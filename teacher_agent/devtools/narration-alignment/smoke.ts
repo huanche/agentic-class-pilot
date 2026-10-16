@@ -234,6 +234,7 @@ for (const [index, item] of cases.entries()) {
       const filename = `audio-${++audioNumber}.${result.format}`;
       await fs.writeFile(path.join(output, 'audio', filename), bytes);
       Object.assign(speech, { audioRef: `audio/${filename}` });
+      delete speech.audioInvalidated;
       seconds += measureAudioDuration(bytes, result.format) ?? 0;
     }
   }

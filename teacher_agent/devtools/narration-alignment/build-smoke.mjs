@@ -30,6 +30,7 @@ await build({
     '@': teacher,
     '@openmaic/generation': path.join(packageRoot, 'src/index.ts'),
     '@openmaic/dsl': path.join(teacher, 'packages/@openmaic/dsl/src/index.ts'),
+    '@openmaic/storage': path.join(teacher, 'packages/@openmaic/storage/src/index.ts'),
   },
   banner: {
     js: "import { createRequire as __createRequire } from 'node:module'; const require = __createRequire(import.meta.url);",
