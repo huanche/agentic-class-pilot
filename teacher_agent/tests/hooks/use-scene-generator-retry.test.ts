@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   getCurrentModelConfig: vi.fn(),
   settingsState: vi.fn(),
   audioPut: vi.fn(),
+  audioGet: vi.fn(),
   audioDelete: vi.fn(),
   poolPut: vi.fn(),
   poolReplace: vi.fn(),
@@ -29,6 +30,7 @@ vi.mock('@/lib/utils/database', () => ({
   db: {
     audioFiles: {
       put: mocks.audioPut,
+      get: mocks.audioGet,
       delete: mocks.audioDelete,
     },
   },
@@ -88,6 +90,7 @@ describe('browser scene generation retry wrappers', () => {
   beforeEach(() => {
     mockFetch.mockReset();
     mocks.audioPut.mockReset();
+    mocks.audioGet.mockReset().mockResolvedValue(undefined);
     mocks.audioDelete.mockReset().mockResolvedValue(undefined);
     mocks.poolPut.mockReset();
     mocks.poolReplace.mockReset().mockResolvedValue(undefined);
@@ -329,7 +332,7 @@ describe('browser scene generation retry wrappers', () => {
     expect(mocks.poolRemove).toHaveBeenCalledExactlyOnceWith('ast_audio_allocated');
   });
 
-  it('reclaims earlier allocations when partial scene synthesis fails', async () => {
+  it('preserves successful clips on partial synthesis and does not report a complete duration', async () => {
     const { generateTTSForScene } = await import('@/lib/hooks/use-scene-generator');
     mocks.poolPut.mockResolvedValueOnce('ast_first_audio');
     mockFetch
@@ -359,10 +362,13 @@ describe('browser scene generation retry wrappers', () => {
       maxRetries: 0,
     });
 
-    expect(result).toMatchObject({ success: false, failedCount: 1 });
-    expect(mocks.poolRemove).toHaveBeenCalledExactlyOnceWith('ast_first_audio');
-    expect(mocks.audioDelete).toHaveBeenCalledExactlyOnceWith('ast_first_audio');
-    expect(scene.actions?.every((action) => !('audioId' in action))).toBe(true);
+    // Current main deliberately keeps playable clips when another clip fails.
+    expect(result).toMatchObject({ success: true, failedCount: 1 });
+    expect(mocks.poolRemove).not.toHaveBeenCalled();
+    expect(mocks.audioDelete).not.toHaveBeenCalled();
+    expect(scene.actions?.[0]).toMatchObject({ audioId: 'ast_first_audio' });
+    expect(scene.actions?.[1]).not.toHaveProperty('audioId');
+    expect(scene.timing?.measuredDurationSec).toBeUndefined();
   });
 
   it('waits for parallel TTS workers before rolling back an abandoned scene', async () => {

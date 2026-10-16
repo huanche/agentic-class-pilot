@@ -9,6 +9,8 @@ export type DurationStatus = 'unmeasured' | 'within-tolerance' | 'too-short' | '
 export interface DurationFeedback {
   measuredSeconds: number;
   targetSeconds: number;
+  narrationCharacters?: number;
+  narrationWords?: number;
 }
 
 /** Blank is an intentional default; malformed explicit values must never silently become 28. */
@@ -92,12 +94,19 @@ export function withNarrationDuration(
 ): SceneOutline {
   const seconds = outline.durationBudget?.targetSeconds;
   if (!(seconds && Number.isFinite(seconds) && seconds > 0)) return outline;
-  // A first-pass speaking rate is only a prompt estimate. Real TTS below decides success.
-  const characters = Math.round(seconds * 3.5);
-  const words = Math.round((seconds / 60) * 135);
+  // After real TTS, use the selected script's observed speaking rate. Repeating
+  // the initial estimate during correction can contradict the measured ratio
+  // (code-heavy Chinese narration was still short after both corrections).
+  const recalibrateCount = (count: number | undefined, fallback: number) =>
+    count != null && Number.isFinite(count) && count > 0 &&
+    feedback && Number.isFinite(feedback.measuredSeconds) && feedback.measuredSeconds > 0
+      ? Math.round(count * seconds / feedback.measuredSeconds)
+      : Math.round(fallback);
+  const characters = recalibrateCount(feedback?.narrationCharacters, seconds * 3.5);
+  const words = recalibrateCount(feedback?.narrationWords, (seconds / 60) * 135);
   return {
     ...outline,
-    description: `${outline.description}\n\n【本页播放时长合同（优先于通用讲稿字数建议）】\n本页自动讲解与演示预算 ${seconds} 秒，容差 ±5%。首轮可按中文约 ${characters} 字或英文约 ${words} 词组织自然口语，按实际授课语言选择；这只是估算，不能把估算当作音频实测。不要沿用固定的 140–200 字限制。内容应解释原理、提供适量例子与推演，所有例子必须以本页知识点为依据；不要重复堆砌。为 reveal 等同步动作留少量时间，聚焦和激光笔不额外占讲解时间。保留必要的 reveal 结论揭示。禁止用长时间静音、无意义等待、重复内容、极端慢速或截断语音来凑时长。${feedback ? `\n【实测校正】上一版实际自动播放 ${feedback.measuredSeconds.toFixed(1)} 秒，目标 ${feedback.targetSeconds} 秒。请按目标与实测之比调整讲解的深度和长度，保留核心知识点及必要动作；不要增加没有材料依据的事实。` : ''}`,
+    description: `${outline.description}\n\n【本页播放时长合同（优先于通用讲稿字数建议）】\n本页自动讲解与演示预算 ${seconds} 秒，容差 ±5%。${feedback ? '根据上一版实际配音速度，本轮' : '首轮'}可按中文约 ${characters} 字或英文约 ${words} 词组织自然口语，按实际授课语言选择；这只是估算，不能把估算当作音频实测。不要沿用固定的 140–200 字限制。内容应解释原理、提供适量例子与推演，所有例子必须以本页知识点为依据；不要重复堆砌。为 reveal 等同步动作留少量时间，聚焦和激光笔不额外占讲解时间。保留必要的 reveal 结论揭示。禁止用长时间静音、无意义等待、重复内容、极端慢速或截断语音来凑时长。${feedback ? `\n【实测校正】上一版实际自动播放 ${feedback.measuredSeconds.toFixed(1)} 秒，目标 ${feedback.targetSeconds} 秒。${feedback.narrationCharacters ? `上一版讲稿共 ${feedback.narrationCharacters} 字符；上述本轮字数已按实测比例重新计算，替代首轮固定语速估算。` : ''}请按此参考调整讲解的深度和长度：偏短时增加有依据的案例推演、步骤解释或易错辨析，偏长时精简冗余；保留核心知识点及必要动作，不要增加没有材料依据的事实，也不要用语速或等待凑时间。` : ''}`,
   };
 }
 
@@ -210,8 +219,16 @@ export async function calibrateNarrationDuration(
     attempts++;
     let candidate: Scene;
     try {
+      const narration = (best.actions ?? [])
+        .filter((action) => action.type === 'speech')
+        .map((action) => action.text);
       candidate = await callbacks.regenerate(
-        { measuredSeconds: best.timing!.measuredDurationSec!, targetSeconds: target },
+        {
+          measuredSeconds: best.timing!.measuredDurationSec!,
+          targetSeconds: target,
+          narrationCharacters: narration.join('').length,
+          narrationWords: narration.join(' ').match(/\S+/gu)?.length ?? 0,
+        },
         best,
       );
     } catch (err) {

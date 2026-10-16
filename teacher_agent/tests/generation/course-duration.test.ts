@@ -91,6 +91,20 @@ describe('course duration contract', () => {
     expect(assessCourseDuration([scene(120)], 2, 2).status).toBe('unmeasured');
   });
 
+  it('replaces the initial speaking-rate estimate with the measured narration length', () => {
+    const planned = planCourseDuration([page('1')], 2)[0];
+    planned.durationBudget = { targetSeconds: 104 };
+    const corrected = withNarrationDuration(planned, {
+      measuredSeconds: 86.12,
+      targetSeconds: 104,
+      narrationCharacters: 459,
+      narrationWords: 100,
+    });
+    expect(corrected.description).toContain('中文约 554 字');
+    expect(corrected.description).not.toContain('中文约 364 字');
+    expect(corrected.description).toContain('上一版讲稿');
+  });
+
   it('counts reveal as blocking and spotlight as nonblocking, and requires every audio clip', () => {
     const value = scene();
     value.actions = [
@@ -125,6 +139,23 @@ describe('course duration contract', () => {
 });
 
 describe('measured narration calibration', () => {
+  it('feeds the currently selected script length back to the next generation', async () => {
+    const initial = scene(86.12);
+    initial.timing!.plannedDurationSec = 104;
+    initial.actions = [{ id: 'speech', type: 'speech', text: '字'.repeat(459) }];
+    let feedbackSeen: unknown;
+    await calibrateNarrationDuration(initial, {
+      regenerate: async (feedback) => {
+        feedbackSeen = feedback;
+        return { ...scene(104), timing: { plannedDurationSec: 104, measuredDurationSec: 104 } };
+      },
+      dispose: async () => {},
+    });
+    expect(feedbackSeen).toMatchObject({
+      measuredSeconds: 86.12, targetSeconds: 104, narrationCharacters: 459,
+    });
+  });
+
   it('corrects a short real measurement and disposes superseded audio', async () => {
     const initial = scene(60);
     const disposed: Scene[] = [];
