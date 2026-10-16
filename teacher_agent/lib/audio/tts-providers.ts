@@ -93,6 +93,7 @@
  */
 
 import type { TTSModelConfig } from './types';
+import { qwenLanguageForText } from './qwen-language';
 import { isCustomTTSProvider } from './types';
 import { TTS_PROVIDERS } from './constants';
 import { splitConcatenatedJsonObjects } from './json-stream';
@@ -687,11 +688,9 @@ async function generateQwenTTS(config: TTSModelConfig, text: string): Promise<TT
       input: {
         text,
         voice: config.voice,
-        // Auto handles the mixed Chinese/Latin text emitted by generated
-        // classroom scripts (model names, formulas, and abbreviations).
-        // Forcing Chinese can make DashScope return InvalidParameter for
-        // otherwise valid mixed or short inputs.
-        language_type: 'Auto',
+        // Explicit course language prevents short Han/numeric sentences from
+        // drifting to Japanese. Mixed code/Latin text keeps Auto for compatibility.
+        language_type: qwenLanguageForText(text, config.providerOptions?.languageType),
       },
       parameters: {
         rate, // Speech rate from -500 to 500

@@ -305,6 +305,7 @@ for (const [index, item] of trials.entries()) {
             TTS_PROVIDERS[ttsId as keyof typeof TTS_PROVIDERS]?.defaultBaseUrl,
           modelId: DEFAULT_TTS_MODELS[ttsId as keyof typeof DEFAULT_TTS_MODELS],
           voice: DEFAULT_TTS_VOICES[ttsId as keyof typeof DEFAULT_TTS_VOICES],
+          providerOptions: { languageType: '使用简体中文讲解，保留代码和技术名称。' },
         },
         speech.text,
       );

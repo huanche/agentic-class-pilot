@@ -325,6 +325,7 @@ export async function generateAndStoreTTS(
     providerConfig: ttsProviderConfig,
     voiceId: settings.ttsVoice,
     language,
+    languageDirective: useStageStore.getState().stage?.languageDirective,
   });
   const data = await withGenerationRetry(
     async () => {

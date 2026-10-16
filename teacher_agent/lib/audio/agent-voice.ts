@@ -33,8 +33,10 @@ export interface AgentVoiceResolveOptions {
   providerId: string;
   providerConfig?: TTSProviderConfigShape;
   voiceId: string;
-  /** Course language / locale — only selects the one-time bootstrap sample sentence. */
+  /** Course language / locale for voice bootstrap and Qwen synthesis. */
   language?: string;
+  /** A stage directive takes precedence over the interface locale. */
+  languageDirective?: string;
 }
 
 /**
@@ -76,6 +78,11 @@ export async function resolveAgentVoiceOptions(
   agent: AgentConfig | undefined,
   opts: AgentVoiceResolveOptions,
 ): Promise<Record<string, unknown> | undefined> {
+  if (opts.providerId === 'qwen-tts')
+    return {
+      ...(opts.providerConfig?.providerOptions || {}),
+      languageType: opts.languageDirective || opts.language || 'Auto',
+    };
   if (opts.providerId !== VOXCPM_TTS_PROVIDER_ID) return undefined;
   return {
     ...(opts.providerConfig?.providerOptions || {}),

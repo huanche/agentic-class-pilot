@@ -41,6 +41,7 @@ export async function POST(
       classroomId,
       buildRequestOrigin(request),
       byok?.tts,
+      { languageDirective: classroom.stage.languageDirective },
     );
     if (result.generated === 0) {
       return apiError(
