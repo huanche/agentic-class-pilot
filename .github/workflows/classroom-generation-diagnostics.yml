@@ -49,6 +49,29 @@ jobs:
               if (c && process.env.WRITE_SNAPSHOT === 'true')
                 require('fs').writeFileSync(process.env.SNAPSHOT_TMP, JSON.stringify({stage:c.stage,scenes:c.scenes}));
               console.log(JSON.stringify({check:'classroom-metadata', found:!!c, defaultModel:process.env.DEFAULT_MODEL, updatedAt:c?.updated_at, name:c?.stage?.name, timing:c?.stage?.timing, generationModelPolicy:c?.stage?.generationModelPolicy, stageKeys:Object.keys(c?.stage??{}), scenes:c?.scenes?.map(s=>({order:s.order,id:s.id,title:s.title,type:s.type,timing:s.timing,speeches:s.actions?.filter(a=>a.type==='speech').length,servedAudio:s.actions?.filter(a=>a.type==='speech'&&a.audioUrl).length,invalidatedAudio:s.actions?.filter(a=>a.type==='speech'&&a.audioInvalidated).length}))}));
+              const fs = require('fs'), path = require('path');
+              const root = path.resolve(process.env.CLASSROOMS_DATA_DIR || path.join(process.cwd(),'data','classrooms'),id,'audio');
+              let checked = 0, totalBytes = 0;
+              const missing = [], unsupported = [];
+              for (const scene of c?.scenes || []) for (const action of scene.actions || []) {
+                if (action.type !== 'speech' || !action.audioUrl) continue;
+                const prefix = '/api/classroom-media/'+id+'/audio/';
+                const pathname = new URL(action.audioUrl,'https://localhost').pathname;
+                const filename = pathname.startsWith(prefix) ? pathname.slice(prefix.length) : '';
+                if (!/^[A-Za-z0-9_-]+\.(wav|mp3|ogg|aac)$/.test(filename)) {
+                  unsupported.push({order:scene.order,speechId:action.id}); continue;
+                }
+                const file = path.resolve(root,filename);
+                if (!file.startsWith(root+path.sep)) throw new Error('Invalid media path');
+                try {
+                  const stat = fs.statSync(file);
+                  if (!stat.isFile() || stat.size <= 44) throw new Error('Empty audio');
+                  checked++; totalBytes += stat.size;
+                } catch {
+                  missing.push({order:scene.order,speechId:action.id});
+                }
+              }
+              console.log(JSON.stringify({check:'saved-audio-files',checked,totalBytes,missing,unsupported}));
             } finally {await pool.end();}
           })().catch(e=>{console.log(JSON.stringify({check:'metadata-failed',name:e.name}));process.exitCode=1;});
           NODE
