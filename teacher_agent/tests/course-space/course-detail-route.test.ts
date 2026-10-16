@@ -45,6 +45,7 @@ const existingCourse = {
 describe('course detail route', () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    storage.listCourseArtifacts.mockResolvedValue([]);
     storage.saveServerCourse.mockImplementation(async (course) => course);
   });
 

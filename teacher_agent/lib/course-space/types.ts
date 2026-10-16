@@ -120,7 +120,7 @@ export interface CourseMaterialRecord {
   /** Explicit teacher-controlled visibility in the teaching class. */
   classVisible?: boolean;
   activatedAt?: number;
-  /** Immutable identifier assigned when this material is first published to Class. */
+  /** Identifier for the current publication; cleared on withdrawal. */
   classPublicationId?: string;
   classPublishedAt?: number;
 }
@@ -336,7 +336,7 @@ export interface CourseArtifactRecord {
   /** Explicit teacher-controlled visibility in the teaching class. */
   classVisible?: boolean;
   activatedAt?: number;
-  /** Immutable identifier assigned when this artifact is first published to Class. */
+  /** Identifier for the current publication; cleared on withdrawal. */
   classPublicationId?: string;
   classPublishedAt?: number;
 }

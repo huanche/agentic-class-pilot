@@ -111,7 +111,7 @@ export async function publishCourseResource(
     classPublishedAt: resource.classPublishedAt ?? now,
     updatedAt: now,
   };
-  const updated = await updateServerCourse(courseId, (current) => {
+  const updated = await updateServerCourse(course.id, (current) => {
     placementForLesson(current, input);
     const modules = current.modules.map((courseModule) => ({
       ...courseModule,

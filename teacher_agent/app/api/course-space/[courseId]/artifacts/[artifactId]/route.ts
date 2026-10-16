@@ -10,6 +10,7 @@ import {
   saveCourseArtifact,
   saveCourseArtifactFile,
   updateCourseJobIfPresent,
+  deleteCourseArtifact,
 } from '@/lib/server/course-space-storage';
 import { markdownToArtifactHtml, WORD_ARTIFACT_TYPES } from '@/lib/course-space/artifact-formats';
 import { buildCourseArtifactDocx } from '@/lib/server/course-artifact-docx';
@@ -36,8 +37,19 @@ export async function PATCH(
     action?: 'save' | 'approve' | 'activate' | 'deactivate';
   };
   if (body.action === 'activate' || body.action === 'deactivate') {
-    if (body.action === 'deactivate')
-      return apiError('INVALID_REQUEST', 409, '产物发布到班级后不可撤回');
+    if (body.action === 'deactivate') {
+      const updated = await saveCourseArtifact({
+        ...artifact,
+        status: artifact.status === 'published' ? 'approved' : artifact.status,
+        classVisible: false,
+        classPublicationId: undefined,
+        classPublishedAt: undefined,
+        publicationPlacement: undefined,
+        activatedAt: undefined,
+        updatedAt: Date.now(),
+      });
+      return apiSuccess({ artifact: updated });
+    }
     try {
       return apiSuccess({
         artifact: await publishCourseResource(courseId, 'artifact', artifactId, body.placement!),
@@ -83,4 +95,19 @@ export async function PATCH(
     message: approving ? '教师审核通过' : '教师已保存修改，等待批准',
   });
   return apiSuccess({ artifact: updated });
+}
+
+export async function DELETE(
+  _req: NextRequest,
+  context: { params: Promise<{ courseId: string; artifactId: string }> },
+) {
+  const { courseId, artifactId } = await context.params;
+  const [course, artifact] = await Promise.all([
+    readServerCourse(courseId),
+    readCourseArtifact(artifactId),
+  ]);
+  if (!course || !artifact || artifact.courseId !== course.id)
+    return apiError('INVALID_REQUEST', 404, '教学资源不存在');
+  await deleteCourseArtifact(artifactId);
+  return apiSuccess({ deleted: artifactId });
 }

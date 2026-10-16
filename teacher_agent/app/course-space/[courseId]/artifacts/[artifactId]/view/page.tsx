@@ -4,6 +4,11 @@ import { useCallback, useEffect, useState } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, ExternalLink } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import {
+  courseWorkspaceUrl,
+  teacherReturnUrl,
+  withTeacherReturn,
+} from '@/lib/course-space/navigation';
 import { ArtifactHtmlReview } from '@/components/course-space/artifact-html-review';
 import type { CourseArtifactRecord, CourseSpace } from '@/lib/course-space';
 
@@ -19,7 +24,7 @@ export default function FullScreenArtifactPage() {
     try {
       const response = await fetch(`/api/course-space/${courseId}`, { cache: 'no-store' });
       const data = await response.json();
-      if (!response.ok || data.success === false) throw new Error(data.error || '读取产物失败');
+      if (!response.ok || data.success === false) throw new Error(data.error || '读取资源失败');
       const found = (data.artifacts as CourseArtifactRecord[]).find(
         (item) => item.id === artifactId,
       );
@@ -36,22 +41,9 @@ export default function FullScreenArtifactPage() {
     void load();
   }, [load]);
 
-  const goBack = () => {
-    const source = searchParams.get('from');
-    if (source?.startsWith('/') && !source.startsWith('//')) {
-      router.push(source);
-      return;
-    }
-    if (window.history.length > 1) {
-      router.back();
-      return;
-    }
-    router.push(`/course-space?workspace=${encodeURIComponent(courseId)}`);
-  };
-  const source = searchParams.get('from');
-  const reviewUrl = `/course-space/${courseId}/review/${artifactId}${
-    source?.startsWith('/') && !source.startsWith('//') ? `?from=${encodeURIComponent(source)}` : ''
-  }`;
+  const source = teacherReturnUrl(searchParams.get('from'), courseWorkspaceUrl(courseId));
+  const goBack = () => router.push(source);
+  const reviewUrl = `/course-space/${courseId}/review/${artifactId}?from=${encodeURIComponent(source)}`;
 
   return (
     <main className="flex h-screen min-h-0 flex-col overflow-hidden bg-[radial-gradient(circle_at_top,#eef3ff,transparent_45%),#f8fafc] text-slate-900">
@@ -67,22 +59,27 @@ export default function FullScreenArtifactPage() {
             <ArrowLeft />
           </Button>
           <div className="min-w-0">
-            <h1 className="truncate text-lg font-semibold">
-              {artifact?.title || '可视化教学产物'}
-            </h1>
+            <h1 className="truncate text-lg font-semibold">{artifact?.title || '教学资源'}</h1>
             <p className="truncate text-xs text-muted-foreground">
-              {course?.title || '课程'} · 全屏 HTML 预览
+              {course?.title || '课程'} · 资源预览
               {artifact ? ` · 来源引用 ${artifact.citations.length} 条` : ''}
             </p>
           </div>
         </div>
         <div className="flex shrink-0 gap-2">
+          <Button variant="ghost" onClick={() => router.push('/course-space')}>
+            课程中心
+          </Button>
           <Button variant="outline" onClick={() => router.push(reviewUrl)}>
             进入编辑与审核
           </Button>
           {artifact?.classroomUrl && (
             <Button asChild>
-              <a href={artifact.classroomUrl} target="_blank" rel="noreferrer">
+              <a
+                href={withTeacherReturn(artifact.classroomUrl, source)}
+                target="_blank"
+                rel="noreferrer"
+              >
                 打开互动课件
                 <ExternalLink className="ml-2 size-4" />
               </a>
@@ -95,7 +92,7 @@ export default function FullScreenArtifactPage() {
           <ArtifactHtmlReview artifact={artifact} onChange={() => {}} fullScreen readOnly />
         ) : (
           <div className="flex flex-1 items-center justify-center rounded-2xl border bg-white text-muted-foreground">
-            {error || '正在读取产物…'}
+            {error || '正在读取资源…'}
           </div>
         )}
       </section>
