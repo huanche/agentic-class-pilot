@@ -130,16 +130,19 @@ export function alignActionsToPptNarration(
   actions: Action[],
   narrationScript?: string,
   elements: PPTElement[] = [],
+  options: { preserveGeneratedLength?: boolean } = {},
 ): Action[] {
   const generatedSpeech = actions
     .filter((action) => action.type === 'speech')
     .map((action) => action.text)
     .join('');
   const formulaPage = narrationScript?.includes(FORMULA_NARRATION_MARKER) === true;
-  const script = shortenPptNarration(
-    generatedSpeech || narrationScript || '',
-    formulaPage ? MAX_FORMULA_NARRATION_CHARS : MAX_PPT_NARRATION_CHARS,
-  );
+  const script = options.preserveGeneratedLength && generatedSpeech
+    ? generatedSpeech
+    : shortenPptNarration(
+        generatedSpeech || narrationScript || '',
+        formulaPage ? MAX_FORMULA_NARRATION_CHARS : MAX_PPT_NARRATION_CHARS,
+      );
   if (!script) return actions;
   const speechCount = actions.filter((action) => action.type === 'speech').length;
   if (speechCount === 0) {

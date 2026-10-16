@@ -6,6 +6,15 @@ import {
 } from '@/lib/import/ppt-narration';
 
 describe('PPT narration alignment', () => {
+  it('keeps the full generated narration when a measured duration budget is in use', () => {
+    const longText = '这是按教师时长预算生成的完整讲解，包含必要的解释与示例。'.repeat(40);
+    const actions = alignActionsToPptNarration([
+      { id: 'a', type: 'speech', text: longText },
+      { id: 'r', type: 'reveal', elementId: 'conclusion' },
+    ], undefined, [], { preserveGeneratedLength: true });
+    expect(actions.filter((action) => action.type === 'speech').map((action) => action.text).join('')).toBe(longText);
+    expect(actions.at(-1)?.type).toBe('reveal');
+  });
   it('builds a page-grounded narration brief from notes and visible content', () => {
     const [script] = buildPptNarrationScripts({
       slides: [

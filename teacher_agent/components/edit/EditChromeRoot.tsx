@@ -12,6 +12,8 @@ import { sceneEditorRegistry } from '@/lib/edit/scene-editor-registry';
 import { supportsNarrationTimeline } from './scene-timeline';
 import type { Scene } from '@/lib/types/stage';
 import { RightRailTabs } from '@/components/edit/RightRailTabs';
+import { useStageStore } from '@/lib/store/stage';
+import { CourseDurationSummary } from '@/components/generation/course-duration-summary';
 
 interface EditChromeRootProps {
   readonly scene: Scene;
@@ -42,6 +44,8 @@ interface EditChromeRootProps {
  * `mode === 'edit' && currentScene` to satisfy this contract.
  */
 export function EditChromeRoot({ scene, isEditable, onToggleEditMode, hideAgentPanel = false }: EditChromeRootProps) {
+  const stage = useStageStore((state) => state.stage);
+  const scenes = useStageStore((state) => state.scenes);
   // Mark the body while edit mode is mounted, so the editor-scoped CSS
   // rule in globals.css that pins `body.padding-right` to 0 only fires
   // in Pro mode — not on non-editor pages where Radix's
@@ -88,11 +92,14 @@ export function EditChromeRoot({ scene, isEditable, onToggleEditMode, hideAgentP
   });
 
   const headerControls = (
+    <div className="flex items-center gap-3">
+    <CourseDurationSummary stage={stage} scenes={scenes} />
     <HeaderControls
       mode="edit"
       canEdit={isEditable}
       onToggleEditMode={isMaicEditorEnabled() ? onToggleEditMode : undefined}
     />
+    </div>
   );
 
   return (

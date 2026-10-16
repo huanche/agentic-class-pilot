@@ -6,7 +6,7 @@
  * the reviewed draft makes generated courses reproducible and auditable.
  */
 export const HIGH_FIDELITY_COURSEWARE_POLICY = Object.freeze({
-  version: 'ppt-high-fidelity-v2',
+  version: 'ppt-high-fidelity-v3',
   narration: Object.freeze({
     regularMaxChars: 220,
     formulaMaxChars: 520,

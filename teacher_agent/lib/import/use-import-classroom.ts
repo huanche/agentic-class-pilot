@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useRef } from 'react';
 import { nanoid } from 'nanoid';
+import { durationMeasurementKey } from '@/lib/generation/course-duration';
 import { toast } from 'sonner';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { db, mediaFileKey } from '@/lib/utils/database';
@@ -459,6 +460,7 @@ export function useImportClassroom(onSuccess?: (importedStageId: string) => void
           stage: {
             id: newStageId,
             name: manifest.stage.name || 'Imported Classroom',
+            timing: manifest.stage.timing,
             description: manifest.stage.description,
             languageDirective: manifest.stage.language,
             style: manifest.stage.style,
@@ -506,10 +508,11 @@ export function useImportClassroom(onSuccess?: (importedStageId: string) => void
                     ),
                   }
                 : mScene.content;
-            return canonicalizeLegacyScene({
+            const importedScene = canonicalizeLegacyScene({
               id: newSceneId,
               stageId: newStageId,
               title: mScene.title,
+              timing: mScene.timing,
               order: mScene.order ?? index,
               content,
               actions,
@@ -520,6 +523,8 @@ export function useImportClassroom(onSuccess?: (importedStageId: string) => void
               createdAt: now,
               updatedAt: now,
             });
+            if (importedScene.timing) importedScene.timing.measurementKey = durationMeasurementKey(importedScene);
+            return importedScene;
           }),
         };
 

@@ -79,11 +79,11 @@ const slideContent = {
   remark: 'Retry transient failures',
 };
 
-async function generateWithProgress() {
+async function generateWithProgress(targetDurationMinutes?: number) {
   const progress: Array<{ message: string }> = [];
   const { generateClassroom } = await import('@/lib/server/classroom-generation');
   const result = await generateClassroom(
-    { requirement: 'Teach retry basics' },
+    { requirement: 'Teach retry basics', targetDurationMinutes },
     {
       baseUrl: 'http://localhost',
       onProgress: (event) => {
@@ -153,6 +153,19 @@ describe('classroom scene generation retries', () => {
     expect(progress.some((event) => event.message.includes('Retrying scene 1/1 content'))).toBe(
       true,
     );
+  });
+
+  it.each([undefined, 20])('carries the optional target %s through outline, narration, and saved stage', async (input) => {
+    mocks.generateSceneContent.mockResolvedValue(slideContent);
+    const { result } = await generateWithProgress(input);
+    const minutes = input ?? 28;
+    expect(mocks.generateSceneOutlinesFromRequirements.mock.calls[0][0].targetDurationMinutes).toBe(minutes);
+    expect(mocks.generateSceneActions.mock.calls[0][0].description).toContain(`${minutes * 60} 秒`);
+    expect(mocks.generateSceneContent.mock.calls[0][0].description).toContain('本页内容深度要求');
+    expect(mocks.generateSceneContent.mock.calls[0][0].description).toContain(`${minutes * 60} 秒`);
+    expect(result.stage.timing?.targetDurationMinutes).toBe(minutes);
+    expect(result.scenes[0].timing?.plannedDurationSec).toBe(minutes * 60);
+    expect(result.scenes[0].timing?.measuredDurationSec).toBeUndefined();
   });
 
   it('forwards classroom thinking config to scene retry LLM calls', async () => {

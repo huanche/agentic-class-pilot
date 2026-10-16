@@ -4,6 +4,8 @@ import type {
   SceneType,
   SceneContent,
   VideoManifest,
+  StageTiming,
+  SceneTiming,
 } from '@/lib/types/stage';
 import type { Action } from '@/lib/types/action';
 import type { AgentVoiceConfig, Slide, VoiceDesign } from '@openmaic/dsl';
@@ -22,6 +24,7 @@ export interface ClassroomManifest {
 }
 
 export interface ManifestStage {
+  timing?: StageTiming;
   name: string;
   description?: string;
   language?: string;
@@ -111,6 +114,7 @@ export function agentConfigFromManifest(agent: ManifestAgent, id: string): Gener
 }
 
 export interface ManifestScene {
+  timing?: SceneTiming;
   type: SceneType;
   title: string;
   order: number;

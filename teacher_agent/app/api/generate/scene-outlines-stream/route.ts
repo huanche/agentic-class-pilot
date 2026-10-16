@@ -39,6 +39,7 @@ import { createLogger } from '@/lib/logger';
 import { resolveModelFromRequest } from '@/lib/server/resolve-model';
 import { sortDocumentImagesForVision } from '@/lib/document/bundle';
 import { resolveVocationalActive } from '@/lib/config/feature-flags';
+import { withCourseDurationRequirement } from '@/lib/generation/course-duration';
 const log = createLogger('Outlines Stream');
 
 export const maxDuration = 300;
@@ -288,6 +289,11 @@ export async function POST(req: NextRequest) {
   let resolvedModelString: string | undefined;
   try {
     const body = await req.json();
+    let promptRequirements: UserRequirements | undefined;
+    if (body.requirements) {
+      try { promptRequirements = withCourseDurationRequirement(body.requirements); }
+      catch (error) { return apiError('INVALID_REQUEST', 400, (error as Error).message); }
+    }
 
     // Get API configuration from request headers/body
     const {
@@ -366,7 +372,7 @@ export async function POST(req: NextRequest) {
     const taskEngineMode = resolveVocationalActive(requirements);
     // Standard outline generation is byte-identical to the package path. The
     // two app-only modes retain their own templates but share the same inputs.
-    let prompts: { system: string; user: string } | null = buildOutlinePrompt(requirements, {
+    let prompts: { system: string; user: string } | null = buildOutlinePrompt(promptRequirements!, {
       pdfText,
       pdfImages,
       visionEnabled: hasVision,
@@ -382,7 +388,7 @@ export async function POST(req: NextRequest) {
         ? PROMPT_IDS.TASK_ENGINE_OUTLINES
         : PROMPT_IDS.INTERACTIVE_OUTLINES;
       prompts = buildPrompt(promptId, {
-        requirement: requirements.requirement,
+        requirement: promptRequirements!.requirement,
         pdfContent: pdfText ? pdfText.substring(0, MAX_PDF_CONTENT_CHARS) : 'None',
         availableImages: availableImagesText,
         researchContext: researchContext || 'None',

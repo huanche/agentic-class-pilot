@@ -1,4 +1,5 @@
 'use client';
+import { CourseDurationSummary } from '@/components/generation/course-duration-summary';
 
 import {
   forwardRef,
@@ -901,7 +902,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
               // The student player is a media playlist, not a paced teacher
               // presentation. Once narration ends, move on immediately rather
               // than padding the slide to its lesson-plan duration.
-              const transitionDelayMs = videoOnly
+              const transitionDelayMs = videoOnly || (stage?.timing?.budgetVersion === 1 && isAutoPlayedStudentScene(currentScene))
                 ? currentScene.type === 'interactive'
                   ? 1500
                   : 300
@@ -1495,6 +1496,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
               canEdit={!!canEnterProMode}
               onToggleEditMode={onEnterProMode}
               totalDurationMinutes={Math.ceil(getCourseDurationSeconds(stage, scenes) / 60)}
+              durationSummary={stage?.timing?.budgetVersion === 1 ? <CourseDurationSummary stage={stage} scenes={scenes} /> : undefined}
             />
           )}
 

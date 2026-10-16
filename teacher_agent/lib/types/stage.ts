@@ -37,12 +37,20 @@ export type {
 
 export interface StageTiming {
   targetDurationMinutes?: number;
+  /** Only new courses with an explicit normalized generation contract. */
+  budgetVersion?: 1;
+  expectedAutomaticPages?: number;
 }
 
 export type Stage = DslStage & { timing?: StageTiming };
 
 export interface SceneTiming {
   plannedDurationSec?: number;
+  /** Complete measured speech + supported synchronous actions, at normal playback speed. */
+  measuredDurationSec?: number;
+  measurementKey?: string;
+  durationStatus?: import('@/lib/generation/course-duration').DurationStatus;
+  correctionAttempts?: number;
   mode?: 'narration-fit' | 'fixed' | 'interactive-demo' | 'quiz';
   quizSecondsPerQuestion?: number;
   autoAdvance?: boolean;

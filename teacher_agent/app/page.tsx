@@ -90,6 +90,8 @@ import {
 } from '@/lib/import/pptx-course';
 import { InteractiveModeButton } from '@/components/generation/interactive-mode-button';
 import { CoursewareModeDialog } from '@/components/generation/courseware-mode-dialog';
+import { CourseDurationInput } from '@/components/generation/course-duration-input';
+import { resolveCourseMinutes } from '@/lib/generation/course-duration';
 import {
   buildFaithfulCoursewareRequirement,
   buildLearningSkillsEnhancementRequirement,
@@ -111,6 +113,7 @@ const PPTX_IMPORT_ENABLED = isPptxImportEnabled();
 interface FormState {
   courseMaterials: SelectedCourseMaterial[];
   requirement: string;
+  targetDuration: string;
   webSearch: boolean;
   interactiveMode: boolean;
   vocationalTestMode: boolean;
@@ -119,6 +122,7 @@ interface FormState {
 const initialFormState: FormState = {
   courseMaterials: [],
   requirement: '',
+  targetDuration: '',
   webSearch: false,
   interactiveMode: false,
   vocationalTestMode: false,
@@ -343,6 +347,7 @@ function HomePage({
         sessionId,
         requirements: {
           requirement,
+          targetDurationMinutes: resolveCourseMinutes(form.targetDuration),
           userNickname: userProfile.nickname || undefined,
           userBio: userProfile.bio || undefined,
           webSearch: false,
@@ -661,6 +666,7 @@ function HomePage({
         : scopedRequirement;
       const requirements: UserRequirements = {
         requirement: effectiveRequirement,
+        targetDurationMinutes: resolveCourseMinutes(form.targetDuration),
         userNickname: userProfile.nickname || undefined,
         userBio: userProfile.bio || undefined,
         webSearch: form.webSearch || undefined,
@@ -976,6 +982,8 @@ function HomePage({
         />
       )}
       <CoursewareModeDialog
+        targetDuration={form.targetDuration}
+        onTargetDurationChange={(value) => updateForm('targetDuration', value)}
         open={coursewareModeOpen}
         onOpenChange={(open) => {
           setCoursewareModeOpen(open);
@@ -1217,6 +1225,9 @@ function HomePage({
               />
             </div>
 
+            <div className="px-4 pb-3">
+              <CourseDurationInput value={form.targetDuration} onChange={(value) => updateForm('targetDuration', value)} />
+            </div>
             {/* Toolbar row */}
             <div className="px-3 pb-3 flex items-end gap-2">
               <div className="flex-1 min-w-0">

@@ -8,6 +8,9 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 import { createHash } from 'crypto';
+import { nanoid } from 'nanoid';
+import { measureAudioDuration } from '@/lib/audio/audio-duration';
+import { durationMeasurementKey, durationStatus, measureScenePlaybackSeconds } from '@/lib/generation/course-duration';
 import { createLogger } from '@/lib/logger';
 import { CLASSROOMS_DIR } from '@/lib/server/classroom-storage';
 import { generateImage } from '@/lib/media/image-providers';
@@ -337,6 +340,8 @@ export async function generateTTSForClassroom(
 
   for (const scene of scenes) {
     if (!scene.actions) continue;
+    const audioSeconds: Record<string, number | undefined> = {};
+    const renderId = nanoid(8);
 
     // Split long speech actions into multiple shorter ones before TTS generation,
     // mirroring the client-side approach. Each sub-action gets its own audio file.
@@ -357,7 +362,7 @@ export async function generateTTSForClassroom(
       // Server transport emits the derived id plus the serving URL; the
       // client-side converter collapses the pair into one pool asset on
       // first load. Browser generation allocates pool ids directly.
-      const audioId = `tts_s${sceneOrder}_${action.id}`;
+      const audioId = `tts_s${sceneOrder}_${action.id}_${renderId}`;
 
       try {
         const result = await generateTTS(
@@ -374,6 +379,7 @@ export async function generateTTSForClassroom(
 
         const outputFormat = result.format || format;
         const audio = outputFormat === 'wav' ? finalizeWav(Buffer.from(result.audio)) : result.audio;
+        audioSeconds[action.id] = measureAudioDuration(audio, outputFormat) ?? undefined;
         const filename = `${audioId}.${outputFormat}`;
         await fs.writeFile(path.join(audioDir, filename), audio);
 
@@ -389,7 +395,24 @@ export async function generateTTSForClassroom(
         log.warn(`TTS generation failed for action ${action.id}:`, err);
       }
     }
+    scene.timing = { ...scene.timing, measuredDurationSec: measureScenePlaybackSeconds(scene, audioSeconds), measurementKey: durationMeasurementKey(scene) };
+    scene.timing.durationStatus = durationStatus(scene.timing.measuredDurationSec, scene.timing.plannedDurationSec ?? 0);
   }
 
   return { generated, failed, skipped };
+}
+
+/** Only remove files allocated to the discarded candidate, within this classroom's audio directory. */
+export async function removeClassroomTtsAudio(scene: Scene, classroomId: string): Promise<void> {
+  const directory = path.resolve(CLASSROOMS_DIR, classroomId, 'audio');
+  for (const action of scene.actions ?? []) {
+    if (action.type !== 'speech') continue;
+    const url = (action as ServerTransportSpeechAction).audioUrl;
+    if (!url) continue;
+    const filename = decodeURIComponent(new URL(url).pathname.split('/').pop() || '');
+    if (!filename.startsWith('tts_')) continue;
+    const target = path.resolve(directory, filename);
+    if (path.dirname(target) !== directory) continue;
+    await fs.unlink(target).catch((error: NodeJS.ErrnoException) => { if (error.code !== 'ENOENT') throw error; });
+  }
 }

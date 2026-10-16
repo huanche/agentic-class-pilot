@@ -13,6 +13,9 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { CoursewareModeDialog } from '@/components/generation/courseware-mode-dialog';
+import { CourseDurationInput, courseDurationInputError } from '@/components/generation/course-duration-input';
+import { resolveCourseMinutes } from '@/lib/generation/course-duration';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { CoursewareSourceDialog } from '@/components/course-space/courseware-source-dialog';
 import { CourseWorkspaceExplorer } from '@/components/course-space/course-workspace-explorer';
 import { CourseArtifactGallery } from '@/components/course-space/course-artifact-gallery';
@@ -107,6 +110,10 @@ export default function CourseSpacePage() {
   const [generationScope, setGenerationScope] = useState('course');
   const [message, setMessage] = useState('');
   const [coursewareModeOpen, setCoursewareModeOpen] = useState(false);
+  const [targetDuration, setTargetDuration] = useState('');
+  const [pendingCourseware, setPendingCourseware] = useState<{
+    scope: CourseArtifactJob['scope']; instruction?: string;
+  } | null>(null);
   const [coursewareSourceOpen, setCoursewareSourceOpen] = useState(false);
   const [workspacePanel, setWorkspacePanel] = useState<'generate' | 'artifacts'>('generate');
   const [coursewareMaterialId, setCoursewareMaterialId] = useState('');
@@ -470,6 +477,7 @@ export default function CourseSpacePage() {
           sessionId: nanoid(),
           requirements: {
             requirement,
+            targetDurationMinutes: resolveCourseMinutes(targetDuration),
             userNickname: profile.nickname || undefined,
             userBio: profile.bio || undefined,
             webSearch: false,
@@ -538,6 +546,7 @@ export default function CourseSpacePage() {
       JSON.stringify({
         sessionId: nanoid(),
         requirements: {
+          targetDurationMinutes: resolveCourseMinutes(targetDuration),
           requirement: `${requirement}\n\n课程：${selected.title}；当前课时范围：${scopeName}。请先生成可供教师审阅的课件大纲，再根据确认的大纲制作课件。`,
           userNickname: profile.nickname || undefined,
           userBio: profile.bio || undefined,
@@ -579,11 +588,7 @@ export default function CourseSpacePage() {
       return;
     }
     if (includesCourseware) {
-      try {
-        await launchChatCoursewareFlow(scope, instruction);
-      } catch (error) {
-        setMessage(error instanceof Error ? error.message : String(error));
-      }
+      setPendingCourseware({ scope, instruction });
       return;
     }
     const backgroundArtifacts = artifactTypes;
@@ -847,6 +852,8 @@ export default function CourseSpacePage() {
         />
       )}
       <CoursewareModeDialog
+        targetDuration={targetDuration}
+        onTargetDurationChange={setTargetDuration}
         open={coursewareModeOpen}
         onOpenChange={setCoursewareModeOpen}
         onSelect={(mode) => void launchCoursewareFlow(mode)}
@@ -857,6 +864,26 @@ export default function CourseSpacePage() {
             : undefined
         }
       />
+      <Dialog open={Boolean(pendingCourseware)} onOpenChange={(open) => { if (!open) setPendingCourseware(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>设置课件播放时长</DialogTitle>
+            <DialogDescription>根据课程难易程度选择讲解时长，确认后生成审阅大纲。</DialogDescription>
+          </DialogHeader>
+          <CourseDurationInput value={targetDuration} onChange={setTargetDuration} />
+          <Button disabled={launchingCourseware || Boolean(courseDurationInputError(targetDuration))}
+            onClick={async () => {
+              if (!pendingCourseware) return;
+              setLaunchingCourseware(true);
+              try {
+                await launchChatCoursewareFlow(pendingCourseware.scope, pendingCourseware.instruction);
+                setPendingCourseware(null);
+              } catch (error) {
+                setMessage(error instanceof Error ? error.message : String(error));
+              } finally { setLaunchingCourseware(false); }
+            }}>生成课件大纲</Button>
+        </DialogContent>
+      </Dialog>
     </main>
   );
 }

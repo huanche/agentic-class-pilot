@@ -38,6 +38,7 @@ import {
   recordAutomaticFallback,
 } from '@/lib/course-governance/governance';
 import { getOutlineDurationSeconds } from '@/lib/playback/timing-display';
+import { calibrateNarrationDuration, durationMeasurementKey, durationStatus, measureScenePlaybackSeconds, type DurationFeedback } from '@/lib/generation/course-duration';
 
 const log = createLogger('SceneGenerator');
 
@@ -226,10 +227,13 @@ export async function fetchSceneActions(
     languageDirective?: string;
     preferServerModel?: boolean;
     narrationScript?: string;
+    durationFeedback?: DurationFeedback;
   },
   signal?: AbortSignal,
   retryOptions?: ClientRetryOptions<SceneActionsResult>,
 ): Promise<SceneActionsResult> {
+  params.outline = { ...params.outline,
+    durationBudget: params.allOutlines.find((page) => page.id === params.outline.id)?.durationBudget ?? params.outline.durationBudget };
   try {
     return await withGenerationRetry(
       async () => {
@@ -427,6 +431,7 @@ export async function generateTTSForScene(
   language?: string,
   signal?: AbortSignal,
   retryOptions?: ClientRetryOptions<TTSApiResponse>,
+  durationContext?: Parameters<typeof fetchSceneActions>[0],
 ): Promise<{ success: boolean; failedCount: number; error?: string }> {
   const providerId = useSettingsStore.getState().ttsProviderId;
   scene.actions = splitLongSpeechActions(
@@ -507,6 +512,39 @@ export async function generateTTSForScene(
     await removeFreshTtsAllocations(freshAllocations);
     for (const action of speechActions) delete action.audioId;
     throw error;
+  }
+
+  const audioSeconds: Record<string, number | undefined> = {};
+  for (const action of speechActions) {
+    audioSeconds[action.id] = action.audioId ? (await db.audioFiles.get(action.audioId))?.duration : undefined;
+  }
+  scene.timing = {
+    ...scene.timing,
+    measuredDurationSec: measureScenePlaybackSeconds(scene, audioSeconds),
+    measurementKey: durationMeasurementKey(scene),
+  };
+  scene.timing.durationStatus = durationStatus(scene.timing.measuredDurationSec, scene.timing.plannedDurationSec ?? 0);
+
+  if (durationContext?.outline.durationBudget && failedCount === 0) {
+    const calibrated = await calibrateNarrationDuration(scene, {
+      regenerate: async (feedback, previous) => {
+        const result = await fetchSceneActions({ ...durationContext, durationFeedback: feedback }, signal, retryOptions);
+        if (!result.success || !result.scene) throw new Error(result.error || '讲稿时长校正失败');
+        const candidate = result.scene;
+        candidate.timing = { ...previous.timing, measuredDurationSec: undefined };
+        try {
+          const tts = await generateTTSForScene(candidate, language, signal, retryOptions);
+          if (!tts.success || tts.failedCount) throw new Error(tts.error || '配音时长校正失败');
+          return candidate;
+        } catch (error) {
+          await removeFreshTtsAllocations(speechAllocationIds(candidate));
+          throw error;
+        }
+      },
+      dispose: async (discarded) => removeFreshTtsAllocations(speechAllocationIds(discarded)),
+    });
+    scene.actions = calibrated.actions;
+    scene.timing = calibrated.timing;
   }
 
   return {
@@ -791,8 +829,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
 
           // Step 2: Generate actions + assemble scene
           options.onPhaseChange?.('actions', outline);
-          const actionsResult = await fetchSceneActions(
-            {
+          const actionsContext: Parameters<typeof fetchSceneActions>[0] = {
               outline: contentResult.effectiveOutline || outline,
               allOutlines: outlines,
               content: contentResult.content,
@@ -803,7 +840,9 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
               languageDirective: params.languageDirective,
               preferServerModel: params.preferServerModel,
               narrationScript: params.narrationScripts?.[outline.order - 1],
-            },
+            };
+          const actionsResult = await fetchSceneActions(
+            actionsContext,
             signal,
           );
 
@@ -839,6 +878,8 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
                 scene,
                 params.languageDirective || params.stageInfo.language,
                 signal,
+                undefined,
+                actionsContext,
               );
               if (!ttsResult.success) {
                 if (abortRef.current || store.getState().generationEpoch !== startEpoch) {
@@ -877,7 +918,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
             removeGeneratingOutline(outline.id);
             addGeneratedScene(scene);
             options.onSceneGenerated?.(scene, outline.order);
-            previousSpeeches = actionsResult.previousSpeeches || [];
+            previousSpeeches = (scene.actions ?? []).filter((action): action is SpeechAction => action.type === 'speech').map((action) => action.text);
           } else {
             if (abortRef.current || store.getState().generationEpoch !== startEpoch) {
               pausedByFailureOrAbort = true;
@@ -1047,8 +1088,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
               .map((a) => a.text)
           : [];
 
-        const actionsResult = await fetchSceneActions(
-          {
+        const actionsContext: Parameters<typeof fetchSceneActions>[0] = {
             outline: contentResult.effectiveOutline || outline,
             allOutlines: state.outlines,
             content: contentResult.content,
@@ -1059,7 +1099,9 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
             languageDirective: params.languageDirective,
             preferServerModel: params.preferServerModel,
             narrationScript: params.narrationScripts?.[outline.order - 1],
-          },
+          };
+        const actionsResult = await fetchSceneActions(
+          actionsContext,
           signal,
         );
 
@@ -1076,6 +1118,11 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
         }
 
         // Step 3: TTS
+        actionsResult.scene.timing = {
+          plannedDurationSec: getOutlineDurationSeconds(outline, state.stage.timing?.targetDurationMinutes ?? 45, state.outlines.length),
+          mode: actionsResult.scene.type === 'quiz' ? 'quiz' : actionsResult.scene.type === 'interactive' ? 'interactive-demo' : 'narration-fit',
+          autoAdvance: true,
+        };
         const settings = useSettingsStore.getState();
         if (
           settings.ttsEnabled &&
@@ -1089,6 +1136,8 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
             actionsResult.scene,
             params.languageDirective || params.stageInfo.language,
             signal,
+            undefined,
+            actionsContext,
           );
           if (!ttsResult.success) {
             if (governanceEnabled && params.preferImportedCanvas) {

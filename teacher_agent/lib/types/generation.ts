@@ -70,10 +70,11 @@ export interface UploadedDocument {
 
 /**
  * Simplified user requirements for course generation
- * All details (topic, duration, style, etc.) should be included in the requirement text
+ * Topic/style are free-form; playback duration has a structured, validated value.
  */
 export interface UserRequirements {
   requirement: string; // Single free-form text for all user input
+  targetDurationMinutes?: number; // Blank UI input resolves to 28 for new courses.
   userNickname?: string; // Student nickname for personalization
   userBio?: string; // Student background for personalization
   webSearch?: boolean; // Enable web search for richer context
@@ -130,6 +131,8 @@ export interface SceneOutline {
   keyPoints: string[]; // 3-5 core key points
   teachingObjective?: string;
   estimatedDuration?: number; // seconds
+  /** App-normalized automatic playback budget; absent on legacy/manual activities. */
+  durationBudget?: { targetSeconds: number };
   order: number;
   /** Original zero-based PPT page index retained through outline review edits. */
   sourceSlideOriginalIndex?: number;

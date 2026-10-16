@@ -5,6 +5,7 @@ import { useI18n } from '@/lib/hooks/use-i18n';
 import { useRouter } from 'next/navigation';
 import type { StageMode } from '@/lib/types/stage';
 import { HeaderControls } from './stage/header-controls';
+import type { ReactNode } from 'react';
 
 interface HeaderProps {
   readonly currentSceneTitle: string;
@@ -12,6 +13,7 @@ interface HeaderProps {
   readonly canEdit?: boolean;
   readonly onToggleEditMode?: () => void;
   readonly totalDurationMinutes?: number;
+  readonly durationSummary?: ReactNode;
 }
 
 export function Header({
@@ -20,6 +22,7 @@ export function Header({
   canEdit,
   onToggleEditMode,
   totalDurationMinutes,
+  durationSummary,
 }: HeaderProps) {
   const { t } = useI18n();
   const router = useRouter();
@@ -60,7 +63,7 @@ export function Header({
           {mode !== 'edit' && totalDurationMinutes != null && (
             <div className="ml-2 flex shrink-0 items-center gap-1.5 rounded-full border border-violet-100 bg-violet-50/80 px-3 py-1.5 text-xs font-medium text-violet-700 dark:border-violet-800/60 dark:bg-violet-950/30 dark:text-violet-300">
               <Clock3 className="h-3.5 w-3.5" />
-              预计 {Math.round(totalDurationMinutes)} 分钟
+              {durationSummary ?? `预计 ${Math.round(totalDurationMinutes)} 分钟`}
             </div>
           )}
         </div>
