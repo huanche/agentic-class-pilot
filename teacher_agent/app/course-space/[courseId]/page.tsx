@@ -11,6 +11,11 @@ import {
   Upload,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { ResourceActions } from '@/components/course-space/resource-actions';
+import {
+  ResourcePublicationDialog,
+  type PublicationTarget,
+} from '@/components/course-space/resource-publication-dialog';
 import type { CourseArtifactJob, CourseArtifactRecord, CourseSpace } from '@/lib/course-space';
 import type { CourseScheduleInput } from '@/lib/server/course-onboarding';
 const steps = ['上传并解析课程资料', '完成并审核课程大纲', '完善课程信息与安排'];
@@ -23,6 +28,7 @@ export default function CourseOnboardingPage() {
   const { courseId } = useParams<{ courseId: string }>();
   const router = useRouter();
   const [course, setCourse] = useState<CourseSpace>();
+  const [publicationTarget, setPublicationTarget] = useState<PublicationTarget>();
   const [artifacts, setArtifacts] = useState<CourseArtifactRecord[]>([]);
   const [jobs, setJobs] = useState<CourseArtifactJob[]>([]);
   const [step, setStep] = useState(1);
@@ -293,6 +299,26 @@ export default function CourseOnboardingPage() {
                         {item.status === 'failed' ? '重试解析' : '开始解析'}
                       </Button>
                     )}
+                    <ResourceActions
+                      courseId={course.id}
+                      course={course}
+                      kind="materials"
+                      id={item.id}
+                      title={item.name}
+                      published={Boolean(item.classPublicationId)}
+                      courseActive={course.status === 'active'}
+                      onChange={load}
+                      onPublish={() =>
+                        setPublicationTarget({
+                          kind: 'material',
+                          id: item.id,
+                          title: item.name,
+                          resourceType: 'material',
+                          storageType: item.mimeType,
+                          lessonId: item.publicationPlacement?.lessonId,
+                        })
+                      }
+                    />
                   </div>
                 ))}
               </div>
@@ -590,6 +616,14 @@ export default function CourseOnboardingPage() {
           )}
         </section>
       </div>
+      {publicationTarget && course && (
+        <ResourcePublicationDialog
+          course={course}
+          target={publicationTarget}
+          onClose={() => setPublicationTarget(undefined)}
+          onPublished={load}
+        />
+      )}
     </main>
   );
 }

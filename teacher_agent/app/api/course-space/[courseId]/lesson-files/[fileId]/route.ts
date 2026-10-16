@@ -21,7 +21,7 @@ export async function GET(
   const { courseId, fileId } = await context.params;
   const course = await readServerCourse(courseId);
   const file = findLessonFile(course, fileId);
-  if (!course || !file?.classPublicationId)
+  if (!course || course.status !== 'active' || !file?.classVisible || !file.classPublicationId)
     return apiError('INVALID_REQUEST', 404, '已发布课时文件不存在');
   const body = markdownToArtifactHtml(`# ${file.title}\n\n${file.content}`);
   const requestedSource = new URL(request.url).searchParams.get('from');
@@ -56,7 +56,7 @@ export async function PATCH(
       return apiError('INVALID_REQUEST', 400, '内容不能为空');
     const content = body.content.trim();
     const status = body.action === 'approve' ? ('ready' as const) : ('draft' as const);
-    const updated = await updateServerCourse(courseId, (current) => ({
+    const updated = await updateServerCourse(course.id, (current) => ({
       ...current,
       updatedAt: Date.now(),
       modules: current.modules.map((module) => ({
@@ -71,6 +71,31 @@ export async function PATCH(
     }));
     return apiSuccess({ file: findLessonFile(updated, fileId) });
   }
+  if (body?.action === 'unpublish') {
+    const updated = await updateServerCourse(course.id, (current) => ({
+      ...current,
+      updatedAt: Date.now(),
+      modules: current.modules.map((courseModule) => ({
+        ...courseModule,
+        lessons: courseModule.lessons.map((lesson) => ({
+          ...lesson,
+          files: lesson.files?.map((item) =>
+            item.id === fileId
+              ? {
+                  ...item,
+                  classVisible: false,
+                  classPublicationId: undefined,
+                  classPublishedAt: undefined,
+                  publicationPlacement: undefined,
+                  updatedAt: Date.now(),
+                }
+              : item,
+          ),
+        })),
+      })),
+    }));
+    return apiSuccess({ file: findLessonFile(updated, fileId) });
+  }
   if (body?.action !== 'publish') return apiError('INVALID_REQUEST', 400, '不支持的操作');
   try {
     return apiSuccess({
@@ -79,4 +104,26 @@ export async function PATCH(
   } catch (error) {
     return apiError('INVALID_REQUEST', 409, error instanceof Error ? error.message : '发布失败');
   }
+}
+
+export async function DELETE(
+  _req: NextRequest,
+  context: { params: Promise<{ courseId: string; fileId: string }> },
+) {
+  const { courseId, fileId } = await context.params;
+  const course = await readServerCourse(courseId);
+  if (!course || !findLessonFile(course, fileId))
+    return apiError('INVALID_REQUEST', 404, '课程文件不存在');
+  await updateServerCourse(course.id, (current) => ({
+    ...current,
+    updatedAt: Date.now(),
+    modules: current.modules.map((courseModule) => ({
+      ...courseModule,
+      lessons: courseModule.lessons.map((lesson) => ({
+        ...lesson,
+        files: lesson.files?.filter((item) => item.id !== fileId),
+      })),
+    })),
+  }));
+  return apiSuccess({ deleted: fileId });
 }

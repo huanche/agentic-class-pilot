@@ -631,6 +631,7 @@ export default function CourseSpacePage() {
             variant="ghost"
             size="icon"
             className="rounded-full"
+            aria-label="返回课程中心"
             onClick={() => router.push('/course-space')}
           >
             <ArrowLeft />
@@ -653,9 +654,9 @@ export default function CourseSpacePage() {
           <Button
             variant="outline"
             className="rounded-full bg-white/70"
-            onClick={() => router.push('/')}
+            onClick={() => router.push('/course-space')}
           >
-            返回品牌首页
+            课程中心
           </Button>
           <div className="rounded-full border bg-white/70 px-3 py-1.5 text-xs text-muted-foreground">
             默认教师

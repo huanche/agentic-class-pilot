@@ -1,4 +1,6 @@
 import { type NextRequest } from 'next/server';
+import { z } from 'zod';
+import type { CourseLesson, CoursePublicationPlacement } from '@/lib/course-space/types';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import {
   deleteCourseArtifact,
@@ -9,24 +11,45 @@ import {
   updateServerCourse,
 } from '@/lib/server/course-space-storage';
 
-type TreeAction =
-  | { action: 'delete-lesson'; lessonId: string }
-  | { action: 'delete-module'; moduleId: string }
-  | {
-      action: 'move-item';
-      itemKind: 'material' | 'course-file' | 'artifact';
-      itemId: string;
-      targetLessonId: string;
-    };
+const treeActionSchema = z.discriminatedUnion('action', [
+  z.object({ action: z.literal('delete-lesson'), lessonId: z.string().min(1) }),
+  z.object({ action: z.literal('delete-module'), moduleId: z.string().min(1) }),
+  z.object({
+    action: z.literal('move-item'),
+    itemKind: z.enum(['material', 'course-file', 'artifact']),
+    itemId: z.string().min(1),
+    targetLessonId: z.string().min(1),
+  }),
+]);
+
+function movedPlacement(
+  resource: { classPublicationId?: string; publicationPlacement?: CoursePublicationPlacement },
+  target: CourseLesson,
+) {
+  if (!resource.classPublicationId || !resource.publicationPlacement) return {};
+  if (!target.week || !target.lessonNumber || !target.teachingHours) return null;
+  return {
+    publicationPlacement: {
+      ...resource.publicationPlacement,
+      lessonId: target.id,
+      week: target.week,
+      lessonNumber: target.lessonNumber,
+      teachingHours: target.teachingHours,
+      confirmedAt: Date.now(),
+    },
+  };
+}
 
 export async function POST(req: NextRequest, context: { params: Promise<{ courseId: string }> }) {
   const { courseId } = await context.params;
-  const body = (await req.json()) as TreeAction;
+  const parsed = treeActionSchema.safeParse(await req.json().catch(() => null));
+  if (!parsed.success) return apiError('INVALID_REQUEST', 400, '目录操作参数无效');
+  const body = parsed.data;
   const course = await readServerCourse(courseId);
   if (!course) return apiError('INVALID_REQUEST', 404, '课程不存在');
 
   const allLessons = course.modules.flatMap((module) => module.lessons);
-  const artifacts = await listCourseArtifacts(courseId);
+  const artifacts = body.action === 'move-item' ? [] : await listCourseArtifacts(course.id);
   const releasedLessons = new Set([
     ...artifacts
       .filter((item) => item.classPublicationId)
@@ -52,18 +75,6 @@ export async function POST(req: NextRequest, context: { params: Promise<{ course
         ?.lessons.some((lesson) => releasedLessons.has(lesson.id)))
   )
     return apiError('INVALID_REQUEST', 409, '该课时已有发布文件，不能删除其归属目录');
-  if (body.action === 'move-item') {
-    const item =
-      body.itemKind === 'artifact'
-        ? artifacts.find((item) => item.id === body.itemId)
-        : body.itemKind === 'material'
-          ? course.materials.find((item) => item.id === body.itemId)
-          : allLessons
-              .flatMap((lesson) => lesson.files ?? [])
-              .find((item) => item.id === body.itemId);
-    if (item?.classPublicationId)
-      return apiError('INVALID_REQUEST', 409, '已发布文件不能拖动修改归属，请发布新版本');
-  }
 
   if (body.action === 'delete-lesson') {
     const lesson = allLessons.find((item) => item.id === body.lessonId);
@@ -71,7 +82,7 @@ export async function POST(req: NextRequest, context: { params: Promise<{ course
     const artifactIds = artifacts
       .filter((item) => item.scope.type === 'lesson' && item.scope.lessonId === lesson.id)
       .map((item) => item.id);
-    await updateServerCourse(courseId, (current) => ({
+    await updateServerCourse(course.id, (current) => ({
       ...current,
       updatedAt: Date.now(),
       modules: current.modules.map((module) => ({
@@ -96,7 +107,7 @@ export async function POST(req: NextRequest, context: { params: Promise<{ course
           (item.scope.type === 'lesson' && lessonIds.has(item.scope.lessonId)),
       )
       .map((item) => item.id);
-    await updateServerCourse(courseId, (current) => ({
+    await updateServerCourse(course.id, (current) => ({
       ...current,
       updatedAt: Date.now(),
       modules: current.modules
@@ -114,10 +125,20 @@ export async function POST(req: NextRequest, context: { params: Promise<{ course
 
   if (body.itemKind === 'artifact') {
     const artifact = await readCourseArtifact(body.itemId);
-    if (!artifact || artifact.courseId !== courseId)
+    if (!artifact || artifact.courseId !== course.id)
       return apiError('INVALID_REQUEST', 404, '教学产物不存在');
+    if (artifact.scope.type === 'lesson' && artifact.scope.lessonId === target.id)
+      return apiSuccess({ moved: 'artifact', targetLessonId: target.id });
+    const placement = movedPlacement(artifact, target);
+    if (!placement)
+      return apiError(
+        'INVALID_REQUEST',
+        409,
+        '目标课时尚未确认周次和课时数，请先取消发布后移动，再确认归属发布',
+      );
     await saveCourseArtifact({
       ...artifact,
+      ...placement,
       scope: { type: 'lesson', lessonId: target.id },
       updatedAt: now,
     });
@@ -125,11 +146,24 @@ export async function POST(req: NextRequest, context: { params: Promise<{ course
   }
 
   if (body.itemKind === 'material') {
-    if (!course.materials.some((material) => material.id === body.itemId))
-      return apiError('INVALID_REQUEST', 404, '课程材料不存在');
-    await updateServerCourse(courseId, (current) => ({
+    const material = course.materials.find((material) => material.id === body.itemId);
+    if (!material) return apiError('INVALID_REQUEST', 404, '课程材料不存在');
+    const locations = allLessons.filter((lesson) => lesson.materialIds.includes(body.itemId));
+    if (locations.length === 1 && locations[0].id === target.id)
+      return apiSuccess({ moved: 'material', targetLessonId: target.id });
+    const placement = movedPlacement(material, target);
+    if (!placement)
+      return apiError(
+        'INVALID_REQUEST',
+        409,
+        '目标课时尚未确认周次和课时数，请先取消发布后移动，再确认归属发布',
+      );
+    await updateServerCourse(course.id, (current) => ({
       ...current,
       updatedAt: now,
+      materials: current.materials.map((item) =>
+        item.id === body.itemId ? { ...item, ...placement, updatedAt: now } : item,
+      ),
       modules: current.modules.map((module) => ({
         ...module,
         lessons: module.lessons.map((lesson) => ({
@@ -158,9 +192,18 @@ export async function POST(req: NextRequest, context: { params: Promise<{ course
   );
   const file = source?.files?.find((item) => item.id === body.itemId);
   if (!source || !file) return apiError('INVALID_REQUEST', 404, '课程结构文件不存在');
+  if (source.id === target.id)
+    return apiSuccess({ moved: 'course-file', targetLessonId: target.id });
   if ((target.files ?? []).some((item) => item.type === file.type && item.id !== file.id))
-    return apiError('INVALID_REQUEST', 409, `目标文件夹已包含“${file.title}”`);
-  await updateServerCourse(courseId, (current) => ({
+    return apiError('INVALID_REQUEST', 409, '目标课时已包含同类型的课程文件，请选择其他课时');
+  const placement = movedPlacement(file, target);
+  if (!placement)
+    return apiError(
+      'INVALID_REQUEST',
+      409,
+      '目标课时尚未确认周次和课时数，请先取消发布后移动，再确认归属发布',
+    );
+  await updateServerCourse(course.id, (current) => ({
     ...current,
     updatedAt: now,
     modules: current.modules.map((module) => ({
@@ -170,7 +213,7 @@ export async function POST(req: NextRequest, context: { params: Promise<{ course
         if (lesson.id === target.id)
           return {
             ...lesson,
-            files: [...without, { ...file, lessonId: target.id, updatedAt: now }],
+            files: [...without, { ...file, ...placement, lessonId: target.id, updatedAt: now }],
             updatedAt: now,
           };
         return without.length === (lesson.files ?? []).length

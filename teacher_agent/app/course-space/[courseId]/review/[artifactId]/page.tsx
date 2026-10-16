@@ -2,9 +2,15 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
-import { ArrowLeft, ExternalLink, PackageCheck } from 'lucide-react';
+import { ArrowLeft, ExternalLink } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ResourcePublicationDialog } from '@/components/course-space/resource-publication-dialog';
+import { ResourceActions } from '@/components/course-space/resource-actions';
+import {
+  courseWorkspaceUrl,
+  teacherReturnUrl,
+  withTeacherReturn,
+} from '@/lib/course-space/navigation';
 import { Input } from '@/components/ui/input';
 import { ArtifactHtmlReview } from '@/components/course-space/artifact-html-review';
 import type { CourseArtifactRecord, CourseSpace } from '@/lib/course-space';
@@ -47,10 +53,11 @@ export default function ArtifactReviewPage() {
     setArtifact(data.artifact);
     setMessage(action === 'approve' ? '审核通过。点击发布此文件后学生才可见。' : '修改已保存。');
   };
-  const source = searchParams.get('from');
-  const previewUrl = `/course-space/${courseId}/artifacts/${artifactId}/view${
-    source?.startsWith('/') && !source.startsWith('//') ? `?from=${encodeURIComponent(source)}` : ''
-  }`;
+  const source = teacherReturnUrl(searchParams.get('from'), courseWorkspaceUrl(courseId));
+  const previewUrl = withTeacherReturn(
+    `/course-space/${courseId}/artifacts/${artifactId}/view`,
+    source,
+  );
 
   return (
     <main className="min-h-screen bg-slate-50 text-slate-900">
@@ -71,7 +78,11 @@ export default function ArtifactReviewPage() {
         </div>
         {artifact?.classroomUrl && (
           <Button variant="outline" asChild>
-            <a href={artifact.classroomUrl} target="_blank">
+            <a
+              href={withTeacherReturn(artifact.classroomUrl, source)}
+              target="_blank"
+              rel="noreferrer"
+            >
               打开互动课件
               <ExternalLink className="ml-2 size-4" />
             </a>
@@ -132,14 +143,31 @@ export default function ArtifactReviewPage() {
                 onChange={(event) => setArtifact({ ...artifact, reviewerNote: event.target.value })}
               />
               <div className="mt-4 flex flex-wrap gap-2">
-                <Button variant="outline" onClick={() => void review('save')}>
+                <Button
+                  variant="outline"
+                  disabled={artifact.status === 'published'}
+                  onClick={() => void review('save')}
+                >
                   保存修改
                 </Button>
-                <Button onClick={() => void review('approve')}>审核通过</Button>
-                <Button variant="secondary" onClick={() => setPublishOpen(true)}>
-                  <PackageCheck className="mr-2 size-4" />
-                  发布此文件
+                <Button
+                  disabled={artifact.status === 'published'}
+                  onClick={() => void review('approve')}
+                >
+                  审核通过
                 </Button>
+                <ResourceActions
+                  courseId={courseId}
+                  course={course}
+                  kind="artifacts"
+                  id={artifact.id}
+                  title={artifact.title}
+                  published={Boolean(artifact.classPublicationId)}
+                  courseActive={course?.status === 'active'}
+                  onPublish={() => setPublishOpen(true)}
+                  onChange={load}
+                  onDeleted={() => router.push(source)}
+                />
               </div>
             </div>
           </div>
