@@ -2,6 +2,9 @@ name: server-diagnostics-read-only
 
 on:
   workflow_dispatch:
+  push:
+    branches: [codex/course-duration-budget]
+    paths: [.github/workflows/server-diagnostics.yml]
 
 permissions:
   contents: read
@@ -37,4 +40,7 @@ jobs:
           done
           echo '--- Docker disk usage ---'
           docker system df
+          echo '--- host database services ---'
+          systemctl list-units --all --no-pager 'postgresql*' || true
+          if command -v pg_lsclusters >/dev/null 2>&1; then pg_lsclusters; fi
           REMOTE
