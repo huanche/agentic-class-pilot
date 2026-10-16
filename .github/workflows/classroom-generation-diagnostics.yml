@@ -10,6 +10,10 @@ on:
         description: Classroom to inspect (read only)
         default: z1u6w1DG7q
         required: true
+      snapshot:
+        description: Save the scoped classroom JSON for validation
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -24,6 +28,7 @@ jobs:
           SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
           SERVER_HOST: ${{ secrets.SERVER_HOST }}
           CLASSROOM_ID: ${{ inputs.classroom_id || 'z1u6w1DG7q' }}
+          SNAPSHOT: ${{ inputs.snapshot && 'true' || 'false' }}
         run: |
           set -euo pipefail
           [[ "$CLASSROOM_ID" =~ ^[A-Za-z0-9_-]+$ ]]
@@ -31,7 +36,7 @@ jobs:
           chmod 600 /tmp/generation_diagnostic_key
           trap 'rm -f /tmp/generation_diagnostic_key' EXIT
           SSH=(ssh -i /tmp/generation_diagnostic_key -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=20 -o ServerAliveCountMax=2 -o StrictHostKeyChecking=accept-new "ubuntu@$SERVER_HOST")
-          "${SSH[@]}" "docker exec -i agentic-teacher-prod node - '$CLASSROOM_ID'" <<'NODE'
+          "${SSH[@]}" "docker exec -i -e WRITE_SNAPSHOT='$SNAPSHOT' -e SNAPSHOT_TMP='/tmp/classroom-snapshot-$GITHUB_RUN_ID.json' agentic-teacher-prod node - '$CLASSROOM_ID'" <<'NODE'
           (async () => {
             const id = process.argv[2];
             const { Pool } = require('pg');
@@ -41,10 +46,16 @@ jobs:
             try {
               const result = await pool.query('SELECT stage, scenes, updated_at FROM mentra_classrooms WHERE id=$1', [id]);
               const c = result.rows[0];
+              if (c && process.env.WRITE_SNAPSHOT === 'true')
+                require('fs').writeFileSync(process.env.SNAPSHOT_TMP, JSON.stringify({stage:c.stage,scenes:c.scenes}));
               console.log(JSON.stringify({check:'classroom-metadata', found:!!c, defaultModel:process.env.DEFAULT_MODEL, updatedAt:c?.updated_at, name:c?.stage?.name, timing:c?.stage?.timing, generationModelPolicy:c?.stage?.generationModelPolicy, stageKeys:Object.keys(c?.stage??{}), scenes:c?.scenes?.map(s=>({order:s.order,id:s.id,title:s.title,type:s.type,timing:s.timing,speeches:s.actions?.filter(a=>a.type==='speech').length,servedAudio:s.actions?.filter(a=>a.type==='speech'&&a.audioUrl).length,invalidatedAudio:s.actions?.filter(a=>a.type==='speech'&&a.audioInvalidated).length}))}));
             } finally {await pool.end();}
           })().catch(e=>{console.log(JSON.stringify({check:'metadata-failed',name:e.name}));process.exitCode=1;});
           NODE
+          if [ "$SNAPSHOT" = true ]; then
+            "${SSH[@]}" "docker exec agentic-teacher-prod cat '/tmp/classroom-snapshot-$GITHUB_RUN_ID.json'" > classroom-snapshot.json
+            "${SSH[@]}" "docker exec agentic-teacher-prod rm -f '/tmp/classroom-snapshot-$GITHUB_RUN_ID.json'"
+          fi
           "${SSH[@]}" 'docker logs --since 120m --tail 2000 agentic-teacher-prod 2>&1' | python3 -c '
           import sys,re,json
           lines=[]
@@ -54,3 +65,10 @@ jobs:
               line=re.sub(r"Bearer\s+[^\s\"\x27]+", "Bearer [redacted]",line)
               lines.append(line.strip()[:900])
           print(json.dumps({"check":"recent-generation-log", "lines":lines[-90:]},ensure_ascii=False))'
+      - name: Preserve scoped classroom snapshot
+        if: inputs.snapshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: classroom-generation-snapshot
+          path: classroom-snapshot.json
+          retention-days: 3
