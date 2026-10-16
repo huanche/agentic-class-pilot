@@ -85,8 +85,8 @@ import {
 } from '@/lib/course-governance/governance';
 import {
   getOutlineDurationSeconds,
-  inferTargetDurationMinutes,
 } from '@/lib/playback/timing-display';
+import { planCourseDuration, resolveCourseMinutes } from '@/lib/generation/course-duration';
 
 const log = createLogger('GenerationPreview');
 const OUTLINE_REVIEW_AUTO_CONTINUE_MS = 2500;
@@ -834,6 +834,7 @@ function GenerationPreviewContent() {
         outlines = currentSession.pptContentDraft
           ? bindPptOutlinesToReviewedPages(outlineResult.outlines, currentSession.pptContentDraft)
           : outlineResult.outlines;
+        outlines = planCourseDuration(outlines, resolveCourseMinutes(currentSession.requirements.targetDurationMinutes));
         languageDirective = outlineResult.languageDirective;
         courseTitle = outlineResult.courseTitle;
         const effectiveTaskEngineMode = outlineResult.taskEngineMode;
@@ -1130,11 +1131,12 @@ function GenerationPreviewContent() {
 
       // Store stage and outlines
       const store = useStageStore.getState();
+      const targetDurationMinutes = resolveCourseMinutes(currentSession.requirements.targetDurationMinutes);
+      outlines = planCourseDuration(outlines, targetDurationMinutes);
       stage.timing = {
-        targetDurationMinutes: inferTargetDurationMinutes(
-          currentSession.requirements.requirement,
-          outlines.length,
-        ),
+        targetDurationMinutes,
+        budgetVersion: 1,
+        expectedAutomaticPages: outlines.filter((page) => page.durationBudget).length,
       };
       stage.videoManifest = buildVideoManifestFromOutlines(outlines);
       store.setStage(stage);
@@ -1189,6 +1191,7 @@ function GenerationPreviewContent() {
             );
 
       let firstScene: Scene;
+      let firstActionsContext: Parameters<typeof fetchSceneActions>[0] | undefined;
       let fallbackKind:
         | 'content-generation-failure'
         | 'action-generation-failure'
@@ -1215,8 +1218,7 @@ function GenerationPreviewContent() {
         const actionsStepIdx = activeSteps.findIndex((s) => s.id === 'actions');
         setCurrentStepIndex(actionsStepIdx >= 0 ? actionsStepIdx : currentStepIndex + 1);
 
-        const data = await fetchSceneActions(
-          {
+        firstActionsContext = {
             outline: contentData.effectiveOutline || firstOutline,
             allOutlines: outlines,
             content: contentData.content,
@@ -1227,7 +1229,9 @@ function GenerationPreviewContent() {
             languageDirective,
             preferServerModel,
             narrationScript: narrationScripts[firstOutline.order - 1],
-          },
+          };
+        const data = await fetchSceneActions(
+          firstActionsContext,
           signal,
           FOREGROUND_SCENE_RETRY_OPTIONS,
         );
@@ -1279,6 +1283,7 @@ function GenerationPreviewContent() {
           languageDirective,
           signal,
           FOREGROUND_SCENE_RETRY_OPTIONS,
+          firstActionsContext,
         );
         if (!ttsResult.success) {
           if (!currentSession.conversionMode) throw new Error(t('generation.speechFailed'));
@@ -1488,7 +1493,7 @@ function GenerationPreviewContent() {
     if (isOutlineStreaming) return;
     updatePersistedSession((currentSession) => ({
       ...currentSession,
-      sceneOutlines: outlines,
+      sceneOutlines: planCourseDuration(outlines, resolveCourseMinutes(currentSession.requirements.targetDurationMinutes)),
       previewPhase: 'review',
     }));
   };
@@ -1619,15 +1624,11 @@ function GenerationPreviewContent() {
       ? activeSteps[Math.min(currentStepIndex, activeSteps.length - 1)]
       : ALL_STEPS[0];
   const activeStepText = getGenerationStepText(activeStep, session);
-  const previewOutlines = session.sceneOutlines ?? streamingOutlines ?? [];
-  const previewTargetMinutes = inferTargetDurationMinutes(
-    session.requirements.requirement,
-    previewOutlines.length,
-  );
+  const previewTargetMinutes = resolveCourseMinutes(session.requirements.targetDurationMinutes);
   const durationBadge = (
     <div className="absolute left-1/2 top-4 z-20 flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-violet-200/70 bg-white/85 px-4 py-2 text-sm font-medium text-violet-700 shadow-sm backdrop-blur dark:border-violet-800 dark:bg-slate-900/85 dark:text-violet-300">
       <Clock3 className="h-4 w-4" />
-      预计 {previewTargetMinutes} 分钟
+      目标 {previewTargetMinutes} 分钟 · 生成后实测
     </div>
   );
 

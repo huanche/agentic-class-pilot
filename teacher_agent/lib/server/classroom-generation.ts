@@ -19,7 +19,10 @@ import { createLogger } from '@/lib/logger';
 import { isProviderKeyRequired } from '@/lib/ai/providers';
 import { resolveClassroomWebSearchConfig } from '@/lib/server/web-search-config';
 import { resolveModel } from '@/lib/server/resolve-model';
-import { type PlatformUserModelConfig, llmOverrideFromConfig } from '@/lib/server/platform-user-model-config';
+import {
+  type PlatformUserModelConfig,
+  llmOverrideFromConfig,
+} from '@/lib/server/platform-user-model-config';
 import { getStageModel, type LlmStage } from '@/lib/server/model-routes';
 import type { LanguageModel } from 'ai';
 import type { ThinkingConfig } from '@/lib/types/provider';
@@ -37,6 +40,24 @@ import { buildVideoManifestFromOutlines } from '@/lib/media/video-manifest';
 import type { UserRequirements } from '@/lib/types/generation';
 import type { Scene, Stage } from '@/lib/types/stage';
 import { AGENT_COLOR_PALETTE, AGENT_DEFAULT_AVATARS } from '@/lib/constants/agent-defaults';
+import {
+  calibrateNarrationDuration,
+  planCourseDuration,
+  resolveCourseMinutes,
+  withCourseDurationRequirement,
+  withNarrationDuration,
+  withSceneContentDuration,
+  type DurationFeedback,
+} from '@/lib/generation/course-duration';
+import {
+  removeClassroomTtsAudio,
+  finalizeClassroomTtsAudio,
+} from '@/lib/server/classroom-media-generation';
+import type { Action } from '@/lib/types/action';
+import {
+  calibrateCourseDuration,
+  MAX_COURSE_DURATION_CORRECTIONS,
+} from '@/lib/generation/course-duration-calibration';
 
 const log = createLogger('Classroom');
 
@@ -48,6 +69,7 @@ export function containPBLGenerationError(error: unknown, sceneTitle: string): n
 
 export interface GenerateClassroomInput {
   requirement: string;
+  targetDurationMinutes?: number;
   pdfContent?: { text: string; images: string[] };
   enableWebSearch?: boolean;
   webSearchProviderId?: WebSearchProviderId;
@@ -404,9 +426,11 @@ export async function generateClassroom(
     return result.text;
   };
 
-  const requirements: UserRequirements = {
+  const targetDurationMinutes = resolveCourseMinutes(input.targetDurationMinutes);
+  const requirements: UserRequirements = withCourseDurationRequirement({
     requirement,
-  };
+    targetDurationMinutes,
+  });
   const vocationalActive = resolveVocationalActive(requirements);
   const pdfText = pdfContent?.text || undefined;
 
@@ -495,7 +519,8 @@ export async function generateClassroom(
     throw new Error(outlinesResult.error || 'Failed to generate scene outlines');
   }
 
-  const { languageDirective, courseTitle, outlines } = outlinesResult.data;
+  const { languageDirective, courseTitle } = outlinesResult.data;
+  const outlines = planCourseDuration(outlinesResult.data.outlines, targetDurationMinutes);
   log.info(
     `Generated ${outlines.length} scene outlines (languageDirective: ${languageDirective}, courseTitle: ${courseTitle ?? 'n/a'})`,
   );
@@ -528,6 +553,11 @@ export async function generateClassroom(
   const stageId = nanoid(10);
   const stage: Stage = {
     id: stageId,
+    timing: {
+      targetDurationMinutes,
+      budgetVersion: 1,
+      expectedAutomaticPages: outlines.filter((page) => page.durationBudget).length,
+    },
     name: courseTitle || outlines[0]?.title || requirement.slice(0, 50),
     description: undefined,
     languageDirective,
@@ -560,11 +590,15 @@ export async function generateClassroom(
 
   log.info('Stage 2: Generating scene content and actions...');
   let generatedScenes = 0;
+  const durationRegenerators = new Map<string, (feedback: DurationFeedback) => Promise<Action[]>>();
 
   for (const [index, outline] of outlines.entries()) {
-    const safeOutline = applyOutlineFallbacks(outline, true, {
-      allowProceduralSkill: vocationalActive,
-    });
+    const safeOutline = {
+      ...applyOutlineFallbacks(outline, true, {
+        allowProceduralSkill: vocationalActive,
+      }),
+      durationBudget: outline.durationBudget,
+    };
     const progressStart = 30 + Math.floor((index / Math.max(outlines.length, 1)) * 60);
 
     await options.onProgress?.({
@@ -599,7 +633,7 @@ export async function generateClassroom(
       try {
         return await withGenerationRetry(
           () =>
-            generateSceneContent(safeOutline, contentCall.aiCall, {
+            generateSceneContent(withSceneContentDuration(safeOutline), contentCall.aiCall, {
               agents,
               languageDirective,
               allowProceduralSkill: vocationalActive,
@@ -634,7 +668,7 @@ export async function generateClassroom(
     const actionsAiCall = await getSceneActionsAiCall();
     const actions = await withGenerationRetry(
       () =>
-        generateSceneActions(safeOutline, content, actionsAiCall, {
+        generateSceneActions(withNarrationDuration(safeOutline), content, actionsAiCall, {
           agents,
           languageDirective,
         }),
@@ -649,6 +683,20 @@ export async function generateClassroom(
     if (!sceneId) {
       log.warn(`Skipping scene "${safeOutline.title}" — scene creation failed`);
       continue;
+    }
+    const createdScene = store.getState().scenes.find((scene) => scene.id === sceneId);
+    if (safeOutline.durationBudget && createdScene) {
+      createdScene.timing = {
+        plannedDurationSec: safeOutline.durationBudget.targetSeconds,
+        mode: createdScene.type === 'interactive' ? 'interactive-demo' : 'narration-fit',
+        autoAdvance: true,
+      };
+      durationRegenerators.set(sceneId, (feedback) =>
+        generateSceneActions(withNarrationDuration(safeOutline, feedback), content, actionsAiCall, {
+          agents,
+          languageDirective,
+        }),
+      );
     }
 
     generatedScenes += 1;
@@ -699,7 +747,90 @@ export async function generateClassroom(
     });
 
     try {
-      await generateTTSForClassroom(scenes, stageId, options.baseUrl, options.platformModelConfig?.tts);
+      await generateTTSForClassroom(
+        scenes,
+        stageId,
+        options.baseUrl,
+        options.platformModelConfig?.tts,
+        { isolateAudio: true },
+      );
+      for (const scene of scenes) {
+        const regenerate = durationRegenerators.get(scene.id);
+        if (!regenerate) continue;
+        const calibrated = await calibrateNarrationDuration(scene, {
+          regenerate: async (feedback, previous) => {
+            const candidate = {
+              ...scene,
+              actions: await regenerate(feedback),
+              timing: { ...previous.timing, measuredDurationSec: undefined },
+            } as Scene;
+            try {
+              const result = await generateTTSForClassroom(
+                [candidate],
+                stageId,
+                options.baseUrl,
+                options.platformModelConfig?.tts,
+                { isolateAudio: true },
+              );
+              if (result.failed || !result.generated) throw new Error('配音时长校正失败');
+              return candidate;
+            } catch (error) {
+              await removeClassroomTtsAudio(candidate, stageId);
+              throw error;
+            }
+          },
+          dispose: (discarded) => removeClassroomTtsAudio(discarded, stageId),
+        });
+        scene.actions = calibrated.actions;
+        scene.timing = calibrated.timing;
+      }
+      const courseAttempts = stage.timing?.courseCorrectionAttempts ?? 0;
+      await calibrateCourseDuration(
+        scenes,
+        targetDurationMinutes,
+        stage.timing?.expectedAutomaticPages ?? 0,
+        {
+          onAttempt: (attempt) => {
+            stage.timing = { ...stage.timing, courseCorrectionAttempts: courseAttempts + attempt };
+          },
+          regenerate: async (previous, feedback) => {
+            const regenerate = durationRegenerators.get(previous.id);
+            if (!regenerate) throw new Error('页面讲稿上下文缺失');
+            const candidate = {
+              ...previous,
+              actions: await regenerate(feedback),
+              timing: {
+                ...previous.timing,
+                measuredDurationSec: undefined,
+                measurementKey: undefined,
+              },
+            } as Scene;
+            try {
+              const audio = await generateTTSForClassroom(
+                [candidate],
+                stageId,
+                options.baseUrl,
+                options.platformModelConfig?.tts,
+                { isolateAudio: true },
+              );
+              if (audio.failed || !audio.generated) throw new Error('整课配音校正失败');
+              return candidate;
+            } catch (error) {
+              await removeClassroomTtsAudio(candidate, stageId);
+              throw error;
+            }
+          },
+          dispose: (candidate) => removeClassroomTtsAudio(candidate, stageId),
+          onAccepted: async (previous, candidate) => {
+            const target = scenes.find((page) => page.id === previous.id)!;
+            await removeClassroomTtsAudio(target, stageId);
+            target.actions = candidate.actions;
+            target.timing = candidate.timing;
+          },
+        },
+        { maxAttempts: MAX_COURSE_DURATION_CORRECTIONS - courseAttempts },
+      );
+      for (const scene of scenes) await finalizeClassroomTtsAudio(scene, stageId, options.baseUrl);
       log.info('TTS generation complete');
     } catch (err) {
       log.warn('TTS generation phase failed, continuing:', err);

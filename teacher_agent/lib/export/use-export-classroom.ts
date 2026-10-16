@@ -26,6 +26,7 @@ import {
   legacyAudioMediaIndexEntry,
 } from './classroom-zip-utils';
 import { createLogger } from '@/lib/logger';
+import { measuredSceneSeconds, durationStatus } from '@/lib/generation/course-duration';
 import { buildStageAssetManifest } from '@/lib/media/asset-manifest';
 import {
   inlineHtmlAssets,
@@ -198,6 +199,7 @@ export async function buildClassroomExportZip(
 
     // 7. Build manifest
     const manifestStage: ManifestStage = {
+      timing: exportStage.timing,
       name: latestName,
       description: exportStage.description,
       language: exportStage.languageDirective,
@@ -225,6 +227,12 @@ export async function buildClassroomExportZip(
           if (!aggregateReport.failed.some((g) => g.url === f.url)) aggregateReport.failed.push(f);
         return {
           type: scene.type,
+          timing: scene.timing ? {
+            ...scene.timing,
+            measuredDurationSec: measuredSceneSeconds(scene),
+            measurementKey: undefined,
+            durationStatus: durationStatus(measuredSceneSeconds(scene), scene.timing.plannedDurationSec ?? 0),
+          } : undefined,
           title: scene.title,
           order: scene.order,
           content,

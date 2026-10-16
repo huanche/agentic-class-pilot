@@ -7,6 +7,7 @@ import { createClassroomGenerationJob } from '@/lib/server/classroom-job-store';
 import { buildRequestOrigin } from '@/lib/server/classroom-storage';
 import { getPlatformUserModelConfigForRequest } from '@/lib/server/platform-user-model-config';
 import { createLogger } from '@/lib/logger';
+import { resolveCourseMinutes } from '@/lib/generation/course-duration';
 
 const log = createLogger('GenerateClassroom API');
 
@@ -16,9 +17,13 @@ export async function POST(req: NextRequest) {
   let requirementSnippet: string | undefined;
   try {
     const rawBody = (await req.json()) as Partial<GenerateClassroomInput>;
+    let targetDurationMinutes: number;
+    try { targetDurationMinutes = resolveCourseMinutes(rawBody.targetDurationMinutes); }
+    catch (error) { return apiError('INVALID_REQUEST', 400, (error as Error).message); }
     requirementSnippet = rawBody.requirement?.substring(0, 60);
     const body: GenerateClassroomInput = {
       requirement: rawBody.requirement || '',
+      targetDurationMinutes,
       ...(rawBody.pdfContent ? { pdfContent: rawBody.pdfContent } : {}),
 
       ...(rawBody.enableWebSearch != null ? { enableWebSearch: rawBody.enableWebSearch } : {}),

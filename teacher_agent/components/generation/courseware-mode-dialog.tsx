@@ -10,6 +10,7 @@ import {
 } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 import type { CoursewareConversionMode } from '@/lib/learning-skills/courseware-mode';
+import { CourseDurationInput, courseDurationInputError } from './course-duration-input';
 
 interface CoursewareModeDialogProps {
   open: boolean;
@@ -17,6 +18,8 @@ interface CoursewareModeDialogProps {
   onSelect: (mode: CoursewareConversionMode) => void;
   sourceLabel?: 'PPTX' | 'PPT / PPTX' | 'PDF / PPTX';
   faithfulDisabledReason?: string;
+  targetDuration: string;
+  onTargetDurationChange: (value: string) => void;
 }
 
 const choices: Array<{
@@ -64,6 +67,8 @@ export function CoursewareModeDialog({
   onSelect,
   sourceLabel = 'PDF / PPTX',
   faithfulDisabledReason,
+  targetDuration,
+  onTargetDurationChange,
 }: CoursewareModeDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -76,10 +81,12 @@ export function CoursewareModeDialog({
           </DialogDescription>
         </DialogHeader>
 
+        <CourseDurationInput value={targetDuration} onChange={onTargetDurationChange} />
         <div className="grid gap-3 md:grid-cols-2">
           {choices.map((choice) => {
             const Icon = choice.icon;
-            const disabled = choice.mode === 'faithful' && Boolean(faithfulDisabledReason);
+            const disabled = Boolean(courseDurationInputError(targetDuration)) ||
+              (choice.mode === 'faithful' && Boolean(faithfulDisabledReason));
             return (
               <button
                 key={choice.mode}

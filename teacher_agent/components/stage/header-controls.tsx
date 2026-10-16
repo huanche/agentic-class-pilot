@@ -87,6 +87,7 @@ export function HeaderControls({
   const stage = useStageStore((s) => s.stage);
   const generatingOutlines = useStageStore((s) => s.generatingOutlines);
   const failedOutlines = useStageStore((s) => s.failedOutlines);
+  const generationStatus = useStageStore((s) => s.generationStatus);
   const mediaTasks = useMediaGenerationStore((s) => s.tasks);
   const { exporting: isExporting, exportPPTX, exportResourcePack } = useExportPPTX();
   const { exporting: isExportingZip, exportClassroomZip } = useExportClassroom();
@@ -114,6 +115,7 @@ export function HeaderControls({
 
   const canExport =
     scenes.length > 0 &&
+    generationStatus !== 'generating' &&
     generatingOutlines.length === 0 &&
     failedOutlines.length === 0 &&
     Object.values(mediaTasks).every((task) => task.status === 'done' || task.status === 'failed') &&
@@ -270,7 +272,9 @@ export function HeaderControls({
         <button
           type="button"
           onClick={() => setReviewDialogOpen(true)}
-          title={releaseGate.ready ? '来源追踪与逐场景审核已通过' : '完成来源追踪与逐场景审核后才能发布'}
+          title={
+            releaseGate.ready ? '来源追踪与逐场景审核已通过' : '完成来源追踪与逐场景审核后才能发布'
+          }
           className={cn(
             'relative shrink-0 rounded-full p-2 transition-all',
             releaseGate.ready

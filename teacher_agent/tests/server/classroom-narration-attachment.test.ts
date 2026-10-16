@@ -50,6 +50,20 @@ describe('attachNarrationServingUrls', () => {
     );
   });
 
+  it('keeps selected calibration audio discoverable after a browser drops transport URLs', async () => {
+    process.env.CLASSROOMS_DATA_DIR = classroomsDir;
+    const { attachNarrationServingUrls } = await loadModule();
+    const { finalizeClassroomTtsAudio } = await import('@/lib/server/classroom-media-generation');
+    const temporary = path.join(classroomsDir, 'cls_1', 'audio', 'tts_s1_action_0_candidate.wav');
+    mkdirSync(path.dirname(temporary), { recursive: true });
+    writeFileSync(temporary, Buffer.from('selected narration bytes'));
+    const generated = speechScene(1, [{ text: '选中的完整讲解', audioId: 'tts_s1_action_0_candidate', audioUrl: 'https://teacher.example/api/classroom-media/cls_1/audio/tts_s1_action_0_candidate.wav?v=hash' }]);
+    await finalizeClassroomTtsAudio(generated, 'cls_1', 'https://teacher.example');
+    const converted = speechScene(1, [{ text: '选中的完整讲解', audioId: 'ast_local' }]);
+    const [reopened] = await attachNarrationServingUrls([converted], 'cls_1', 'https://teacher.example');
+    expect((reopened.actions![0] as unknown as { audioUrl: string }).audioUrl).toMatch(/tts_s1_action_0\.wav\?v=/);
+  });
+
   it('keeps an action untouched when it already carries a URL', async () => {
     process.env.CLASSROOMS_DATA_DIR = classroomsDir;
     const { attachNarrationServingUrls } = await loadModule();

@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import type { SceneOutline } from '@/lib/types/generation';
+import type { Scene } from '@/lib/types/stage';
 
 const mocks = vi.hoisted(() => ({
   getCurrentModelConfig: vi.fn(),
   settingsState: vi.fn(),
   audioPut: vi.fn(),
+  audioGet: vi.fn(),
   audioDelete: vi.fn(),
   poolPut: vi.fn(),
   poolReplace: vi.fn(),
@@ -29,6 +31,7 @@ vi.mock('@/lib/utils/database', () => ({
   db: {
     audioFiles: {
       put: mocks.audioPut,
+      get: mocks.audioGet,
       delete: mocks.audioDelete,
     },
   },
@@ -88,6 +91,7 @@ describe('browser scene generation retry wrappers', () => {
   beforeEach(() => {
     mockFetch.mockReset();
     mocks.audioPut.mockReset();
+    mocks.audioGet.mockReset().mockResolvedValue(undefined);
     mocks.audioDelete.mockReset().mockResolvedValue(undefined);
     mocks.poolPut.mockReset();
     mocks.poolReplace.mockReset().mockResolvedValue(undefined);
@@ -329,7 +333,7 @@ describe('browser scene generation retry wrappers', () => {
     expect(mocks.poolRemove).toHaveBeenCalledExactlyOnceWith('ast_audio_allocated');
   });
 
-  it('reclaims earlier allocations when partial scene synthesis fails', async () => {
+  it('preserves successful clips on partial synthesis and does not report a complete duration', async () => {
     const { generateTTSForScene } = await import('@/lib/hooks/use-scene-generator');
     mocks.poolPut.mockResolvedValueOnce('ast_first_audio');
     mockFetch
@@ -359,10 +363,13 @@ describe('browser scene generation retry wrappers', () => {
       maxRetries: 0,
     });
 
-    expect(result).toMatchObject({ success: false, failedCount: 1 });
-    expect(mocks.poolRemove).toHaveBeenCalledExactlyOnceWith('ast_first_audio');
-    expect(mocks.audioDelete).toHaveBeenCalledExactlyOnceWith('ast_first_audio');
-    expect(scene.actions?.every((action) => !('audioId' in action))).toBe(true);
+    // Current main deliberately keeps playable clips when another clip fails.
+    expect(result).toMatchObject({ success: true, failedCount: 1 });
+    expect(mocks.poolRemove).not.toHaveBeenCalled();
+    expect(mocks.audioDelete).not.toHaveBeenCalled();
+    expect(scene.actions?.[0]).toMatchObject({ audioId: 'ast_first_audio' });
+    expect(scene.actions?.[1]).not.toHaveProperty('audioId');
+    expect(scene.timing?.measuredDurationSec).toBeUndefined();
   });
 
   it('waits for parallel TTS workers before rolling back an abandoned scene', async () => {
@@ -409,6 +416,110 @@ describe('browser scene generation retry wrappers', () => {
     expect(mocks.audioDelete).toHaveBeenCalledExactlyOnceWith('ast_late_audio');
     expect(scene.actions?.every((action) => !('audioId' in action))).toBe(true);
   });
+
+  it.each([false, true])(
+    'calibrates aggregate audio and protects navigation during synthesis (navigate=%s)',
+    async (navigate) => {
+      const { calibrateCompletedCourse } = await import('@/lib/hooks/use-scene-generator');
+      const { useStageStore } = await import('@/lib/store/stage');
+      const { assessCourseDuration } = await import('@/lib/generation/course-duration');
+      const pages = [60, 85, 60].map(
+        (actual, index) =>
+          ({
+            id: `page-${index}`,
+            stageId: 'stage-1',
+            type: 'slide',
+            title: 'Example',
+            order: index,
+            content: { type: 'slide', canvas: { elements: [] } },
+            actions: [
+              {
+                id: `speech-${index}`,
+                type: 'speech',
+                text: '保留这个知识点和推演。',
+                audioId: `old-${index}`,
+              },
+            ],
+            timing: { plannedDurationSec: 60, measuredDurationSec: actual },
+          }) as unknown as Scene,
+      );
+      const state = {
+        stage: {
+          id: 'stage-1',
+          timing: {
+            budgetVersion: 1,
+            targetDurationMinutes: 3,
+            expectedAutomaticPages: 3,
+            courseCorrectionAttempts: 0,
+          },
+        },
+        scenes: pages,
+        outlines: [],
+        currentSceneId: 'page-0',
+        mode: 'play',
+        generationEpoch: 1,
+        generationStatus: 'completed',
+        generatingOutlines: [],
+        failedOutlines: [],
+        setGenerationStatus: vi.fn((status: string) => {
+          state.generationStatus = status;
+        }),
+        updateStage: vi.fn((update: { timing: typeof state.stage.timing }) => {
+          state.stage.timing = update.timing;
+        }),
+        updateScene: vi.fn((id: string, update: Partial<Scene>) => {
+          state.scenes = state.scenes.map((scene) =>
+            scene.id === id ? ({ ...scene, ...update } as Scene) : scene,
+          );
+        }),
+        saveToStorage: vi.fn().mockResolvedValue(undefined),
+      };
+      const spy = vi
+        .spyOn(useStageStore, 'getState')
+        .mockImplementation(() => state as unknown as ReturnType<typeof useStageStore.getState>);
+      mocks.audioGet.mockResolvedValue({ duration: 60 });
+      mockFetch.mockImplementation(async (url: string) => {
+        if (url.includes('scene-actions'))
+          return jsonResponse(200, {
+            success: true,
+            scene: {
+              actions: [
+                { id: 'speech-1', type: 'speech', text: '重新解释相同知识点，保留步骤和结论。' },
+              ],
+            },
+          });
+        if (navigate) state.currentSceneId = 'page-1';
+        return jsonResponse(200, { success: true, base64: btoa('measured-audio'), format: 'wav' });
+      });
+      try {
+        if (navigate) {
+          await expect(calibrateCompletedCourse()).rejects.toMatchObject({ name: 'AbortError' });
+          expect(state.scenes).toBe(pages);
+          expect(mocks.poolRemove).toHaveBeenCalledExactlyOnceWith('ast_audio_allocated');
+        } else {
+          await expect(calibrateCompletedCourse()).resolves.toEqual({ attempts: 1, changed: 1 });
+          expect(assessCourseDuration(state.scenes, 3, 3).actualSeconds).toBe(180);
+          expect(state.scenes[1].content).toBe(pages[1].content);
+          expect(state.scenes[0]).toBe(pages[0]);
+          expect(state.scenes[2]).toBe(pages[2]);
+          expect(state.saveToStorage).toHaveBeenCalledOnce();
+          expect(mocks.poolRemove).not.toHaveBeenCalled();
+          await expect(calibrateCompletedCourse()).resolves.toEqual({ attempts: 0, changed: 0 });
+        }
+        expect(state.stage.timing.courseCorrectionAttempts).toBe(1);
+        expect(state.generationStatus).toBe('completed');
+        expect(mockFetch).toHaveBeenCalledTimes(2);
+        const ttsRequest = JSON.parse(mockFetch.mock.calls[1][1].body);
+        expect(ttsRequest.audioId).not.toBe('tts_s1_speech-1');
+        expect(ttsRequest.ttsSpeed).toBe(1);
+        expect(
+          JSON.parse(mockFetch.mock.calls[0][1].body).durationFeedback.courseMeasuredSeconds,
+        ).toBe(205);
+      } finally {
+        spy.mockRestore();
+      }
+    },
+  );
 
   it('replaces allocated audio under the stable id and refreshes its compatibility row', async () => {
     const { generateAndStoreTTS } = await import('@/lib/hooks/use-scene-generator');

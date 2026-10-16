@@ -88,6 +88,7 @@ describe('classroom ZIP export conversion snapshot', () => {
         },
       },
       actions: [{ id: 'a1', type: 'speech', text: 'Hi', audioId: 'tts_s0_a1' }],
+      timing: { plannedDurationSec: 120, measuredDurationSec: 119 },
     };
     const store = new BrowserDocumentStore({
       indexedDB: globalThis.indexedDB as unknown as IDBFactory,
@@ -120,7 +121,8 @@ describe('classroom ZIP export conversion snapshot', () => {
     });
     // The in-memory working state mirrors the persisted document (the user's
     // copy is unconverted too; only the export access converts it).
-    const stage = { id: 'stage-1', name: 'Course', createdAt: 100, updatedAt: 200 };
+    const stage = { id: 'stage-1', name: 'Course', createdAt: 100, updatedAt: 200,
+      timing: { targetDurationMinutes: 2, budgetVersion: 1, expectedAutomaticPages: 1 } };
     const scenes = [legacyScene];
 
     const deps: DocumentMigrationDeps = {
@@ -159,6 +161,8 @@ describe('classroom ZIP export conversion snapshot', () => {
     };
     const exportedSrc = manifest.scenes[0].content.canvas.elements[0].src;
     const exportedAudioRef = manifest.scenes[0].actions?.[0]?.audioRef;
+    expect(manifest.stage.timing).toMatchObject({ targetDurationMinutes: 2, budgetVersion: 1 });
+    expect(manifest.scenes[0].timing).toMatchObject({ plannedDurationSec: 120, measuredDurationSec: 119 });
     expect(exportedSrc).toBe(durableCanvas.elements[0].src);
     expect(exportedSrc).toMatch(/^ast_/);
     expect(exportedAudioRef).toBe('audio/audio-1.mp3');

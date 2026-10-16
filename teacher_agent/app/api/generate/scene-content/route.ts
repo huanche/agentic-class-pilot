@@ -28,6 +28,7 @@ import { resolveVocationalActive } from '@/lib/config/feature-flags';
 import { sortDocumentImagesForVision } from '@/lib/document/bundle';
 import { generatePBLV2Project } from '@/lib/pbl/v2/agents/planner';
 import { sanitizeEnhancedGeneratedContent } from '@/lib/learning-skills/enhanced-courseware-quality';
+import { withSceneContentDuration } from '@/lib/generation/course-duration';
 
 const log = createLogger('Scene Content API');
 
@@ -79,7 +80,9 @@ export async function POST(req: NextRequest) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'stageId is required');
     }
 
-    const outline: SceneOutline = { ...rawOutline };
+    const outline: SceneOutline = withSceneContentDuration({ ...rawOutline,
+      durationBudget: allOutlines.find((page) => page.id === rawOutline.id)?.durationBudget ?? rawOutline.durationBudget,
+    });
 
     // ── Model resolution from request headers/body ──
     // Route per scene-content type (e.g. `scene-content:quiz`); getStageModel
