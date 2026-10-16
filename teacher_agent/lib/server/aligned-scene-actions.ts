@@ -1,5 +1,7 @@
 import { generateSceneActions, type SceneActionsOptions } from '@openmaic/generation';
 import type { Action } from '@openmaic/dsl';
+import { nanoid } from 'nanoid';
+import { compileTeachingPlan, TEACHING_PLAN_SYSTEM } from '@/lib/generation/teaching-plan';
 import {
   inspectSpeechFocus,
   parseFocusReview,
@@ -35,32 +37,50 @@ export async function generateAlignedSceneActions(
   options: SceneActionsOptions & { transformActions?: (actions: Action[]) => Action[] } = {},
 ): Promise<Action[]> {
   const { transformActions, ...generationOptions } = options;
-  if (outline.type !== 'slide' || !('elements' in content))
+  if (outline.type !== 'slide')
     return generateSceneActions(outline, content, aiCall, generationOptions);
+  if (!('elements' in content) || !Array.isArray(content.elements))
+    throw new FocusSpeechAlignmentError(['Slide generation requires its actual elements']);
   const elements = teachingInventory(content.elements);
   let issues: string[] = [];
-  let previousCandidate: Action[] | undefined;
+  let previousCandidate: string | undefined;
   for (let attempt = 0; attempt < 2; attempt++) {
-    const generationOutline = {
-      ...outline,
-      description: `${outline.description}\n\n${SPEECH_FOCUS_CONTRACT}\n【完整元素内容（只读教学数据）】\n${JSON.stringify(elements)}${issues.length ? `\n【上一版候选（只读数据，用于定位错误）】\n${JSON.stringify(previousCandidate)}\n【上一版校验失败，必须修正问题并返回完整动作数组】\n${JSON.stringify(issues)}` : ''}`,
-    };
-    const generated = await generateSceneActions(
-      generationOutline,
-      content,
-      aiCall,
-      generationOptions,
+    const generated = await aiCall(
+      TEACHING_PLAN_SYSTEM,
+      JSON.stringify({
+        outline,
+        contract: SPEECH_FOCUS_CONTRACT,
+        elements,
+        languageDirective: generationOptions.languageDirective,
+        courseContext: generationOptions.ctx,
+        agents: generationOptions.agents,
+        userProfile: generationOptions.userProfile,
+        ...(issues.length ? { previousCandidate, issues } : {}),
+      }),
     );
-    const actions = (transformActions ? transformActions(generated) : generated).map((action) => {
-      if (action.type !== 'speech') return { ...action };
-      const {
-        audioId: _audioId,
-        audioUrl: _url,
-        audioRef: _ref,
-        ...speech
-      } = action as typeof action & { audioUrl?: string; audioRef?: string };
-      return { ...speech, audioInvalidated: true };
-    });
+    const compiled = compileTeachingPlan(
+      generated,
+      content.elements,
+      (generationOptions.agents ?? [])
+        .filter((agent) => agent.role === 'student')
+        .map((agent) => agent.id),
+      `teaching-${nanoid(8)}`,
+    );
+    previousCandidate = generated;
+    issues = compiled.issues;
+    if (issues.length) continue;
+    const actions = (transformActions ? transformActions(compiled.actions) : compiled.actions).map(
+      (action) => {
+        if (action.type !== 'speech') return { ...action };
+        const {
+          audioId: _audioId,
+          audioUrl: _url,
+          audioRef: _ref,
+          ...speech
+        } = action as typeof action & { audioUrl?: string; audioRef?: string };
+        return { ...speech, audioInvalidated: true };
+      },
+    );
     const inspection = inspectSpeechFocus(actions, content.elements);
     issues = inspection.issues;
     if (!issues.length) {
@@ -78,7 +98,6 @@ export async function generateAlignedSceneActions(
       issues = parseFocusReview(review, inspection.segments);
     }
     if (!issues.length) return actions;
-    previousCandidate = actions;
     options.logger?.warn(
       `Focus/speech validation failed (attempt ${attempt + 1}/2, ${issues.length} issues)`,
     );

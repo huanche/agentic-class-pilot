@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import type { Action } from '@openmaic/dsl';
-import { approveFocusReview } from '@/tests/fixtures/focus-review';
+import { approveFocusReview, fixtureTeachingPlan } from '@/tests/fixtures/focus-review';
 
 const mocks = vi.hoisted(() => ({ generate: vi.fn(), llm: vi.fn(), build: vi.fn() }));
 vi.mock('@openmaic/generation', async (original) => ({
@@ -52,30 +52,43 @@ describe('scene action API enforces semantic approval before assembly', () => {
     }));
   });
   it('returns the reviewed paragraph/target unchanged', async () => {
-    mocks.llm.mockImplementation(async (params) => ({ text: approveFocusReview(params.prompt) }));
+    mocks.llm.mockImplementation(async (params) => ({
+      text: params.system.includes('[FOCUS_SPEECH_REVIEW]')
+        ? approveFocusReview(params.prompt)
+        : fixtureTeachingPlan('literal', '字符串没有结束。'),
+    }));
     const response = await POST(request());
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body.scene.actions[0]).toMatchObject({ elementId: 'literal' });
     expect(body.scene.actions[1]).toMatchObject({
-      id: 's',
       text: '字符串没有结束。',
       audioInvalidated: true,
     });
-    expect(mocks.generate).toHaveBeenCalledOnce();
-    expect(mocks.llm).toHaveBeenCalledOnce();
+    expect(mocks.generate).not.toHaveBeenCalled();
+    expect(mocks.llm).toHaveBeenCalledTimes(2);
   });
   it('does not assemble or publish actions that failed both semantic checks', async () => {
-    mocks.llm.mockResolvedValue({
-      text: '{"segments":[{"speechId":"s","targetIds":["literal"],"matches":false,"singleTopic":false,"reason":"mixed topics"}]}',
-    });
+    mocks.llm.mockImplementation(async (params) => ({
+      text: params.system.includes('[FOCUS_SPEECH_REVIEW]')
+        ? JSON.stringify({
+            segments: JSON.parse(params.prompt).segments.map((s: object) => ({
+              ...s,
+              matches: false,
+              singleTopic: false,
+              reason: 'mixed topics',
+            })),
+          })
+        : fixtureTeachingPlan('literal', '字符串没有结束。'),
+    }));
     const response = await POST(request());
     expect(response.status).toBe(422);
     expect(await response.json()).toMatchObject({
       success: false,
       errorCode: 'FOCUS_SPEECH_ALIGNMENT_FAILED',
     });
-    expect(mocks.generate).toHaveBeenCalledTimes(2);
+    expect(mocks.generate).not.toHaveBeenCalled();
+    expect(mocks.llm).toHaveBeenCalledTimes(4);
     expect(mocks.build).not.toHaveBeenCalled();
   });
 });

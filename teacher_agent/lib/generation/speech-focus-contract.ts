@@ -1,11 +1,12 @@
 import type { Action, PPTElement } from '@openmaic/dsl';
 
 export const SPEECH_FOCUS_CONTRACT = `【讲解与聚焦生成合同】
-把每个可指认知识点生成为“目标元素＋讲稿”的单元：先 spotlight/laser，再紧接对应 speech。
-一个聚焦单元只能解释同一个可见区域；讲到另一个区域、步骤或报错类型之前，必须结束当前 speech，切换目标后再生成新的 speech。禁止把“第二个，某概念”放在前一个目标的讲稿末尾。
+把每个可指认知识点生成为同时包含 targetId 和 speech 的教学片段；由代码转换为聚焦和讲解动作，不要输出零散动作数组。
+每段主体讲稿都要声明自己的目标；同一目标分成多段时，每段重复该 targetId。比较表格的实际行列属于主体讲解，不属于无聚焦的整页概览。
+一个片段只能解释同一个可见区域；讲到另一个区域、步骤或报错类型之前，必须结束当前片段，切换目标后再生成新的片段。禁止把“第二个，某概念”放在前一个目标的讲稿末尾。
 只选择本页真实存在的教学元素；比较表格时指向表格，不要指向页标题、建议框或装饰。下方完整元素内容优先于截断的摘要。
 过渡、开场和整页概览可以不聚焦。没有足够证据确定目标时不要猜测。不能为了通过检查而删掉必要教学内容或把主体讲解全部改成不聚焦。
-先 reveal 使目标可见，再聚焦并讲解；保留结论在推导后揭示的教学安排。
+结论在推导后首次讲解时可设置 revealBefore=true，由代码先揭示再聚焦和讲解；保留结论在推导后揭示的教学安排。
 保持课程的内容深度、时长预算、语言要求；增加或压缩讲解都必须保持上述单元边界。`;
 
 export interface SpeechFocusSegment {
@@ -27,6 +28,7 @@ export function teachingInventory(elements: PPTElement[]) {
     return {
       id: element.id,
       type: element.type,
+      ...(element.type === 'video' ? { hasMediaSource: !!element.src } : {}),
       text: shapeText ? `${text} ${shapeText}` : text,
       ...(element.type === 'chart'
         ? { chartType: element.chartType, chartData: element.data }

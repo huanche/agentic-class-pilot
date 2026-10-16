@@ -5,7 +5,7 @@ import type { SceneContext } from '@/lib/agent/tools/regenerate-scene-actions';
 import type { SceneOutline } from '@/lib/types/generation';
 import type { SceneContent } from '@/lib/types/stage';
 import type { PPTElement } from '@openmaic/dsl';
-import { approveFocusReview } from '@/tests/fixtures/focus-review';
+import { approveFocusReview, fixtureTeachingPlan } from '@/tests/fixtures/focus-review';
 
 function slideOutline(id: string): SceneOutline {
   return { id, type: 'slide', title: 'Slide Title', description: 'd', keyPoints: ['a'], order: 0 };
@@ -76,7 +76,7 @@ describe('regenerate_scene tool', () => {
         ? approveFocusReview(user)
         : prompts.length === 1
           ? NEW_SLIDE_JSON
-          : '[]';
+          : fixtureTeachingPlan(JSON.parse(user).elements[0]?.id ?? null, '新内容。');
     });
 
     const tool = makeRegenerateSceneTool({
@@ -109,7 +109,7 @@ describe('regenerate_scene tool', () => {
         ? approveFocusReview(user)
         : prompts.length === 1
           ? NEW_SLIDE_JSON
-          : '[]';
+          : fixtureTeachingPlan(JSON.parse(user).elements[0]?.id ?? null, '新内容。');
     });
 
     const dataSrc = `data:image/png;base64,${'Z'.repeat(2000)}`;

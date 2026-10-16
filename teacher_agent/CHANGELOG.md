@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 
 - Validate slide narration and focus targets together before TTS across all app generation paths; retry one failed candidate and surface unresolved alignment as a failed page.
+- Generate narration as atomic target/text segments and compile them to existing playback actions, including reveal, video and discussion, without guessing missing targets.
 - Preserve generated speech boundaries and carry their focus through provider-driven audio splitting, pause/resume, and actual speech completion.
 
 

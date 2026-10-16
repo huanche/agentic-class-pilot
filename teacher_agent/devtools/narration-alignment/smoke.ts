@@ -6,6 +6,7 @@ import { callLLM } from '@/lib/ai/llm';
 import {
   generateAlignedSceneActions,
   FOCUS_REVIEW_SYSTEM,
+  FocusSpeechAlignmentError,
 } from '@/lib/server/aligned-scene-actions';
 import { inspectSpeechFocus, parseFocusReview } from '@/lib/generation/speech-focus-contract';
 import { withNarrationDuration } from '@/lib/generation/course-duration';
@@ -19,7 +20,7 @@ import { DEFAULT_TTS_MODELS, DEFAULT_TTS_VOICES, TTS_PROVIDERS } from '@/lib/aud
 import { measureAudioDuration } from '@/lib/audio/audio-duration';
 import type { PPTElement, Action } from '@openmaic/dsl';
 import type { TTSProviderId } from '@/lib/audio/types';
-import { buildPrompt } from '@openmaic/generation';
+import { buildPrompt, buildCompleteScene, generateSceneContent } from '@openmaic/generation';
 
 // Same header finalization as the production classroom TTS writer.
 function finalizeWav(audio: Buffer): Buffer {
@@ -84,6 +85,7 @@ if (process.env.FOCUS_SMOKE_CHECK_ONLY === '1') {
 }
 const resolved = await resolveModel({ stage: 'scene-actions' });
 const calls: Array<{ kind: string; milliseconds: number }> = [];
+const exchanges: Array<{ kind: string; input: string; output: string }> = [];
 const aiCall = async (system: string, user: string) => {
   const start = Date.now();
   const response = await callLLM(
@@ -99,10 +101,14 @@ const aiCall = async (system: string, user: string) => {
     undefined,
     resolved.thinkingConfig,
   );
+  const kind = system.includes('[FOCUS_SPEECH_REVIEW]') ? 'review' : 'generate';
   calls.push({
-    kind: system.includes('[FOCUS_SPEECH_REVIEW]') ? 'review' : 'generate',
+    kind,
     milliseconds: Date.now() - start,
   });
+  // Synthetic teaching data only; preserve rejected candidates for diagnosis.
+  exchanges.push({ kind, input: user, output: response.text });
+  await fs.writeFile(path.join(output, 'exchanges.json'), JSON.stringify(exchanges, null, 2));
   return response.text;
 };
 const prefix = `sample_${Date.now()}`;
@@ -150,7 +156,7 @@ if (!negativeIssues.length)
   throw new Error('Live reviewer incorrectly approved the known cross-topic mismatch');
 console.log(JSON.stringify({ check: 'known-mismatch-rejected', passed: true }));
 
-const cases = [
+const cases: Array<{ title: string; instruction: string; elements?: PPTElement[] }> = [
   {
     title: 'Python：区分语法错误与名称错误',
     instruction:
@@ -193,6 +199,16 @@ const cases = [
       text('conclusion', '结论：赋值先计算右侧，再转换为左侧变量的类型。', 390),
     ],
   },
+  {
+    title: '平均数与中位数',
+    instruction:
+      '使用数据 1、2、3、4、20，分别展示平均数 6 和中位数 3 的计算步骤。两个概念各用独立文字区域，最后用独立结论说明较大的数会影响平均数。页面只用文字和形状，不使用图片和视频。',
+  },
+  {
+    title: 'Python：for 与 while',
+    instruction:
+      '分别用独立区域展示 for 遍历列表和 while 根据条件循环的简短代码，再用独立区域说明选择循环的建议。只使用文字和形状，不使用图片和视频。讲解每种代码时指向相应区域。',
+  },
 ];
 const ttsId = Object.entries(getServerTTSProviders()).find(
   ([id, config]) => id !== 'browser-native-tts' && !config.disabled,
@@ -200,9 +216,10 @@ const ttsId = Object.entries(getServerTTSProviders()).find(
 if (process.env.FOCUS_SMOKE_TTS === '1' && !ttsId)
   throw new Error('No managed TTS provider available');
 const scenes = [];
+const failures: Array<{ page: number; title: string; issues: readonly string[] }> = [];
 let audioNumber = 0;
-for (const [index, item] of cases.entries()) {
-  const elements = [text(`title_${index}`, item.title, 25), ...item.elements];
+const trials = [1, 2].flatMap((round) => cases.map((item) => ({ ...item, round })));
+for (const [index, item] of trials.entries()) {
   const outline = withNarrationDuration({
     id: `outline_${index}`,
     type: 'slide',
@@ -212,9 +229,33 @@ for (const [index, item] of cases.entries()) {
     order: index + 1,
     durationBudget: { targetSeconds: 30 },
   });
-  const actions = await generateAlignedSceneActions(outline, { elements }, aiCall, {
-    languageDirective: '使用简体中文讲解，保留代码和报错名称。',
-  });
+  const generatedContent = item.elements
+    ? { elements: [text(`title_${index}`, item.title, 25), ...item.elements] }
+    : await generateSceneContent(outline, aiCall, {
+        languageDirective: '使用简体中文，保留代码和技术名称。',
+      });
+  if (!generatedContent || !('elements' in generatedContent))
+    throw new Error('Slide content generation did not complete');
+  let actions: Action[];
+  try {
+    actions = await generateAlignedSceneActions(outline, generatedContent, aiCall, {
+      languageDirective: '使用简体中文讲解，保留代码和报错名称。',
+      ctx: {
+        pageIndex: (index % cases.length) + 1,
+        totalPages: cases.length,
+        allTitles: cases.map((c) => c.title),
+        previousSpeeches: [],
+      },
+    });
+  } catch (error) {
+    if (!(error instanceof FocusSpeechAlignmentError)) throw error;
+    failures.push({ page: index + 1, title: item.title, issues: error.issues });
+    await fs.writeFile(path.join(output, 'failures.json'), JSON.stringify(failures, null, 2));
+    console.log(
+      JSON.stringify({ check: 'generated-page-rejected', page: index + 1, issues: error.issues }),
+    );
+    continue;
+  }
   const speeches = actions.filter((action) => action.type === 'speech');
   if (speeches.length > 12 || speeches.reduce((sum, action) => sum + action.text.length, 0) > 1200)
     throw new Error('Unexpectedly large smoke narration; refusing unbounded TTS calls');
@@ -241,32 +282,23 @@ for (const [index, item] of cases.entries()) {
       seconds += measureAudioDuration(bytes, result.format) ?? 0;
     }
   }
-  scenes.push({
-    id: `scene_${index}`,
-    stageId: 'focus-smoke',
-    order: index + 1,
-    type: 'slide',
-    title: item.title,
-    actions,
-    content: {
-      type: 'slide',
-      canvas: {
-        id: `canvas_${index}`,
-        viewportSize: 1000,
-        viewportRatio: 0.5625,
-        background: { type: 'solid', color: '#ffffff' },
-        elements,
-      },
-    },
-  });
+  const scene = buildCompleteScene(outline, generatedContent, actions, 'focus-smoke');
+  if (!scene) throw new Error('Slide assembly failed');
+  scenes.push(scene);
   await fs.writeFile(
     path.join(output, 'samples.json'),
-    JSON.stringify({ scenes, calls, model: resolved.modelString, negativeIssues }, null, 2),
+    JSON.stringify(
+      { scenes, calls, failures, model: resolved.modelString, negativeIssues },
+      null,
+      2,
+    ),
   );
   console.log(
     JSON.stringify({
       check: 'generated-page',
       page: index + 1,
+      round: item.round,
+      generatedContent: !item.elements,
       approved: true,
       speechSegments: speeches.length,
       seconds: Number(seconds.toFixed(2)),
@@ -277,8 +309,9 @@ console.log(
   JSON.stringify({
     check: 'complete',
     pages: scenes.length,
+    rejectedPages: failures.length,
     audioClips: audioNumber,
     modelCalls: calls.length,
   }),
 );
-process.exit(0);
+process.exit(failures.length ? 1 : 0);

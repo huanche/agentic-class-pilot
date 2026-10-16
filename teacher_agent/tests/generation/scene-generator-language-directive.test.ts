@@ -14,7 +14,7 @@ import { generateSceneActions, generateSceneContent, type AICallFn } from '@open
 import { buildSceneFromOutline } from '@/lib/server/scene-generation';
 import { normalizeLegacyPBLContent } from '@/lib/pbl/legacy/read';
 import { legacyPBLSceneFixture } from '@/tests/fixtures/pbl-v1-scene';
-import { approveFocusReview } from '@/tests/fixtures/focus-review';
+import { approveFocusReview, fixtureTeachingPlan } from '@/tests/fixtures/focus-review';
 import type {
   SceneOutline,
   GeneratedSlideContent,
@@ -289,6 +289,7 @@ describe('scene-generator language directive threading (issue #472)', () => {
         captured.push(user);
         // First call is content (expects JSON); second is actions (expects array)
         if (system.includes('[FOCUS_SPEECH_REVIEW]')) return approveFocusReview(user);
+        if (system.includes('[SLIDE_TEACHING_PLAN]')) return fixtureTeachingPlan();
         return captured.length === 1
           ? JSON.stringify({ elements: [], background: null, remark: '' })
           : '[]';

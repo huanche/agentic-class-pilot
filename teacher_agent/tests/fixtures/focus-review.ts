@@ -11,3 +11,12 @@ export function approveFocusReview(user: string): string {
     })),
   });
 }
+
+/** A minimal plan for transport tests; semantic behavior is tested separately. */
+export function fixtureTeachingPlan(targetId: string | null = null, speech = '本页概览。'): string {
+  return JSON.stringify({
+    segments: [
+      { kind: 'narration', purpose: targetId ? 'explanation' : 'overview', targetId, speech },
+    ],
+  });
+}

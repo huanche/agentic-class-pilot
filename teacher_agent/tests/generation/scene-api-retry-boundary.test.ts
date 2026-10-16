@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SceneOutline } from '@/lib/types/generation';
 import { legacyPBLSceneFixture } from '@/tests/fixtures/pbl-v1-scene';
-import { approveFocusReview } from '@/tests/fixtures/focus-review';
+import { approveFocusReview, fixtureTeachingPlan } from '@/tests/fixtures/focus-review';
 
 const mocks = vi.hoisted(() => ({
   callLLM: vi.fn(),
@@ -83,7 +83,9 @@ describe('scene API retry boundary', () => {
     mocks.callLLM.mockImplementation(async (params) => ({
       text: params.system?.includes('[FOCUS_SPEECH_REVIEW]')
         ? approveFocusReview(params.prompt)
-        : 'ok',
+        : params.system?.includes('[SLIDE_TEACHING_PLAN]')
+          ? fixtureTeachingPlan()
+          : 'ok',
     }));
     mocks.resolveVocationalActive.mockReturnValue(false);
   });
@@ -175,6 +177,12 @@ describe('scene API retry boundary', () => {
     expect(body.success).toBe(true);
     expect(body.scene.content.canvas).toEqual(canvas);
     expect(body.scene.content.canvas.animations).toEqual([{ id: 'animation-1' }]);
+    const planCall = mocks.callLLM.mock.calls.find((call) =>
+      call[0].system?.includes('[SLIDE_TEACHING_PLAN]'),
+    );
+    expect(JSON.parse(planCall![0].prompt).elements).toMatchObject([
+      { id: 'title', text: '原始标题' },
+    ]);
   });
 
   it('normalizes stored legacy PBL content before generating actions and building the scene', async () => {
