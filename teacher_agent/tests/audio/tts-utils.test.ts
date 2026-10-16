@@ -99,4 +99,37 @@ describe('splitLongSpeechActions', () => {
     // …and the text is preserved across the split.
     expect(out.map((a) => a.text).join('')).toBe(long);
   });
+
+  it('carries the same focus to every audio chunk and never repeats reveal', () => {
+    const cue: Action = { id: 'focus', type: 'spotlight', elementId: 'formula' };
+    const reveal: Action = { id: 'show', type: 'reveal', elementId: 'formula' };
+    const long = '这段话始终解释同一个公式。'.repeat(130);
+    const out = splitLongSpeechActions(
+      [reveal, cue, speech('a', long), speech('next', '下面进入下一部分。')],
+      'glm-tts',
+    );
+    const chunks = out.filter((action) => action.type === 'speech' && action.id !== 'next');
+    expect(out.filter((action) => action.type === 'reveal')).toEqual([reveal]);
+    for (const chunk of chunks)
+      expect(out[out.indexOf(chunk) - 1]).toMatchObject({
+        type: 'spotlight',
+        elementId: 'formula',
+      });
+    expect(new Set(out.map((action) => action.id)).size).toBe(out.length);
+    expect(out.at(-1)).toEqual(speech('next', '下面进入下一部分。'));
+  });
+
+  it('never collides with existing action ids or reuses a parent audio URL after splitting', () => {
+    const parent = {
+      ...speech('a', '讲解同一个公式。'.repeat(200)),
+      audioId: 'old',
+      audioUrl: 'https://old.invalid/audio.wav',
+    };
+    const out = splitLongSpeechActions([parent, speech('a_tts_1', '另一个完整段落。')], 'glm-tts');
+    expect(new Set(out.map((action) => action.id)).size).toBe(out.length);
+    for (const action of out.slice(0, -1)) {
+      expect(action).not.toHaveProperty('audioId');
+      expect(action).not.toHaveProperty('audioUrl');
+    }
+  });
 });

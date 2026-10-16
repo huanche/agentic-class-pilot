@@ -6,13 +6,42 @@ import {
 } from '@/lib/import/ppt-narration';
 
 describe('PPT narration alignment', () => {
+  it('preserves each generated speech boundary around focus and reveal cues', () => {
+    const first = '第一步打开 python.org。选择稳定版。下载完成后再安装。';
+    const second = '第二步勾选 Add Python to PATH，然后点击 Install Now。';
+    const input = [
+      { id: 'f1', type: 'spotlight', elementId: 'download' },
+      { id: 's1', type: 'speech', text: first },
+      { id: 'r', type: 'reveal', elementId: 'install' },
+      { id: 'f2', type: 'spotlight', elementId: 'install' },
+      { id: 's2', type: 'speech', text: second },
+    ] as Parameters<typeof alignActionsToPptNarration>[0];
+    for (const preserveGeneratedLength of [true, false]) {
+      const output = alignActionsToPptNarration(input, undefined, [], { preserveGeneratedLength });
+      expect(
+        output.filter((action) => action.type === 'speech').map((action) => action.text),
+      ).toEqual([first, second]);
+      expect(output.map((action) => action.id)).toEqual(input.map((action) => action.id));
+    }
+  });
+
   it('keeps the full generated narration when a measured duration budget is in use', () => {
     const longText = '这是按教师时长预算生成的完整讲解，包含必要的解释与示例。'.repeat(40);
-    const actions = alignActionsToPptNarration([
-      { id: 'a', type: 'speech', text: longText },
-      { id: 'r', type: 'reveal', elementId: 'conclusion' },
-    ], undefined, [], { preserveGeneratedLength: true });
-    expect(actions.filter((action) => action.type === 'speech').map((action) => action.text).join('')).toBe(longText);
+    const actions = alignActionsToPptNarration(
+      [
+        { id: 'a', type: 'speech', text: longText },
+        { id: 'r', type: 'reveal', elementId: 'conclusion' },
+      ],
+      undefined,
+      [],
+      { preserveGeneratedLength: true },
+    );
+    expect(
+      actions
+        .filter((action) => action.type === 'speech')
+        .map((action) => action.text)
+        .join(''),
+    ).toBe(longText);
     expect(actions.at(-1)?.type).toBe('reveal');
   });
   it('builds a page-grounded narration brief from notes and visible content', () => {
@@ -38,16 +67,16 @@ describe('PPT narration alignment', () => {
     const actions = alignActionsToPptNarration(
       [
         { id: 's1', type: 'speech', text: '模型扩写一' },
-        { id: 'h1', type: 'spotlight', targetIds: ['title'] },
+        { id: 'h1', type: 'spotlight', elementId: 'title' },
         { id: 's2', type: 'speech', text: '模型扩写二' },
-      ] as any,
+      ],
       '第一页讲稿。只讲本页内容。',
     );
     expect(actions.filter((action) => action.type === 'spotlight')).toHaveLength(1);
     expect(
       actions
         .filter((action) => action.type === 'speech')
-        .map((action: any) => action.text)
+        .map((action) => action.text)
         .join(''),
     ).toBe('模型扩写一模型扩写二');
   });
@@ -82,10 +111,10 @@ describe('PPT narration alignment', () => {
       '其中接收功率由符号P表示，下标RX代表接收端，T表示观察时间。'.repeat(6) +
       '积分表示累计观察区间内的信号能量，再除以时间得到平均功率。';
     const actions = alignActionsToPptNarration(
-      [{ id: 's1', type: 'speech', text: explanation }] as any,
+      [{ id: 's1', type: 'speech', text: explanation }],
       '【公式增强页面】\n本页公式（LaTeX）：P_{RX}=...',
     );
-    const speech = actions.find((action) => action.type === 'speech') as any;
+    const speech = actions.find((action) => action.type === 'speech')!;
 
     expect(speech.text.length).toBeGreaterThan(220);
     expect(speech.text).toContain('积分表示累计观察区间内的信号能量');
@@ -128,45 +157,54 @@ describe('PPT narration alignment', () => {
     expect(scripts.join('')).not.toContain('第二页');
   });
 
-  it('caps total speech without removing spotlight order', () => {
+  it('caps legacy narration within the original speech slots instead of moving sentences to later targets', () => {
+    const first = `第一句。${'深入解释'.repeat(100)}。`;
     const actions = alignActionsToPptNarration(
       [
-        { id: 's1', type: 'speech', text: `第一句。${'深入解释'.repeat(100)}。` },
-        { id: 'h1', type: 'spotlight', targetIds: ['diagram'] },
+        { id: 'h1', type: 'spotlight', elementId: 'first' },
+        { id: 's1', type: 'speech', text: first },
+        { id: 'h2', type: 'spotlight', elementId: 'last' },
         { id: 's2', type: 'speech', text: '最后一句。' },
-      ] as any,
+      ],
       '本页材料',
+      [
+        { id: 'first', type: 'text', content: '深入解释' },
+        { id: 'last', type: 'text', content: '最后一句' },
+      ] as unknown as Parameters<typeof alignActionsToPptNarration>[2],
     );
     const narration = actions
       .filter((action) => action.type === 'speech')
-      .map((action: any) => action.text)
+      .map((action) => action.text)
       .join('');
     expect(narration.length).toBeLessThanOrEqual(222);
-    expect(actions.findIndex((action) => action.type === 'spotlight')).toBeGreaterThan(0);
+    expect(actions.map((action) => action.id)).toEqual(['h1', 's1']);
+    expect(actions.find((action) => action.id === 's1')).toMatchObject({
+      text: expect.stringContaining('第一句。'),
+    });
   });
 
-  it('rebinds a mismatched focus cue to the element explained next', () => {
+  it('leaves semantic mismatch detection to the generation gate rather than guessing another target', () => {
     const actions = alignFocusActionsToSpeech(
       [
         { id: 'focus', type: 'spotlight', elementId: 'wired' },
         { id: 'speech', type: 'speech', text: '无线信道容易受到多径干扰。' },
-      ] as any,
+      ],
       [
         { id: 'wired', type: 'text', content: '<p>有线信道部署成本</p>' },
         { id: 'wireless', type: 'text', content: '<p>无线信道的多径干扰</p>' },
-      ] as any,
+      ] as unknown as Parameters<typeof alignFocusActionsToSpeech>[1],
     );
-    expect((actions[0] as any).elementId).toBe('wireless');
+    expect(actions[0]).toMatchObject({ elementId: 'wired' });
   });
 
-  it('drops a focus cue when the following explanation has no matching element', () => {
+  it('drops orphaned visual cues instead of pairing them with an earlier speech', () => {
     const actions = alignFocusActionsToSpeech(
       [
-        { id: 'focus', type: 'laser', elementId: 'decorative' },
-        { id: 'speech', type: 'speech', text: '下面进入课堂练习。' },
-      ] as any,
-      [{ id: 'decorative', type: 'text', content: '<p>无线信道</p>' }] as any,
+        { id: 's', type: 'speech', text: '本页讲解已结束。' },
+        { id: 'f', type: 'spotlight', elementId: 'late' },
+      ],
+      [],
     );
-    expect(actions).toEqual([{ id: 'speech', type: 'speech', text: '下面进入课堂练习。' }]);
+    expect(actions.map((action) => action.id)).toEqual(['s']);
   });
 });

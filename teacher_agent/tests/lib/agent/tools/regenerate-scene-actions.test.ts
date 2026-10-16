@@ -12,6 +12,7 @@ import { generateSceneActions } from '@openmaic/generation';
 import type { SlideContent } from '@/lib/types/stage';
 import type { PPTElement, Slide } from '@openmaic/dsl';
 import { legacyPBLSceneFixture } from '@/tests/fixtures/pbl-v1-scene';
+import { approveFocusReview } from '@/tests/fixtures/focus-review';
 
 /** Minimal SceneOutline stub */
 const stubOutline = (id: string, title: string, order = 1) => ({
@@ -70,7 +71,7 @@ function makeDeps(sceneId: string, extra?: Partial<SceneContext>) {
     ...extra,
   };
   return {
-    aiCall: async () => '',
+    aiCall: async (_stage: string, _system: string, user: string) => approveFocusReview(user),
     getSceneContext: (id: string) => (id === sceneId ? ctx : undefined),
   };
 }
@@ -188,7 +189,7 @@ describe('regenerate_scene_actions', () => {
       stageId: 'stage1',
     };
     const deps = {
-      aiCall: async () => '',
+      aiCall: async (_stage: string, _system: string, user: string) => approveFocusReview(user),
       getSceneContext: (id: string) => (id === 's2' ? multiCtx : undefined),
     };
     const tool = makeRegenerateSceneActionsTool(deps);
@@ -217,7 +218,7 @@ describe('regenerate_scene_actions', () => {
 
   // ── Bug 1 & Bug 2: empty generation is surfaced as an error ──────────────────
   it('returns isError when generateSceneActions yields an empty array', async () => {
-    mockGen.mockResolvedValueOnce([]);
+    mockGen.mockResolvedValue([]);
 
     const tool = makeRegenerateSceneActionsTool(makeDeps('s1'));
     const res = await tool.execute('tc-empty', { sceneId: 's1' });
@@ -225,7 +226,7 @@ describe('regenerate_scene_actions', () => {
     expect((res as { isError?: boolean }).isError).toBe(true);
     expect((res.details as { actions: unknown[] }).actions).toHaveLength(0);
     const text = (res.content[0] as { type: string; text: string }).text;
-    expect(text).toMatch(/no actions|no action|0 action/i);
+    expect(text).toContain('讲解与聚焦校验未通过');
   });
 
   it('tool has expected metadata', () => {

@@ -161,6 +161,29 @@ describe('browser scene generation retry wrappers', () => {
     expect(mockFetch).toHaveBeenCalledTimes(1);
   });
 
+  it('keeps semantic alignment failures failed without repeating model calls or generating audio', async () => {
+    const { fetchSceneActions } = await import('@/lib/hooks/use-scene-generator');
+    mockFetch.mockResolvedValue(
+      jsonResponse(422, {
+        success: false,
+        errorCode: 'FOCUS_SPEECH_ALIGNMENT_FAILED',
+        error: '讲解与聚焦校验未通过',
+      }),
+    );
+    const result = await fetchSceneActions(
+      { outline, allOutlines: [outline], content: { elements: [] }, stageId: 'stage-1' },
+      undefined,
+      retryOptions,
+    );
+    expect(result).toMatchObject({
+      success: false,
+      errorCode: 'FOCUS_SPEECH_ALIGNMENT_FAILED',
+      statusCode: 422,
+    });
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(mocks.poolPut).not.toHaveBeenCalled();
+  });
+
   it('preserves scene content error metadata for localized UI messages', async () => {
     const { fetchSceneContent } = await import('@/lib/hooks/use-scene-generator');
     mockFetch.mockResolvedValue(

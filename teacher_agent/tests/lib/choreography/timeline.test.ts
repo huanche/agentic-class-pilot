@@ -105,22 +105,24 @@ describe('resolveActionTimeline — fire-and-forget effects do not advance the c
     expect(resolveActionTimeline(scenes)[0].durationMs).toBe(2000);
   });
 
-  it('lives its full EFFECT_AUTO_CLEAR_MS when the scene runs long enough', () => {
-    // speech dwell 6000 > 5000, so the auto-clear timer fires before the boundary.
+  it('holds a paired cue until a long speech ends', () => {
     const scenes = [
       sc('S0', [
         act({ id: 'sp', type: 'spotlight', elementId: 'e1' }),
         speech('s', '中'.repeat(40)),
       ]),
     ];
-    expect(resolveActionTimeline(scenes)[0].durationMs).toBe(EFFECT_AUTO_CLEAR_MS);
+    expect(resolveActionTimeline(scenes)[0].durationMs).toBe(6000);
+    expect(resolveActionTimeline(scenes, { getAudioDurationMs: () => 20_000 })[0].durationMs).toBe(
+      20_000,
+    );
+    expect(
+      resolveActionTimeline(scenes, { playbackSpeed: 2, getAudioDurationMs: () => 20_000 })[0]
+        .durationMs,
+    ).toBe(10_000);
   });
 
-  it('a later effect resets the shared clear timer, extending earlier effects', () => {
-    // spotlight@0, then speech(3000), then laser@3000 (resets the shared timer),
-    // then speech(6000) → completion 9000. The shared timer last fires at
-    // 3000+5000=8000, so BOTH effects clear together at 8000: spotlight lives
-    // 8000ms (extended past its own 5000), laser lives 5000ms.
+  it('clears each cue at its own speech end before the next cue starts', () => {
     const scenes = [
       sc('S0', [
         act({ id: 'sp', type: 'spotlight', elementId: 'e1' }),
@@ -130,18 +132,15 @@ describe('resolveActionTimeline — fire-and-forget effects do not advance the c
       ]),
     ];
     const tl = resolveActionTimeline(scenes);
-    expect(tl[0]).toMatchObject({ startMs: 0, durationMs: 8000, blocking: false }); // spotlight
+    expect(tl[0]).toMatchObject({ startMs: 0, durationMs: 3000, blocking: false });
     expect(tl[2]).toMatchObject({
       startMs: 3000,
-      durationMs: EFFECT_AUTO_CLEAR_MS,
+      durationMs: 6000,
       blocking: false,
     }); // laser
   });
 
-  it('breaks the chain when the gap between effects exceeds EFFECT_AUTO_CLEAR_MS', () => {
-    // spotlight@0; speech(6000) > 5000, so the shared timer for the spotlight
-    // already fired at 5000 before the laser@6000 arrives. The laser starts a
-    // fresh 5000 window. Long trailing speech keeps both within their own scene.
+  it('does not let a later cue change a completed long speech focus', () => {
     const scenes = [
       sc('S0', [
         act({ id: 'sp', type: 'spotlight', elementId: 'e1' }),
@@ -151,8 +150,8 @@ describe('resolveActionTimeline — fire-and-forget effects do not advance the c
       ]),
     ];
     const tl = resolveActionTimeline(scenes);
-    expect(tl[0]).toMatchObject({ startMs: 0, durationMs: EFFECT_AUTO_CLEAR_MS }); // spotlight: own 5000
-    expect(tl[2]).toMatchObject({ startMs: 6000, durationMs: EFFECT_AUTO_CLEAR_MS }); // laser: own 5000
+    expect(tl[0]).toMatchObject({ startMs: 0, durationMs: 6000 });
+    expect(tl[2]).toMatchObject({ startMs: 6000, durationMs: 6000 });
   });
 
   it('breaks the chain at an EXACT 5s boundary (earlier clear timer fires first)', () => {

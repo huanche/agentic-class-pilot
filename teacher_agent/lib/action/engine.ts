@@ -162,6 +162,8 @@ export type WidgetMessageCallback = (type: string, payload: Record<string, unkno
 export interface ActionExecutionOptions {
   silent?: boolean;
   signal?: AbortSignal;
+  /** Sequential narration owns the lifetime; standalone/live cues keep the timer. */
+  persistEffects?: boolean;
 }
 
 export class ActionEngine {
@@ -221,10 +223,10 @@ export class ActionEngine {
     switch (action.type) {
       // Fire-and-forget
       case 'spotlight':
-        this.executeSpotlight(action);
+        this.executeSpotlight(action, options.persistEffects);
         return;
       case 'laser':
-        this.executeLaser(action);
+        this.executeLaser(action, options.persistEffects);
         return;
       case 'reveal':
         return this.executeReveal(action as RevealAction);
@@ -303,10 +305,12 @@ export class ActionEngine {
   }
 
   /** Schedule auto-clear for fire-and-forget effects */
-  private scheduleEffectClear(): void {
+  private scheduleEffectClear(persist = false): void {
     if (this.effectTimer) {
       clearTimeout(this.effectTimer);
+      this.effectTimer = null;
     }
+    if (persist) return;
     this.effectTimer = setTimeout(() => {
       useCanvasStore.getState().clearAllEffects();
       this.effectTimer = null;
@@ -315,18 +319,18 @@ export class ActionEngine {
 
   // ==================== Fire-and-forget ====================
 
-  private executeSpotlight(action: SpotlightAction): void {
+  private executeSpotlight(action: SpotlightAction, persist = false): void {
     useCanvasStore.getState().setSpotlight(action.elementId, {
       dimness: action.dimOpacity ?? 0.5,
     });
-    this.scheduleEffectClear();
+    this.scheduleEffectClear(persist);
   }
 
-  private executeLaser(action: LaserAction): void {
+  private executeLaser(action: LaserAction, persist = false): void {
     useCanvasStore.getState().setLaser(action.elementId, {
       color: action.color ?? '#ff0000',
     });
-    this.scheduleEffectClear();
+    this.scheduleEffectClear(persist);
   }
 
   // ==================== Synchronous — Speech ====================

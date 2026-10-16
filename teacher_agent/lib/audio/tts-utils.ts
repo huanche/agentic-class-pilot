@@ -101,23 +101,48 @@ export function splitLongSpeechActions(actions: Action[], providerId: TTSProvide
   if (!maxLength) return actions;
 
   let didSplit = false;
-  const nextActions: Action[] = actions.flatMap((action) => {
+  const usedIds = new Set(actions.map((action) => action.id));
+  const uniqueId = (base: string) => {
+    let id = base;
+    let suffix = 1;
+    while (usedIds.has(id)) id = `${base}_${suffix++}`;
+    usedIds.add(id);
+    return id;
+  };
+  const nextActions: Action[] = actions.flatMap((action, index) => {
     if (action.type !== 'speech' || !action.text || action.text.length <= maxLength)
       return [action];
 
     const chunks = splitLongSpeechText(action.text, maxLength);
     if (chunks.length <= 1) return [action];
     didSplit = true;
-    const { audioId: _audioId, ...baseAction } = action as SpeechAction;
+    const {
+      audioId: _audioId,
+      audioUrl: _url,
+      audioRef: _ref,
+      ...baseAction
+    } = action as SpeechAction & { audioUrl?: string; audioRef?: string };
+    const cues: Extract<Action, { type: 'spotlight' | 'laser' }>[] = [];
+    for (let previous = index - 1; previous >= 0; previous--) {
+      const cue = actions[previous];
+      if (cue.type === 'spotlight' || cue.type === 'laser') cues.unshift(cue);
+      else if (cue.type !== 'reveal' && cue.type !== 'discussion') break;
+    }
 
     log.info(
       `Split speech for ${providerId}: action=${action.id}, len=${action.text.length}, chunks=${chunks.length}`,
     );
-    return chunks.map((chunk, i) => ({
-      ...baseAction,
-      id: `${action.id}_tts_${i + 1}`,
-      text: chunk,
-    }));
+    return chunks.flatMap((chunk, i): Action[] => [
+      ...(i
+        ? cues.map((cue) => ({ ...cue, id: uniqueId(`${cue.id}_${action.id}_tts_${i + 1}`) }))
+        : []),
+      {
+        ...baseAction,
+        id: uniqueId(`${action.id}_tts_${i + 1}`),
+        text: chunk,
+        audioInvalidated: true,
+      },
+    ]);
   });
   return didSplit ? nextActions : actions;
 }

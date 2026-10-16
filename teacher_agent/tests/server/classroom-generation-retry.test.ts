@@ -52,6 +52,10 @@ vi.mock('@/lib/server/scene-generation', () => ({
   createSceneWithActions: mocks.createSceneWithActions,
 }));
 
+vi.mock('@/lib/server/aligned-scene-actions', () => ({
+  generateAlignedSceneActions: mocks.generateSceneActions,
+}));
+
 vi.mock('@/lib/server/classroom-storage', () => ({
   persistClassroom: mocks.persistClassroom,
 }));
@@ -155,18 +159,27 @@ describe('classroom scene generation retries', () => {
     );
   });
 
-  it.each([undefined, 20])('carries the optional target %s through outline, narration, and saved stage', async (input) => {
-    mocks.generateSceneContent.mockResolvedValue(slideContent);
-    const { result } = await generateWithProgress(input);
-    const minutes = input ?? 28;
-    expect(mocks.generateSceneOutlinesFromRequirements.mock.calls[0][0].targetDurationMinutes).toBe(minutes);
-    expect(mocks.generateSceneActions.mock.calls[0][0].description).toContain(`${minutes * 60} 秒`);
-    expect(mocks.generateSceneContent.mock.calls[0][0].description).toContain('本页内容深度要求');
-    expect(mocks.generateSceneContent.mock.calls[0][0].description).toContain(`${minutes * 60} 秒`);
-    expect(result.stage.timing?.targetDurationMinutes).toBe(minutes);
-    expect(result.scenes[0].timing?.plannedDurationSec).toBe(minutes * 60);
-    expect(result.scenes[0].timing?.measuredDurationSec).toBeUndefined();
-  });
+  it.each([undefined, 20])(
+    'carries the optional target %s through outline, narration, and saved stage',
+    async (input) => {
+      mocks.generateSceneContent.mockResolvedValue(slideContent);
+      const { result } = await generateWithProgress(input);
+      const minutes = input ?? 28;
+      expect(
+        mocks.generateSceneOutlinesFromRequirements.mock.calls[0][0].targetDurationMinutes,
+      ).toBe(minutes);
+      expect(mocks.generateSceneActions.mock.calls[0][0].description).toContain(
+        `${minutes * 60} 秒`,
+      );
+      expect(mocks.generateSceneContent.mock.calls[0][0].description).toContain('本页内容深度要求');
+      expect(mocks.generateSceneContent.mock.calls[0][0].description).toContain(
+        `${minutes * 60} 秒`,
+      );
+      expect(result.stage.timing?.targetDurationMinutes).toBe(minutes);
+      expect(result.scenes[0].timing?.plannedDurationSec).toBe(minutes * 60);
+      expect(result.scenes[0].timing?.measuredDurationSec).toBeUndefined();
+    },
+  );
 
   it('forwards classroom thinking config to scene retry LLM calls', async () => {
     const thinkingConfig = { enabled: true, effort: 'high' };

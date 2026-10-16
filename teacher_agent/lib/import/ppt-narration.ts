@@ -1,10 +1,10 @@
 import type { Action } from '@/lib/types/action';
+import { focusSpeechIndex } from '@/lib/choreography/timeline';
 import type { PPTElement } from '@openmaic/dsl';
 import type { PptContentDraft } from '@/lib/types/generation';
 import { HIGH_FIDELITY_COURSEWARE_POLICY } from '@/lib/import/high-fidelity-courseware-policy';
 
-export const MAX_PPT_NARRATION_CHARS =
-  HIGH_FIDELITY_COURSEWARE_POLICY.narration.regularMaxChars;
+export const MAX_PPT_NARRATION_CHARS = HIGH_FIDELITY_COURSEWARE_POLICY.narration.regularMaxChars;
 export const MAX_FORMULA_NARRATION_CHARS =
   HIGH_FIDELITY_COURSEWARE_POLICY.narration.formulaMaxChars;
 export const FORMULA_NARRATION_MARKER = '【公式增强页面】';
@@ -54,76 +54,13 @@ export function buildPptNarrationScripts(draft?: PptContentDraft): string[] {
     });
 }
 
-function splitForSlots(script: string, slots: number): string[] {
-  if (slots <= 1) return [script];
-  const sentences = script
-    .match(/[^。！？.!?]+[。！？.!?]?/g)
-    ?.map(compact)
-    .filter(Boolean) ?? [script];
-  const chunks = Array.from({ length: Math.min(slots, sentences.length) }, () => '');
-  sentences.forEach((sentence, index) => {
-    const target = Math.min(
-      chunks.length - 1,
-      Math.floor((index * chunks.length) / sentences.length),
-    );
-    chunks[target] += sentence;
-  });
-  return chunks.map(compact).filter(Boolean);
-}
-
-/** Keep visual actions and constrain the model's explanation to one concise page narration. */
-function elementTeachingText(element: PPTElement): string {
-  const record = element as unknown as Record<string, unknown>;
-  const values = [record.content, record.text, record.latex, record.alt, record.name];
-  return compact(
-    values
-      .filter((value): value is string => typeof value === 'string')
-      .join(' ')
-      .replace(/<[^>]+>/g, ' '),
+/** Preserve authored bindings; semantic review runs after narration processing. */
+export function alignFocusActionsToSpeech(actions: Action[], _elements: PPTElement[]): Action[] {
+  return actions.filter(
+    (action, index) =>
+      (action.type !== 'spotlight' && action.type !== 'laser') ||
+      actions[focusSpeechIndex(actions, index)]?.type === 'speech',
   );
-}
-
-function semanticTokens(value: string): Set<string> {
-  const normalized = value.toLowerCase().replace(/<[^>]+>/g, ' ');
-  const tokens = new Set(normalized.match(/[a-z0-9]{2,}|[\u3400-\u9fff]/g) ?? []);
-  const chinese = [...normalized].filter((char) => /[\u3400-\u9fff]/u.test(char));
-  for (let i = 0; i < chinese.length - 1; i++) tokens.add(chinese[i] + chinese[i + 1]);
-  return tokens;
-}
-
-function overlapScore(left: string, right: string): number {
-  const a = semanticTokens(left);
-  const b = semanticTokens(right);
-  let score = 0;
-  for (const token of a) if (b.has(token)) score += token.length > 1 ? 2 : 1;
-  return score;
-}
-
-/** Rebind each focus cue to the element actually described by its following speech. */
-export function alignFocusActionsToSpeech(actions: Action[], elements: PPTElement[]): Action[] {
-  const candidates = elements
-    .map((element) => ({ id: element.id, text: elementTeachingText(element) }))
-    .filter((item) => item.text.length > 0);
-  const result: Action[] = [];
-  for (let index = 0; index < actions.length; index++) {
-    const action = actions[index];
-    if (action.type !== 'spotlight' && action.type !== 'laser') {
-      result.push(action);
-      continue;
-    }
-    const speech = actions[index + 1];
-    if (speech?.type !== 'speech') continue;
-    const current = candidates.find((item) => item.id === action.elementId);
-    if (current && overlapScore(current.text, speech.text) > 0) {
-      result.push(action);
-      continue;
-    }
-    const ranked = candidates
-      .map((item) => ({ ...item, score: overlapScore(item.text, speech.text) }))
-      .sort((a, b) => b.score - a.score);
-    if (ranked[0]?.score > 0) result.push({ ...action, elementId: ranked[0].id });
-  }
-  return result;
 }
 
 export function alignActionsToPptNarration(
@@ -132,35 +69,34 @@ export function alignActionsToPptNarration(
   elements: PPTElement[] = [],
   options: { preserveGeneratedLength?: boolean } = {},
 ): Action[] {
-  const generatedSpeech = actions
-    .filter((action) => action.type === 'speech')
-    .map((action) => action.text)
-    .join('');
   const formulaPage = narrationScript?.includes(FORMULA_NARRATION_MARKER) === true;
-  const script = options.preserveGeneratedLength && generatedSpeech
-    ? generatedSpeech
-    : shortenPptNarration(
-        generatedSpeech || narrationScript || '',
-        formulaPage ? MAX_FORMULA_NARRATION_CHARS : MAX_PPT_NARRATION_CHARS,
-      );
-  if (!script) return actions;
-  const speechCount = actions.filter((action) => action.type === 'speech').length;
-  if (speechCount === 0) {
-    return [
-      { id: `ppt-narration-${Date.now()}`, type: 'speech', text: script },
-      ...actions,
-    ] as Action[];
-  }
-  const chunks = splitForSlots(script, speechCount);
-  let speechIndex = 0;
-  const aligned: Action[] = [];
-  for (const action of actions) {
-    if (action.type !== 'speech') {
-      aligned.push(action);
-      continue;
+  const maxChars = formulaPage ? MAX_FORMULA_NARRATION_CHARS : MAX_PPT_NARRATION_CHARS;
+  if (actions.some((action) => action.type === 'speech' && action.text)) {
+    // The model paired these paragraphs with visual cues. Concatenating and
+    // evenly re-splitting moves sentences across cues (and splits python.org).
+    // Legacy length limits may shorten a paragraph in its own slot, never move
+    // its sentences under a different target. Budgeted courses keep all text.
+    let remaining = options.preserveGeneratedLength ? Infinity : maxChars;
+    const aligned: Action[] = [];
+    for (const action of actions) {
+      if (action.type !== 'speech') {
+        aligned.push(action);
+        continue;
+      }
+      if (remaining <= 0) continue;
+      const text =
+        action.text.length <= remaining
+          ? action.text
+          : remaining > 2
+            ? shortenPptNarration(action.text, remaining - 2)
+            : '';
+      if (!text) continue;
+      remaining -= text.length;
+      aligned.push({ ...action, text, audioId: undefined, audioInvalidated: true });
     }
-    const text = chunks[speechIndex++];
-    if (text) aligned.push({ ...action, text, audioId: undefined, audioInvalidated: true });
+    return elements.length ? alignFocusActionsToSpeech(aligned, elements) : aligned;
   }
-  return elements.length > 0 ? alignFocusActionsToSpeech(aligned, elements) : aligned;
+  const script = shortenPptNarration(narrationScript || '', maxChars);
+  if (!script) return actions;
+  return [{ id: `ppt-narration-${Date.now()}`, type: 'speech', text: script }, ...actions];
 }

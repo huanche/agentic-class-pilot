@@ -14,6 +14,7 @@ import { generateSceneActions, generateSceneContent, type AICallFn } from '@open
 import { buildSceneFromOutline } from '@/lib/server/scene-generation';
 import { normalizeLegacyPBLContent } from '@/lib/pbl/legacy/read';
 import { legacyPBLSceneFixture } from '@/tests/fixtures/pbl-v1-scene';
+import { approveFocusReview } from '@/tests/fixtures/focus-review';
 import type {
   SceneOutline,
   GeneratedSlideContent,
@@ -284,9 +285,10 @@ describe('scene-generator language directive threading (issue #472)', () => {
   describe('buildSceneFromOutline (high-level pipeline)', () => {
     it('threads languageDirective through content AND actions for a slide', async () => {
       const captured: string[] = [];
-      const aiCall: AICallFn = async (_system, user) => {
+      const aiCall: AICallFn = async (system, user) => {
         captured.push(user);
         // First call is content (expects JSON); second is actions (expects array)
+        if (system.includes('[FOCUS_SPEECH_REVIEW]')) return approveFocusReview(user);
         return captured.length === 1
           ? JSON.stringify({ elements: [], background: null, remark: '' })
           : '[]';
@@ -307,7 +309,7 @@ describe('scene-generator language directive threading (issue #472)', () => {
         DIRECTIVE,
       );
 
-      expect(captured).toHaveLength(2);
+      expect(captured).toHaveLength(3);
       for (const user of captured) {
         expect(user).toContain(DIRECTIVE);
         expect(user).not.toContain('{{languageDirective}}');

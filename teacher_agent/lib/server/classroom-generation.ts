@@ -1,3 +1,4 @@
+import { generateAlignedSceneActions as generateSceneActions } from '@/lib/server/aligned-scene-actions';
 import { nanoid } from 'nanoid';
 import { callLLM } from '@/lib/ai/llm';
 import { createStageAPI } from '@/lib/api/stage-api';
@@ -5,7 +6,6 @@ import type { StageStore } from '@/lib/api/stage-api-types';
 import {
   applyOutlineFallbacks,
   generateSceneOutlinesFromRequirements,
-  generateSceneActions,
   generateSceneContent,
   PBLGenerationError,
   withGenerationRetry,

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SceneOutline } from '@/lib/types/generation';
 import { legacyPBLSceneFixture } from '@/tests/fixtures/pbl-v1-scene';
+import { approveFocusReview } from '@/tests/fixtures/focus-review';
 
 const mocks = vi.hoisted(() => ({
   callLLM: vi.fn(),
@@ -79,7 +80,11 @@ describe('scene API retry boundary', () => {
       thinkingConfig: undefined,
     });
     mocks.applyOutlineFallbacks.mockImplementation((value) => value);
-    mocks.callLLM.mockResolvedValue({ text: 'ok' });
+    mocks.callLLM.mockImplementation(async (params) => ({
+      text: params.system?.includes('[FOCUS_SPEECH_REVIEW]')
+        ? approveFocusReview(params.prompt)
+        : 'ok',
+    }));
     mocks.resolveVocationalActive.mockReturnValue(false);
   });
 
@@ -102,7 +107,7 @@ describe('scene API retry boundary', () => {
     vi.resetModules();
     mocks.generateSceneActions.mockImplementation(async (_outline, _content, aiCall) => {
       await aiCall('system', 'user');
-      return [];
+      return [{ id: 's', type: 'speech', text: '本页介绍重试控制。' }];
     });
     mocks.buildCompleteScene.mockReturnValue({
       id: 'scene-1',
@@ -122,7 +127,8 @@ describe('scene API retry boundary', () => {
     const body = await response.json();
 
     expect(body.success).toBe(true);
-    expect(mocks.callLLM.mock.calls[0][0].maxRetries).toBe(0);
+    expect(mocks.callLLM).toHaveBeenCalledTimes(2);
+    expect(mocks.callLLM.mock.calls.every((call) => call[0].maxRetries === 0)).toBe(true);
   });
 
   it('analyzes imported slide elements but persists the complete original canvas', async () => {
@@ -143,7 +149,7 @@ describe('scene API retry boundary', () => {
     };
     mocks.generateSceneActions.mockImplementation(async (_outline, content) => {
       expect(content).toMatchObject({ elements: canvas.elements, remark: '原始备注' });
-      return [];
+      return [{ id: 's', type: 'speech', text: '原始标题。' }];
     });
     mocks.buildCompleteScene.mockReturnValue({
       id: 'scene-imported-1',

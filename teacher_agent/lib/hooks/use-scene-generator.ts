@@ -1128,7 +1128,11 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
               break;
             }
             const reason = actionsResult.error || 'Actions generation failed';
-            if (governanceEnabled && params.preferImportedCanvas) {
+            if (
+              governanceEnabled &&
+              params.preferImportedCanvas &&
+              actionsResult.errorCode !== 'FOCUS_SPEECH_ALIGNMENT_FAILED'
+            ) {
               await applyAutomaticFallback(outline, 'action-generation-failure', reason);
               previousSpeeches = [];
               continue;
@@ -1309,7 +1313,11 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
         const actionsResult = await fetchSceneActions(actionsContext, signal);
 
         if (!actionsResult.success || !actionsResult.scene) {
-          if (governanceEnabled && params.preferImportedCanvas) {
+          if (
+            governanceEnabled &&
+            params.preferImportedCanvas &&
+            actionsResult.errorCode !== 'FOCUS_SPEECH_ALIGNMENT_FAILED'
+          ) {
             await applyRetryFallback(
               'action-generation-failure',
               actionsResult.error || 'Actions generation failed',

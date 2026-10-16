@@ -36,10 +36,7 @@ import type {
 import type { AudioPlayer } from '@/lib/utils/audio-player';
 import type { LegacySpeechAction } from '@/lib/media/convert-legacy-asset-refs';
 import { ActionEngine } from '@/lib/action/engine';
-import {
-  resolvePlaybackCursor,
-  estimateSpeechDurationMs,
-} from '@/lib/choreography';
+import { resolvePlaybackCursor, estimateSpeechDurationMs } from '@/lib/choreography';
 import {
   canJumpWithinReconstructablePrefix,
   isWhiteboardPlaybackAction,
@@ -49,6 +46,7 @@ import { useSettingsStore } from '@/lib/store/settings';
 import { isSpeakableSpeechText } from '@/lib/audio/tts-utils';
 import { isTTSProviderEnabled } from '@/lib/audio/provider-enablement';
 import { createLogger } from '@/lib/logger';
+import { focusSpeechIndex } from '@/lib/choreography/timeline';
 
 const log = createLogger('PlaybackEngine');
 
@@ -323,10 +321,7 @@ export class PlaybackEngine {
         const generation = this.playbackGeneration;
         this.audioPlayer.onEnded(() => {
           if (!this.isCurrentGeneration(generation)) return;
-          this.callbacks.onSpeechEnd?.();
-          if (this.mode === 'playing') {
-            this.processNext(generation);
-          }
+          this.completeSpeech(generation);
         });
         this.audioPlayer.resume();
       } else if (this.speechTimerRemaining > 0) {
@@ -337,8 +332,7 @@ export class PlaybackEngine {
           if (!this.isCurrentGeneration(generation)) return;
           this.speechTimer = null;
           this.speechTimerRemaining = 0;
-          this.callbacks.onSpeechEnd?.();
-          if (this.mode === 'playing') this.processNext(generation);
+          this.completeSpeech(generation);
         }, this.speechTimerRemaining);
       } else {
         // TTS finished while paused, continue to next event
@@ -584,6 +578,47 @@ export class PlaybackEngine {
     return { action: res.action, sceneId: res.sceneId };
   }
 
+  private completeSpeech(generation: number): void {
+    if (!this.isCurrentGeneration(generation)) return;
+    this.actionEngine.clearEffects();
+    this.callbacks.onSpeechEnd?.();
+    if (this.mode === 'playing') this.processNext(generation);
+  }
+
+  private fireFocus(action: Extract<Action, { type: 'spotlight' | 'laser' }>, index: number): void {
+    const scene = this.scenes[this.sceneIndex];
+    const speechIndex = focusSpeechIndex(scene.actions ?? [], index);
+    const speech = scene.actions?.[speechIndex];
+    this.actionEngine.execute(action, { persistEffects: speech?.type === 'speech' });
+    this.callbacks.onEffectFire?.({
+      kind: action.type,
+      targetId: action.elementId,
+      ...(action.type === 'spotlight'
+        ? { dimOpacity: action.dimOpacity }
+        : { color: action.color }),
+    } as Effect);
+  }
+
+  /** A direct jump skips the visual cue, so restore the cue paired with this line. */
+  private restoreSpeechFocus(speechIndex: number): void {
+    const scene = this.scenes[this.sceneIndex];
+    const actions = scene.actions ?? [];
+    let start = speechIndex - 1;
+    while (
+      start >= 0 &&
+      ['spotlight', 'laser', 'reveal', 'discussion'].includes(actions[start].type)
+    )
+      start--;
+    for (let index = start + 1; index < speechIndex; index++) {
+      const cue = actions[index];
+      if (cue.type !== 'spotlight' && cue.type !== 'laser') continue;
+      const canvas = useCanvasStore.getState();
+      const currentId =
+        cue.type === 'spotlight' ? canvas.spotlightElementId : canvas.laserElementId;
+      if (currentId !== cue.elementId) this.fireFocus(cue, index);
+    }
+  }
+
   /**
    * Core processing loop: consume the next action.
    */
@@ -622,18 +657,17 @@ export class PlaybackEngine {
       case 'speech': {
         const speechAction = action as SpeechAction;
         if (!isSpeakableSpeechText(speechAction.text)) {
+          this.actionEngine.clearEffects();
           this.processNext(generation);
           break;
         }
+        this.restoreSpeechFocus(this.actionIndex - 1);
         this.callbacks.onSpeechStart?.(speechAction.text);
 
         // onEnded → processNext; if paused, resume() will call processNext
         this.audioPlayer.onEnded(() => {
           if (!this.isCurrentGeneration(generation)) return;
-          this.callbacks.onSpeechEnd?.();
-          if (this.mode === 'playing') {
-            this.processNext(generation);
-          }
+          this.completeSpeech(generation);
         });
 
         // Estimated reading time when no pre-generated audio (TTS disabled).
@@ -650,8 +684,7 @@ export class PlaybackEngine {
             if (!this.isCurrentGeneration(generation)) return;
             this.speechTimer = null;
             this.speechTimerRemaining = 0;
-            this.callbacks.onSpeechEnd?.();
-            if (this.mode === 'playing') this.processNext(generation);
+            this.completeSpeech(generation);
           }, readingMs);
         };
 
@@ -713,14 +746,7 @@ export class PlaybackEngine {
       case 'spotlight':
       case 'laser': {
         // Fire-and-forget visual effects via ActionEngine
-        this.actionEngine.execute(action);
-        this.callbacks.onEffectFire?.({
-          kind: action.type,
-          targetId: action.elementId,
-          ...(action.type === 'spotlight'
-            ? { dimOpacity: action.dimOpacity }
-            : { color: action.color }),
-        } as Effect);
+        this.fireFocus(action, this.actionIndex - 1);
         // Don't block — continue immediately (use queueMicrotask to avoid
         // stack overflow from deep synchronous recursion when many consecutive
         // spotlight/laser actions appear in sequence)
@@ -815,8 +841,7 @@ export class PlaybackEngine {
       // All chunks done
       this.browserTTSActive = false;
       this.browserTTSChunks = [];
-      this.callbacks.onSpeechEnd?.();
-      if (this.mode === 'playing') this.processNext(generation);
+      this.completeSpeech(generation);
       return;
     }
 
