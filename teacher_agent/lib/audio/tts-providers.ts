@@ -93,6 +93,7 @@
  */
 
 import type { TTSModelConfig } from './types';
+import { throwIfQwenAccountUnavailable } from './tts-errors';
 import { qwenLanguageForText } from './qwen-language';
 import { isCustomTTSProvider } from './types';
 import { TTS_PROVIDERS } from './constants';
@@ -701,12 +702,20 @@ async function generateQwenTTS(config: TTSModelConfig, text: string): Promise<TT
   if (!response.ok) {
     throwIfTtsRateLimited('Qwen', response.status);
     const errorText = await response.text().catch(() => response.statusText);
+    let code: unknown;
+    try {
+      code = JSON.parse(errorText).code;
+    } catch {
+      /* Non-JSON upstream error. */
+    }
+    throwIfQwenAccountUnavailable(code, response.status);
     throw new Error(`Qwen TTS API error: ${errorText}`);
   }
 
   const data = await response.json();
 
   // Check for audio URL in response
+  throwIfQwenAccountUnavailable(data.code);
   if (!data.output?.audio?.url) {
     throw new Error(`Qwen TTS error: No audio URL in response. Response: ${JSON.stringify(data)}`);
   }

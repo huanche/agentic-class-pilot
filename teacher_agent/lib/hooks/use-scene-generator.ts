@@ -19,6 +19,11 @@ import type { SpeechAction } from '@/lib/types/action';
 import { filterUnspeakableSpeechActions, splitLongSpeechActions } from '@/lib/audio/tts-utils';
 import { measureAudioDuration } from '@/lib/audio/audio-duration';
 import { isTTSProviderEnabled } from '@/lib/audio/provider-enablement';
+import {
+  isTTSProviderAccountError,
+  TTS_ACCOUNT_ERROR_CODE,
+  type TTSProviderAccountError,
+} from '@/lib/audio/tts-errors';
 import { resolveAgentVoiceOptions, pickNarratorAgent } from '@/lib/audio/agent-voice';
 import { useAgentRegistry } from '@/lib/orchestration/registry/store';
 import {
@@ -627,7 +632,7 @@ export async function generateTTSForScene(
   signal?: AbortSignal,
   retryOptions?: ClientRetryOptions<TTSApiResponse>,
   durationContext?: Parameters<typeof fetchSceneActions>[0],
-): Promise<{ success: boolean; failedCount: number; error?: string }> {
+): Promise<{ success: boolean; failedCount: number; error?: string; errorCode?: string }> {
   const providerId = useSettingsStore.getState().ttsProviderId;
   scene.actions = splitLongSpeechActions(
     filterUnspeakableSpeechActions(scene.actions || []),
@@ -641,14 +646,17 @@ export async function generateTTSForScene(
   let failedCount = 0;
   let lastError: string | undefined;
   const freshAllocations: string[] = [];
+  let accountFailure: TTSProviderAccountError | undefined;
 
   // Scene order keeps the provider request correlation label unique. Storage
   // identity is allocated by the pool and is never derived from this value.
   const sceneOrder = scene.order;
 
-  // Generate + store one action's audio. Failures are counted, not thrown, so
-  // one bad clip never aborts the rest of the scene.
+  // Independent clip failures are counted; an unavailable account stops the scene.
   const generateOne = async (action: SpeechAction) => {
+    // Workers already in flight settle before cleanup; queued clips do not hit
+    // an unavailable account again.
+    if (accountFailure) return;
     const requestId = `tts_s${sceneOrder}_${action.id}`;
     try {
       const assetId = await generateAndStoreTTS(
@@ -667,6 +675,10 @@ export async function generateTTSForScene(
       }
     } catch (error) {
       if (isAbortError(error)) throw error;
+      if (isTTSProviderAccountError(error)) {
+        accountFailure = error;
+        throw error;
+      }
 
       failedCount++;
       lastError = error instanceof Error ? error.message : `TTS failed for action ${action.id}`;
@@ -707,6 +719,14 @@ export async function generateTTSForScene(
   } catch (error) {
     await removeFreshTtsAllocations(freshAllocations);
     for (const action of speechActions) delete action.audioId;
+    if (accountFailure && !signal?.aborted) {
+      return {
+        success: false,
+        failedCount: speechActions.length,
+        error: accountFailure.message,
+        errorCode: TTS_ACCOUNT_ERROR_CODE,
+      };
+    }
     throw error;
   }
 
@@ -969,7 +989,9 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
                 },
                 {
                   shouldContinue: () =>
-                    !abortRef.current && store.getState().generationEpoch === startEpoch,
+                    !abortRef.current &&
+                    !signal.aborted &&
+                    store.getState().generationEpoch === startEpoch,
                 },
               ).map((promise, i) => [pending[i].id, promise] as const),
             )
@@ -1089,7 +1111,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
                   break;
                 }
                 const reason = ttsResult.error || 'TTS generation failed';
-                if (governanceEnabled) {
+                if (governanceEnabled && ttsResult.errorCode !== TTS_ACCOUNT_ERROR_CODE) {
                   await removeFreshTtsAllocations(speechAllocationIds(scene));
                   await recordAutomaticFallback({
                     stageId: stage.id,
@@ -1101,6 +1123,10 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
                       : 'text-slide',
                   });
                 } else {
+                  if (ttsResult.errorCode === TTS_ACCOUNT_ERROR_CODE) {
+                    fetchAbortRef.current?.abort();
+                    mediaAbortRef.current?.abort();
+                  }
                   store.getState().addFailedOutline(outline);
                   options.onSceneFailed?.(outline, reason);
                   store.getState().setGenerationStatus('paused');
@@ -1361,7 +1387,11 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
             actionsContext,
           );
           if (!ttsResult.success) {
-            if (governanceEnabled && params.preferImportedCanvas) {
+            if (
+              governanceEnabled &&
+              params.preferImportedCanvas &&
+              ttsResult.errorCode !== TTS_ACCOUNT_ERROR_CODE
+            ) {
               await removeFreshTtsAllocations(speechAllocationIds(actionsResult.scene));
               await applyRetryFallback(
                 'tts-generation-failure',
@@ -1370,6 +1400,8 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
               return;
             }
             store.getState().addFailedOutline(outline);
+            options.onSceneFailed?.(outline, ttsResult.error || 'TTS generation failed');
+            store.getState().setGenerationStatus('paused');
             return;
           }
         }
@@ -1400,7 +1432,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
         }
       }
     },
-    [store],
+    [store, options],
   );
 
   return { generateRemaining, retrySingleOutline, stop, isGenerating };

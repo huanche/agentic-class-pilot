@@ -52,12 +52,15 @@ export default function ClassroomDetailPage() {
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [generationFailure, setGenerationFailure] = useState<string | null>(null);
 
   const generationStartedRef = useRef(false);
   const snapshotSyncRef = useRef<ReturnType<typeof createClassroomSnapshotSyncQueue> | null>(null);
 
   const { generateRemaining, retrySingleOutline, stop } = useSceneGenerator({
+    onSceneFailed: (outline, reason) => setGenerationFailure(`${outline.title}：${reason}`),
     onComplete: () => {
+      setGenerationFailure(null);
       log.info('[Classroom] All scenes generated');
       const raw = sessionStorage.getItem('generationParams');
       let importKey: string | undefined;
@@ -122,6 +125,7 @@ export default function ClassroomDetailPage() {
     /* eslint-disable react-hooks/set-state-in-effect -- Course switch must hide stale Stage before async load */
     setLoading(true);
     setError(null);
+    setGenerationFailure(null);
     /* eslint-enable react-hooks/set-state-in-effect */
     generationStartedRef.current = false;
 
@@ -299,6 +303,14 @@ export default function ClassroomDetailPage() {
               </Link>
             </nav>
           )}
+          {generationFailure && !playerOnlyEmbed && (
+            <div
+              role="alert"
+              className="shrink-0 border-b border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800"
+            >
+              {generationFailure}
+            </div>
+          )}
           {loading ? (
             <div className="flex-1 flex items-center justify-center bg-gray-50 dark:bg-gray-900">
               <div className="text-center text-muted-foreground">
@@ -323,7 +335,10 @@ export default function ClassroomDetailPage() {
             </div>
           ) : (
             <Stage
-              onRetryOutline={retrySingleOutline}
+              onRetryOutline={async (outlineId) => {
+                setGenerationFailure(null);
+                await retrySingleOutline(outlineId);
+              }}
               forceEditMode={embeddedCourseWorkspace}
               videoOnly={playerOnlyEmbed}
               hidePlaybackTiming={searchParams.get('replay') === '1'}
