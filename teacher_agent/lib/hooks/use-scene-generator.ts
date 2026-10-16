@@ -38,9 +38,21 @@ import {
   recordAutomaticFallback,
 } from '@/lib/course-governance/governance';
 import { getOutlineDurationSeconds } from '@/lib/playback/timing-display';
-import { calibrateNarrationDuration, durationMeasurementKey, durationStatus, measureScenePlaybackSeconds, type DurationFeedback } from '@/lib/generation/course-duration';
+import {
+  assessCourseDuration,
+  calibrateNarrationDuration,
+  durationMeasurementKey,
+  durationStatus,
+  measureScenePlaybackSeconds,
+  type DurationFeedback,
+} from '@/lib/generation/course-duration';
+import {
+  calibrateCourseDuration,
+  MAX_COURSE_DURATION_CORRECTIONS,
+} from '@/lib/generation/course-duration-calibration';
 
 const log = createLogger('SceneGenerator');
+const courseCalibrations = new Set<string>();
 
 function addGeneratedScene(scene: Scene): void {
   const state = useStageStore.getState();
@@ -232,8 +244,12 @@ export async function fetchSceneActions(
   signal?: AbortSignal,
   retryOptions?: ClientRetryOptions<SceneActionsResult>,
 ): Promise<SceneActionsResult> {
-  params.outline = { ...params.outline,
-    durationBudget: params.allOutlines.find((page) => page.id === params.outline.id)?.durationBudget ?? params.outline.durationBudget };
+  params.outline = {
+    ...params.outline,
+    durationBudget:
+      params.allOutlines.find((page) => page.id === params.outline.id)?.durationBudget ??
+      params.outline.durationBudget,
+  };
   try {
     return await withGenerationRetry(
       async () => {
@@ -425,6 +441,184 @@ function speechAllocationIds(scene: Scene): string[] {
   );
 }
 
+/** Final aggregate pass, also available for an already generated classroom. */
+export async function calibrateCompletedCourse(
+  params: Pick<GenerationParams, 'agents' | 'languageDirective' | 'preferServerModel'> & {
+    signal?: AbortSignal;
+  } = {},
+): Promise<{ attempts: number; changed: number }> {
+  const initial = useStageStore.getState();
+  const stage = initial.stage;
+  if (
+    stage?.timing?.budgetVersion !== 1 ||
+    courseCalibrations.has(stage.id) ||
+    initial.generatingOutlines.length ||
+    initial.failedOutlines.length
+  )
+    return { attempts: 0, changed: 0 };
+  const minutes = stage.timing.targetDurationMinutes!;
+  const expected = stage.timing.expectedAutomaticPages ?? 0;
+  const report = assessCourseDuration(initial.scenes, minutes, expected);
+  const used = stage.timing.courseCorrectionAttempts ?? 0;
+  if (
+    report.actualSeconds == null ||
+    report.status === 'within-tolerance' ||
+    used >= MAX_COURSE_DURATION_CORRECTIONS
+  )
+    return { attempts: 0, changed: 0 };
+  const settings = useSettingsStore.getState();
+  if (
+    settings.ttsProviderId === 'browser-native-tts' ||
+    !isTTSProviderEnabled(
+      settings.ttsProviderId,
+      settings.ttsProvidersConfig?.[settings.ttsProviderId],
+    )
+  )
+    return { attempts: 0, changed: 0 };
+  const epoch = initial.generationEpoch;
+  const previousStatus = initial.generationStatus;
+  const isCurrent = () =>
+    !params.signal?.aborted &&
+    useStageStore.getState().stage?.id === stage.id &&
+    useStageStore.getState().generationEpoch === epoch;
+  const ensureCurrent = () => {
+    if (!isCurrent()) throw new DOMException('Course changed', 'AbortError');
+  };
+  const excluded = new Set(
+    initial.scenes
+      .filter(
+        (page) =>
+          page.id === initial.currentSceneId ||
+          isSceneEditLocked({
+            sceneId: page.id,
+            mode: initial.mode,
+            currentSceneId: initial.currentSceneId,
+          }),
+      )
+      .map((page) => page.id),
+  );
+  const outlines: SceneOutline[] = initial.outlines.length
+    ? initial.outlines
+    : initial.scenes.map((page) => ({
+        id: page.outlineId || page.id,
+        order: page.order,
+        type: page.type,
+        title: page.title,
+        description: `保留本页画布中的知识点、例子、推演及结论，校正有效讲解长度。原讲稿：\n${(
+          page.actions ?? []
+        )
+          .filter((action) => action.type === 'speech')
+          .map((action) => action.text)
+          .join('\n')}`,
+        keyPoints: [],
+        durationBudget: { targetSeconds: page.timing?.plannedDurationSec ?? 0 },
+      }));
+  let changed = 0;
+  courseCalibrations.add(stage.id);
+  initial.setGenerationStatus('generating');
+  try {
+    const result = await calibrateCourseDuration(
+      initial.scenes,
+      minutes,
+      expected,
+      {
+        onAttempt: (attempt) => {
+          ensureCurrent();
+          const state = useStageStore.getState();
+          state.updateStage({
+            timing: { ...state.stage!.timing, courseCorrectionAttempts: used + attempt },
+          });
+        },
+        regenerate: async (previous, feedback) => {
+          ensureCurrent();
+          const original =
+            outlines.find((page) => page.id === previous.outlineId) ||
+            outlines.find((page) => page.order === previous.order);
+          if (!original) throw new Error('页面大纲缺失，已保留原课件');
+          const outline = {
+            ...original,
+            durationBudget: { targetSeconds: previous.timing!.plannedDurationSec! },
+          };
+          const previousPage = initial.scenes
+            .filter((page) => page.order < previous.order)
+            .sort((a, b) => b.order - a.order)[0];
+          const actions = await fetchSceneActions(
+            {
+              outline,
+              allOutlines: outlines.map((page) => (page.id === outline.id ? outline : page)),
+              content: previous.content,
+              stageId: stage.id,
+              agents: params.agents,
+              previousSpeeches: (previousPage?.actions ?? [])
+                .filter((action) => action.type === 'speech')
+                .map((action) => action.text),
+              languageDirective: params.languageDirective || stage.languageDirective,
+              preferServerModel: params.preferServerModel ?? true,
+              durationFeedback: feedback,
+            },
+            params.signal,
+          );
+          if (!actions.success || !actions.scene)
+            throw new Error(actions.error || '整课讲稿校正失败');
+          const candidate = {
+            ...previous,
+            actions: actions.scene.actions?.map((action) => {
+              if (action.type !== 'speech') return action;
+              // The endpoint persists by request id. A fresh id prevents rejected
+              // candidates from overwriting currently published server audio.
+              return { ...action, id: `speech_${crypto.randomUUID()}`, audioId: undefined };
+            }),
+            timing: {
+              ...previous.timing,
+              measuredDurationSec: undefined,
+              measurementKey: undefined,
+            },
+          } as Scene;
+          try {
+            const audio = await generateTTSForScene(
+              candidate,
+              params.languageDirective || stage.languageDirective,
+              params.signal,
+            );
+            if (!audio.success || audio.failedCount)
+              throw new Error(audio.error || '整课配音校正失败');
+            ensureCurrent();
+            return candidate;
+          } catch (error) {
+            await removeFreshTtsAllocations(speechAllocationIds(candidate));
+            throw error;
+          }
+        },
+        dispose: (candidate) => removeFreshTtsAllocations(speechAllocationIds(candidate)),
+        onAccepted: (previous, candidate) => {
+          ensureCurrent();
+          const state = useStageStore.getState();
+          const latest = state.scenes.find((page) => page.id === previous.id);
+          if (
+            !latest ||
+            state.currentSceneId === previous.id ||
+            durationMeasurementKey(latest) !== durationMeasurementKey(previous)
+          )
+            throw new DOMException('Page is now active or edited', 'AbortError');
+          // Retain prior published audio; only rejected fresh candidates are disposed.
+          state.updateScene(previous.id, {
+            actions: candidate.actions,
+            timing: candidate.timing,
+            updatedAt: Date.now(),
+          });
+          changed++;
+        },
+      },
+      { maxAttempts: MAX_COURSE_DURATION_CORRECTIONS - used, excludedSceneIds: excluded },
+    );
+    if (isCurrent()) await useStageStore.getState().saveToStorage();
+    return { attempts: result.attempts, changed };
+  } finally {
+    courseCalibrations.delete(stage.id);
+    if (isCurrent()) useStageStore.getState().setGenerationStatus(previousStatus);
+  }
+}
+
 /** Generate TTS for all speech actions in a scene. Returns result. */
 export async function generateTTSForScene(
   scene: Scene,
@@ -517,19 +711,28 @@ export async function generateTTSForScene(
 
   const audioSeconds: Record<string, number | undefined> = {};
   for (const action of speechActions) {
-    audioSeconds[action.id] = action.audioId ? (await db.audioFiles.get(action.audioId))?.duration : undefined;
+    audioSeconds[action.id] = action.audioId
+      ? (await db.audioFiles.get(action.audioId))?.duration
+      : undefined;
   }
   scene.timing = {
     ...scene.timing,
     measuredDurationSec: measureScenePlaybackSeconds(scene, audioSeconds),
     measurementKey: durationMeasurementKey(scene),
   };
-  scene.timing.durationStatus = durationStatus(scene.timing.measuredDurationSec, scene.timing.plannedDurationSec ?? 0);
+  scene.timing.durationStatus = durationStatus(
+    scene.timing.measuredDurationSec,
+    scene.timing.plannedDurationSec ?? 0,
+  );
 
   if (durationContext?.outline.durationBudget && failedCount === 0) {
     const calibrated = await calibrateNarrationDuration(scene, {
       regenerate: async (feedback, previous) => {
-        const result = await fetchSceneActions({ ...durationContext, durationFeedback: feedback }, signal, retryOptions);
+        const result = await fetchSceneActions(
+          { ...durationContext, durationFeedback: feedback },
+          signal,
+          retryOptions,
+        );
         if (!result.success || !result.scene) throw new Error(result.error || '讲稿时长校正失败');
         const candidate = result.scene;
         candidate.timing = { ...previous.timing, measuredDurationSec: undefined };
@@ -831,21 +1034,18 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
           // Step 2: Generate actions + assemble scene
           options.onPhaseChange?.('actions', outline);
           const actionsContext: Parameters<typeof fetchSceneActions>[0] = {
-              outline: contentResult.effectiveOutline || outline,
-              allOutlines: outlines,
-              content: contentResult.content,
-              stageId: stage.id,
-              agents: params.agents,
-              previousSpeeches,
-              userProfile: params.userProfile,
-              languageDirective: params.languageDirective,
-              preferServerModel: params.preferServerModel,
-              narrationScript: params.narrationScripts?.[outline.order - 1],
-            };
-          const actionsResult = await fetchSceneActions(
-            actionsContext,
-            signal,
-          );
+            outline: contentResult.effectiveOutline || outline,
+            allOutlines: outlines,
+            content: contentResult.content,
+            stageId: stage.id,
+            agents: params.agents,
+            previousSpeeches,
+            userProfile: params.userProfile,
+            languageDirective: params.languageDirective,
+            preferServerModel: params.preferServerModel,
+            narrationScript: params.narrationScripts?.[outline.order - 1],
+          };
+          const actionsResult = await fetchSceneActions(actionsContext, signal);
 
           if (actionsResult.success && actionsResult.scene) {
             const scene = actionsResult.scene;
@@ -919,7 +1119,9 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
             removeGeneratingOutline(outline.id);
             addGeneratedScene(scene);
             options.onSceneGenerated?.(scene, outline.order);
-            previousSpeeches = (scene.actions ?? []).filter((action): action is SpeechAction => action.type === 'speech').map((action) => action.text);
+            previousSpeeches = (scene.actions ?? [])
+              .filter((action): action is SpeechAction => action.type === 'speech')
+              .map((action) => action.text);
           } else {
             if (abortRef.current || store.getState().generationEpoch !== startEpoch) {
               pausedByFailureOrAbort = true;
@@ -945,6 +1147,8 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
             // surface them for retry instead of signalling a clean completion.
             store.getState().setGenerationStatus('paused');
           } else {
+            await calibrateCompletedCourse({ ...params, signal });
+            if (abortRef.current || store.getState().generationEpoch !== startEpoch) return;
             store.getState().setGenerationStatus('completed');
             store.getState().setGeneratingOutlines([]);
             store.getState().setGenerationComplete(true);
@@ -955,7 +1159,8 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
         // AbortError is expected when stop() is called — don't treat as failure
         if (isAbortError(err)) {
           log.info('Generation aborted');
-          store.getState().setGenerationStatus('paused');
+          if (store.getState().generationEpoch === startEpoch)
+            store.getState().setGenerationStatus('paused');
         } else {
           throw err;
         }
@@ -1090,21 +1295,18 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
           : [];
 
         const actionsContext: Parameters<typeof fetchSceneActions>[0] = {
-            outline: contentResult.effectiveOutline || outline,
-            allOutlines: state.outlines,
-            content: contentResult.content,
-            stageId: state.stage.id,
-            agents: params.agents,
-            previousSpeeches,
-            userProfile: params.userProfile,
-            languageDirective: params.languageDirective,
-            preferServerModel: params.preferServerModel,
-            narrationScript: params.narrationScripts?.[outline.order - 1],
-          };
-        const actionsResult = await fetchSceneActions(
-          actionsContext,
-          signal,
-        );
+          outline: contentResult.effectiveOutline || outline,
+          allOutlines: state.outlines,
+          content: contentResult.content,
+          stageId: state.stage.id,
+          agents: params.agents,
+          previousSpeeches,
+          userProfile: params.userProfile,
+          languageDirective: params.languageDirective,
+          preferServerModel: params.preferServerModel,
+          narrationScript: params.narrationScripts?.[outline.order - 1],
+        };
+        const actionsResult = await fetchSceneActions(actionsContext, signal);
 
         if (!actionsResult.success || !actionsResult.scene) {
           if (governanceEnabled && params.preferImportedCanvas) {
@@ -1120,8 +1322,17 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
 
         // Step 3: TTS
         actionsResult.scene.timing = {
-          plannedDurationSec: getOutlineDurationSeconds(outline, state.stage.timing?.targetDurationMinutes ?? 45, state.outlines.length),
-          mode: actionsResult.scene.type === 'quiz' ? 'quiz' : actionsResult.scene.type === 'interactive' ? 'interactive-demo' : 'narration-fit',
+          plannedDurationSec: getOutlineDurationSeconds(
+            outline,
+            state.stage.timing?.targetDurationMinutes ?? 45,
+            state.outlines.length,
+          ),
+          mode:
+            actionsResult.scene.type === 'quiz'
+              ? 'quiz'
+              : actionsResult.scene.type === 'interactive'
+                ? 'interactive-demo'
+                : 'narration-fit',
           autoAdvance: true,
         };
         const settings = useSettingsStore.getState();
@@ -1170,7 +1381,9 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
           // generateRemaining completion path is not reached on the retry flow,
           // so mark completion here too — otherwise a later delete would treat
           // the orphaned outline as pending and regenerate it.
-          store.getState().markGenerationCompleteIfDone();
+          await calibrateCompletedCourse(params);
+          if (store.getState().generationEpoch === retryEpoch)
+            store.getState().markGenerationCompleteIfDone();
         }
       } catch (err) {
         if (!isAbortError(err)) {

@@ -40,6 +40,8 @@ export interface StageTiming {
   /** Only new courses with an explicit normalized generation contract. */
   budgetVersion?: 1;
   expectedAutomaticPages?: number;
+  /** Additional bounded corrections after the complete course was measured. */
+  courseCorrectionAttempts?: number;
 }
 
 export type Stage = DslStage & { timing?: StageTiming };
