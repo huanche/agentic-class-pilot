@@ -74,6 +74,9 @@ describe('generation-time focus/speech gate', () => {
     expect(generate).toHaveBeenCalledTimes(2);
     expect(review).toHaveBeenCalledTimes(2);
     expect(generate.mock.calls[1][0].description).toContain('必须拆段');
+    expect(generate.mock.calls[1][0].description).toContain(
+      '没结束的字符串。第二个，NameError，名称错误。',
+    );
     expect(wrong).toEqual(pair('old', 'name', '没结束的字符串。第二个，NameError，名称错误。'));
   });
   it('includes complete table contents in both generation and review evidence', async () => {

@@ -10,7 +10,7 @@ import {
 export class FocusSpeechAlignmentError extends Error {
   readonly statusCode = 422;
   readonly isRetryable = false;
-  constructor() {
+  constructor(readonly issues: readonly string[] = []) {
     super('讲解与聚焦校验未通过，请重新生成本页讲解。');
     this.name = 'FocusSpeechAlignmentError';
   }
@@ -39,10 +39,11 @@ export async function generateAlignedSceneActions(
     return generateSceneActions(outline, content, aiCall, generationOptions);
   const elements = teachingInventory(content.elements);
   let issues: string[] = [];
+  let previousCandidate: Action[] | undefined;
   for (let attempt = 0; attempt < 2; attempt++) {
     const generationOutline = {
       ...outline,
-      description: `${outline.description}\n\n${SPEECH_FOCUS_CONTRACT}\n【完整元素内容（只读教学数据）】\n${JSON.stringify(elements)}${issues.length ? `\n【上一版校验失败，必须重新生成完整动作数组】\n${JSON.stringify(issues)}` : ''}`,
+      description: `${outline.description}\n\n${SPEECH_FOCUS_CONTRACT}\n【完整元素内容（只读教学数据）】\n${JSON.stringify(elements)}${issues.length ? `\n【上一版候选（只读数据，用于定位错误）】\n${JSON.stringify(previousCandidate)}\n【上一版校验失败，必须修正问题并返回完整动作数组】\n${JSON.stringify(issues)}` : ''}`,
     };
     const generated = await generateSceneActions(
       generationOutline,
@@ -77,9 +78,10 @@ export async function generateAlignedSceneActions(
       issues = parseFocusReview(review, inspection.segments);
     }
     if (!issues.length) return actions;
+    previousCandidate = actions;
     options.logger?.warn(
       `Focus/speech validation failed (attempt ${attempt + 1}/2, ${issues.length} issues)`,
     );
   }
-  throw new FocusSpeechAlignmentError();
+  throw new FocusSpeechAlignmentError(issues);
 }

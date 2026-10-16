@@ -58,6 +58,9 @@ process.on('uncaughtException', (error) => {
       reason: error.message.startsWith('Live reviewer incorrectly approved')
         ? error.message
         : 'Live generation or TTS test did not complete',
+      ...(error.name === 'FocusSpeechAlignmentError'
+        ? { issues: (error as Error & { issues?: readonly string[] }).issues }
+        : {}),
     }),
   );
   process.exit(1);
