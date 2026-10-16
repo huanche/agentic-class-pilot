@@ -1,7 +1,13 @@
-name: server-diagnostics-read-only
+name: server-diagnostics
 
 on:
   workflow_dispatch:
+    inputs:
+      reclaimBuildCache:
+        description: Reclaim unused Docker build cache older than seven days
+        type: boolean
+        required: false
+        default: false
   push:
     branches: [codex/course-duration-budget]
     paths: [.github/workflows/server-diagnostics.yml]
@@ -14,7 +20,30 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      - name: Reclaim old unused build cache without touching images or volumes
+        if: ${{ inputs.reclaimBuildCache == true }}
+        env:
+          SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+        run: |
+          set -euo pipefail
+          printf '%s\n' "$SERVER_SSH_KEY" > /tmp/maintenance_key
+          chmod 600 /tmp/maintenance_key
+          ssh -i /tmp/maintenance_key -o StrictHostKeyChecking=accept-new "ubuntu@$SERVER_HOST" 'bash -s' <<'REMOTE'
+          set -eu
+          df -P /
+          docker builder prune --force --filter until=168h
+          df -P /
+          # PostgreSQL retries recovery itself once writable space is available.
+          for attempt in $(seq 1 15); do
+            if docker exec agentedu-final-database-1 pg_isready; then exit 0; fi
+            sleep 4
+          done
+          echo 'Database still not ready after cache reclamation; no database files were changed by this script.'
+          exit 1
+          REMOTE
       - name: Inspect service readiness without changing data
+        if: always()
         env:
           SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
           SERVER_HOST: ${{ secrets.SERVER_HOST }}
