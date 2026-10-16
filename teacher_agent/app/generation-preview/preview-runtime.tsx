@@ -23,6 +23,7 @@ import { useSettingsStore } from '@/lib/store/settings';
 import { useAgentRegistry } from '@/lib/orchestration/registry/store';
 import { getEnabledProvidersWithVoices } from '@/lib/audio/voice-resolver';
 import { isTTSProviderEnabled } from '@/lib/audio/provider-enablement';
+import { TTS_ACCOUNT_ERROR_CODE } from '@/lib/audio/tts-errors';
 import { useVoxCPMVoiceProfiles } from '@/lib/audio/voxcpm-voices';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import {
@@ -1287,6 +1288,7 @@ function GenerationPreviewContent() {
           firstActionsContext,
         );
         if (!ttsResult.success) {
+          if (ttsResult.errorCode === TTS_ACCOUNT_ERROR_CODE) throw new Error(ttsResult.error);
           if (!currentSession.conversionMode) throw new Error(t('generation.speechFailed'));
           fallbackKind = 'tts-generation-failure';
           fallbackReason = t('generation.speechFailed');

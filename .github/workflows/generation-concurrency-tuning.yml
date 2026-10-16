@@ -1,0 +1,46 @@
+name: generation-concurrency-tuning
+on:
+  push:
+    branches: [codex/generation-throughput]
+    paths: [.github/workflows/generation-concurrency-tuning.yml, scripts/server-tune-generation-concurrency.sh]
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: Apply and restart the current image (false only inspects)
+        type: boolean
+        default: false
+      concurrency:
+        description: 2 enables bounded parallelism; 0 restores serial generation
+        type: choice
+        options: ['2', '0']
+        default: '2'
+permissions:
+  contents: read
+concurrency:
+  group: teacher-deploy
+  cancel-in-progress: false
+jobs:
+  tune:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect or tune the current teacher image
+        env:
+          SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          APPLY: ${{ inputs.apply || false }}
+          CONCURRENCY: ${{ inputs.concurrency || '2' }}
+        run: |
+          set -euo pipefail
+          key="/tmp/generation-tuning-key-$GITHUB_RUN_ID"
+          printf '%s\n' "$SERVER_SSH_KEY" > "$key"
+          chmod 600 "$key"
+          trap 'rm -f "$key"' EXIT
+          SSH=(ssh -i "$key" -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=20 -o ServerAliveCountMax=2 -o StrictHostKeyChecking=accept-new "ubuntu@$SERVER_HOST")
+          SCP=(scp -i "$key" -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new)
+          "${SCP[@]}" scripts/server-tune-generation-concurrency.sh "ubuntu@$SERVER_HOST:/tmp/server-tune-generation-concurrency.sh"
+          "${SCP[@]}" teacher_agent/scripts/server-deploy-teacher.sh "ubuntu@$SERVER_HOST:/tmp/server-deploy-teacher.sh"
+          mode=check
+          if [[ "$APPLY" = true ]]; then mode=apply; fi
+          "${SSH[@]}" "sed -i 's/\r$//' /tmp/server-tune-generation-concurrency.sh /tmp/server-deploy-teacher.sh && bash /tmp/server-tune-generation-concurrency.sh '$mode' '$CONCURRENCY' '$GITHUB_RUN_ID'"
