@@ -1,3 +1,5 @@
+import { generateAlignedSceneActions as generateSceneActions } from '@/lib/server/aligned-scene-actions';
+import { FocusSpeechAlignmentError } from '@/lib/server/aligned-scene-actions';
 /**
  * Scene Actions Generation API
  *
@@ -9,7 +11,6 @@
 import { NextRequest } from 'next/server';
 import { callLLM } from '@/lib/ai/llm';
 import {
-  generateSceneActions,
   buildCompleteScene,
   buildVisionUserContent,
   type SceneGenerationContext,
@@ -36,7 +37,8 @@ import { withNarrationDuration, type DurationFeedback } from '@/lib/generation/c
 
 const log = createLogger('Scene Actions API');
 
-export const maxDuration = 60;
+// Generation plus independent review, with at most one content repair.
+export const maxDuration = 180;
 
 export async function POST(req: NextRequest) {
   let outlineTitle: string | undefined;
@@ -123,6 +125,7 @@ export async function POST(req: NextRequest) {
             ],
             maxOutputTokens: modelInfo?.outputWindow,
             maxRetries: 0,
+            abortSignal: req.signal,
           },
           'scene-actions',
           undefined,
@@ -137,6 +140,7 @@ export async function POST(req: NextRequest) {
           prompt: userPrompt,
           maxOutputTokens: modelInfo?.outputWindow,
           maxRetries: 0,
+          abortSignal: req.signal,
         },
         'scene-actions',
         undefined,
@@ -180,7 +184,8 @@ export async function POST(req: NextRequest) {
       | GeneratedPBLContent;
 
     const isFormulaEnhancedPage = narrationScript?.includes(FORMULA_NARRATION_MARKER) === true;
-    const durationBudget = allOutlines.find((page) => page.id === outline.id)?.durationBudget ?? outline.durationBudget;
+    const durationBudget =
+      allOutlines.find((page) => page.id === outline.id)?.durationBudget ?? outline.durationBudget;
     const narrationContract = isFormulaEnhancedPage
       ? `【公式增强页讲稿合同】
 1. ${durationBudget ? '讲稿长度遵守本页播放时长合同' : '中文讲稿控制在 260–420 字；公式较多或页面知识点较多时可到 500 字'}，不得因追求简短而漏掉页面主要结论。
@@ -188,34 +193,35 @@ export async function POST(req: NextRequest) {
 3. 必须覆盖“本页公式（LaTeX）”列出的每一个公式。短公式可用自然语言读出关系；长公式禁止逐字符、逐运算符或朗读 LaTeX，只介绍每一项、上下标、系数、积分/求和区间的物理意义。
 4. 公式中的符号要按学科语义播报，例如 P 表示功率、G 表示增益、下标 TX/RX 表示发射端/接收端；仅在页面材料能够支持时解释，不能猜测。
 5. 至少安排一次公式元素聚焦或激光笔动作，并让该动作与对应解释相邻。讲稿必须是可直接交给 TTS 的自然口语，不得包含 LaTeX 源码。`
-      : durationBudget ? '讲稿长度遵守本页播放时长合同，避免重复标题和逐字罗列页面文字。' : '中文总讲稿控制在 140–200 字，只讲一个核心逻辑，避免重复标题和罗列全部文字。';
+      : durationBudget
+        ? '讲稿长度遵守本页播放时长合同，避免重复标题和逐字罗列页面文字。'
+        : '中文总讲稿控制在 140–200 字，只讲一个核心逻辑，避免重复标题和罗列全部文字。';
     const narrationAwareOutline = narrationScript
       ? {
           ...outline,
           description: `${outline.description}\n\n【高保真 PPT 讲解约束】\n${narrationScript}\n请参考 OpenMAIC 的逐页讲解方式：先理解本页视觉内容，再用自然口语解释“为什么、如何理解或如何应用”，不要逐字朗读页面。选择一个最有帮助的例子、类比或观察提示，并用一句短过渡承接上一页或引出下一页。所有内容必须以本页材料为依据，不得混入其他页面。\n${narrationContract}`,
         }
       : outline;
-    const actionOutline = withNarrationDuration(withEnhancedChoreographyContract({
-      ...narrationAwareOutline,
-      durationBudget,
-    }), durationFeedback);
-    const generatedActions = await generateSceneActions(
-      actionOutline,
-      generationContent,
-      aiCall,
-      {
-        ctx,
-        agents,
-        userProfile,
-        languageDirective,
-      },
+    const actionOutline = withNarrationDuration(
+      withEnhancedChoreographyContract({
+        ...narrationAwareOutline,
+        durationBudget,
+      }),
+      durationFeedback,
     );
-    const actions = alignActionsToPptNarration(
-      generatedActions,
-      narrationScript,
-      'elements' in generationContent ? generationContent.elements : [],
-      { preserveGeneratedLength: Boolean(durationBudget) },
-    );
+    const actions = await generateSceneActions(actionOutline, generationContent, aiCall, {
+      ctx,
+      agents,
+      userProfile,
+      languageDirective,
+      transformActions: (generated) =>
+        alignActionsToPptNarration(
+          generated,
+          narrationScript,
+          'elements' in generationContent ? generationContent.elements : [],
+          { preserveGeneratedLength: Boolean(durationBudget) },
+        ),
+    });
 
     log.info(`Generated ${actions.length} actions for: "${outline.title}"`);
 
@@ -246,6 +252,9 @@ export async function POST(req: NextRequest) {
 
     return apiSuccess({ scene, previousSpeeches: outputPreviousSpeeches });
   } catch (error) {
+    if (error instanceof FocusSpeechAlignmentError) {
+      return apiError('FOCUS_SPEECH_ALIGNMENT_FAILED', 422, error.message);
+    }
     log.error(
       `Scene actions generation failed [scene="${outlineTitle ?? 'unknown'}", model=${resolvedModelString ?? 'unknown'}]:`,
       error,

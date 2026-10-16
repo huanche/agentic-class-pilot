@@ -285,7 +285,7 @@ export async function generateTTSForClassroom(
   classroomId: string,
   baseUrl: string,
   ttsOverride?: PlatformTtsConfig | null,
-  options?: { isolateAudio?: boolean },
+  options?: { isolateAudio?: boolean; languageDirective?: string },
 ): Promise<{ generated: number; failed: number; skipped: number }> {
   const audioDir = path.join(CLASSROOMS_DIR, classroomId, 'audio');
   await ensureDir(audioDir);
@@ -374,6 +374,7 @@ export async function generateTTSForClassroom(
             baseUrl: ttsBaseUrl,
             voice,
             speed: speechAction.speed,
+            providerOptions: { languageType: options?.languageDirective },
           },
           speechAction.text,
         );

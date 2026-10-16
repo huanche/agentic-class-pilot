@@ -1,3 +1,4 @@
+import { generateAlignedSceneActions as generateSceneActions } from '@/lib/server/aligned-scene-actions';
 /**
  * App adapters around the store-independent @openmaic/generation scene layer.
  */
@@ -7,7 +8,6 @@ import {
   applyOutlineFallbacks,
   buildCompleteScene,
   buildLanguageText,
-  generateSceneActions,
   generateSceneContent,
   type AICallFn,
   type AgentInfo,

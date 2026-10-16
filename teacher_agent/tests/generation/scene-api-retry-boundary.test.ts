@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SceneOutline } from '@/lib/types/generation';
 import { legacyPBLSceneFixture } from '@/tests/fixtures/pbl-v1-scene';
+import { approveFocusReview, fixtureTeachingPlan } from '@/tests/fixtures/focus-review';
 
 const mocks = vi.hoisted(() => ({
   callLLM: vi.fn(),
@@ -79,7 +80,13 @@ describe('scene API retry boundary', () => {
       thinkingConfig: undefined,
     });
     mocks.applyOutlineFallbacks.mockImplementation((value) => value);
-    mocks.callLLM.mockResolvedValue({ text: 'ok' });
+    mocks.callLLM.mockImplementation(async (params) => ({
+      text: params.system?.includes('[FOCUS_SPEECH_REVIEW]')
+        ? approveFocusReview(params.prompt)
+        : params.system?.includes('[SLIDE_TEACHING_PLAN]')
+          ? fixtureTeachingPlan()
+          : 'ok',
+    }));
     mocks.resolveVocationalActive.mockReturnValue(false);
   });
 
@@ -102,7 +109,7 @@ describe('scene API retry boundary', () => {
     vi.resetModules();
     mocks.generateSceneActions.mockImplementation(async (_outline, _content, aiCall) => {
       await aiCall('system', 'user');
-      return [];
+      return [{ id: 's', type: 'speech', text: '本页介绍重试控制。' }];
     });
     mocks.buildCompleteScene.mockReturnValue({
       id: 'scene-1',
@@ -122,7 +129,8 @@ describe('scene API retry boundary', () => {
     const body = await response.json();
 
     expect(body.success).toBe(true);
-    expect(mocks.callLLM.mock.calls[0][0].maxRetries).toBe(0);
+    expect(mocks.callLLM).toHaveBeenCalledTimes(2);
+    expect(mocks.callLLM.mock.calls.every((call) => call[0].maxRetries === 0)).toBe(true);
   });
 
   it('analyzes imported slide elements but persists the complete original canvas', async () => {
@@ -143,7 +151,7 @@ describe('scene API retry boundary', () => {
     };
     mocks.generateSceneActions.mockImplementation(async (_outline, content) => {
       expect(content).toMatchObject({ elements: canvas.elements, remark: '原始备注' });
-      return [];
+      return [{ id: 's', type: 'speech', text: '原始标题。' }];
     });
     mocks.buildCompleteScene.mockReturnValue({
       id: 'scene-imported-1',
@@ -169,6 +177,12 @@ describe('scene API retry boundary', () => {
     expect(body.success).toBe(true);
     expect(body.scene.content.canvas).toEqual(canvas);
     expect(body.scene.content.canvas.animations).toEqual([{ id: 'animation-1' }]);
+    const planCall = mocks.callLLM.mock.calls.find((call) =>
+      call[0].system?.includes('[SLIDE_TEACHING_PLAN]'),
+    );
+    expect(JSON.parse(planCall![0].prompt).elements).toMatchObject([
+      { id: 'title', text: '原始标题' },
+    ]);
   });
 
   it('normalizes stored legacy PBL content before generating actions and building the scene', async () => {

@@ -5,6 +5,7 @@ import type { SceneContext } from '@/lib/agent/tools/regenerate-scene-actions';
 import type { SceneOutline } from '@/lib/types/generation';
 import type { SceneContent } from '@/lib/types/stage';
 import type { PPTElement } from '@openmaic/dsl';
+import { approveFocusReview, fixtureTeachingPlan } from '@/tests/fixtures/focus-review';
 
 function slideOutline(id: string): SceneOutline {
   return { id, type: 'slide', title: 'Slide Title', description: 'd', keyPoints: ['a'], order: 0 };
@@ -67,11 +68,15 @@ describe('regenerate_scene tool', () => {
   it('regenerates slide content (with the instruction + baseline) then actions', async () => {
     const prompts: string[] = [];
     const stages: string[] = [];
-    const aiCall = vi.fn(async (stage: string, _system: string, user: string) => {
+    const aiCall = vi.fn(async (stage: string, system: string, user: string) => {
       stages.push(stage);
       prompts.push(user);
       // 1st call = content generation (expects slide JSON); 2nd = actions (array)
-      return prompts.length === 1 ? NEW_SLIDE_JSON : '[]';
+      return system.includes('[FOCUS_SPEECH_REVIEW]')
+        ? approveFocusReview(user)
+        : prompts.length === 1
+          ? NEW_SLIDE_JSON
+          : fixtureTeachingPlan(JSON.parse(user).elements[0]?.id ?? null, '新内容。');
     });
 
     const tool = makeRegenerateSceneTool({
@@ -87,7 +92,7 @@ describe('regenerate_scene tool', () => {
     expect((res as { isError?: boolean }).isError).toBeFalsy();
     expect(res.details.sceneId).toBe('s1');
     // Black box: content resolves the slide-content stage, actions the actions stage.
-    expect(stages).toEqual(['scene-content:slide', 'scene-actions']);
+    expect(stages).toEqual(['scene-content:slide', 'scene-actions', 'scene-actions']);
     // The content-generation prompt ran in EDIT MODE with the instruction + baseline.
     expect(prompts[0]).toContain('EDIT MODE');
     expect(prompts[0]).toContain('<<REGEN-INSTRUCTION-SENTINEL>>');
@@ -98,9 +103,13 @@ describe('regenerate_scene tool', () => {
 
   it('threads existing images as resources (id-ref baseline + non-empty assignedImages)', async () => {
     const prompts: string[] = [];
-    const aiCall = vi.fn(async (_stage: string, _system: string, user: string) => {
+    const aiCall = vi.fn(async (_stage: string, system: string, user: string) => {
       prompts.push(user);
-      return prompts.length === 1 ? NEW_SLIDE_JSON : '[]';
+      return system.includes('[FOCUS_SPEECH_REVIEW]')
+        ? approveFocusReview(user)
+        : prompts.length === 1
+          ? NEW_SLIDE_JSON
+          : fixtureTeachingPlan(JSON.parse(user).elements[0]?.id ?? null, '新内容。');
     });
 
     const dataSrc = `data:image/png;base64,${'Z'.repeat(2000)}`;

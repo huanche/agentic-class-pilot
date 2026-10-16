@@ -1,0 +1,76 @@
+name: narration-alignment-smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      case_start:
+        description: First synthetic case (1-10)
+        type: number
+        default: 1
+      case_end:
+        description: Last synthetic case (1-10)
+        type: number
+        default: 10
+
+permissions:
+  contents: read
+concurrency:
+  group: narration-alignment-smoke
+  cancel-in-progress: false
+
+jobs:
+  live-model-and-tts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.28.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: teacher_agent/pnpm-lock.yaml
+      - name: Install dependencies without application setup scripts
+        working-directory: teacher_agent
+        run: pnpm install --frozen-lockfile --ignore-scripts --network-concurrency=3
+      - name: Bundle the checked-out generation pipeline
+        run: node teacher_agent/devtools/narration-alignment/build-smoke.mjs /tmp/focus-smoke.mjs
+      - name: Verify bundle without using model credentials
+        env:
+          FOCUS_SMOKE_CHECK_ONLY: "1"
+          FOCUS_SMOKE_OUTPUT: /tmp/focus-check
+        run: node /tmp/focus-smoke.mjs
+      - name: Run isolated synthetic samples with server-managed models
+        env:
+          SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          CASE_START: ${{ inputs.case_start || 1 }}
+          CASE_END: ${{ inputs.case_end || 10 }}
+        run: |
+          set -euo pipefail
+          printf '%s\n' "$SERVER_SSH_KEY" > /tmp/focus_test_key
+          chmod 600 /tmp/focus_test_key
+          trap 'rm -f /tmp/focus_test_key /tmp/focus-smoke.mjs' EXIT
+          RUN_DIR="/tmp/agentic-focus-smoke-${GITHUB_RUN_ID}"
+          SSH=(ssh -i /tmp/focus_test_key -o StrictHostKeyChecking=accept-new "ubuntu@$SERVER_HOST")
+          scp -i /tmp/focus_test_key -o StrictHostKeyChecking=accept-new /tmp/focus-smoke.mjs "ubuntu@$SERVER_HOST:$RUN_DIR.mjs"
+          # The existing service continues running. Only a separate Node process
+          # reads its provider configuration and writes synthetic files under /tmp.
+          "${SSH[@]}" "docker exec agentic-teacher-prod mkdir -p '$RUN_DIR' && docker cp '$RUN_DIR.mjs' 'agentic-teacher-prod:$RUN_DIR/smoke.mjs'"
+          status=0
+          [[ "$CASE_START" =~ ^[0-9]+$ && "$CASE_END" =~ ^[0-9]+$ ]]
+          "${SSH[@]}" "timeout 600 docker exec -w /app -e FOCUS_SMOKE_OUTPUT='$RUN_DIR/results' -e FOCUS_SMOKE_TTS=1 -e FOCUS_SMOKE_CASE_START='$CASE_START' -e FOCUS_SMOKE_CASE_END='$CASE_END' -e LOG_LEVEL=error agentic-teacher-prod node '$RUN_DIR/smoke.mjs'" || status=$?
+          mkdir -p smoke-results
+          "${SSH[@]}" "docker exec agentic-teacher-prod sh -c 'test -d $RUN_DIR/results && tar -C $RUN_DIR/results -czf - .'" > smoke-results/results.tar.gz || true
+          "${SSH[@]}" "docker exec agentic-teacher-prod rm -f '$RUN_DIR/smoke.mjs' && rm -f '$RUN_DIR.mjs'" || true
+          exit "$status"
+      - name: Preserve generated samples and audio
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: narration-alignment-samples
+          path: smoke-results/
+          if-no-files-found: ignore
+          retention-days: 7

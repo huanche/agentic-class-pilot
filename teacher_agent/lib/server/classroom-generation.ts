@@ -1,3 +1,4 @@
+import { generateAlignedSceneActions as generateSceneActions } from '@/lib/server/aligned-scene-actions';
 import { nanoid } from 'nanoid';
 import { callLLM } from '@/lib/ai/llm';
 import { createStageAPI } from '@/lib/api/stage-api';
@@ -5,7 +6,6 @@ import type { StageStore } from '@/lib/api/stage-api-types';
 import {
   applyOutlineFallbacks,
   generateSceneOutlinesFromRequirements,
-  generateSceneActions,
   generateSceneContent,
   PBLGenerationError,
   withGenerationRetry,
@@ -752,7 +752,7 @@ export async function generateClassroom(
         stageId,
         options.baseUrl,
         options.platformModelConfig?.tts,
-        { isolateAudio: true },
+        { isolateAudio: true, languageDirective },
       );
       for (const scene of scenes) {
         const regenerate = durationRegenerators.get(scene.id);
@@ -770,7 +770,7 @@ export async function generateClassroom(
                 stageId,
                 options.baseUrl,
                 options.platformModelConfig?.tts,
-                { isolateAudio: true },
+                { isolateAudio: true, languageDirective },
               );
               if (result.failed || !result.generated) throw new Error('配音时长校正失败');
               return candidate;
@@ -811,7 +811,7 @@ export async function generateClassroom(
                 stageId,
                 options.baseUrl,
                 options.platformModelConfig?.tts,
-                { isolateAudio: true },
+                { isolateAudio: true, languageDirective },
               );
               if (audio.failed || !audio.generated) throw new Error('整课配音校正失败');
               return candidate;

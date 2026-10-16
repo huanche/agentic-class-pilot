@@ -1,3 +1,5 @@
+import { generateAlignedSceneActions as generateSceneActions } from '@/lib/server/aligned-scene-actions';
+import { FocusSpeechAlignmentError } from '@/lib/server/aligned-scene-actions';
 /**
  * `regenerate_scene` agent tool
  *
@@ -20,11 +22,7 @@
 
 import { Type, type Static } from 'typebox';
 import type { AgentTool } from '@earendil-works/pi-agent-core';
-import {
-  generateSceneActions,
-  generateSceneContent,
-  type SceneGenerationContext,
-} from '@openmaic/generation';
+import { generateSceneContent, type SceneGenerationContext } from '@openmaic/generation';
 import type { Action } from '@/lib/types/action';
 import type { GeneratedSlideContent, PdfImage, ImageMapping } from '@/lib/types/generation';
 import type { SceneContent } from '@/lib/types/stage';
@@ -278,11 +276,21 @@ export function makeRegenerateSceneTool(
         previousSpeeches: [],
       };
 
-      const actions = await generateSceneActions(outline, newContent, actionsAiCall, {
-        ctx,
-        agents,
-        languageDirective,
-      });
+      let actions: Action[];
+      try {
+        actions = await generateSceneActions(outline, newContent, actionsAiCall, {
+          ctx,
+          agents,
+          languageDirective,
+        });
+      } catch (error) {
+        if (!(error instanceof FocusSpeechAlignmentError)) throw error;
+        return {
+          content: [{ type: 'text', text: error.message }],
+          details: { sceneId, content: null, actions: [] },
+          isError: true,
+        };
+      }
 
       const text =
         actions.length > 0

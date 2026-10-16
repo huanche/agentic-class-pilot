@@ -12,6 +12,7 @@ import { generateSceneActions } from '@openmaic/generation';
 import type { SlideContent } from '@/lib/types/stage';
 import type { PPTElement, Slide } from '@openmaic/dsl';
 import { legacyPBLSceneFixture } from '@/tests/fixtures/pbl-v1-scene';
+import { approveFocusReview, fixtureTeachingPlan } from '@/tests/fixtures/focus-review';
 
 /** Minimal SceneOutline stub */
 const stubOutline = (id: string, title: string, order = 1) => ({
@@ -70,7 +71,11 @@ function makeDeps(sceneId: string, extra?: Partial<SceneContext>) {
     ...extra,
   };
   return {
-    aiCall: async () => '',
+    aiCall: vi.fn(async (_stage: string, system: string, user: string) =>
+      system.includes('[FOCUS_SPEECH_REVIEW]')
+        ? approveFocusReview(user)
+        : fixtureTeachingPlan('el1', 'Hello'),
+    ),
     getSceneContext: (id: string) => (id === sceneId ? ctx : undefined),
   };
 }
@@ -95,11 +100,12 @@ describe('regenerate_scene_actions', () => {
   // but generateSceneActions expects GeneratedSlideContent = { elements, background? }.
   // Without conversion, 'elements' in content is false → returns [] immediately.
   it('converts SlideContent (runtime) to GeneratedSlideContent before calling the generator', async () => {
-    const tool = makeRegenerateSceneActionsTool(makeDeps('s1'));
+    const deps = makeDeps('s1');
+    const tool = makeRegenerateSceneActionsTool(deps);
     await tool.execute('tc-shape', { sceneId: 's1' });
 
-    expect(mockGen).toHaveBeenCalledOnce();
-    const [, passedContent] = mockGen.mock.lastCall ?? [];
+    expect(deps.aiCall).toHaveBeenCalledTimes(2);
+    const passedContent = JSON.parse(deps.aiCall.mock.calls[0][2]);
     // The generator must receive the flattened shape with 'elements' at top level
     expect(passedContent).toHaveProperty('elements');
     expect(Array.isArray((passedContent as { elements: unknown }).elements)).toBe(true);
@@ -182,13 +188,13 @@ describe('regenerate_scene_actions', () => {
 
   it('includes the action count in the content text', async () => {
     const multiCtx: SceneContext = {
-      outline: stubOutline('s2', 'Quiz', 2),
-      allOutlines: [stubOutline('s1', 'T', 1), stubOutline('s2', 'Quiz', 2)],
+      outline: { ...stubOutline('s2', 'Quiz', 2), type: 'quiz' },
+      allOutlines: [stubOutline('s1', 'T', 1), { ...stubOutline('s2', 'Quiz', 2), type: 'quiz' }],
       content: { type: 'quiz', questions: [] },
       stageId: 'stage1',
     };
     const deps = {
-      aiCall: async () => '',
+      aiCall: async (_stage: string, _system: string, user: string) => approveFocusReview(user),
       getSceneContext: (id: string) => (id === 's2' ? multiCtx : undefined),
     };
     const tool = makeRegenerateSceneActionsTool(deps);
@@ -198,13 +204,14 @@ describe('regenerate_scene_actions', () => {
   });
 
   it('passes previousSpeeches to the generator', async () => {
-    const tool = makeRegenerateSceneActionsTool(makeDeps('s1'));
+    const deps = makeDeps('s1');
+    const tool = makeRegenerateSceneActionsTool(deps);
     await tool.execute('tc3', { sceneId: 's1', previousSpeeches: ['hello'] });
 
-    expect(mockGen).toHaveBeenCalledOnce();
-    // Verify via the last call's options arg (4th positional param)
-    const [, , , options] = mockGen.mock.lastCall ?? [];
-    expect(options?.ctx?.previousSpeeches).toEqual(['hello']);
+    expect(deps.aiCall).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(deps.aiCall.mock.calls[0][2]).courseContext.previousSpeeches).toEqual([
+      'hello',
+    ]);
   });
 
   it('returns an error result when sceneId is not in the context map', async () => {
@@ -217,15 +224,15 @@ describe('regenerate_scene_actions', () => {
 
   // ── Bug 1 & Bug 2: empty generation is surfaced as an error ──────────────────
   it('returns isError when generateSceneActions yields an empty array', async () => {
-    mockGen.mockResolvedValueOnce([]);
-
-    const tool = makeRegenerateSceneActionsTool(makeDeps('s1'));
+    const deps = makeDeps('s1');
+    deps.aiCall.mockResolvedValue('{"segments":[]}');
+    const tool = makeRegenerateSceneActionsTool(deps);
     const res = await tool.execute('tc-empty', { sceneId: 's1' });
 
     expect((res as { isError?: boolean }).isError).toBe(true);
     expect((res.details as { actions: unknown[] }).actions).toHaveLength(0);
     const text = (res.content[0] as { type: string; text: string }).text;
-    expect(text).toMatch(/no actions|no action|0 action/i);
+    expect(text).toContain('讲解与聚焦校验未通过');
   });
 
   it('tool has expected metadata', () => {

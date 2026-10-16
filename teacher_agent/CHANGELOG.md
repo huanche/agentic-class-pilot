@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Fixed
+
+- Validate slide narration and focus targets together before TTS across all app generation paths; retry one failed candidate and surface unresolved alignment as a failed page.
+- Generate narration as atomic target/text segments and compile them to existing playback actions, including reveal, video and discussion, without guessing missing targets.
+- Preserve generated speech boundaries and carry their focus through provider-driven audio splitting, pause/resume, and actual speech completion.
+- Do not replay completed narration when resuming during a reveal between speech segments.
+- Carry the course language into Qwen TTS and explicitly select it for single-language narration so short Chinese/numeric sentences do not drift to Japanese; retain Auto for mixed code.
+
+
 ## [0.3.2] - 2026-08-14
 
 ### Features

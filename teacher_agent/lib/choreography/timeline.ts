@@ -9,8 +9,8 @@
  * - **Blocking** actions (speech, whiteboard, widget, video, discussion) hold
  *   the cursor until they complete — the next action starts after them.
  * - **Fire-and-forget** actions (spotlight, laser) do not block: playback
- *   continues immediately, and the effect persists visually for
- *   {@link EFFECT_AUTO_CLEAR_MS} before auto-clearing.
+ *   continues immediately. A cue paired with speech stays until that speech
+ *   ends; unpaired effects use {@link EFFECT_AUTO_CLEAR_MS}.
  *
  * The blocking/non-blocking partition is read from the DSL's
  * {@link FIRE_AND_FORGET_ACTIONS} rather than hardcoded here, so the two stay
@@ -49,6 +49,15 @@ import {
 } from './timing';
 
 const FIRE_AND_FORGET = new Set<string>(FIRE_AND_FORGET_ACTIONS);
+
+/** A visual cue may precede other cues/reveals, but cannot cross a media/board action. */
+export function focusSpeechIndex(actions: readonly Action[], cueIndex: number): number {
+  for (let index = cueIndex + 1; index < actions.length; index++) {
+    if (actions[index].type === 'speech') return index;
+    if (!['spotlight', 'laser', 'reveal', 'discussion'].includes(actions[index].type)) break;
+  }
+  return -1;
+}
 
 /**
  * Synthetic segment emitted when a whiteboard mutation runs while the board is
@@ -337,15 +346,15 @@ export function resolveActionTimeline(
     });
   });
 
-  clampFireAndForgetLifetimes(segments, clockMs);
+  clampFireAndForgetLifetimes(segments, clockMs, scenes);
 
   return segments;
 }
 
 /**
  * Correct the visual `durationMs` of fire-and-forget effects (spotlight/laser)
- * in place. Their nominal lifetime is {@link EFFECT_AUTO_CLEAR_MS}, but the
- * engine cuts it short — and occasionally extends it:
+ * in place. Speech-paired cues follow the real (speed-adjusted) speech duration.
+ * Unpaired cues retain the standalone timer behavior described below:
  *
  * - **Scene boundary / completion.** The app plays one `PlaybackEngine` per
  *   scene: switching scenes tears the engine down (`stop()` → `clearEffects()`)
@@ -365,7 +374,11 @@ export function resolveActionTimeline(
  * @param completionMs the final cursor clock (when the last scene's actions are
  *        exhausted and playback completes → `clearEffects`).
  */
-function clampFireAndForgetLifetimes(segments: TimelineSegment[], completionMs: number): void {
+function clampFireAndForgetLifetimes(
+  segments: TimelineSegment[],
+  completionMs: number,
+  scenes: SceneCore[],
+): void {
   // First segment startMs per scene index → the wall-clock of that scene's
   // boundary clearEffects. Every scene yields ≥1 segment, so all indices exist.
   const sceneStartMs = new Map<number, number>();
@@ -381,6 +394,28 @@ function clampFireAndForgetLifetimes(segments: TimelineSegment[], completionMs: 
     const nextSceneStart = sceneStartMs.get(seg.sceneIndex + 1);
     const boundaryMs = nextSceneStart ?? completionMs;
 
+    const speechIndex = focusSpeechIndex(scenes[seg.sceneIndex].actions ?? [], seg.actionIndex);
+    const paired = segments.find(
+      (other) =>
+        other.sceneIndex === seg.sceneIndex &&
+        other.actionIndex === speechIndex &&
+        other.action.type === 'speech',
+    );
+    if (paired) {
+      let clearMs = paired.startMs + paired.durationMs;
+      // A second cue of the same kind replaces the old target immediately.
+      for (let j = i + 1; j < segments.length; j++) {
+        const other = segments[j];
+        if (other.sceneIndex !== seg.sceneIndex || other === paired) break;
+        if (other.action.type === seg.action.type) {
+          clearMs = Math.min(clearMs, other.startMs);
+          break;
+        }
+      }
+      seg.durationMs = Math.max(0, Math.min(boundaryMs, clearMs) - seg.startMs);
+      return;
+    }
+
     // Shared auto-clear deadline, chained through any later effects in THIS scene
     // that fire before it elapses (each resets the shared timer). Segments are in
     // non-decreasing startMs order, so a forward walk suffices.
@@ -388,7 +423,11 @@ function clampFireAndForgetLifetimes(segments: TimelineSegment[], completionMs: 
     for (let j = i + 1; j < segments.length; j++) {
       const other = segments[j];
       if (other.sceneIndex !== seg.sceneIndex) break; // cleared at the boundary anyway
-      if (other.blocking) continue; // blocking actions don't touch the effect timer
+      if (other.action.type === 'speech') {
+        deadlineMs = Math.min(deadlineMs, other.startMs + other.durationMs);
+        break; // Playback clears any remaining visual cue at the end of a line.
+      }
+      if (other.blocking) continue;
       // Chain breaks at exact equality too: the earlier effect's clear timer was
       // registered first (same 5000ms delay as the reading timer that triggers
       // the later effect), so it fires before the later effect resets it. Its

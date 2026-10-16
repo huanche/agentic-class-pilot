@@ -61,6 +61,23 @@ describe('pickNarratorAgent', () => {
 });
 
 describe('resolveAgentVoiceOptions — voice-design source', () => {
+  it('carries the course language to Qwen instead of guessing from each short sentence', async () => {
+    await expect(
+      resolveAgentVoiceOptions(undefined, {
+        providerId: 'qwen-tts',
+        voiceId: 'Cherry',
+        language: 'en-US',
+        languageDirective: '使用简体中文讲解',
+      }),
+    ).resolves.toEqual({ languageType: '使用简体中文讲解' });
+    await expect(
+      resolveAgentVoiceOptions(undefined, {
+        providerId: 'qwen-tts',
+        voiceId: 'Cherry',
+        language: 'ja-JP',
+      }),
+    ).resolves.toEqual({ languageType: 'ja-JP' });
+  });
   beforeEach(() => {
     mockGetOptions.mockReset();
     mockGetOptions.mockResolvedValue({});

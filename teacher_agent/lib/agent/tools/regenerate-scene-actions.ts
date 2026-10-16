@@ -1,3 +1,5 @@
+import { generateAlignedSceneActions as generateSceneActions } from '@/lib/server/aligned-scene-actions';
+import { FocusSpeechAlignmentError } from '@/lib/server/aligned-scene-actions';
 /**
  * `regenerate_scene_actions` agent tool
  *
@@ -20,11 +22,7 @@
 
 import { Type, type Static } from 'typebox';
 import type { AgentTool } from '@earendil-works/pi-agent-core';
-import {
-  generateSceneActions,
-  type SceneGenerationContext,
-  type AgentInfo,
-} from '@openmaic/generation';
+import { type SceneGenerationContext, type AgentInfo } from '@openmaic/generation';
 import type { Action } from '@/lib/types/action';
 import type {
   SceneOutline,
@@ -229,12 +227,22 @@ export function makeRegenerateSceneActionsTool(
       // function returns [] immediately.
       const generationContent = toGenerationContent(content);
 
-      const actions = await generateSceneActions(outline, generationContent, aiCallFn, {
-        ctx,
-        agents,
-        userProfile,
-        languageDirective,
-      });
+      let actions: Action[];
+      try {
+        actions = await generateSceneActions(outline, generationContent, aiCallFn, {
+          ctx,
+          agents,
+          userProfile,
+          languageDirective,
+        });
+      } catch (error) {
+        if (!(error instanceof FocusSpeechAlignmentError)) throw error;
+        return {
+          content: [{ type: 'text', text: error.message }],
+          details: { sceneId, actions: [] },
+          isError: true,
+        };
+      }
 
       if (actions.length === 0) {
         return {
