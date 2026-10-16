@@ -143,7 +143,14 @@ export function measureScenePlaybackSeconds(
 }
 
 export function durationMeasurementKey(scene: Scene): string {
-  const text = JSON.stringify(scene.actions ?? []);
+  // Reference conversion changes ids/URLs without changing the rendered audio.
+  const text = JSON.stringify((scene.actions ?? []).map((action) => {
+    if (action.type !== 'speech') return action;
+    const transport = action as typeof action & { audioUrl?: string; audioRef?: string };
+    return { id: action.id, type: action.type, text: action.text, speed: action.speed ?? 1,
+      hasAudio: Boolean(action.audioId || transport.audioUrl || transport.audioRef),
+      invalidated: Boolean(action.audioInvalidated) };
+  }));
   let hash = 2166136261;
   for (let index = 0; index < text.length; index++)
     hash = Math.imul(hash ^ text.charCodeAt(index), 16777619);

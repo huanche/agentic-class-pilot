@@ -38,7 +38,7 @@ import type { UserRequirements } from '@/lib/types/generation';
 import type { Scene, Stage } from '@/lib/types/stage';
 import { AGENT_COLOR_PALETTE, AGENT_DEFAULT_AVATARS } from '@/lib/constants/agent-defaults';
 import { calibrateNarrationDuration, planCourseDuration, resolveCourseMinutes, withCourseDurationRequirement, withNarrationDuration, withSceneContentDuration, type DurationFeedback } from '@/lib/generation/course-duration';
-import { removeClassroomTtsAudio } from '@/lib/server/classroom-media-generation';
+import { removeClassroomTtsAudio, finalizeClassroomTtsAudio } from '@/lib/server/classroom-media-generation';
 import type { Action } from '@/lib/types/action';
 
 const log = createLogger('Classroom');
@@ -713,7 +713,7 @@ export async function generateClassroom(
     });
 
     try {
-      await generateTTSForClassroom(scenes, stageId, options.baseUrl, options.platformModelConfig?.tts);
+      await generateTTSForClassroom(scenes, stageId, options.baseUrl, options.platformModelConfig?.tts, { isolateAudio: true });
       for (const scene of scenes) {
         const regenerate = durationRegenerators.get(scene.id);
         if (!regenerate) continue;
@@ -721,7 +721,7 @@ export async function generateClassroom(
           regenerate: async (feedback, previous) => {
             const candidate = { ...scene, actions: await regenerate(feedback), timing: { ...previous.timing, measuredDurationSec: undefined } } as Scene;
             try {
-              const result = await generateTTSForClassroom([candidate], stageId, options.baseUrl, options.platformModelConfig?.tts);
+              const result = await generateTTSForClassroom([candidate], stageId, options.baseUrl, options.platformModelConfig?.tts, { isolateAudio: true });
               if (result.failed || !result.generated) throw new Error('配音时长校正失败');
               return candidate;
             } catch (error) {
@@ -734,6 +734,7 @@ export async function generateClassroom(
         scene.actions = calibrated.actions;
         scene.timing = calibrated.timing;
       }
+      for (const scene of scenes) await finalizeClassroomTtsAudio(scene, stageId, options.baseUrl);
       log.info('TTS generation complete');
     } catch (err) {
       log.warn('TTS generation phase failed, continuing:', err);

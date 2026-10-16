@@ -285,6 +285,7 @@ export async function generateTTSForClassroom(
   classroomId: string,
   baseUrl: string,
   ttsOverride?: PlatformTtsConfig | null,
+  options?: { isolateAudio?: boolean },
 ): Promise<{ generated: number; failed: number; skipped: number }> {
   const audioDir = path.join(CLASSROOMS_DIR, classroomId, 'audio');
   await ensureDir(audioDir);
@@ -341,7 +342,7 @@ export async function generateTTSForClassroom(
   for (const scene of scenes) {
     if (!scene.actions) continue;
     const audioSeconds: Record<string, number | undefined> = {};
-    const renderId = nanoid(8);
+    const renderId = options?.isolateAudio ? nanoid(8) : undefined;
 
     // Split long speech actions into multiple shorter ones before TTS generation,
     // mirroring the client-side approach. Each sub-action gets its own audio file.
@@ -362,7 +363,7 @@ export async function generateTTSForClassroom(
       // Server transport emits the derived id plus the serving URL; the
       // client-side converter collapses the pair into one pool asset on
       // first load. Browser generation allocates pool ids directly.
-      const audioId = `tts_s${sceneOrder}_${action.id}_${renderId}`;
+      const audioId = `tts_s${sceneOrder}_${action.id}${renderId ? `_${renderId}` : ''}`;
 
       try {
         const result = await generateTTS(
@@ -400,6 +401,31 @@ export async function generateTTSForClassroom(
   }
 
   return { generated, failed, skipped };
+}
+
+/** Publish only the chosen candidate under the stable name used by browser round-trip recovery. */
+export async function finalizeClassroomTtsAudio(scene: Scene, classroomId: string, baseUrl: string): Promise<void> {
+  const directory = path.resolve(CLASSROOMS_DIR, classroomId, 'audio');
+  for (const action of scene.actions ?? []) {
+    if (action.type !== 'speech') continue;
+    const speech = action as ServerTransportSpeechAction;
+    if (!speech.audioUrl) continue;
+    if (!/^[A-Za-z0-9_-]+$/.test(action.id) || !Number.isSafeInteger(scene.order)) {
+      throw new Error('Invalid narration identity');
+    }
+    const previous = new URL(speech.audioUrl);
+    const filename = decodeURIComponent(previous.pathname.split('/').pop() || '');
+    const source = path.resolve(directory, filename);
+    if (path.dirname(source) !== directory || !filename.startsWith('tts_')) throw new Error('Invalid narration path');
+    const extension = path.extname(filename);
+    const stableId = `tts_s${scene.order}_${action.id}`;
+    const stableName = `${stableId}${extension}`;
+    const destination = path.resolve(directory, stableName);
+    if (source !== destination) await fs.rename(source, destination);
+    speech.audioId = stableId;
+    speech.audioUrl = `${mediaServingUrl(baseUrl, classroomId, `audio/${stableName}`)}${previous.search}`;
+  }
+  if (scene.timing) scene.timing.measurementKey = durationMeasurementKey(scene);
 }
 
 /** Only remove files allocated to the discarded candidate, within this classroom's audio directory. */

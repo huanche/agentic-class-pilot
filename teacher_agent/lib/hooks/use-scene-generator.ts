@@ -467,6 +467,7 @@ export async function generateTTSForScene(
       );
       if (assetId) {
         action.audioId = assetId;
+        delete action.audioInvalidated;
         freshAllocations.push(assetId);
       }
     } catch (error) {

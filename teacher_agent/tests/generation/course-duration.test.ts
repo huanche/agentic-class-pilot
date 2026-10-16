@@ -112,6 +112,16 @@ describe('course duration contract', () => {
     if (value.actions[0].type === 'speech') value.actions[0].text = '改过的讲稿';
     expect(assessCourseDuration([value], 2, 1).status).toBe('unmeasured');
   });
+
+  it('keeps measured duration when transport URLs become local asset references', () => {
+    const original = scene(120);
+    original.actions = [{ id: 'a', type: 'speech', text: '同一段讲解', audioId: 'tts_s1_a', audioUrl: 'https://teacher.example/audio.wav' } as never];
+    original.timing!.measurementKey = durationMeasurementKey(original);
+    const converted = { ...original, actions: [{ id: 'a', type: 'speech', text: '同一段讲解', audioId: 'ast_converted' }] } as Scene;
+    expect(assessCourseDuration([converted], 2, 1).status).toBe('within-tolerance');
+    converted.actions = [{ id: 'a', type: 'speech', text: '同一段讲解' }];
+    expect(assessCourseDuration([converted], 2, 1).status).toBe('unmeasured');
+  });
 });
 
 describe('measured narration calibration', () => {
