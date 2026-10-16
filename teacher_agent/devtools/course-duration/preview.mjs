@@ -7,13 +7,13 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const require = createRequire(import.meta.url);
 const { build } = createRequire(require.resolve('tsx/package.json'))('esbuild');
-const teacher = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const teacher = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'course-duration-'));
 const fixturesDir =
   process.env.COURSE_DURATION_FIXTURES || path.resolve(teacher, '../outputs/playback-diagnostics');
 const alias = { '@': teacher };
 await build({
-  entryPoints: [path.join(teacher, 'scripts/course-duration-preview.tsx')],
+  entryPoints: [path.join(teacher, 'devtools/course-duration/preview.tsx')],
   outfile: path.join(temporary, 'preview.js'),
   bundle: true,
   platform: 'browser',

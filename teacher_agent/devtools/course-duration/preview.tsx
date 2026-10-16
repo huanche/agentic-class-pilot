@@ -1,3 +1,4 @@
+// Offline development preview; kept outside the production dependency-install inputs.
 import { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import {

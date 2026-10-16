@@ -18,7 +18,7 @@
 在 `teacher_agent` 目录运行：
 
 ```powershell
-pnpm preview:course-duration
+node devtools/course-duration/preview.mjs
 ```
 
 打开 <http://127.0.0.1:3214>。这里使用真实的输入组件、预算与音频测量函数，可验证留空、20 分钟、非法输入和预算合计。它是独立的离线测试页，不是完整教师工作区，不会调用模型或 TTS。
