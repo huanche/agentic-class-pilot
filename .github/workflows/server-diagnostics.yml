@@ -1,0 +1,40 @@
+name: server-diagnostics-read-only
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Inspect service readiness without changing data
+        env:
+          SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+        run: |
+          set -euo pipefail
+          printf '%s\n' "$SERVER_SSH_KEY" > /tmp/diagnostic_key
+          chmod 600 /tmp/diagnostic_key
+          ssh -i /tmp/diagnostic_key -o StrictHostKeyChecking=accept-new "ubuntu@$SERVER_HOST" 'bash -s' <<'REMOTE'
+          set -eu
+          echo '--- disk space ---'
+          df -P / /home/ubuntu
+          echo '--- memory ---'
+          free -m
+          echo '--- containers ---'
+          docker ps -a --format '{{.Names}} | {{.Image}} | {{.Status}}'
+          echo '--- database readiness ---'
+          for database in $(docker ps -a --format '{{.Names}} {{.Image}}' | awk 'tolower($0) ~ /postgres/ { print $1 }'); do
+            echo "database=$database"
+            docker inspect "$database" --format 'state={{.State.Status}} restarting={{.State.Restarting}} oom={{.State.OOMKilled}} restartCount={{.RestartCount}}'
+            docker exec "$database" pg_isready || true
+            # Return categories only. Never publish SQL, credentials or raw application logs.
+            docker logs --tail 300 "$database" 2>&1 | python3 -c 'import sys,json; text=sys.stdin.read().lower(); patterns={"disk_full":"no space left on device", "out_of_memory":"out of memory", "permission_denied":"permission denied", "ready":"ready to accept connections", "recovery":"recovery", "invalid_checkpoint":"invalid checkpoint", "missing_wal":"could not locate a valid checkpoint", "startup":"starting up", "invalid_record":"invalid record length", "panic":"panic", "fatal":"fatal", "lock_exists":"lock file", "shutdown":"shutdown"}; print(json.dumps({"log_category_counts": {key:text.count(value) for key,value in patterns.items()}}))'
+          done
+          echo '--- Docker disk usage ---'
+          docker system df
+          REMOTE
