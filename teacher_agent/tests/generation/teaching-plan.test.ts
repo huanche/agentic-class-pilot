@@ -55,6 +55,7 @@ describe('atomic teaching plan compilation', () => {
   });
   it.each([
     explain(null),
+    { ...explain(null), purpose: ['explanation'] },
     explain('missing'),
     { kind: 'narration', purpose: 'explanation', speech: '没有目标字段。' },
     { ...explain('error'), targetId: ['error', 'answer'] },

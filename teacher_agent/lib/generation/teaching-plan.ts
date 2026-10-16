@@ -66,7 +66,10 @@ export function compileTeachingPlan(
       issues.push(`${at}: unsupported fields; use the teaching segment schema`);
     if (segment.kind === 'narration') {
       const { targetId, purpose, speech, focus, revealBefore } = segment;
-      if (!['explanation', 'opening', 'transition', 'overview'].includes(String(purpose)))
+      if (
+        typeof purpose !== 'string' ||
+        !['explanation', 'opening', 'transition', 'overview'].includes(purpose)
+      )
         issues.push(`${at}: invalid narration purpose`);
       if (!text(speech)) issues.push(`${at}: narration must be non-empty text`);
       if (targetId !== null && (!text(targetId) || !known.has(targetId)))
