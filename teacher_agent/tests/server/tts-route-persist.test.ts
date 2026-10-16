@@ -52,6 +52,20 @@ describe('POST /api/generate/tts server-side persistence', () => {
     ttsApiKey: 'test-key',
   };
 
+  it.each(['Arrearage', 'insufficient_quota', 'InvalidApiKey'])(
+    'reports %s as an account failure rather than a retryable server error',
+    async (code) => {
+      const { generateTTS } = await import('@/lib/audio/tts-providers');
+      vi.mocked(generateTTS).mockRejectedValueOnce(
+        new Error(`Qwen TTS API error: {"code":"${code}"}`),
+      );
+      const { response, json } = await callRoute({ ...baseBody, audioId: 'tts_account_failure' });
+      expect(response.status).toBe(402);
+      expect(json.errorCode).toBe('TTS_ACCOUNT_UNAVAILABLE');
+      expect(json.error).toContain('已暂停配音');
+    },
+  );
+
   it('writes the audio file and returns the serving URL', async () => {
     const { response, json } = await callRoute({
       ...baseBody,

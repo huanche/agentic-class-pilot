@@ -1,6 +1,8 @@
 import { type NextRequest } from 'next/server';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import {
+  deleteServerCourse,
+  CourseDeletionConflict,
   listCourseArtifacts,
   listCourseJobs,
   readServerCourse,
@@ -9,6 +11,18 @@ import {
 import type { CourseSpace } from '@/lib/course-space/types';
 
 export const dynamic = 'force-dynamic';
+
+export async function DELETE(_req: NextRequest, context: { params: Promise<{ courseId: string }> }) {
+  const { courseId } = await context.params;
+  try {
+    await deleteServerCourse(courseId);
+    return apiSuccess({ deleted: true });
+  } catch (error) {
+    if (error instanceof CourseDeletionConflict)
+      return apiError('INVALID_REQUEST', 409, error.message);
+    return apiError('INTERNAL_ERROR', 500, '课程删除失败，请重试');
+  }
+}
 
 export async function GET(_req: NextRequest, context: { params: Promise<{ courseId: string }> }) {
   const { courseId } = await context.params;

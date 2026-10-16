@@ -31,6 +31,7 @@ import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { validateUrlForSSRF } from '@/lib/server/ssrf-guard';
 import { VOXCPM_AUTO_VOICE_ID, VOXCPM_TTS_PROVIDER_ID } from '@/lib/audio/voxcpm';
 import { isSpeakableSpeechText } from '@/lib/audio/tts-utils';
+import { ttsAccountFailureMessage } from '@/lib/audio/tts-errors';
 
 const log = createLogger('TTS API');
 
@@ -194,6 +195,8 @@ export async function POST(req: NextRequest) {
     if (error instanceof TTSRateLimitError) {
       return apiError('RATE_LIMITED', 429, error.message);
     }
+    const accountFailure = ttsAccountFailureMessage(error);
+    if (accountFailure) return apiError('TTS_ACCOUNT_UNAVAILABLE', 402, accountFailure);
     return apiError(
       'GENERATION_FAILED',
       500,

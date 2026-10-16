@@ -1,5 +1,24 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
+it.each([
+  ['', 2],
+  ['1', 1],
+  ['3', 3],
+  ['50', 4],
+  ['0', 1],
+  ['invalid', 2],
+])('configures the independent narration pool with %s', async (value, expected) => {
+  const previous = process.env.PARALLEL_TTS_CONCURRENCY;
+  process.env.PARALLEL_TTS_CONCURRENCY = String(value);
+  try {
+    const { getParallelTtsConcurrency } = await import('@/lib/server/provider-config');
+    expect(getParallelTtsConcurrency()).toBe(expected);
+  } finally {
+    if (previous === undefined) delete process.env.PARALLEL_TTS_CONCURRENCY;
+    else process.env.PARALLEL_TTS_CONCURRENCY = previous;
+  }
+});
+
 // Mock fs — only intercept server-providers.yml; delegate everything else to real fs.
 // This prevents YAML config from leaking host-machine state into tests while keeping
 // the mock scoped to what provider-config actually reads.

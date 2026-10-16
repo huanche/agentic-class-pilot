@@ -1285,8 +1285,17 @@ function GenerationPreviewContent() {
           signal,
           FOREGROUND_SCENE_RETRY_OPTIONS,
           firstActionsContext,
+          (progress) => setStatusMessage(progress.calibrating
+            ? '正在校正首页讲解时长，已保留当前讲稿'
+            : `正在合成首页配音：${progress.completed}/${progress.total} 段`),
         );
         if (!ttsResult.success) {
+          if (ttsResult.blocked) {
+            store.addScene(firstScene);
+            store.setCurrentSceneId(firstScene.id);
+            await store.saveToStorage();
+            throw new Error(ttsResult.error);
+          }
           if (!currentSession.conversionMode) throw new Error(t('generation.speechFailed'));
           fallbackKind = 'tts-generation-failure';
           fallbackReason = t('generation.speechFailed');

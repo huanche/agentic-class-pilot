@@ -7,6 +7,7 @@ import {
   getServerVideoProviders,
   getServerWebSearchProviders,
   getParallelSceneConcurrency,
+  getParallelTtsConcurrency,
 } from '@/lib/server/provider-config';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { createLogger } from '@/lib/logger';
@@ -25,6 +26,7 @@ export async function GET() {
       webSearch: getServerWebSearchProviders(),
       generation: {
         parallelSceneConcurrency: getParallelSceneConcurrency(),
+        parallelTtsConcurrency: getParallelTtsConcurrency(),
       },
     });
   } catch (error) {

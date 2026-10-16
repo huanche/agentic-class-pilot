@@ -8,6 +8,7 @@
  */
 
 import { create } from 'zustand';
+import { ttsConcurrency } from '@/lib/audio/tts-concurrency';
 import { persist } from 'zustand/middleware';
 import type { ProviderId } from '@/lib/ai/providers';
 import type { ProvidersConfig } from '@/lib/types/settings';
@@ -205,6 +206,7 @@ export interface SettingsState {
   // Server-configured opt-in parallel scene-content concurrency (#572).
   // 0 = off (serial generation); populated by fetchServerProviders.
   parallelSceneConcurrency: number;
+  parallelTtsConcurrency: number;
 
   // Auto-config lifecycle flag (persisted)
   autoConfigApplied: boolean;
@@ -914,9 +916,6 @@ export const useSettingsStore = create<SettingsState>()(
         videoGenerationEnabled: false,
         reviewOutlineEnabled: false,
 
-        // TTS is OFF by default; auto-enabled on first server-sync when a TTS
-        // provider is configured (mirrors image/video). Fresh installs with no
-        // provider stay off and show an "enable browser-native" CTA (#665).
         // This deployment has a server-managed Qwen TTS provider configured.
         // Keep voice playback available on a fresh browser origin/port; users
         // can still disable it from Audio settings when needed.
@@ -925,6 +924,7 @@ export const useSettingsStore = create<SettingsState>()(
 
         // Off until the server reports a concurrency via fetchServerProviders.
         parallelSceneConcurrency: 0,
+        parallelTtsConcurrency: 2,
 
         autoConfigApplied: false,
 
@@ -1373,7 +1373,7 @@ export const useSettingsStore = create<SettingsState>()(
               image: Record<string, { models?: string[] }>;
               video: Record<string, Record<string, never>>;
               webSearch: Record<string, Record<string, never>>;
-              generation?: { parallelSceneConcurrency?: number };
+              generation?: { parallelSceneConcurrency?: number; parallelTtsConcurrency?: number };
             };
 
             set((state) => {
@@ -1775,6 +1775,7 @@ export const useSettingsStore = create<SettingsState>()(
                   0,
                   Math.floor(data.generation?.parallelSceneConcurrency ?? 0),
                 ),
+                parallelTtsConcurrency: ttsConcurrency(data.generation?.parallelTtsConcurrency),
                 autoConfigApplied: true,
                 // Validated selections
                 ...(validLLMProvider !== state.providerId && {

@@ -143,6 +143,8 @@ export interface CourseStudentLearningState {
 }
 
 export interface CourseSpace {
+  /** Soft deletion retains source files for recovery; normal reads exclude this course. */
+  deletedAt?: number;
   onboarding?: { version: 1; step: 1 | 2 | 3; outlineArtifactId?: string; completedAt?: number };
   id: string;
   teacherId: string;
