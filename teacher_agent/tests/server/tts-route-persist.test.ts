@@ -60,9 +60,9 @@ describe('POST /api/generate/tts server-side persistence', () => {
         new Error(`Qwen TTS API error: {"code":"${code}"}`),
       );
       const { response, json } = await callRoute({ ...baseBody, audioId: 'tts_account_failure' });
-      expect(response.status).toBe(402);
-      expect(json.errorCode).toBe('TTS_ACCOUNT_UNAVAILABLE');
-      expect(json.error).toContain('已暂停配音');
+      expect(response.status).toBe(code === 'InvalidApiKey' ? 403 : 402);
+      expect(json.errorCode).toBe('TTS_PROVIDER_ACCOUNT_UNAVAILABLE');
+      expect(json.error).toContain('已暂停生成');
     },
   );
 

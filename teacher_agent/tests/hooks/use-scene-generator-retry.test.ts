@@ -328,7 +328,7 @@ describe('browser scene generation retry wrappers', () => {
     mockFetch.mockResolvedValue(
       jsonResponse(402, {
         success: false,
-        errorCode: 'TTS_ACCOUNT_UNAVAILABLE',
+        errorCode: 'TTS_PROVIDER_ACCOUNT_UNAVAILABLE',
         error: '配音服务账户欠费，已暂停配音',
       }),
     );
@@ -351,14 +351,17 @@ describe('browser scene generation retry wrappers', () => {
     expect(scene.actions).toHaveLength(20);
   });
 
-  it('retains synthesized audio when a later clip hits an account failure', async () => {
+  it('keeps narration text but rolls back incomplete-page audio after an account failure', async () => {
     const { generateTTSForScene } = await import('@/lib/hooks/use-scene-generator');
     mockFetch
       .mockResolvedValueOnce(
         jsonResponse(200, { success: true, base64: btoa('audio'), format: 'wav' }),
       )
       .mockResolvedValue(
-        jsonResponse(402, { errorCode: 'TTS_ACCOUNT_UNAVAILABLE', error: '配音账户不可用' }),
+        jsonResponse(402, {
+          errorCode: 'TTS_PROVIDER_ACCOUNT_UNAVAILABLE',
+          error: '配音账户不可用',
+        }),
       );
     const scene = {
       id: 'partial-scene',
@@ -372,11 +375,16 @@ describe('browser scene generation retry wrappers', () => {
       })),
     } as Scene;
     const result = await generateTTSForScene(scene, 'Chinese', undefined, retryOptions);
-    expect(result).toMatchObject({ success: false, blocked: true, failedCount: 2 });
+    expect(result).toMatchObject({ success: false, blocked: true, failedCount: 3 });
     expect(mockFetch).toHaveBeenCalledTimes(2);
-    expect(scene.actions?.[0]).toMatchObject({ audioId: 'ast_audio_allocated' });
-    expect(mocks.poolRemove).not.toHaveBeenCalled();
-    expect(mocks.audioDelete).not.toHaveBeenCalled();
+    expect(scene.actions?.every((action) => !('audioId' in action))).toBe(true);
+    expect(scene.actions?.map((action) => (action.type === 'speech' ? action.text : ''))).toEqual([
+      '已经生成的讲稿',
+      '已经生成的讲稿',
+      '已经生成的讲稿',
+    ]);
+    expect(mocks.poolRemove).toHaveBeenCalledExactlyOnceWith('ast_audio_allocated');
+    expect(mocks.audioDelete).toHaveBeenCalledExactlyOnceWith('ast_audio_allocated');
   });
 
   it.each([1, 2])(
@@ -429,7 +437,7 @@ describe('browser scene generation retry wrappers', () => {
     const { generateTTSForScene } = await import('@/lib/hooks/use-scene-generator');
     mocks.settingsState.mockReturnValue({ ...mocks.settingsState(), parallelTtsConcurrency: 2 });
     mockFetch.mockResolvedValue(
-      jsonResponse(402, { errorCode: 'TTS_ACCOUNT_UNAVAILABLE', error: '配音账户不可用' }),
+      jsonResponse(402, { errorCode: 'TTS_PROVIDER_ACCOUNT_UNAVAILABLE', error: '配音账户不可用' }),
     );
     const scene = {
       id: 'blocked-pool',
@@ -522,6 +530,136 @@ describe('browser scene generation retry wrappers', () => {
     expect(scene.actions?.[0]).toMatchObject({ audioId: 'ast_first_audio' });
     expect(scene.actions?.[1]).not.toHaveProperty('audioId');
     expect(scene.timing?.measuredDurationSec).toBeUndefined();
+  });
+
+  it('stops the scene on an account failure instead of saving partially voiced narration', async () => {
+    const { generateTTSForScene } = await import('@/lib/hooks/use-scene-generator');
+    mockFetch
+      .mockResolvedValueOnce(
+        jsonResponse(200, { success: true, base64: btoa('first clip'), format: 'wav' }),
+      )
+      .mockResolvedValue(
+        jsonResponse(402, {
+          errorCode: 'TTS_PROVIDER_ACCOUNT_UNAVAILABLE',
+          error: '配音服务欠费，请检查账户。',
+        }),
+      );
+    const scene = {
+      id: 'account-scene',
+      stageId: 'stage-1',
+      type: 'slide',
+      title: 'Account',
+      order: 1,
+      content: { type: 'slide', canvas: { id: 'slide-1', elements: [] } },
+      actions: [1, 2, 3].map((index) => ({
+        id: `speech-${index}`,
+        type: 'speech',
+        text: `Narration ${index}`,
+      })),
+    } as unknown as Scene;
+    const result = await generateTTSForScene(scene, 'English', undefined, retryOptions);
+    expect(result).toMatchObject({ success: false, error: '配音服务欠费，请检查账户。' });
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    expect(mocks.poolRemove).toHaveBeenCalledExactlyOnceWith('ast_audio_allocated');
+    expect(scene.actions?.every((action) => !('audioId' in action))).toBe(true);
+  });
+
+  it('stops queued TTS on account failure and waits for aborted in-flight audio without storing it', async () => {
+    const { generateTTSForScene } = await import('@/lib/hooks/use-scene-generator');
+    mocks.settingsState.mockReturnValue({ ...mocks.settingsState(), parallelTtsConcurrency: 2 });
+    let releaseSibling!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      releaseSibling = resolve;
+    });
+    mockFetch
+      .mockResolvedValueOnce(
+        jsonResponse(402, {
+          errorCode: 'TTS_PROVIDER_ACCOUNT_UNAVAILABLE',
+          error: '配音服务欠费，请检查账户。',
+        }),
+      )
+      .mockImplementationOnce(async () => {
+        await pending;
+        return jsonResponse(200, { success: true, base64: btoa('late clip'), format: 'wav' });
+      });
+    mocks.poolPut.mockResolvedValueOnce('ast_late_account_audio');
+    const scene = {
+      id: 'parallel-account-scene',
+      stageId: 'stage-1',
+      type: 'slide',
+      title: 'Account',
+      order: 1,
+      content: { type: 'slide', canvas: { id: 'slide-1', elements: [] } },
+      actions: [1, 2, 3, 4].map((index) => ({
+        id: `speech-${index}`,
+        type: 'speech',
+        text: `Narration ${index}`,
+      })),
+    } as unknown as Scene;
+    const generating = generateTTSForScene(scene, 'English', undefined, retryOptions);
+    await vi.waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(2));
+    expect(mocks.poolRemove).not.toHaveBeenCalled();
+    releaseSibling();
+    await expect(generating).resolves.toMatchObject({ success: false });
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    expect(mocks.poolPut).not.toHaveBeenCalled();
+    expect(mocks.audioPut).not.toHaveBeenCalled();
+    expect(scene.actions?.every((action) => !('audioId' in action))).toBe(true);
+  });
+
+  it('bounds parallel narration requests and retains focus/audio bindings when clips finish out of order', async () => {
+    const { generateTTSForScene } = await import('@/lib/hooks/use-scene-generator');
+    mocks.settingsState.mockReturnValue({
+      ...mocks.settingsState(),
+      parallelTtsConcurrency: 2,
+    });
+    const release = new Map<string, () => void>();
+    let active = 0;
+    let maximum = 0;
+    mockFetch.mockImplementation(async (_url, init) => {
+      const { text } = JSON.parse(init.body);
+      active++;
+      maximum = Math.max(maximum, active);
+      await new Promise<void>((resolve) => release.set(text, resolve));
+      active--;
+      return jsonResponse(200, { success: true, base64: btoa(text), format: 'wav' });
+    });
+    mocks.poolPut.mockImplementation(async (_blob, metadata) => `ast_${metadata.text}`);
+    const scene = {
+      id: 'parallel-scene',
+      stageId: 'stage-1',
+      type: 'slide',
+      title: 'Parallel',
+      order: 1,
+      content: { type: 'slide', canvas: { id: 'canvas', elements: [] } },
+      actions: [1, 2, 3, 4].flatMap((index) => [
+        { id: `focus-${index}`, type: 'spotlight', elementId: `region-${index}` },
+        { id: `speech-${index}`, type: 'speech', text: `Narration ${index}` },
+      ]),
+    } as unknown as Scene;
+    const generating = generateTTSForScene(scene, 'English', undefined, retryOptions);
+    await vi.waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(2));
+    expect(active).toBe(2);
+    for (const index of [2, 3]) {
+      release.get(`Narration ${index}`)!();
+      await vi.waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(index + 1));
+      expect(active).toBe(2);
+    }
+    release.get('Narration 4')!();
+    release.get('Narration 1')!();
+    await expect(generating).resolves.toMatchObject({ success: true, failedCount: 0 });
+    expect(maximum).toBe(2);
+    expect(scene.actions).toMatchObject(
+      [1, 2, 3, 4].flatMap((index) => [
+        { id: `focus-${index}`, type: 'spotlight', elementId: `region-${index}` },
+        {
+          id: `speech-${index}`,
+          type: 'speech',
+          text: `Narration ${index}`,
+          audioId: `ast_Narration ${index}`,
+        },
+      ]),
+    );
   });
 
   it('waits for parallel TTS workers before rolling back an abandoned scene', async () => {

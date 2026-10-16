@@ -19,6 +19,33 @@ it.each([
   }
 });
 
+it.each([
+  ['0', undefined, 1],
+  ['2', undefined, 2],
+  ['3', undefined, 3],
+  ['10', undefined, 4],
+  ['3', '1', 1],
+  ['0', '2', 2],
+])(
+  'preserves legacy scene concurrency %s unless TTS is explicit (%s)',
+  async (scene, tts, expected) => {
+    const previousScene = process.env.PARALLEL_SCENE_CONCURRENCY;
+    const previousTts = process.env.PARALLEL_TTS_CONCURRENCY;
+    process.env.PARALLEL_SCENE_CONCURRENCY = scene;
+    if (tts === undefined) delete process.env.PARALLEL_TTS_CONCURRENCY;
+    else process.env.PARALLEL_TTS_CONCURRENCY = tts;
+    try {
+      const { getParallelTtsConcurrency } = await import('@/lib/server/provider-config');
+      expect(getParallelTtsConcurrency()).toBe(expected);
+    } finally {
+      if (previousScene === undefined) delete process.env.PARALLEL_SCENE_CONCURRENCY;
+      else process.env.PARALLEL_SCENE_CONCURRENCY = previousScene;
+      if (previousTts === undefined) delete process.env.PARALLEL_TTS_CONCURRENCY;
+      else process.env.PARALLEL_TTS_CONCURRENCY = previousTts;
+    }
+  },
+);
+
 // Mock fs — only intercept server-providers.yml; delegate everything else to real fs.
 // This prevents YAML config from leaking host-machine state into tests while keeping
 // the mock scoped to what provider-config actually reads.

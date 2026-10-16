@@ -796,5 +796,11 @@ export function getParallelSceneConcurrency(): number {
 
 /** TTS has its own provider quota, independent of scene-model concurrency. */
 export function getParallelTtsConcurrency(): number {
-  return ttsConcurrency(process.env.PARALLEL_TTS_CONCURRENCY?.trim());
+  const explicit = process.env.PARALLEL_TTS_CONCURRENCY?.trim();
+  if (explicit) return ttsConcurrency(explicit);
+  // Preserve deployments that used the original shared switch, including serial rollback.
+  if (process.env.PARALLEL_SCENE_CONCURRENCY?.trim()) {
+    return ttsConcurrency(getParallelSceneConcurrency());
+  }
+  return ttsConcurrency(undefined);
 }

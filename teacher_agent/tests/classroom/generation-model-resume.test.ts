@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   update: vi.fn(),
   from: '',
   stage: {} as Record<string, unknown>,
+  onFailure: undefined as undefined | ((outline: { title: string }, reason: string) => void),
 }));
 const state = {
   stage: mocks.stage,
@@ -51,11 +52,14 @@ vi.mock('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams(mocks.from ? { from: mocks.from } : {}),
 }));
 vi.mock('@/lib/hooks/use-scene-generator', () => ({
-  useSceneGenerator: () => ({
-    generateRemaining: mocks.generate,
-    stop: mocks.stop,
-    retrySingleOutline: mocks.retry,
-  }),
+  useSceneGenerator: (options: { onSceneFailed: typeof mocks.onFailure }) => {
+    mocks.onFailure = options.onSceneFailed;
+    return {
+      generateRemaining: mocks.generate,
+      stop: mocks.stop,
+      retrySingleOutline: mocks.retry,
+    };
+  },
 }));
 vi.mock('@/lib/store/stage', () => ({
   claimStageSceneLoadToken: () => ({}),
@@ -144,5 +148,15 @@ describe('classroom generation model survives session loss', () => {
   it('does not infer a course context from an external return URL', async () => {
     mocks.from = 'https://outside.example/course-space?workspace=course';
     expect((await render()).preferServerModel).toBe(false);
+  });
+  it('keeps completed classroom visible with a persistent generation error', async () => {
+    await render();
+    await act(async () =>
+      mocks.onFailure?.({ title: '命令行与 REPL' }, '配音服务账户欠费，已暂停生成。'),
+    );
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain(
+      '配音服务账户欠费，已暂停生成。',
+    );
+    expect(host.textContent).toContain('classroom ready');
   });
 });
