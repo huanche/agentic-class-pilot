@@ -69,6 +69,8 @@ jobs:
           done
           echo '--- Docker disk usage ---'
           docker system df
+          echo '--- recent generation event counts (no content or credentials) ---'
+          docker logs --since 30m --tail 3000 agentic-teacher-prod 2>&1 | python3 -c 'import sys,json,re; patterns={"content_started":"Generating content", "content_ready":"Content generated successfully", "actions_started":"Generating actions:", "actions_ready":"actions for:", "scene_ready":"Scene built successfully", "tts_started":"Generating TTS", "tts_ready":"TTS generated", "tts_failed":"TTS generation failed", "llm_timeout":"LLM request timed out", "validation_retry":"Validation failed", "generation_error":"Failed to generate", "http_timeout":"504 Gateway"}; events=[]; counts={key:0 for key in patterns}; lines=sys.stdin.read().splitlines(); [(counts.__setitem__(key,counts[key]+1),events.append({"time":(re.search(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z",line).group(0) if re.search(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z",line) else None),"event":key})) for line in lines for key,value in patterns.items() if value in line]; print(json.dumps({"generation_counts":counts,"recent_events":events[-40:]}))'
           echo '--- host database services ---'
           systemctl list-units --all --no-pager 'postgresql*' || true
           if command -v pg_lsclusters >/dev/null 2>&1; then pg_lsclusters; fi
