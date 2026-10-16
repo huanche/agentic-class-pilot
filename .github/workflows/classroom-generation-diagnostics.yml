@@ -41,7 +41,7 @@ jobs:
             try {
               const result = await pool.query('SELECT stage, scenes, updated_at FROM mentra_classrooms WHERE id=$1', [id]);
               const c = result.rows[0];
-              console.log(JSON.stringify({check:'classroom-metadata', found:!!c, defaultModel:process.env.DEFAULT_MODEL, updatedAt:c?.updated_at, name:c?.stage?.name, timing:c?.stage?.timing, stageKeys:Object.keys(c?.stage??{}), scenes:c?.scenes?.map(s=>({order:s.order,id:s.id,title:s.title,type:s.type,timing:s.timing,speeches:s.actions?.filter(a=>a.type==='speech').length}))}));
+              console.log(JSON.stringify({check:'classroom-metadata', found:!!c, defaultModel:process.env.DEFAULT_MODEL, updatedAt:c?.updated_at, name:c?.stage?.name, timing:c?.stage?.timing, generationModelPolicy:c?.stage?.generationModelPolicy, stageKeys:Object.keys(c?.stage??{}), scenes:c?.scenes?.map(s=>({order:s.order,id:s.id,title:s.title,type:s.type,timing:s.timing,speeches:s.actions?.filter(a=>a.type==='speech').length,servedAudio:s.actions?.filter(a=>a.type==='speech'&&a.audioUrl).length,invalidatedAudio:s.actions?.filter(a=>a.type==='speech'&&a.audioInvalidated).length}))}));
             } finally {await pool.end();}
           })().catch(e=>{console.log(JSON.stringify({check:'metadata-failed',name:e.name}));process.exitCode=1;});
           NODE
