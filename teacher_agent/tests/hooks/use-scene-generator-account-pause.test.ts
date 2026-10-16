@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, createElement } from 'react';
+import { act, createElement, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
@@ -148,7 +148,10 @@ describe('account errors pause the real generation hook with governance enabled'
       });
       vi.stubGlobal('fetch', fetchMock);
       function Harness() {
-        api = useSceneGenerator({ onSceneFailed: failed });
+        const generator = useSceneGenerator({ onSceneFailed: failed });
+        useEffect(() => {
+          api = generator;
+        }, [generator]);
         return null;
       }
       await act(async () => {
