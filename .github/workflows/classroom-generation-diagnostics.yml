@@ -1,0 +1,56 @@
+name: classroom-generation-diagnostics
+
+on:
+  push:
+    branches: [codex/classroom-generation-resume]
+    paths: [.github/workflows/classroom-generation-diagnostics.yml]
+  workflow_dispatch:
+    inputs:
+      classroom_id:
+        description: Classroom to inspect (read only)
+        default: z1u6w1DG7q
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - name: Inspect classroom metadata and generation logs
+        env:
+          SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          CLASSROOM_ID: ${{ inputs.classroom_id || 'z1u6w1DG7q' }}
+        run: |
+          set -euo pipefail
+          [[ "$CLASSROOM_ID" =~ ^[A-Za-z0-9_-]+$ ]]
+          printf '%s\n' "$SERVER_SSH_KEY" > /tmp/generation_diagnostic_key
+          chmod 600 /tmp/generation_diagnostic_key
+          trap 'rm -f /tmp/generation_diagnostic_key' EXIT
+          SSH=(ssh -i /tmp/generation_diagnostic_key -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=20 -o ServerAliveCountMax=2 -o StrictHostKeyChecking=accept-new "ubuntu@$SERVER_HOST")
+          "${SSH[@]}" "docker exec -i agentic-teacher-prod node - '$CLASSROOM_ID'" <<'NODE'
+          (async () => {
+            const id = process.argv[2];
+            const { Pool } = require('pg');
+            const schema = process.env.COURSE_DATABASE_SCHEMA?.trim();
+            if (schema && !/^[a-z_][a-z0-9_]*$/.test(schema)) throw new Error('Invalid schema');
+            const pool = new Pool({connectionString:process.env.COURSE_DATABASE_URL||process.env.DATABASE_URL, connectionTimeoutMillis:10000, statement_timeout:10000, ...(schema?{options:'-c search_path='+schema}:{})});
+            try {
+              const result = await pool.query('SELECT stage, scenes, updated_at FROM mentra_classrooms WHERE id=$1', [id]);
+              const c = result.rows[0];
+              console.log(JSON.stringify({check:'classroom-metadata', found:!!c, defaultModel:process.env.DEFAULT_MODEL, updatedAt:c?.updated_at, name:c?.stage?.name, timing:c?.stage?.timing, stageKeys:Object.keys(c?.stage??{}), scenes:c?.scenes?.map(s=>({order:s.order,id:s.id,title:s.title,type:s.type,timing:s.timing,speeches:s.actions?.filter(a=>a.type==='speech').length}))}));
+            } finally {await pool.end();}
+          })().catch(e=>{console.log(JSON.stringify({check:'metadata-failed',name:e.name}));process.exitCode=1;});
+          NODE
+          "${SSH[@]}" 'docker logs --since 120m --tail 2000 agentic-teacher-prod 2>&1' | python3 -c '
+          import sys,re,json
+          lines=[]
+          for line in sys.stdin:
+              if not any(tag in line for tag in ("[Scene Content API]", "[Scene Actions API]", "[TTS API]")):continue
+              line=re.sub(r"sk-[A-Za-z0-9._-]+", "[redacted]",line)
+              line=re.sub(r"Bearer\s+[^\s\"\x27]+", "Bearer [redacted]",line)
+              lines.append(line.strip()[:900])
+          print(json.dumps({"check":"recent-generation-log", "lines":lines[-90:]},ensure_ascii=False))'
