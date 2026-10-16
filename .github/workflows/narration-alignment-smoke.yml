@@ -2,11 +2,15 @@ name: narration-alignment-smoke
 
 on:
   workflow_dispatch:
-  push:
-    branches: [codex/narration-focus-sync]
-    paths:
-      - ".github/workflows/narration-alignment-smoke.yml"
-      - "teacher_agent/devtools/narration-alignment/**"
+    inputs:
+      case_start:
+        description: First synthetic case (1-10)
+        type: number
+        default: 1
+      case_end:
+        description: Last synthetic case (1-10)
+        type: number
+        default: 10
 
 permissions:
   contents: read
@@ -42,6 +46,8 @@ jobs:
         env:
           SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
           SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          CASE_START: ${{ inputs.case_start || 1 }}
+          CASE_END: ${{ inputs.case_end || 10 }}
         run: |
           set -euo pipefail
           printf '%s\n' "$SERVER_SSH_KEY" > /tmp/focus_test_key
@@ -54,7 +60,8 @@ jobs:
           # reads its provider configuration and writes synthetic files under /tmp.
           "${SSH[@]}" "docker exec agentic-teacher-prod mkdir -p '$RUN_DIR' && docker cp '$RUN_DIR.mjs' 'agentic-teacher-prod:$RUN_DIR/smoke.mjs'"
           status=0
-          "${SSH[@]}" "timeout 600 docker exec -w /app -e FOCUS_SMOKE_OUTPUT='$RUN_DIR/results' -e FOCUS_SMOKE_TTS=1 -e LOG_LEVEL=error agentic-teacher-prod node '$RUN_DIR/smoke.mjs'" || status=$?
+          [[ "$CASE_START" =~ ^[0-9]+$ && "$CASE_END" =~ ^[0-9]+$ ]]
+          "${SSH[@]}" "timeout 600 docker exec -w /app -e FOCUS_SMOKE_OUTPUT='$RUN_DIR/results' -e FOCUS_SMOKE_TTS=1 -e FOCUS_SMOKE_CASE_START='$CASE_START' -e FOCUS_SMOKE_CASE_END='$CASE_END' -e LOG_LEVEL=error agentic-teacher-prod node '$RUN_DIR/smoke.mjs'" || status=$?
           mkdir -p smoke-results
           "${SSH[@]}" "docker exec agentic-teacher-prod sh -c 'test -d $RUN_DIR/results && tar -C $RUN_DIR/results -czf - .'" > smoke-results/results.tar.gz || true
           "${SSH[@]}" "docker exec agentic-teacher-prod rm -f '$RUN_DIR/smoke.mjs' && rm -f '$RUN_DIR.mjs'" || true

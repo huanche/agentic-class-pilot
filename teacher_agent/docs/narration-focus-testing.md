@@ -37,6 +37,6 @@ node node_modules/typescript/bin/tsc --noEmit --incremental false
 
 `build-smoke.mjs <output.mjs>` 将当前代码与包内提示词打包为单独的 Node 程序。`FOCUS_SMOKE_CHECK_ONLY=1` 仅验证导入和提示词资源，不调用模型。
 
-`.github/workflows/narration-alignment-smoke.yml` 在测试分支构建此程序，通过单独的 Node 进程读取服务器现有模型配置，输出只写入 `/tmp/agentic-focus-smoke-<run-id>/results`。它不替换服务容器，也不保存或修改课程。测试的 JSON 和音频作为七天有效的 Actions artifact 保留。
+`.github/workflows/narration-alignment-smoke.yml` 由人工启动，可通过 `case_start/case_end` 补测指定样本，避免每次修改测试工具都自动消耗模型额度。它在测试分支构建此程序，通过单独的 Node 进程读取服务器现有模型配置，输出只写入 `/tmp/agentic-focus-smoke-<run-id>/results`。它不替换服务容器，也不保存或修改课程。测试的 JSON 和音频作为七天有效的 Actions artifact 保留。页面内容生成沿用正式流程的空结果重试机制，测试限制为一次重试；失败仍如实记录。
 
 正常生成每页新增一次语义审核。内容修正最多一次；取消及提供商错误按原来的调用路径处理，不当作语义修正反复调用。

@@ -20,7 +20,12 @@ import { DEFAULT_TTS_MODELS, DEFAULT_TTS_VOICES, TTS_PROVIDERS } from '@/lib/aud
 import { measureAudioDuration } from '@/lib/audio/audio-duration';
 import type { PPTElement, Action } from '@openmaic/dsl';
 import type { TTSProviderId } from '@/lib/audio/types';
-import { buildPrompt, buildCompleteScene, generateSceneContent } from '@openmaic/generation';
+import {
+  buildPrompt,
+  buildCompleteScene,
+  generateSceneContent,
+  withGenerationRetry,
+} from '@openmaic/generation';
 
 // Same header finalization as the production classroom TTS writer.
 function finalizeWav(audio: Buffer): Buffer {
@@ -219,7 +224,18 @@ const scenes = [];
 const failures: Array<{ page: number; title: string; issues: readonly string[] }> = [];
 let audioNumber = 0;
 const trials = [1, 2].flatMap((round) => cases.map((item) => ({ ...item, round })));
+const firstCase = Number(process.env.FOCUS_SMOKE_CASE_START ?? 1);
+const lastCase = Number(process.env.FOCUS_SMOKE_CASE_END ?? trials.length);
+if (
+  !Number.isInteger(firstCase) ||
+  !Number.isInteger(lastCase) ||
+  firstCase < 1 ||
+  lastCase > trials.length ||
+  firstCase > lastCase
+)
+  throw new Error('Invalid smoke case range');
 for (const [index, item] of trials.entries()) {
+  if (index + 1 < firstCase || index + 1 > lastCase) continue;
   const outline = withNarrationDuration({
     id: `outline_${index}`,
     type: 'slide',
@@ -231,9 +247,27 @@ for (const [index, item] of trials.entries()) {
   });
   const generatedContent = item.elements
     ? { elements: [text(`title_${index}`, item.title, 25), ...item.elements] }
-    : await generateSceneContent(outline, aiCall, {
-        languageDirective: '使用简体中文，保留代码和技术名称。',
-      });
+    : await withGenerationRetry(
+        () =>
+          generateSceneContent(outline, aiCall, {
+            languageDirective: '使用简体中文，保留代码和技术名称。',
+          }),
+        {
+          label: 'synthetic slide content',
+          maxRetries: 1,
+          shouldRetryResult: (result) => result === null,
+          onRetry: (event) => {
+            console.log(
+              JSON.stringify({
+                check: 'content-retry',
+                page: index + 1,
+                attempt: event.attempt,
+                reason: event.reason,
+              }),
+            );
+          },
+        },
+      );
   if (!generatedContent || !('elements' in generatedContent))
     throw new Error('Slide content generation did not complete');
   let actions: Action[];
