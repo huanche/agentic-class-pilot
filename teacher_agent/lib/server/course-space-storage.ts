@@ -202,7 +202,10 @@ export async function deleteServerCourse(courseId: string): Promise<void> {
   });
 }
 
+export class CourseMaterialReplacementConflict extends Error {}
+
 export async function storeCourseMaterial(input: {
+  replaceMaterialId?: string;
   purpose?: 'course-material' | 'course-outline';
   courseId: string;
   teacherId: string;
@@ -235,10 +238,6 @@ export async function storeCourseMaterial(input: {
     createdAt: now,
     updatedAt: now,
   };
-  await updateServerCourse(input.courseId, (course) => ({
-    ...course,
-    materials: [...course.materials, record],
-  }));
   if (isCourseObjectStorageEnabled()) {
     await putCourseObject(record.storageKey, input.bytes, record.mimeType);
   }
@@ -251,6 +250,30 @@ export async function storeCourseMaterial(input: {
     bytes: isCourseObjectStorageEnabled() ? undefined : input.bytes,
     sizeBytes: input.bytes.length,
     sha256: record.sha256!,
+  });
+  // Attach only after the new bytes are durable. Replacements keep the old bytes
+  // available to existing citations and start a new, unreviewed material version.
+  await updateServerCourse(input.courseId, (course) => {
+    if (!input.replaceMaterialId)
+      return { ...course, updatedAt: now, materials: [...course.materials, record] };
+    const previous = course.materials.find((item) => item.id === input.replaceMaterialId);
+    if (!previous || previous.classPublicationId || previous.status === 'parsing') {
+      throw new CourseMaterialReplacementConflict('文件已删除、已发布或正在解析，请刷新后重试');
+    }
+    record.pinned = previous.pinned;
+    record.purpose = previous.purpose;
+    return {
+      ...course,
+      updatedAt: now,
+      materials: course.materials.map((item) => (item.id === previous.id ? record : item)),
+      modules: course.modules.map((module) => ({
+        ...module,
+        lessons: module.lessons.map((lesson) => ({
+          ...lesson,
+          materialIds: lesson.materialIds.map((id) => (id === previous.id ? record.id : id)),
+        })),
+      })),
+    };
   });
   return record;
 }
