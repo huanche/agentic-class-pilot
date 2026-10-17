@@ -160,6 +160,8 @@ export interface CourseSpace {
   status: CourseSpaceStatus;
   modules: CourseModule[];
   materials: CourseMaterialRecord[];
+  /** Replaced source versions remain readable by existing citations, outside the active tree. */
+  archivedMaterials?: CourseMaterialRecord[];
   activeKnowledgePackageId?: string;
   activeKnowledgeGraphVersion?: number;
   curriculum?: {

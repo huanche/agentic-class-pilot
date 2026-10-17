@@ -9,6 +9,7 @@ const storage = vi.hoisted(() => ({
   updateCourseJobIfPresent: vi.fn(),
   updateServerCourse: vi.fn(),
   deleteCourseArtifact: vi.fn(),
+  withCourseArtifactLock: vi.fn(),
 }));
 vi.mock('@/lib/server/course-space-storage', () => storage);
 import { PATCH, DELETE } from '@/app/api/course-space/[courseId]/artifacts/[artifactId]/route';
@@ -53,6 +54,7 @@ function patchRequest(body: unknown): NextRequest {
 describe('artifact activation', () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    storage.withCourseArtifactLock.mockImplementation(async (_id, operation) => operation());
     storage.updateServerCourse.mockImplementation(async (_id, update) =>
       update(structuredClone(course)),
     );

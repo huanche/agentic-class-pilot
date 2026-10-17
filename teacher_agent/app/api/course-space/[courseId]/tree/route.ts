@@ -5,9 +5,8 @@ import { apiError, apiSuccess } from '@/lib/server/api-response';
 import {
   deleteCourseArtifact,
   listCourseArtifacts,
-  readCourseArtifact,
   readServerCourse,
-  saveCourseArtifact,
+  updateCourseArtifact,
   updateServerCourse,
 } from '@/lib/server/course-space-storage';
 
@@ -124,24 +123,30 @@ export async function POST(req: NextRequest, context: { params: Promise<{ course
   const now = Date.now();
 
   if (body.itemKind === 'artifact') {
-    const artifact = await readCourseArtifact(body.itemId);
-    if (!artifact || artifact.courseId !== course.id)
-      return apiError('INVALID_REQUEST', 404, '教学产物不存在');
-    if (artifact.scope.type === 'lesson' && artifact.scope.lessonId === target.id)
-      return apiSuccess({ moved: 'artifact', targetLessonId: target.id });
-    const placement = movedPlacement(artifact, target);
-    if (!placement)
+    let incompatiblePlacement = false;
+    const updated = await updateCourseArtifact(body.itemId, (artifact) => {
+      if (artifact.courseId !== course.id) return null;
+      if (artifact.scope.type === 'lesson' && artifact.scope.lessonId === target.id)
+        return artifact;
+      const placement = movedPlacement(artifact, target);
+      if (!placement) {
+        incompatiblePlacement = true;
+        return null;
+      }
+      return {
+        ...artifact,
+        ...placement,
+        scope: { type: 'lesson', lessonId: target.id },
+        updatedAt: now,
+      };
+    });
+    if (incompatiblePlacement)
       return apiError(
         'INVALID_REQUEST',
         409,
         '目标课时尚未确认周次和课时数，请先取消发布后移动，再确认归属发布',
       );
-    await saveCourseArtifact({
-      ...artifact,
-      ...placement,
-      scope: { type: 'lesson', lessonId: target.id },
-      updatedAt: now,
-    });
+    if (!updated) return apiError('INVALID_REQUEST', 404, '教学产物不存在');
     return apiSuccess({ moved: 'artifact', targetLessonId: target.id });
   }
 

@@ -6,6 +6,7 @@ import {
   saveCourseArtifact,
   updateServerCourse,
   updateCourseJobIfPresent,
+  withCourseArtifactLock,
 } from './course-space-storage';
 export type PublicationRequest = Omit<CoursePublicationPlacement, 'confirmedAt'> & {
   newLessonTitle?: string;
@@ -56,6 +57,16 @@ function placementForLesson(course: CourseSpace, input: PublicationRequest) {
     throw new Error('该周课次已存在，请选择已有课时，避免重复创建');
 }
 export async function publishCourseResource(
+  courseId: string,
+  kind: PublicationKind,
+  id: string,
+  input: PublicationRequest,
+) {
+  const publish = () => publishCourseResourceUnlocked(courseId, kind, id, input);
+  return kind === 'artifact' ? withCourseArtifactLock(id, publish) : publish();
+}
+
+async function publishCourseResourceUnlocked(
   courseId: string,
   kind: PublicationKind,
   id: string,
