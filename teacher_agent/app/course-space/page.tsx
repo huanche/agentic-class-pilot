@@ -1,7 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { usePathname, useRouter } from 'next/navigation';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { nanoid } from 'nanoid';
 import {
   ArrowLeft,
@@ -13,9 +13,18 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { CoursewareModeDialog } from '@/components/generation/courseware-mode-dialog';
-import { CourseDurationInput, courseDurationInputError } from '@/components/generation/course-duration-input';
+import {
+  CourseDurationInput,
+  courseDurationInputError,
+} from '@/components/generation/course-duration-input';
 import { resolveCourseMinutes } from '@/lib/generation/course-duration';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from '@/components/ui/dialog';
 import { CoursewareSourceDialog } from '@/components/course-space/courseware-source-dialog';
 import { CourseWorkspaceExplorer } from '@/components/course-space/course-workspace-explorer';
 import { CourseArtifactGallery } from '@/components/course-space/course-artifact-gallery';
@@ -92,7 +101,24 @@ function buildLegacyPptDraft(extraction: CourseMaterialExtraction): PptContentDr
   };
 }
 
+function CourseSpaceRoute() {
+  const workspaceCourseId = useSearchParams().get('workspace');
+  return workspaceCourseId ? (
+    <CourseWorkspace key={workspaceCourseId} workspaceCourseId={workspaceCourseId} />
+  ) : (
+    <CourseCenter />
+  );
+}
+
 export default function CourseSpacePage() {
+  return (
+    <Suspense fallback={<main className="p-8">正在打开课程中心…</main>}>
+      <CourseSpaceRoute />
+    </Suspense>
+  );
+}
+
+function CourseWorkspace({ workspaceCourseId }: { workspaceCourseId: string }) {
   const router = useRouter();
   const pathname = usePathname();
   const isTeacherV11 = pathname.startsWith('/teacher-workspace');
@@ -112,14 +138,14 @@ export default function CourseSpacePage() {
   const [coursewareModeOpen, setCoursewareModeOpen] = useState(false);
   const [targetDuration, setTargetDuration] = useState('');
   const [pendingCourseware, setPendingCourseware] = useState<{
-    scope: CourseArtifactJob['scope']; instruction?: string;
+    scope: CourseArtifactJob['scope'];
+    instruction?: string;
   } | null>(null);
   const [coursewareSourceOpen, setCoursewareSourceOpen] = useState(false);
   const [workspacePanel, setWorkspacePanel] = useState<'generate' | 'artifacts'>('generate');
   const [coursewareMaterialId, setCoursewareMaterialId] = useState('');
   const [launchingCourseware, setLaunchingCourseware] = useState(false);
   const [publishingCourse, setPublishingCourse] = useState(false);
-  const [workspaceCourseId, setWorkspaceCourseId] = useState<string | null | undefined>();
   const [courseAreaHeight, setCourseAreaHeight] = useState(790);
   const [statusFocus, setStatusFocus] = useState<CourseStatusTarget & { nonce: number }>();
   const [workbenchHeight, setWorkbenchHeight] = useState(500);
@@ -204,12 +230,15 @@ export default function CourseSpacePage() {
   );
 
   useEffect(() => {
-    const requestedCourseId = new URLSearchParams(window.location.search).get('workspace');
-    setWorkspaceCourseId(requestedCourseId);
-    if (!requestedCourseId) return;
-    const timer = window.setTimeout(() => void refresh(requestedCourseId), 0);
+    const timer = window.setTimeout(
+      () =>
+        void refresh(workspaceCourseId).catch((error) =>
+          setMessage(error instanceof Error ? error.message : String(error)),
+        ),
+      0,
+    );
     return () => window.clearTimeout(timer);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [workspaceCourseId]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     const active =
       selected?.materials.some((item) => item.status === 'parsing') ||
@@ -620,14 +649,6 @@ export default function CourseSpacePage() {
     }
   };
 
-  if (workspaceCourseId === undefined)
-    return (
-      <main className="flex min-h-screen items-center justify-center bg-slate-50 text-muted-foreground">
-        正在打开课程中心…
-      </main>
-    );
-  if (workspaceCourseId === null) return <CourseCenter />;
-
   return (
     <main className="relative min-h-screen overflow-hidden bg-[radial-gradient(circle_at_28%_8%,rgba(59,130,246,0.10),transparent_28%),radial-gradient(circle_at_72%_88%,rgba(176,0,85,0.08),transparent_30%),linear-gradient(to_bottom,#f8fafc,#f3f6fa)] text-slate-900">
       <header className="sticky top-0 z-30 flex items-center justify-between border-b border-white/70 bg-white/75 px-6 py-3 backdrop-blur-xl">
@@ -864,24 +885,40 @@ export default function CourseSpacePage() {
             : undefined
         }
       />
-      <Dialog open={Boolean(pendingCourseware)} onOpenChange={(open) => { if (!open) setPendingCourseware(null); }}>
+      <Dialog
+        open={Boolean(pendingCourseware)}
+        onOpenChange={(open) => {
+          if (!open) setPendingCourseware(null);
+        }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>设置课件播放时长</DialogTitle>
-            <DialogDescription>根据课程难易程度选择讲解时长，确认后生成审阅大纲。</DialogDescription>
+            <DialogDescription>
+              根据课程难易程度选择讲解时长，确认后生成审阅大纲。
+            </DialogDescription>
           </DialogHeader>
           <CourseDurationInput value={targetDuration} onChange={setTargetDuration} />
-          <Button disabled={launchingCourseware || Boolean(courseDurationInputError(targetDuration))}
+          <Button
+            disabled={launchingCourseware || Boolean(courseDurationInputError(targetDuration))}
             onClick={async () => {
               if (!pendingCourseware) return;
               setLaunchingCourseware(true);
               try {
-                await launchChatCoursewareFlow(pendingCourseware.scope, pendingCourseware.instruction);
+                await launchChatCoursewareFlow(
+                  pendingCourseware.scope,
+                  pendingCourseware.instruction,
+                );
                 setPendingCourseware(null);
               } catch (error) {
                 setMessage(error instanceof Error ? error.message : String(error));
-              } finally { setLaunchingCourseware(false); }
-            }}>生成课件大纲</Button>
+              } finally {
+                setLaunchingCourseware(false);
+              }
+            }}
+          >
+            生成课件大纲
+          </Button>
         </DialogContent>
       </Dialog>
     </main>

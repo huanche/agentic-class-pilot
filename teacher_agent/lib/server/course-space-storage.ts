@@ -99,26 +99,34 @@ async function listJson<T>(dir: string): Promise<T[]> {
 
 export async function listServerCourses(teacherId: string): Promise<CourseSpace[]> {
   const databaseCourses = await listCoursesFromDatabase(teacherId);
-  if (databaseCourses) return databaseCourses;
+  if (databaseCourses) return databaseCourses.filter((course) => !course.deletedAt);
   return (await listJson<CourseSpace>(COURSES_DIR))
-    .filter((course) => course.teacherId === teacherId)
+    .filter((course) => course.teacherId === teacherId && !course.deletedAt)
     .sort((a, b) => b.updatedAt - a.updatedAt);
 }
 
 export async function readServerCourse(courseId: string): Promise<CourseSpace | null> {
+  const course = await readStoredCourse(courseId);
+  return course && !course.deletedAt ? course : null;
+}
+
+async function readStoredCourse(courseId: string): Promise<CourseSpace | null> {
   assertId(courseId, 'course id');
+  const direct = await readStoredCourseById(courseId);
+  if (direct) return direct;
+  // Platform entry points may still carry the UUID of a legacy teacher course.
+  const legacyId = await resolveLegacyCourseId(courseId);
+  return legacyId ? readStoredCourseById(legacyId) : null;
+}
+
+async function readStoredCourseById(courseId: string): Promise<CourseSpace | null> {
   const databaseCourse = await readCourseFromDatabase(courseId);
   if (databaseCourse) return databaseCourse;
   if (!isCourseDatabaseConfigured()) {
-    const localCourse = readJson<CourseSpace>(path.join(COURSES_DIR, `${courseId}.json`));
+    const localCourse = await readJson<CourseSpace>(path.join(COURSES_DIR, `${courseId}.json`));
     if (localCourse) return localCourse;
   }
-  // Platform entry points reference pre-integration courses by the platform
-  // UUID; retry once under the legacy teacher-agent id via the mapping.
-  const legacyId = await resolveLegacyCourseId(courseId);
-  if (!legacyId) return null;
-  if (isCourseDatabaseConfigured()) return (await readCourseFromDatabase(legacyId)) ?? null;
-  return (await readJson<CourseSpace>(path.join(COURSES_DIR, `${legacyId}.json`))) ?? null;
+  return null;
 }
 
 export async function createServerCourse(input: CreateCourseSpaceInput): Promise<CourseSpace> {
@@ -138,14 +146,22 @@ export async function createServerCourse(input: CreateCourseSpaceInput): Promise
     createdAt: now,
     updatedAt: now,
   };
-  if (!isCourseDatabaseConfigured())
-    await writeJsonFileAtomic(path.join(COURSES_DIR, `${course.id}.json`), course);
-  await databaseAdapter.saveCourse(course);
-  return course;
+  return withLock(`course:${course.id}`, async () => {
+    if (await readStoredCourseById(course.id)) throw new Error('课程标识已存在，请重新创建课程');
+    return writeServerCourse(course);
+  });
 }
 
 export async function saveServerCourse(course: CourseSpace): Promise<CourseSpace> {
   assertId(course.id, 'course id');
+  return withLock(`course:${course.id}`, async () => {
+    const existing = await readStoredCourse(course.id);
+    if (existing?.deletedAt) throw new Error('课程已删除，请返回课程中心');
+    return writeServerCourse({ ...course, deletedAt: existing?.deletedAt });
+  });
+}
+
+async function writeServerCourse(course: CourseSpace): Promise<CourseSpace> {
   const saved = { ...course, updatedAt: Date.now() };
   if (!isCourseDatabaseConfigured())
     await writeJsonFileAtomic(path.join(COURSES_DIR, `${course.id}.json`), saved);
@@ -157,10 +173,32 @@ export async function updateServerCourse(
   courseId: string,
   update: (course: CourseSpace) => CourseSpace | Promise<CourseSpace>,
 ): Promise<CourseSpace> {
-  return withLock(`course:${courseId}`, async () => {
-    const course = await readServerCourse(courseId);
+  const initial = await readServerCourse(courseId);
+  if (!initial) throw new Error('Course not found');
+  return withLock(`course:${initial.id}`, async () => {
+    const course = await readServerCourse(initial.id);
     if (!course) throw new Error('Course not found');
-    return saveServerCourse(await update(course));
+    return writeServerCourse(await update(course));
+  });
+}
+
+export class CourseDeletionConflict extends Error {}
+
+/** Keep bytes and a tombstone so stale browser saves cannot resurrect a deleted course. */
+export async function deleteServerCourse(courseId: string): Promise<void> {
+  const course = await readStoredCourse(courseId);
+  if (!course || course.deletedAt) return;
+  await withLock(`course:${course.id}`, async () => {
+    const current = await readStoredCourse(course.id);
+    if (!current || current.deletedAt) return;
+    const jobs = await listCourseJobs(current.id);
+    if (
+      jobs.some((job) => ['queued', 'running'].includes(job.status) && !isStaleActiveJob(job)) ||
+      current.materials.some((material) => material.status === 'parsing')
+    ) {
+      throw new CourseDeletionConflict('课程仍有生成或解析任务，请等待任务结束后再删除');
+    }
+    await writeServerCourse({ ...current, status: 'archived', deletedAt: Date.now() });
   });
 }
 

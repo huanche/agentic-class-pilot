@@ -31,7 +31,7 @@ import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { validateUrlForSSRF } from '@/lib/server/ssrf-guard';
 import { VOXCPM_AUTO_VOICE_ID, VOXCPM_TTS_PROVIDER_ID } from '@/lib/audio/voxcpm';
 import { isSpeakableSpeechText } from '@/lib/audio/tts-utils';
-import { isTTSProviderAccountError } from '@/lib/audio/tts-errors';
+import { classifyTTSAccountError } from '@/lib/audio/tts-errors';
 
 const log = createLogger('TTS API');
 
@@ -165,7 +165,11 @@ export async function POST(req: NextRequest) {
     // persist under the canonical `tts_...` stem.
     const stripped = audioId.replace(/^tts_request_/, '');
     const fileStem = stripped.startsWith('tts_') ? stripped : `tts_${stripped}`;
-    if (classroomId && /^tts_[A-Za-z0-9_-]+$/.test(fileStem) && /^(wav|mp3|ogg|aac)$/.test(format)) {
+    if (
+      classroomId &&
+      /^tts_[A-Za-z0-9_-]+$/.test(fileStem) &&
+      /^(wav|mp3|ogg|aac)$/.test(format)
+    ) {
       try {
         const audioDir = path.join(CLASSROOMS_DIR, classroomId, 'audio');
         await fs.mkdir(audioDir, { recursive: true });
@@ -195,9 +199,13 @@ export async function POST(req: NextRequest) {
     if (error instanceof TTSRateLimitError) {
       return apiError('RATE_LIMITED', 429, error.message);
     }
-    if (isTTSProviderAccountError(error)) {
-      return apiError('TTS_PROVIDER_ACCOUNT_UNAVAILABLE', error.statusCode, error.message);
-    }
+    const accountFailure = classifyTTSAccountError(error);
+    if (accountFailure)
+      return apiError(
+        'TTS_PROVIDER_ACCOUNT_UNAVAILABLE',
+        accountFailure.statusCode,
+        accountFailure.message,
+      );
     return apiError(
       'GENERATION_FAILED',
       500,

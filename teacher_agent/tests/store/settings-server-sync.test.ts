@@ -204,6 +204,7 @@ async function readPersistedState(): Promise<Record<string, unknown>> {
 
 /** Full server response shape */
 interface MockServerResponse {
+  generation?: { parallelSceneConcurrency?: number; parallelTtsConcurrency?: number };
   providers?: Record<string, { models?: string[]; baseUrl?: string }>;
   tts?: Record<string, { baseUrl?: string; disabled?: boolean }>;
   asr?: Record<string, { baseUrl?: string }>;
@@ -381,6 +382,15 @@ describe('fetchServerProviders — provider availability sync', () => {
   }
 
   // ---- Server model list filtering ----
+
+  it('syncs the speech pool independently from model concurrency and allows serial-only TTS', async () => {
+    const store = await getStore();
+    expect(store.getState().parallelTtsConcurrency).toBe(2);
+    mockServerResponse({ generation: { parallelSceneConcurrency: 4, parallelTtsConcurrency: 1 } });
+    await store.getState().fetchServerProviders();
+    expect(store.getState().parallelTtsConcurrency).toBe(1);
+    expect(store.getState().parallelSceneConcurrency).toBe(4);
+  });
 
   it('filters models to only those the server allows', async () => {
     const store = await getStore();
@@ -1684,9 +1694,9 @@ describe('TTS provider enablement (#665)', () => {
     expect(store.getState().ttsProvidersConfig['browser-native-tts'].enabled).toBe(false);
   });
 
-  it('TTS master toggle is OFF by default on a fresh install', async () => {
+  it('keeps narration enabled by default for this deployment', async () => {
     const store = await getStore();
-    expect(store.getState().ttsEnabled).toBe(false);
+    expect(store.getState().ttsEnabled).toBe(true);
   });
 
   it('initializes the keyless FunASR provider on a fresh install', async () => {
@@ -1701,6 +1711,7 @@ describe('TTS provider enablement (#665)', () => {
   it('first server-sync auto-enables TTS when a server provider exists', async () => {
     mockServerResponse({ tts: { 'openai-tts': {} } });
     const store = await getStore();
+    store.setState({ ttsEnabled: false });
     expect(store.getState().ttsEnabled).toBe(false);
     await store.getState().fetchServerProviders();
     expect(store.getState().ttsEnabled).toBe(true);
@@ -1709,6 +1720,7 @@ describe('TTS provider enablement (#665)', () => {
   it('server-sync does NOT auto-enable TTS when no provider is configured', async () => {
     mockServerResponse({ tts: {} });
     const store = await getStore();
+    store.setState({ ttsEnabled: false });
     await store.getState().fetchServerProviders();
     expect(store.getState().ttsEnabled).toBe(false);
   });

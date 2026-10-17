@@ -2,11 +2,25 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, FolderPlus, Layers3, Plus, Upload } from 'lucide-react';
+import { ArrowLeft, FolderPlus, Layers3, Plus, Trash2, Upload } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ApiCourseSpaceRepository, DEFAULT_TEACHER_ID, type CourseSpace } from '@/lib/course-space';
 import { platformHomeUrl } from '@/lib/integration/platform-links';
+import {
+  isGenerationTaskActive,
+  useCourseGenerationTask,
+} from '@/lib/store/course-generation-task';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 
 export function CourseCenter() {
   const router = useRouter();
@@ -15,6 +29,30 @@ export function CourseCenter() {
   const [title, setTitle] = useState('');
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState('');
+  const [deletingCourse, setDeletingCourse] = useState<CourseSpace | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
+  const task = useCourseGenerationTask((state) => state.task);
+  const activeCourseId = isGenerationTaskActive(task) ? task?.courseId : undefined;
+
+  const deleteCourse = async () => {
+    if (!deletingCourse || deleting) return;
+    setDeleting(true);
+    setDeleteError('');
+    try {
+      const response = await fetch(`/api/course-space/${encodeURIComponent(deletingCourse.id)}`, {
+        method: 'DELETE',
+      });
+      const body = await response.json();
+      if (!response.ok || body.success === false) throw new Error(body.error || '课程删除失败');
+      setCourses((current) => current.filter((course) => course.id !== deletingCourse.id));
+      setDeletingCourse(null);
+    } catch (reason) {
+      setDeleteError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   useEffect(() => {
     void repository
@@ -75,13 +113,17 @@ export function CourseCenter() {
             const lessons = course.modules.reduce((sum, module) => sum + module.lessons.length, 0);
             const ready = course.materials.filter((material) => material.status === 'ready').length;
             return (
-              <button
+              <article
                 key={course.id}
-                onClick={() => router.push(`/course-space/${course.id}`)}
                 className="group min-h-[270px] overflow-hidden rounded-[20px] border border-white/80 bg-white/90 text-left shadow-[0_16px_42px_-34px_rgba(15,23,42,0.5)] transition hover:-translate-y-1 hover:border-[#B00055]/25 hover:shadow-[0_22px_55px_-34px_rgba(176,0,85,0.28)]"
               >
                 <div className="h-1.5 bg-gradient-to-r from-[#B00055] via-[#D65A93] to-blue-400" />
-                <div className="p-5">
+                <button
+                  type="button"
+                  className="w-full p-5 text-left"
+                  onClick={() => router.push(`/course-space/${course.id}`)}
+                  aria-label={`打开课程：${course.title}`}
+                >
                   <div className="flex items-start justify-between">
                     <div className="rounded-xl bg-[#B00055]/8 p-2.5 text-[#B00055]">
                       <Layers3 className="size-5" />
@@ -122,8 +164,24 @@ export function CourseCenter() {
                     </span>
                     <span className="font-medium text-[#B00055]">打开课程 →</span>
                   </div>
+                </button>
+                <div className="flex items-center justify-end border-t px-5 py-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-red-700 hover:bg-red-50 hover:text-red-800"
+                    disabled={activeCourseId === course.id}
+                    aria-label={`删除课程：${course.title}`}
+                    onClick={() => {
+                      setDeleteError('');
+                      setDeletingCourse(course);
+                    }}
+                  >
+                    <Trash2 className="mr-1.5 size-4" />
+                    {activeCourseId === course.id ? '任务进行中' : '删除课程'}
+                  </Button>
                 </div>
-              </button>
+              </article>
             );
           })}
           <div className="flex min-h-[270px] flex-col rounded-[20px] border-2 border-dashed border-[#B00055]/20 bg-white/55 p-5 shadow-[0_16px_42px_-36px_rgba(15,23,42,0.35)] transition hover:border-[#B00055]/40 hover:bg-white/80">
@@ -166,6 +224,39 @@ export function CourseCenter() {
           </div>
         )}
       </section>
+      <AlertDialog
+        open={Boolean(deletingCourse)}
+        onOpenChange={(open) => {
+          if (!open && !deleting) setDeletingCourse(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>删除课程“{deletingCourse?.title}”？</AlertDialogTitle>
+            <AlertDialogDescription>
+              删除后课程将从课程中心移除，学生将无法继续打开其中的教学资源。请确认已不再使用这门课程。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {deleteError && (
+            <p role="alert" className="text-sm text-red-700">
+              {deleteError}
+            </p>
+          )}
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>取消</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={deleting}
+              className="bg-red-700 hover:bg-red-800"
+              onClick={(event) => {
+                event.preventDefault();
+                void deleteCourse();
+              }}
+            >
+              {deleting ? '正在删除…' : '确认删除课程'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </main>
   );
 }

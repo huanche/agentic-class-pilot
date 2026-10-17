@@ -1286,6 +1286,9 @@ function GenerationPreviewContent() {
           signal,
           FOREGROUND_SCENE_RETRY_OPTIONS,
           firstActionsContext,
+          (progress) => setStatusMessage(progress.calibrating
+            ? '正在校正首页讲解时长，已保留当前讲稿'
+            : `正在合成首页配音：${progress.completed}/${progress.total} 段`),
         );
         if (!ttsResult.success) {
           if (ttsResult.errorCode === TTS_ACCOUNT_ERROR_CODE) throw new Error(ttsResult.error);
