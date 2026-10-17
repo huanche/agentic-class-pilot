@@ -173,32 +173,74 @@ export function measureScenePlaybackSeconds(
   return seconds > 0 ? seconds : undefined;
 }
 
-export function durationMeasurementKey(scene: Scene): string {
+function measurementActions(scene: Scene, restoreLegacyRevealOrder = false) {
   // Reference conversion changes ids/URLs without changing the rendered audio.
-  const text = JSON.stringify(
-    (scene.actions ?? []).map((action) => {
-      if (action.type !== 'speech') return action;
-      const transport = action as typeof action & { audioUrl?: string; audioRef?: string };
-      return {
-        id: action.id,
-        type: action.type,
-        text: action.text,
-        speed: action.speed ?? 1,
-        hasAudio: Boolean(action.audioId || transport.audioUrl || transport.audioRef),
-        invalidated: Boolean(action.audioInvalidated),
-      };
-    }),
-  );
+  return (scene.actions ?? []).map((action) => {
+    if (action.type !== 'speech') {
+      // Historical teaching-plan.ts emitted this order. JSONB stores shorter
+      // keys first, so reconstruct it only for the old five-field contract.
+      if (
+        restoreLegacyRevealOrder &&
+        action.type === 'reveal' &&
+        Object.keys(action).every((key) =>
+          ['id', 'type', 'elementId', 'effect', 'duration'].includes(key),
+        )
+      )
+        return {
+          id: action.id,
+          type: action.type,
+          elementId: action.elementId,
+          effect: action.effect,
+          duration: action.duration,
+        };
+      return action;
+    }
+    const transport = action as typeof action & { audioUrl?: string; audioRef?: string };
+    return {
+      id: action.id,
+      type: action.type,
+      text: action.text,
+      speed: action.speed ?? 1,
+      hasAudio: Boolean(action.audioId || transport.audioUrl || transport.audioRef),
+      invalidated: Boolean(action.audioInvalidated),
+    };
+  });
+}
+
+function hashMeasurement(text: string): string {
   let hash = 2166136261;
   for (let index = 0; index < text.length; index++)
     hash = Math.imul(hash ^ text.charCodeAt(index), 16777619);
   return `${text.length}:${hash >>> 0}`;
 }
 
+export function durationMeasurementKey(scene: Scene): string {
+  // Object field order is storage trivia; array order remains playback order.
+  const text = JSON.stringify(measurementActions(scene), (_key, value) =>
+    value && typeof value === 'object' && !Array.isArray(value)
+      ? Object.fromEntries(
+          Object.keys(value)
+            .sort()
+            .map((key) => [key, value[key]]),
+        )
+      : value,
+  );
+  return `v2:${hashMeasurement(text)}`;
+}
+
 /** Editing narration/actions invalidates the earlier measurement without rewriting editor state. */
 export function measuredSceneSeconds(scene: Scene): number | undefined {
-  if (scene.timing?.measurementKey && scene.timing.measurementKey !== durationMeasurementKey(scene))
-    return undefined;
+  const storedKey = scene.timing?.measurementKey;
+  if (storedKey && storedKey !== durationMeasurementKey(scene)) {
+    // Accept prior measurements only when their exact old input can be
+    // reproduced; changed narration, targets, timings and audio still invalidate.
+    if (
+      storedKey.startsWith('v2:') ||
+      (storedKey !== hashMeasurement(JSON.stringify(measurementActions(scene))) &&
+        storedKey !== hashMeasurement(JSON.stringify(measurementActions(scene, true))))
+    )
+      return undefined;
+  }
   const value = scene.timing?.measuredDurationSec;
   return value != null && Number.isFinite(value) && value > 0 ? value : undefined;
 }
