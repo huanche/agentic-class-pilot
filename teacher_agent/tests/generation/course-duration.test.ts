@@ -136,6 +136,48 @@ describe('course duration contract', () => {
     converted.actions = [{ id: 'a', type: 'speech', text: '同一段讲解' }];
     expect(assessCourseDuration([converted], 2, 1).status).toBe('unmeasured');
   });
+
+  it('keeps measurements across JSON object key reordering, including nested widget state', () => {
+    const value = scene(120);
+    value.actions = [
+      { id: 'r', type: 'reveal', elementId: 'answer', effect: 'fade-up', duration: 520 },
+      { id: 'w', type: 'widget_setState', state: { code: 'print(2)', result: { value: 2, ok: true } } },
+      { id: 's', type: 'speech', text: '答案是2', audioId: 'a' },
+    ];
+    value.timing!.measurementKey = durationMeasurementKey(value);
+    const restored = structuredClone(value);
+    restored.actions = [
+      { duration: 520, effect: 'fade-up', elementId: 'answer', type: 'reveal', id: 'r' },
+      { state: { result: { ok: true, value: 2 }, code: 'print(2)' }, type: 'widget_setState', id: 'w' },
+      { text: '答案是2', audioId: 'restored-a', type: 'speech', id: 's' },
+    ];
+    expect(durationMeasurementKey(restored)).toBe(value.timing!.measurementKey);
+    expect(assessCourseDuration([restored], 2, 1).status).toBe('within-tolerance');
+    restored.actions.reverse();
+    expect(assessCourseDuration([restored], 2, 1).status).toBe('unmeasured');
+  });
+
+  it('recognizes saved pre-v2 teaching-plan reveal measurements after JSONB reorders fields', () => {
+    const restored = scene(120);
+    // Captured from the previous implementation before persistence reordered reveal fields.
+    restored.timing!.measurementKey = '170:706129978';
+    restored.actions = [
+      { id: 'r', type: 'reveal', effect: 'fade-up', duration: 520, elementId: 'answer' },
+      { id: 's', type: 'speech', text: '答案是2', audioId: 'restored-a' },
+    ];
+    expect(assessCourseDuration([restored], 2, 1).status).toBe('within-tolerance');
+    for (const edit of [
+      (actions: NonNullable<Scene['actions']>) => { if (actions[0].type === 'reveal') actions[0].duration = 900; },
+      (actions: NonNullable<Scene['actions']>) => { if (actions[0].type === 'reveal') actions[0].elementId = 'other'; },
+      (actions: NonNullable<Scene['actions']>) => { if (actions[1].type === 'speech') actions[1].text = '答案是3'; },
+      (actions: NonNullable<Scene['actions']>) => { if (actions[1].type === 'speech') delete actions[1].audioId; },
+      (actions: NonNullable<Scene['actions']>) => { if (actions[1].type === 'speech') actions[1].audioInvalidated = true; },
+    ]) {
+      const changed = structuredClone(restored);
+      edit(changed.actions!);
+      expect(assessCourseDuration([changed], 2, 1).status).toBe('unmeasured');
+    }
+  });
 });
 
 describe('measured narration calibration', () => {
