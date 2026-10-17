@@ -152,11 +152,18 @@ export async function createServerCourse(input: CreateCourseSpaceInput): Promise
   });
 }
 
-export async function saveServerCourse(course: CourseSpace): Promise<CourseSpace> {
+export class CourseUpdateConflict extends Error {}
+
+export async function saveServerCourse(
+  course: CourseSpace,
+  expectedCourse?: CourseSpace,
+): Promise<CourseSpace> {
   assertId(course.id, 'course id');
   return withLock(`course:${course.id}`, async () => {
     const existing = await readStoredCourse(course.id);
     if (existing?.deletedAt) throw new Error('课程已删除，请返回课程中心');
+    if (expectedCourse && JSON.stringify(existing) !== JSON.stringify(expectedCourse))
+      throw new CourseUpdateConflict('课程已更新，请刷新后重试目录编辑');
     return writeServerCourse({ ...course, deletedAt: existing?.deletedAt });
   });
 }
@@ -266,6 +273,7 @@ export async function storeCourseMaterial(input: {
       ...course,
       updatedAt: now,
       materials: course.materials.map((item) => (item.id === previous.id ? record : item)),
+      archivedMaterials: [...(course.archivedMaterials ?? []), previous],
       modules: course.modules.map((module) => ({
         ...module,
         lessons: module.lessons.map((lesson) => ({
@@ -276,6 +284,13 @@ export async function storeCourseMaterial(input: {
     };
   });
   return record;
+}
+
+/** Resolve a source version within its owning course; mutations use active materials only. */
+export function readCourseMaterialVersion(course: CourseSpace, materialId: string) {
+  return [...course.materials, ...(course.archivedMaterials ?? [])].find(
+    (item) => item.id === materialId && item.courseId === course.id,
+  );
 }
 
 export async function readCourseMaterialBytes(record: CourseMaterialRecord): Promise<Buffer> {
@@ -404,6 +419,27 @@ export async function saveCourseArtifact(artifact: CourseArtifactRecord) {
   return artifact;
 }
 
+/** Serialize artifact read/modify/write operations within the current server process. */
+export function withCourseArtifactLock<T>(artifactId: string, operation: () => Promise<T>) {
+  assertId(artifactId, 'artifact id');
+  return withLock(`artifact:${artifactId}`, operation);
+}
+
+export async function updateCourseArtifact(
+  artifactId: string,
+  update: (
+    artifact: CourseArtifactRecord,
+  ) => CourseArtifactRecord | null | Promise<CourseArtifactRecord | null>,
+) {
+  return withCourseArtifactLock(artifactId, async () => {
+    const current = await readCourseArtifact(artifactId);
+    if (!current) return null;
+    const next = await update(current);
+    if (next === current) return current;
+    return next ? saveCourseArtifact(next) : null;
+  });
+}
+
 export async function saveCourseArtifactFile(artifactId: string, fileName: string, bytes: Buffer) {
   assertId(artifactId, 'artifact id');
   const safeName = path.basename(fileName);
@@ -471,27 +507,37 @@ export async function listCourseArtifacts(courseId: string) {
   const artifacts = (databaseArtifacts ?? (await listJson<CourseArtifactRecord>(ARTIFACTS_DIR)))
     .filter((artifact) => artifact.courseId === courseId)
     .sort((a, b) => b.createdAt - a.createdAt);
-  return Promise.all(
+  const refreshed = await Promise.all(
     artifacts.map(async (artifact) => {
-      let changed = false;
-      if (!artifact.htmlContent) {
-        artifact.htmlContent = markdownToArtifactHtml(artifact.content);
-        changed = true;
-      }
-      if (WORD_ARTIFACT_TYPES.has(artifact.type) && !artifact.wordStorageKey) {
-        const wordFileName = `${artifact.title.replace(/[\\/:*?"<>|]/g, '_')}.docx`;
-        artifact.wordFileName = wordFileName;
-        artifact.wordStorageKey = await saveCourseArtifactFile(
-          artifact.id,
-          wordFileName,
-          await buildCourseArtifactDocx(artifact.title, artifact.content),
-        );
-        changed = true;
-      }
-      if (changed) await saveCourseArtifact(artifact);
-      return artifact;
+      if (
+        artifact.htmlContent &&
+        (!WORD_ARTIFACT_TYPES.has(artifact.type) || artifact.wordStorageKey)
+      )
+        return artifact;
+      // A lazy migration is a writer too: reload after acquiring the same lock
+      // as edits and publication, so a course read cannot restore stale metadata.
+      return updateCourseArtifact(artifact.id, async (latest) => {
+        const updated = { ...latest };
+        let changed = false;
+        if (!updated.htmlContent) {
+          updated.htmlContent = markdownToArtifactHtml(updated.content);
+          changed = true;
+        }
+        if (WORD_ARTIFACT_TYPES.has(updated.type) && !updated.wordStorageKey) {
+          const wordFileName = `${updated.title.replace(/[\\/:*?"<>|]/g, '_')}.docx`;
+          updated.wordFileName = wordFileName;
+          updated.wordStorageKey = await saveCourseArtifactFile(
+            updated.id,
+            wordFileName,
+            await buildCourseArtifactDocx(updated.title, updated.content),
+          );
+          changed = true;
+        }
+        return changed ? updated : latest;
+      });
     }),
   );
+  return refreshed.filter((artifact): artifact is CourseArtifactRecord => artifact !== null);
 }
 
 export async function saveKnowledgePackage(pkg: PublishedKnowledgePackage) {

@@ -6,6 +6,7 @@ const storage = vi.hoisted(() => ({
   readServerCourse: vi.fn(),
   updateServerCourse: vi.fn(),
   readCourseMaterialBytes: vi.fn(),
+  readCourseMaterialVersion: vi.fn(),
   readCourseArtifact: vi.fn(),
   saveCourseArtifact: vi.fn(),
   updateCourseJobIfPresent: vi.fn(),
@@ -60,6 +61,9 @@ beforeEach(() => {
     ],
   } as CourseSpace;
   storage.readServerCourse.mockImplementation(async () => course);
+  storage.readCourseMaterialVersion.mockImplementation((current: CourseSpace, id: string) =>
+    [...current.materials, ...(current.archivedMaterials ?? [])].find((item) => item.id === id),
+  );
   storage.updateServerCourse.mockImplementation(
     async (_id, update) => (course = await update(course)),
   );

@@ -4,8 +4,7 @@ import { apiError, apiSuccess } from '@/lib/server/api-response';
 import {
   readServerCourse,
   updateServerCourse,
-  readCourseArtifact,
-  saveCourseArtifact,
+  updateCourseArtifact,
 } from '@/lib/server/course-space-storage';
 
 const schema = z
@@ -42,16 +41,20 @@ export async function PATCH(
     updatedAt: Date.now(),
   };
   if (kind === 'artifacts') {
-    const artifact = await readCourseArtifact(id);
-    if (!artifact || artifact.courseId !== course.id)
-      return apiError('INVALID_REQUEST', 404, '文件不存在');
-    const item = await saveCourseArtifact({
-      ...artifact,
-      ...patch,
-      ...(title !== undefined && artifact.wordStorageKey
-        ? { wordFileName: `${title.replace(/[\\/:*?"<>|]/g, '_').replace(/\.docx$/i, '')}.docx` }
-        : {}),
-    });
+    const item = await updateCourseArtifact(id, (artifact) =>
+      artifact.courseId !== course.id
+        ? null
+        : {
+            ...artifact,
+            ...patch,
+            ...(title !== undefined && artifact.wordStorageKey
+              ? {
+                  wordFileName: `${title.replace(/[\\/:*?"<>|]/g, '_').replace(/\.docx$/i, '')}.docx`,
+                }
+              : {}),
+          },
+    );
+    if (!item) return apiError('INVALID_REQUEST', 404, '文件不存在');
     return apiSuccess({ item });
   }
   const lessons = course.modules.flatMap((module) => module.lessons);

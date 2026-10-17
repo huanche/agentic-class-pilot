@@ -6,6 +6,7 @@ import { type NextRequest, NextResponse } from 'next/server';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import {
   readCourseMaterialBytes,
+  readCourseMaterialVersion,
   readServerCourse,
   updateServerCourse,
   storeCourseMaterial,
@@ -54,7 +55,7 @@ export async function GET(
 ) {
   const { courseId, materialId } = await context.params;
   const course = await readServerCourse(courseId);
-  const material = course?.materials.find((item) => item.id === materialId);
+  const material = course && readCourseMaterialVersion(course, materialId);
   if (!course || !material) return apiError('INVALID_REQUEST', 404, '课程材料不存在');
   const bytes = await readCourseMaterialBytes(material);
   return new NextResponse(new Uint8Array(bytes), {

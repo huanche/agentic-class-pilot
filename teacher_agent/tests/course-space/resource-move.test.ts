@@ -10,6 +10,8 @@ const storage = vi.hoisted(() => ({
   saveCourseArtifact: vi.fn(),
   deleteCourseArtifact: vi.fn(),
   readCourseMaterialBytes: vi.fn(),
+  readCourseMaterialVersion: vi.fn(),
+  updateCourseArtifact: vi.fn(),
 }));
 vi.mock('@/lib/server/course-space-storage', () => storage);
 import { POST } from '@/app/api/course-space/[courseId]/tree/route';
@@ -75,6 +77,15 @@ beforeEach(() => {
   storage.listCourseArtifacts.mockImplementation(async () => [artifact]);
   storage.readCourseArtifact.mockImplementation(async () => artifact);
   storage.saveCourseArtifact.mockImplementation(async (value) => (artifact = value));
+  storage.readCourseMaterialVersion.mockImplementation((current, id) =>
+    current.materials.find((item: { id: string }) => item.id === id),
+  );
+  storage.updateCourseArtifact.mockImplementation(async (id, update) => {
+    const current = await storage.readCourseArtifact(id);
+    if (!current) return null;
+    const next = await update(current);
+    return next === current ? current : next ? storage.saveCourseArtifact(next) : null;
+  });
 });
 
 describe('move resources within a course', () => {

@@ -1,0 +1,55 @@
+name: course-file-persistence
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'teacher_agent/**'
+      - '.github/workflows/course-file-persistence.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'teacher_agent/**'
+      - '.github/workflows/course-file-persistence.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  persistence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: acceptance
+          POSTGRES_PASSWORD: acceptance_ci_only
+          POSTGRES_DB: course_file_acceptance_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U acceptance -d course_file_acceptance_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    defaults:
+      run:
+        working-directory: teacher_agent
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.28.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+          cache-dependency-path: teacher_agent/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - name: Course and resource regressions
+        run: node node_modules/vitest/vitest.mjs run tests/course-space tests/course-resource-publication.test.ts
+      - name: Real PostgreSQL routes and cold-process persistence
+        env:
+          TEST_COURSE_DATABASE_URL: postgresql://acceptance:acceptance_ci_only@127.0.0.1:5432/course_file_acceptance_ci
+        run: node node_modules/vitest/vitest.mjs run --config vitest.course-postgres.config.ts
