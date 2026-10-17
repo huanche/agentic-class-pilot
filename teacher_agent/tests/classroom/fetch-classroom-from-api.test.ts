@@ -242,6 +242,25 @@ describe('fetchClassroomFromApi at the server-media boundary', () => {
     return fetchClassroomFromApi('stage-1', undefined, deps);
   }
 
+  it('preserves the pending generation plan through server fetch and document conversion', async () => {
+    const payload = serverPayload();
+    const outlines = [1, 2, 3].map((order) => ({
+      id: `outline-${order}`,
+      type: 'slide',
+      title: `Page ${order}`,
+      description: '',
+      keyPoints: [],
+      order,
+    }));
+    Object.assign(payload.stage, { generationPlan: { version: 1, outlines, complete: false } });
+    stubNetwork({ payload });
+    const result = await fetchApi();
+    expect(result?.stage).toHaveProperty('generationPlan.outlines', outlines);
+    const committed = await deps.store!.loadDocument('stage-1');
+    expect(committed?.stage).toHaveProperty('generationPlan.complete', false);
+    expect(committed?.stage).toHaveProperty('generationPlan.outlines', outlines);
+  });
+
   it('loads the read-only player without downloading every narration clip first', async () => {
     const requests = stubNetwork();
     const { fetchClassroomForPlayer } = await import('@/lib/classroom/load-classroom');

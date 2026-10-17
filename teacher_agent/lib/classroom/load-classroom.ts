@@ -368,13 +368,23 @@ export function applyClassroomStageAndScenes(
   // and persists normally.
   unmarkStageDeleted(stage.id);
   const nextScenes = [...scenes];
+  const plan = stage.generationPlan?.version === 1 ? stage.generationPlan : undefined;
+  const outlines = plan?.outlines ?? [];
+  const generationComplete = plan?.complete ?? false;
   useStageStore.setState((state) => ({
     stage,
     scenes: nextScenes,
     currentSceneId: nextScenes[0]?.id ?? null,
     chats: options.chats ?? [],
     chatSnapshot: options.chatSnapshot ?? { sessions: [], restoreMarker: null },
-    generationComplete: false,
+    outlines,
+    generationComplete,
+    generatingOutlines: generationComplete
+      ? []
+      : outlines.filter((outline) => !nextScenes.some((scene) => scene.order === outline.order)),
+    failedOutlines: [],
+    currentGeneratingOrder: undefined,
+    generationStatus: generationComplete ? 'completed' : 'idle',
     generationEpoch: state.generationEpoch + 1,
     mode: 'playback',
   }));
