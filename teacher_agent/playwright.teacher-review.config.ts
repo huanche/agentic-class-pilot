@@ -4,10 +4,18 @@ import { defineConfig, devices } from '@playwright/test';
 // mock API boundaries and must not contact the platform, database or an LLM.
 export default defineConfig({
   testDir: './e2e/tests',
-  testMatch: 'teacher-preparation.spec.ts',
+  testMatch: [
+    'teacher-preparation.spec.ts',
+    'course-center-navigation.spec.ts',
+    'course-file-management.spec.ts',
+  ],
   workers: 1,
   reporter: 'list',
-  use: { baseURL: 'http://127.0.0.1:3217', screenshot: 'only-on-failure' },
+  use: {
+    baseURL: 'http://127.0.0.1:3217',
+    screenshot: 'only-on-failure',
+    channel: process.env.PLAYWRIGHT_CHANNEL,
+  },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   webServer: {
     command: 'pnpm exec next dev --hostname 127.0.0.1 --port 3217',
@@ -15,9 +23,13 @@ export default defineConfig({
     reuseExistingServer: false,
     timeout: 180000,
     env: {
-      PLATFORM_AUTH_ENABLED: 'false', ACCESS_CODE: '',
-      COURSE_STORAGE_MODE: 'json', COURSE_DATABASE_URL: '', DATABASE_URL: '',
-      NO_PROXY: 'localhost,127.0.0.1', no_proxy: 'localhost,127.0.0.1',
+      PLATFORM_AUTH_ENABLED: 'false',
+      ACCESS_CODE: '',
+      COURSE_STORAGE_MODE: 'json',
+      COURSE_DATABASE_URL: '',
+      DATABASE_URL: '',
+      NO_PROXY: 'localhost,127.0.0.1',
+      no_proxy: 'localhost,127.0.0.1',
     },
   },
 });

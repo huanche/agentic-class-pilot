@@ -57,6 +57,7 @@ export interface CoursePublicationPlacement {
 }
 
 export interface CourseLessonFile {
+  pinned?: boolean;
   publicationPlacement?: CoursePublicationPlacement;
   id: string;
   lessonId: string;
@@ -72,6 +73,7 @@ export interface CourseLessonFile {
 }
 
 export interface CourseLesson {
+  pinned?: boolean;
   week?: number;
   lessonNumber?: number;
   teachingHours?: number;
@@ -87,6 +89,7 @@ export interface CourseLesson {
 }
 
 export interface CourseModule {
+  pinned?: boolean;
   workspaceKind?: 'week' | 'experiment';
   week?: number;
   id: string;
@@ -100,6 +103,7 @@ export interface CourseModule {
 }
 
 export interface CourseMaterialRecord {
+  pinned?: boolean;
   purpose?: 'course-material' | 'course-outline';
   publicationPlacement?: CoursePublicationPlacement;
   id: string;
@@ -312,6 +316,7 @@ export interface CourseMaterialExtraction {
 }
 
 export interface CourseArtifactRecord {
+  pinned?: boolean;
   sourceMaterialId?: string;
   publicationPlacement?: CoursePublicationPlacement;
   id: string;
