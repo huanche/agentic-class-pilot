@@ -154,6 +154,53 @@ afterEach(async () => {
 });
 
 describe('generationComplete', () => {
+  it('carries the full generation plan in the server-saved stage after the first page', async () => {
+    useStageStore.getState().setStage(makeStage());
+    const outlines = [makeOutline(1), makeOutline(2), makeOutline(3)];
+    useStageStore.getState().setOutlines(outlines);
+    useStageStore.getState().addScene(makeSlideScene('first', 1));
+
+    const transport = JSON.parse(
+      JSON.stringify({
+        stage: useStageStore.getState().stage,
+        scenes: useStageStore.getState().scenes,
+      }),
+    );
+    expect(transport.stage.generationPlan).toEqual({ version: 1, outlines, complete: false });
+    expect(transport.scenes).toHaveLength(1);
+
+    useStageStore.getState().setGenerationComplete(true);
+    expect(useStageStore.getState().stage).toHaveProperty('generationPlan.complete', true);
+    await vi.waitFor(() => expect(saveStageDataMock).toHaveBeenCalled());
+  });
+
+  it('recovers a server generation plan when a converted local document has no outline record', async () => {
+    const stored = makeStoredLoad('stage-1', 'first');
+    const outlines = [makeOutline(1), makeOutline(2)];
+    Object.assign(stored.stage, { generationPlan: { version: 1, outlines, complete: false } });
+    loadStageDataMock.mockResolvedValue(stored);
+
+    await useStageStore.getState().loadFromStorage('stage-1');
+
+    expect(useStageStore.getState().outlines).toEqual(outlines);
+    expect(useStageStore.getState().generatingOutlines).toEqual([outlines[1]]);
+    expect(useStageStore.getState().generationComplete).toBe(false);
+  });
+
+  it('backfills an older browser-only plan for the next server sync', async () => {
+    const outlines = [makeOutline(1), makeOutline(2)];
+    loadStageDataMock.mockResolvedValue(makeStoredLoad('stage-1', 'first'));
+    stageOutlinesGet.mockResolvedValue({ outlines, generationComplete: false });
+
+    await useStageStore.getState().loadFromStorage('stage-1');
+
+    expect(useStageStore.getState().stage).toHaveProperty('generationPlan', {
+      version: 1,
+      outlines,
+      complete: false,
+    });
+  });
+
   it('defaults to false', () => {
     expect(useStageStore.getState().generationComplete).toBe(false);
   });

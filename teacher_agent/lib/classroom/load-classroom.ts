@@ -17,6 +17,8 @@ import type { MediaFileRecord } from '@/lib/utils/database';
 import { unmarkStageDeleted } from '@/lib/utils/deleted-stages';
 import type { GeneratedAgentConfig, Scene, Stage } from '@/lib/types/stage';
 import type { DocumentMigrationDeps } from '@/lib/document-store/migration';
+import type { AppDocument, AppDocumentOutline } from '@/lib/document-store/persistence-types';
+import type { SceneOutline } from '@/lib/types/generation';
 import { DSL_VERSION, type PPTElement } from '@openmaic/dsl';
 import {
   collectDocumentMediaElements,
@@ -26,6 +28,99 @@ import {
 export interface ClassroomPayload {
   stage: Stage;
   scenes: Scene[];
+  /** A clean server read must not be echoed back as a new classroom write. */
+  serverSnapshot?: boolean;
+}
+
+export function hasPendingClassroomGeneration({
+  stage,
+  scenes,
+  outlines,
+  generationComplete,
+}: {
+  stage: Stage | null;
+  scenes: readonly Scene[];
+  outlines?: readonly SceneOutline[];
+  generationComplete?: boolean;
+}): boolean {
+  if (!stage || generationComplete || stage.generationPlan?.complete) return false;
+  const plan = outlines?.length ? outlines : stage.generationPlan?.outlines;
+  if (plan?.length) return plan.some((o) => !scenes.some((s) => s.order === o.order));
+  return (
+    stage.timing?.budgetVersion === 1 &&
+    (stage.timing.expectedAutomaticPages ?? 0) >
+      scenes.filter((s) => s.type === 'slide' || s.type === 'interactive').length
+  );
+}
+
+function mergeServerGeneration(existing: AppDocument, payload: ClassroomPayload) {
+  const outline = existing.outline as AppDocumentOutline | undefined;
+  const stage = existing.stage as Stage;
+  if (!hasPendingClassroomGeneration({ stage, scenes: existing.scenes, ...outline }))
+    return { document: existing, serverSnapshot: false };
+  const remoteById = new Map(payload.scenes.map((scene) => [scene.id, scene]));
+  const remoteByOrder = new Map(payload.scenes.map((scene) => [scene.order, scene]));
+  const baseStage =
+    payload.stage.updatedAt > stage.updatedAt ? { ...stage, ...payload.stage } : stage;
+  let changed = false;
+  const scenes = existing.scenes.map((scene) => {
+    const remote = remoteById.get(scene.id) ?? remoteByOrder.get(scene.order);
+    if (
+      remote &&
+      remote.order === scene.order &&
+      (remote.updatedAt ?? 0) > (scene.updatedAt ?? 0)
+    ) {
+      changed = true;
+      return remote;
+    }
+    return scene;
+  });
+  const ids = new Set(scenes.map((s) => s.id));
+  const orders = new Set(scenes.map((s) => s.order));
+  for (const scene of payload.scenes) {
+    if (!ids.has(scene.id) && !orders.has(scene.order)) {
+      scenes.push(scene);
+      ids.add(scene.id);
+      orders.add(scene.order);
+      changed = true;
+    }
+  }
+  const remotePlan = payload.stage.generationPlan;
+  const outlines = outline?.outlines.length ? outline.outlines : remotePlan?.outlines;
+  const complete = Boolean(remotePlan?.complete && outlines?.every((o) => orders.has(o.order)));
+  const generationPlan = outlines?.length ? { version: 1 as const, outlines, complete } : undefined;
+  const planChanged =
+    generationPlan && JSON.stringify(generationPlan) !== JSON.stringify(stage.generationPlan);
+  const localChanges =
+    stage.updatedAt > payload.stage.updatedAt ||
+    existing.scenes.some((scene) => {
+      const remote = remoteById.get(scene.id) ?? remoteByOrder.get(scene.order);
+      return !remote || (scene.updatedAt ?? 0) > (remote.updatedAt ?? 0);
+    }) ||
+    Boolean(
+      outline?.outlines.length &&
+      JSON.stringify(outline.outlines) !== JSON.stringify(remotePlan?.outlines),
+    );
+  if (!changed && !planChanged && baseStage === stage)
+    return { document: existing, serverSnapshot: !localChanges };
+  return {
+    document: {
+      ...existing,
+      stage: generationPlan ? { ...baseStage, generationPlan } : baseStage,
+      scenes: scenes.sort((a, b) => a.order - b.order),
+      ...(generationPlan
+        ? {
+            outline: {
+              outlines: generationPlan.outlines,
+              generationComplete: generationPlan.complete,
+              createdAt: outline?.createdAt ?? Date.now(),
+              updatedAt: Date.now(),
+            },
+          }
+        : {}),
+    },
+    serverSnapshot: !localChanges,
+  };
 }
 
 interface Logger {
@@ -50,6 +145,7 @@ interface AgentLookupResult {
 export interface RunClassroomLoadArgs<TMediaTasks = unknown> {
   classroomId: string;
   preferServerClassroom?: boolean;
+  shouldRefreshFromServer?: () => boolean;
   loadToken: StageSceneLoadToken;
   isCurrent: () => boolean;
   loadFromStorage: (classroomId: string, loadToken: StageSceneLoadToken) => Promise<void>;
@@ -107,6 +203,7 @@ export function resetLegacyAgentFallbackProbes(): void {
 export async function runClassroomLoad<TMediaTasks = unknown>({
   classroomId,
   preferServerClassroom = false,
+  shouldRefreshFromServer = () => false,
   loadToken,
   isCurrent,
   loadFromStorage,
@@ -130,8 +227,8 @@ export async function runClassroomLoad<TMediaTasks = unknown>({
     if (!preferServerClassroom) await loadFromStorage(classroomId, loadToken);
     if (!isCurrent()) return;
 
-    if (preferServerClassroom || !getCurrentStage()) {
-      log.info('No IndexedDB data, trying server-side storage for:', classroomId);
+    if (preferServerClassroom || !getCurrentStage() || shouldRefreshFromServer()) {
+      log.info('Loading current server classroom snapshot:', classroomId);
       // The fetch path converts and commits under the per-stage document lock.
       // Once it returns, the document owns every allocation; a later
       // navigation may discard only this in-memory apply, never the durable
@@ -289,19 +386,29 @@ export async function fetchClassroomFromApi(
     return await mutateDocument(
       payload.stage.id,
       async (existing, store) => {
+        let document: AppDocument = { ...payload, dslVersion: DSL_VERSION };
+        let serverSnapshot = true;
         if (existing) {
           // The document already owns its media (a concurrent cold load, or a
           // prior open). Reuse it verbatim; if it still carries transport
           // URLs, conversion could not complete and the load must fail rather
           // than apply or persist raw addresses.
           if (converter.containsClassroomMediaUrls(existing)) return null;
-          return { stage: existing.stage, scenes: existing.scenes };
+          const merged = mergeServerGeneration(existing, payload);
+          if (merged.document === existing)
+            return {
+              stage: existing.stage,
+              scenes: existing.scenes,
+              serverSnapshot: merged.serverSnapshot,
+            };
+          document = merged.document;
+          serverSnapshot = merged.serverSnapshot;
         }
 
         const allocated: string[] = [];
         try {
           const converted = await converter.convertDocumentAssetRefs(
-            { ...payload, dslVersion: DSL_VERSION },
+            document,
             undefined,
             shouldConvert,
             allocated,
@@ -319,6 +426,7 @@ export async function fetchClassroomFromApi(
           return {
             stage: converted.document.stage,
             scenes: converted.document.scenes,
+            serverSnapshot,
           };
         } catch (error) {
           // Every failure mode -- a liveness abort or an ordinary converter
@@ -340,7 +448,9 @@ export async function fetchClassroomFromApi(
 }
 
 /** The read-only student embed streams narration from audioUrl on demand. */
-export async function fetchClassroomForPlayer(classroomId: string): Promise<ClassroomPayload | null> {
+export async function fetchClassroomForPlayer(
+  classroomId: string,
+): Promise<ClassroomPayload | null> {
   const res = await fetch(`/api/classroom?id=${encodeURIComponent(classroomId)}`);
   if (!res.ok) return null;
   const json = (await res.json()) as { success?: boolean; classroom?: ClassroomPayload };
@@ -368,13 +478,26 @@ export function applyClassroomStageAndScenes(
   // and persists normally.
   unmarkStageDeleted(stage.id);
   const nextScenes = [...scenes];
+  const plan = stage.generationPlan?.version === 1 ? stage.generationPlan : undefined;
+  const outlines = plan?.outlines ?? [];
+  const generationComplete = plan?.complete ?? false;
   useStageStore.setState((state) => ({
     stage,
     scenes: nextScenes,
-    currentSceneId: nextScenes[0]?.id ?? null,
+    currentSceneId:
+      state.stage?.id === stage.id && nextScenes.some((s) => s.id === state.currentSceneId)
+        ? state.currentSceneId
+        : (nextScenes[0]?.id ?? null),
     chats: options.chats ?? [],
     chatSnapshot: options.chatSnapshot ?? { sessions: [], restoreMarker: null },
-    generationComplete: false,
+    outlines,
+    generationComplete,
+    generatingOutlines: generationComplete
+      ? []
+      : outlines.filter((outline) => !nextScenes.some((scene) => scene.order === outline.order)),
+    failedOutlines: [],
+    currentGeneratingOrder: undefined,
+    generationStatus: generationComplete ? 'completed' : 'idle',
     generationEpoch: state.generationEpoch + 1,
     mode: 'playback',
   }));

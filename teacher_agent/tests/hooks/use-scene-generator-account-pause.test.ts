@@ -41,6 +41,7 @@ vi.mock('@/lib/orchestration/registry/store', () => ({
   useAgentRegistry: { getState: () => ({ listAgents: () => [] }) },
 }));
 import { useSceneGenerator } from '@/lib/hooks/use-scene-generator';
+import { reconcileCompletedMediaForScene } from '@/lib/media/media-orchestrator';
 
 describe('account errors pause the real generation hook with governance enabled', () => {
   let host: HTMLDivElement;
@@ -97,6 +98,74 @@ describe('account errors pause the real generation hook with governance enabled'
     host.remove();
     vi.unstubAllGlobals();
   });
+  it.each([0, 2])(
+    'finishes all restored pending pages without regenerating page one (concurrency=%s)',
+    async (concurrency) => {
+      mocks.settings.parallelSceneConcurrency = concurrency;
+      const saved = (mocks.state.scenes as unknown[])[0];
+      const completed = vi.fn();
+      Object.assign(mocks.state, {
+        addScene: (scene: unknown) => (mocks.state.scenes as unknown[]).push(scene),
+        setGenerationComplete: (complete: boolean) => {
+          mocks.state.generationComplete = complete;
+        },
+      });
+      vi.mocked(reconcileCompletedMediaForScene).mockImplementation((scene, stage) => ({
+        scene,
+        stage,
+      }));
+      const requested: number[] = [];
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (url: string, init: RequestInit) => {
+          const body = JSON.parse(String(init.body));
+          if (url.endsWith('/scene-content')) {
+            requested.push(body.outline.order);
+            return Response.json({
+              success: true,
+              content: { type: 'slide', canvas: { id: 'canvas', elements: [] } },
+            });
+          }
+          if (url.endsWith('/scene-actions'))
+            return Response.json({
+              success: true,
+              scene: {
+                id: `page-${body.outline.order}`,
+                stageId: 'lesson',
+                order: body.outline.order,
+                type: 'slide',
+                title: body.outline.title,
+                content: { type: 'slide', canvas: { id: 'canvas', elements: [] } },
+                actions: [],
+              },
+            });
+          throw new Error('Unexpected request');
+        }),
+      );
+      function Harness() {
+        const generator = useSceneGenerator({ onComplete: completed, onSceneFailed: failed });
+        useEffect(() => {
+          api = generator;
+        }, [generator]);
+        return null;
+      }
+      await act(async () => {
+        root.render(createElement(Harness));
+      });
+      await act(async () => {
+        await api.generateRemaining({ stageInfo: { name: 'Python' }, preferServerModel: true });
+      });
+      expect(requested.sort()).toEqual([2, 3, 4, 5, 6]);
+      expect((mocks.state.scenes as Array<{ order: number }>).map((scene) => scene.order)).toEqual([
+        1, 2, 3, 4, 5, 6,
+      ]);
+      expect((mocks.state.scenes as unknown[])[0]).toBe(saved);
+      expect(mocks.state.generationComplete).toBe(true);
+      expect(mocks.state.status).toBe('completed');
+      expect(failed).not.toHaveBeenCalled();
+      expect(completed).toHaveBeenCalledOnce();
+    },
+  );
   it.each([0, 2])(
     'pauses without fallback, completed-scene loss, or continued prefetch (concurrency=%s)',
     async (concurrency) => {

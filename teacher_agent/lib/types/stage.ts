@@ -17,6 +17,7 @@ import type {
   SceneContent as DslSceneContent,
 } from '@openmaic/dsl';
 import type { Action } from '@/lib/types/action';
+import type { SceneOutline } from '@/lib/types/generation';
 import type { WidgetConfig } from '@/lib/types/widgets';
 import type { PBLProjectConfig } from '@/lib/pbl/legacy/read';
 import type { PBLProjectV2 } from '@/lib/pbl/v2/types';
@@ -48,6 +49,12 @@ export type Stage = DslStage & {
   timing?: StageTiming;
   /** Keep the original model source when a classroom resumes in a new tab. */
   generationModelPolicy?: 'server' | 'browser';
+  /** Server snapshots must carry the plan as well as the pages already generated. */
+  generationPlan?: {
+    version: 1;
+    outlines: SceneOutline[];
+    complete: boolean;
+  };
 };
 
 export interface SceneTiming {
