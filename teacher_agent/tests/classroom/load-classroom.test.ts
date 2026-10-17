@@ -163,6 +163,21 @@ beforeEach(() => {
 });
 
 describe('runClassroomLoad', () => {
+  it('checks the server again when a browser has an incomplete cached classroom', async () => {
+    const { deps, setStage } = makeDeps();
+    const stage = makeStage('stage-a');
+    setStage(stage);
+    Object.assign(deps, { shouldRefreshFromServer: () => true });
+    vi.mocked(deps.fetchClassroom).mockResolvedValue({
+      stage,
+      scenes: [makeScene('new', stage.id)],
+    });
+
+    await runClassroomLoad(deps);
+
+    expect(deps.fetchClassroom).toHaveBeenCalledOnce();
+    expect(deps.applyFallbackScenes).toHaveBeenCalled();
+  });
   it('restores the remaining page plan from a server-only partial classroom', () => {
     const stage = makeStage('server-partial');
     const outlines = [1, 2, 3].map((order) => ({
