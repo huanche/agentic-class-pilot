@@ -713,12 +713,34 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
   setGeneratingOutlines: (generatingOutlines) => set({ generatingOutlines }),
 
   setOutlines: (outlines) => {
-    set({ outlines });
-    markPendingChanges(get().stage?.id, { kind: 'outline' });
+    const { stage, generationComplete } = get();
+    set({
+      outlines,
+      ...(stage
+        ? {
+            stage: {
+              ...stage,
+              generationPlan: { version: 1, outlines, complete: generationComplete },
+            },
+          }
+        : {}),
+    });
+    markPendingChanges(stage?.id, { kind: 'outline' }, { kind: 'stage' });
   },
 
   setGenerationComplete: (generationComplete) => {
-    set({ generationComplete });
+    const { stage, outlines } = get();
+    set({
+      generationComplete,
+      ...(stage && outlines.length > 0
+        ? {
+            stage: {
+              ...stage,
+              generationPlan: { version: 1, outlines, complete: generationComplete },
+            },
+          }
+        : {}),
+    });
     // Final scenes and the completion barrier commit in the same aggregate write.
     void get().saveToStorage();
   },
@@ -945,8 +967,10 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
       const data = await loadStageData(stageId);
 
       const outlinesRecord = data?.outline;
-      const outlines = outlinesRecord?.outlines || [];
-      const persistedComplete = outlinesRecord?.generationComplete ?? false;
+      const serverPlan =
+        data?.stage.generationPlan?.version === 1 ? data.stage.generationPlan : undefined;
+      const outlines = outlinesRecord?.outlines ?? serverPlan?.outlines ?? [];
+      const persistedComplete = outlinesRecord?.generationComplete ?? serverPlan?.complete ?? false;
 
       if (data) {
         // Normalize legacy slide content (missing schemaVersion) at the load
@@ -995,7 +1019,15 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
             failedOutlines,
           });
         set({
-          stage: data.stage,
+          // Backfill older browser-only plans so the next classroom sync also
+          // makes an interrupted course resumable in another browser.
+          stage:
+            outlines.length > 0
+              ? {
+                  ...data.stage,
+                  generationPlan: { version: 1, outlines, complete: generationComplete },
+                }
+              : data.stage,
           scenes: migrated,
           currentSceneId: data.currentSceneId,
           chats: data.chats,

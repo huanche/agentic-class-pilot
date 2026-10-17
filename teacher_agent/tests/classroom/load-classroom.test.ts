@@ -163,6 +163,60 @@ beforeEach(() => {
 });
 
 describe('runClassroomLoad', () => {
+  it('restores the remaining page plan from a server-only partial classroom', () => {
+    const stage = makeStage('server-partial');
+    const outlines = [1, 2, 3].map((order) => ({
+      id: `outline-${order}`,
+      type: 'slide',
+      title: `Page ${order}`,
+      description: '',
+      keyPoints: [],
+      order,
+    }));
+    Object.assign(stage, { generationPlan: { version: 1, outlines, complete: false } });
+    useStageStore.setState({ outlines: [], generationComplete: true, failedOutlines: [] });
+
+    applyClassroomStageAndScenes(stage, [makeScene('first', stage.id)], { persist: false });
+
+    expect(useStageStore.getState().outlines).toEqual(outlines);
+    expect(useStageStore.getState().generatingOutlines.map((o) => o.order)).toEqual([2, 3]);
+    expect(useStageStore.getState().generationComplete).toBe(false);
+  });
+
+  it('keeps a finished server deck frozen after a teacher deleted a page', () => {
+    const stage = makeStage('finished');
+    Object.assign(stage, {
+      generationPlan: {
+        version: 1,
+        complete: true,
+        outlines: [
+          { id: 'one', type: 'slide', order: 1 },
+          { id: 'two', type: 'slide', order: 2 },
+        ],
+      },
+    });
+
+    applyClassroomStageAndScenes(stage, [makeScene('first', stage.id)], { persist: false });
+
+    expect(useStageStore.getState().generationComplete).toBe(true);
+    expect(useStageStore.getState().generatingOutlines).toEqual([]);
+  });
+
+  it('does not inherit another classroom generation plan when loading a legacy deck', () => {
+    useStageStore.setState({
+      outlines: [
+        { id: 'old', type: 'slide', title: 'old', description: '', keyPoints: [], order: 2 },
+      ],
+      generatingOutlines: [
+        { id: 'old', type: 'slide', title: 'old', description: '', keyPoints: [], order: 2 },
+      ],
+    });
+    const stage = makeStage('legacy');
+    applyClassroomStageAndScenes(stage, [makeScene('first', stage.id)], { persist: false });
+    expect(useStageStore.getState().outlines).toEqual([]);
+    expect(useStageStore.getState().generatingOutlines).toEqual([]);
+  });
+
   it('keeps the current load token valid when fallback scenes are committed', () => {
     useStageStore.getState().clearStore();
     const loadToken = claimStageSceneLoadToken();
