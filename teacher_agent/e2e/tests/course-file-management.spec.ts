@@ -304,3 +304,24 @@ test('interactive courseware opens the embedded editor and published files expla
   await expect(page.getByRole('menuitem', { name: '重命名' })).toBeEnabled();
   await expect(page.getByRole('menuitem', { name: '置顶', exact: true })).toBeEnabled();
 });
+
+test('renamed filenames are displayed as text in empty file and legacy artifact previews', async ({
+  page,
+}) => {
+  const { course, artifacts } = await setup(page);
+  course.modules[0].lessons[0].files[0].content = '';
+  artifacts[0].htmlContent = '';
+  await page.reload();
+  await page.getByRole('button', { name: '展开“第一课时”', exact: true }).click();
+  const filename = '<img src=x onerror="alert(1)">';
+  for (const id of ['notes', 'artifact']) {
+    await menu(page, id, '重命名');
+    await page.getByRole('textbox', { name: '名称', exact: true }).fill(filename);
+    await page.getByRole('button', { name: '保存名称' }).click();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await row(page, id).getByRole('button').first().click();
+    const preview = page.frameLocator('iframe').first();
+    await expect(preview.getByRole('heading', { name: filename, exact: true })).toBeVisible();
+    await expect(preview.locator('img')).toHaveCount(0);
+  }
+});

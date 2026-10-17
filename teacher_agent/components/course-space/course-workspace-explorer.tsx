@@ -1699,7 +1699,7 @@ export function CourseWorkspaceExplorer({
                   </Button>
                 </div>
                 <p className="mb-3 text-xs text-slate-500">
-                  编辑正文后保存修改；支持 Markdown 标题、列表和表格。
+                  编辑正文后保存修改；支持 Markdown 标题和列表。
                 </p>
                 <textarea
                   autoFocus
@@ -1718,7 +1718,7 @@ export function CourseWorkspaceExplorer({
             ) : selectedFile?.artifact ? (
               <iframe
                 title={selectedFile.title}
-                srcDoc={`<!doctype html><html><head><meta charset="utf-8"><style>body{font:16px/1.75 system-ui;color:#172033;max-width:960px;margin:0 auto;padding:42px}h1,h2,h3{color:#101828}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ddd;padding:8px}</style></head><body>${selectedFile.artifact.htmlContent || `<h1>${selectedFile.artifact.title}</h1><pre>${selectedFile.artifact.content}</pre>`}</body></html>`}
+                srcDoc={`<!doctype html><html><head><meta charset="utf-8"><style>body{font:16px/1.75 system-ui;color:#172033;max-width:960px;margin:0 auto;padding:42px}h1,h2,h3{color:#101828}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ddd;padding:8px}</style></head><body>${selectedFile.artifact.htmlContent || markdownToArtifactHtml(`# ${selectedFile.artifact.title}\n\n${selectedFile.artifact.content}`)}</body></html>`}
                 className="h-full w-full rounded-xl border bg-white shadow-sm"
               />
             ) : selectedFile?.material ? (
@@ -1795,7 +1795,7 @@ export function CourseWorkspaceExplorer({
                   strong{color:#101828}.source-citation{display:inline-flex;margin-left:4px;padding:1px 7px;border-radius:999px;background:#fff0f6;color:#9f004d;font-size:11px;white-space:nowrap}
                   .empty{margin-top:28px;padding:24px;border:1px dashed #d0d5dd;border-radius:16px;background:#f8fafc}
                   @media(max-width:700px){main{padding:28px 22px}li{padding-right:14px}}
-                </style></head><body><main>${selectedFile.courseFile.content ? markdownToArtifactHtml(`# ${selectedFile.courseFile.title}\n\n${selectedFile.courseFile.content}`) : `<h1>${selectedFile.courseFile.title}</h1><div class="empty"><strong>文件已创建</strong><p>当前内容为空，可由备课工作智能体结合课程材料与知识图谱继续完善。</p></div>`}</main></body></html>`}
+                </style></head><body><main>${selectedFile.courseFile.content ? markdownToArtifactHtml(`# ${selectedFile.courseFile.title}\n\n${selectedFile.courseFile.content}`) : `${markdownToArtifactHtml(`# ${selectedFile.courseFile.title}`)}<div class="empty"><strong>文件已创建</strong><p>当前内容为空，可由备课工作智能体结合课程材料与知识图谱继续完善。</p></div>`}</main></body></html>`}
                 className="h-full w-full rounded-xl border bg-white shadow-sm"
               />
             ) : (
