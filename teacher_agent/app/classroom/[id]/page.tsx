@@ -20,6 +20,7 @@ import {
   applyClassroomStageAndScenes,
   defaultClassroomLoadDeps,
   fetchClassroomForPlayer,
+  hasPendingClassroomGeneration,
   runClassroomLoad,
 } from '@/lib/classroom/load-classroom';
 import { isIncompleteEnhancedScene } from '@/lib/learning-skills/enhanced-courseware-quality';
@@ -49,13 +50,16 @@ export default function ClassroomDetailPage() {
   const syncStage = useStageStore((state) => state.stage);
   const syncScenes = useStageStore((state) => state.scenes);
   const generationComplete = useStageStore((state) => state.generationComplete);
+  const syncOutlines = useStageStore((state) => state.outlines);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [generationFailure, setGenerationFailure] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   const generationStartedRef = useRef(false);
   const snapshotSyncRef = useRef<ReturnType<typeof createClassroomSnapshotSyncQueue> | null>(null);
+  const skipServerSnapshotSyncRef = useRef(false);
 
   const { generateRemaining, retrySingleOutline, stop } = useSceneGenerator({
     onSceneFailed: (outline, reason) => setGenerationFailure(`${outline.title}：${reason}`),
@@ -84,14 +88,38 @@ export default function ClassroomDetailPage() {
       await runClassroomLoad({
         classroomId,
         preferServerClassroom,
+        shouldRefreshFromServer: () => hasPendingClassroomGeneration(useStageStore.getState()),
         loadToken,
         isCurrent,
         loadFromStorage,
         getCurrentStage: () => useStageStore.getState().stage,
-        fetchClassroom: (id, shouldConvert, replaceExisting) =>
-          playerOnlyEmbed
+        fetchClassroom: async (id, shouldConvert, replaceExisting) => {
+          const classroom = await (playerOnlyEmbed
             ? fetchClassroomForPlayer(id)
-            : defaultClassroomLoadDeps.fetchClassroom(id, shouldConvert, {}, replaceExisting),
+            : defaultClassroomLoadDeps.fetchClassroom(id, shouldConvert, {}, replaceExisting));
+          if (classroom && !playerOnlyEmbed) {
+            const current = useStageStore.getState();
+            const versions = (scenes: typeof current.scenes) =>
+              JSON.stringify(
+                scenes.map((scene) => [
+                  scene.id,
+                  scene.order,
+                  scene.updatedAt,
+                  scene.timing?.measurementKey,
+                ]),
+              );
+            if (
+              !preferServerClassroom &&
+              current.stage?.id === id &&
+              versions(current.scenes) === versions(classroom.scenes) &&
+              JSON.stringify(current.stage.generationPlan) ===
+                JSON.stringify(classroom.stage.generationPlan)
+            )
+              return null;
+            skipServerSnapshotSyncRef.current = classroom.serverSnapshot === true;
+          }
+          return classroom;
+        },
         applyFallbackScenes: (args) =>
           defaultClassroomLoadDeps.applyFallbackScenes({
             ...args,
@@ -128,6 +156,7 @@ export default function ClassroomDetailPage() {
     setGenerationFailure(null);
     /* eslint-enable react-hooks/set-state-in-effect */
     generationStartedRef.current = false;
+    skipServerSnapshotSyncRef.current = false;
 
     // Clear previous classroom's media tasks to prevent cross-classroom contamination.
     // Placeholder IDs (gen_img_1, gen_vid_1) are NOT globally unique across stages,
@@ -165,10 +194,22 @@ export default function ClassroomDetailPage() {
   // student player reads this server copy rather than browser IndexedDB.
   useEffect(() => {
     if (loading || error || playerOnlyEmbed) return;
+    // Loading newer server pages is a read. Echoing a partial read back could
+    // replace pages another window generated after that read.
+    if (skipServerSnapshotSyncRef.current) {
+      skipServerSnapshotSyncRef.current = false;
+      return;
+    }
     const snapshot = { stage: syncStage, scenes: syncScenes, generationComplete };
     if (!canSyncClassroomSnapshot(classroomId, snapshot)) return;
     snapshotSyncRef.current?.enqueue({ stage: snapshot.stage, scenes: snapshot.scenes });
   }, [classroomId, error, generationComplete, loading, playerOnlyEmbed, syncScenes, syncStage]);
+
+  const missingGenerationPlan =
+    !loading &&
+    !playerOnlyEmbed &&
+    syncOutlines.length === 0 &&
+    hasPendingClassroomGeneration({ stage: syncStage, scenes: syncScenes, generationComplete });
 
   // Auto-resume generation for pending outlines
   useEffect(() => {
@@ -309,6 +350,28 @@ export default function ClassroomDetailPage() {
               className="shrink-0 border-b border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800"
             >
               {generationFailure}
+            </div>
+          )}
+          {missingGenerationPlan && (
+            <div
+              role="status"
+              className="flex shrink-0 items-center justify-between gap-3 border-b bg-amber-50 px-4 py-2 text-sm text-amber-900"
+            >
+              <span>课件尚未完整载入，当前显示 {syncScenes.length} 页。</span>
+              <button
+                disabled={refreshing}
+                className="shrink-0 underline disabled:opacity-50"
+                onClick={async () => {
+                  setRefreshing(true);
+                  try {
+                    await loadClassroom();
+                  } finally {
+                    setRefreshing(false);
+                  }
+                }}
+              >
+                {refreshing ? '正在刷新…' : '刷新生成进度'}
+              </button>
             </div>
           )}
           {loading ? (

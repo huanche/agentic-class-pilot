@@ -242,6 +242,77 @@ describe('fetchClassroomFromApi at the server-media boundary', () => {
     return fetchClassroomFromApi('stage-1', undefined, deps);
   }
 
+  it('merges newly generated server pages into an incomplete cached document and keeps teacher edits', async () => {
+    const payload = serverPayload();
+    Object.assign(payload.stage, { timing: { budgetVersion: 1, expectedAutomaticPages: 3 } });
+    stubNetwork({ payload });
+    await fetchApi();
+    const local = (await deps.store!.loadDocument('stage-1'))!;
+    Object.assign(local.scenes[0], { title: 'Teacher edit', updatedAt: 10 });
+    await deps.store!.saveDocument(local);
+    const next = structuredClone(payload);
+    next.scenes.push({ ...structuredClone(payload.scenes[0]), id: 'scene-2', order: 1 });
+    stubNetwork({ payload: next });
+
+    const result = await fetchApi();
+
+    expect(result?.scenes.map((s) => s.id)).toEqual(['scene-1', 'scene-2']);
+    expect(result?.scenes[0].title).toBe('Teacher edit');
+    expect(JSON.stringify(result)).not.toContain(AUDIO_URL);
+    expect((await deps.store!.loadDocument('stage-1'))?.scenes).toHaveLength(2);
+  });
+
+  it.each([false, true])(
+    'refreshes a newer generated page version (new scene identity=%s)',
+    async (newIdentity) => {
+      const payload = serverPayload();
+      Object.assign(payload.stage, { timing: { budgetVersion: 1, expectedAutomaticPages: 3 } });
+      stubNetwork({ payload });
+      await fetchApi();
+      Object.assign(payload.scenes[0], { title: 'Calibrated server page', updatedAt: 20 });
+      if (newIdentity) payload.scenes[0].id = 'regenerated-scene';
+      stubNetwork({ payload });
+      expect((await fetchApi())?.scenes[0].title).toBe('Calibrated server page');
+    },
+  );
+
+  it('does not restore a deleted page in a completed cached course', async () => {
+    const payload = serverPayload();
+    Object.assign(payload.stage, { generationPlan: { version: 1, complete: true, outlines: [] } });
+    stubNetwork({ payload });
+    await fetchApi();
+    payload.scenes.push({ ...structuredClone(payload.scenes[0]), id: 'deleted', order: 1 });
+    stubNetwork({ payload });
+    expect((await fetchApi())?.scenes.map((s) => s.id)).toEqual(['scene-1']);
+  });
+
+  it('marks a clean partial refresh as a read rather than a new server write', async () => {
+    const payload = serverPayload();
+    Object.assign(payload.stage, { timing: { budgetVersion: 1, expectedAutomaticPages: 3 } });
+    stubNetwork({ payload });
+    await fetchApi();
+    payload.scenes.push({ ...structuredClone(payload.scenes[0]), id: 'scene-2', order: 1 });
+    stubNetwork({ payload });
+    expect((await fetchApi())?.serverSnapshot).toBe(true);
+  });
+
+  it('keeps the old cached document and its audio when importing a new page fails', async () => {
+    const payload = serverPayload();
+    Object.assign(payload.stage, { timing: { budgetVersion: 1, expectedAutomaticPages: 3 } });
+    stubNetwork({ payload });
+    const before = await fetchApi();
+    const next = structuredClone(payload);
+    const page = { ...structuredClone(payload.scenes[0]), id: 'scene-2', order: 1 };
+    page.content.canvas.elements[0].src = '/api/classroom-media/images/new-unavailable.png';
+    next.scenes.push(page);
+    stubNetwork({ payload: next, mediaStatus: 503 });
+    expect(await fetchApi()).toBeNull();
+    expect((await deps.store!.loadDocument('stage-1'))?.scenes).toEqual(before?.scenes);
+    const { getAssetPool } = await import('@/lib/media/asset-pool');
+    for (const id of allocatedIds(before))
+      expect(await getAssetPool().exists?.(id as never)).toBe(true);
+  });
+
   it('preserves the pending generation plan through server fetch and document conversion', async () => {
     const payload = serverPayload();
     const outlines = [1, 2, 3].map((order) => ({

@@ -9,6 +9,12 @@ const mocks = vi.hoisted(() => ({
   retry: vi.fn(),
   load: vi.fn(async () => {}),
   update: vi.fn(),
+  fetch: vi.fn(),
+  sync: vi.fn(),
+  run: vi.fn(),
+  serverRead: false,
+  allowSync: false,
+  pending: false,
   from: '',
   stage: {} as Record<string, unknown>,
   onFailure: undefined as undefined | ((outline: { title: string }, reason: string) => void),
@@ -87,15 +93,25 @@ vi.mock('@/lib/learning-skills/enhanced-courseware-quality', () => ({
   isIncompleteEnhancedScene: () => false,
 }));
 vi.mock('@/lib/classroom/classroom-server-sync', () => ({
-  canSyncClassroomSnapshot: () => false,
-  createClassroomSnapshotSyncQueue: () => ({ enqueue: vi.fn(), dispose: vi.fn() }),
+  canSyncClassroomSnapshot: () => mocks.allowSync,
+  createClassroomSnapshotSyncQueue: () => ({ enqueue: mocks.sync, dispose: vi.fn() }),
 }));
 vi.mock('@/lib/classroom/load-classroom', () => ({
-  defaultClassroomLoadDeps: {},
+  defaultClassroomLoadDeps: { fetchClassroom: mocks.fetch },
+  hasPendingClassroomGeneration: () => mocks.pending,
   applyClassroomStageAndScenes: vi.fn(),
   fetchClassroomForPlayer: vi.fn(),
-  runClassroomLoad: async (args: { setLoading: (loading: boolean) => void }) =>
-    args.setLoading(false),
+  runClassroomLoad: async (args: {
+    setLoading: (loading: boolean) => void;
+    fetchClassroom: (...args: unknown[]) => Promise<unknown>;
+  }) => {
+    mocks.run();
+    if (mocks.serverRead) {
+      const result = await args.fetchClassroom('lesson');
+      if (result) Object.assign(state, result);
+    }
+    args.setLoading(false);
+  },
 }));
 import ClassroomDetailPage from '@/app/classroom/[id]/page';
 
@@ -107,7 +123,15 @@ describe('classroom generation model survives session loss', () => {
     vi.clearAllMocks();
     sessionStorage.clear();
     mocks.from = '';
+    mocks.serverRead = false;
+    mocks.allowSync = false;
+    mocks.pending = false;
     state.stage = { id: 'lesson', name: 'Python' };
+    state.scenes = [{ id: 'first', stageId: 'lesson', order: 1 }];
+    state.outlines = [
+      { id: 'one', order: 1 },
+      { id: 'two', order: 2 },
+    ];
     host = document.createElement('div');
     document.body.append(host);
     root = createRoot(host);
@@ -124,6 +148,34 @@ describe('classroom generation model survives session loss', () => {
     expect(mocks.generate).toHaveBeenCalledOnce();
     return mocks.generate.mock.calls[0]?.[0] as unknown as { preferServerModel: boolean };
   }
+  it('does not echo a clean server refresh, and still saves a subsequent teacher edit', async () => {
+    mocks.serverRead = true;
+    mocks.allowSync = true;
+    state.outlines.push({ id: 'three', order: 3 });
+    mocks.fetch.mockResolvedValue({
+      stage: state.stage,
+      scenes: [...state.scenes, { id: 'second', stageId: 'lesson', order: 2 }],
+      serverSnapshot: true,
+    });
+    await render();
+    expect(mocks.sync).not.toHaveBeenCalled();
+    state.scenes = state.scenes.map((scene) => ({ ...scene }));
+    await act(async () => root.render(createElement(ClassroomDetailPage)));
+    expect(mocks.sync).toHaveBeenCalledOnce();
+  });
+
+  it('offers an explicit progress refresh for a legacy partial deck with no local plan', async () => {
+    mocks.pending = true;
+    state.outlines = [];
+    await act(async () => root.render(createElement(ClassroomDetailPage)));
+    expect(host.textContent).toContain('当前显示 1 页');
+    const button = [...host.querySelectorAll('button')].find(
+      (node) => node.textContent === '刷新生成进度',
+    );
+    expect(button).toBeDefined();
+    await act(async () => button!.click());
+    expect(mocks.run).toHaveBeenCalledTimes(2);
+  });
   it('uses the server model for a course workspace after sessionStorage was lost', async () => {
     mocks.from = '/course-space?workspace=course';
     expect((await render()).preferServerModel).toBe(true);
