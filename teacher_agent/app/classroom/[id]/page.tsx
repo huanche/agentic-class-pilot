@@ -217,6 +217,9 @@ export default function ClassroomDetailPage() {
 
     const state = useStageStore.getState();
     const { outlines, scenes, stage, generationComplete } = state;
+    // Server tasks own their full plan, including cancelled/failed drafts.
+    // Opening a partial classroom must never start a second browser worker.
+    if (stage?.generationPlan?.serverJobId) return;
 
     // Repair AI-enhanced pages that contain a generation plan rather than
     // student-facing teaching content. This also recovers old saved courses;

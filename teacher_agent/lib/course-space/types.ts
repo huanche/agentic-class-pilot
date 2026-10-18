@@ -286,11 +286,18 @@ export interface CourseArtifactJob {
     | { type: 'module'; moduleId: string }
     | { type: 'lesson'; lessonId: string };
   artifactType: CourseArtifactType;
-  status: 'queued' | 'running' | 'review' | 'approved' | 'failed';
+  status: 'queued' | 'running' | 'review' | 'approved' | 'failed' | 'cancelled';
   progress: number;
   message: string;
   artifactId?: string;
   knowledgePackageId?: string;
+  /** Server-owned courseware generation; progress survives browser navigation. */
+  backgroundGeneration?: {
+    classroomId: string;
+    completedPages: number;
+    totalPages: number;
+    phase: string;
+  };
   error?: string;
   createdAt: number;
   updatedAt: number;

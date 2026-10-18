@@ -633,6 +633,13 @@ export function resolveTTSModel(providerId: string, clientModel?: string): strin
   return clientModel;
 }
 
+/** Default voice for server jobs; explicit caller choices still take precedence. */
+export function resolveTTSVoice(providerId: string, clientVoice?: string): string | undefined {
+  if (clientVoice?.trim()) return clientVoice;
+  const prefix = Object.entries(TTS_ENV_MAP).find(([, id]) => id === providerId)?.[0];
+  return prefix ? process.env[`${prefix}_VOICE`]?.trim() || undefined : undefined;
+}
+
 // ---------------------------------------------------------------------------
 // Public API — ASR
 // ---------------------------------------------------------------------------

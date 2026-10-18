@@ -109,11 +109,15 @@ jobs:
           scp -i /tmp/deploy_key -o StrictHostKeyChecking=accept-new \
             teacher_agent/scripts/server-deploy-teacher.sh \
             "ubuntu@$SERVER_HOST:/tmp/server-deploy-teacher.sh"
+          scp -i /tmp/deploy_key -o StrictHostKeyChecking=accept-new \
+            teacher_agent/scripts/server-wait-teacher-idle.sh \
+            "ubuntu@$SERVER_HOST:/tmp/server-wait-teacher-idle.sh"
           $SSH "sed -i 's/\r$//' /tmp/server-deploy-teacher.sh"
+          $SSH "sed -i 's/\r$//' /tmp/server-wait-teacher-idle.sh"
 
           # Authenticate the daemon for the private repo, then swap the container.
           printf '%s' "$DOCKERHUB_TOKEN" | $SSH "docker login -u '$DOCKERHUB_USERNAME' --password-stdin"
-          $SSH "bash /tmp/server-deploy-teacher.sh '$IMAGE' '$IMAGE_TAG'"
+          $SSH "bash /tmp/server-wait-teacher-idle.sh && bash /tmp/server-deploy-teacher.sh '$IMAGE' '$IMAGE_TAG'"
 
       # Informational only — the authoritative gate is the server-side health
       # check + rollback in server-deploy-teacher.sh. The public endpoint may

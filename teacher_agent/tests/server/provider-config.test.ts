@@ -81,6 +81,7 @@ const ENV_PREFIXES_TO_CLEAR = [
   'TTS_ELEVENLABS',
   'TTS_MINIMAX',
   'TTS_VOXCPM',
+  'TTS_LEMONADE',
   'ASR_OPENAI',
   'ASR_QWEN',
   'ASR_FUNASR',
@@ -110,6 +111,7 @@ function clearProviderEnv() {
     delete process.env[`${prefix}_BASE_URL`];
     delete process.env[`${prefix}_MODELS`];
     delete process.env[`${prefix}_ENABLED`];
+    delete process.env[`${prefix}_VOICE`];
   }
   delete process.env.TAVILY_API_KEY;
   delete process.env.BOCHA_API_KEY;
@@ -146,6 +148,14 @@ describe('provider-config', () => {
     vi.unstubAllEnvs();
     clearProviderEnv();
     yamlOverride = null;
+  });
+
+  it('uses a local TTS default voice without overriding an explicit voice', async () => {
+    process.env.TTS_LEMONADE_VOICE = 'zf_xiaoyi';
+    const { resolveTTSVoice } = await import('@/lib/server/provider-config');
+    expect(resolveTTSVoice('lemonade-tts')).toBe('zf_xiaoyi');
+    expect(resolveTTSVoice('lemonade-tts', 'zm_yunxi')).toBe('zm_yunxi');
+    expect(resolveTTSVoice('qwen-tts')).toBeUndefined();
   });
 
   describe('resolveApiKey', () => {

@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { ArrowLeft, ArrowRight, CheckCircle2, Clock3, LoaderCircle, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { CourseArtifactJob, CourseArtifactRecord, CourseSpace } from '@/lib/course-space';
+import { COURSE_JOB_STATUS_LABELS } from '@/lib/generation/background-courseware';
 
 const labels: Record<string, string> = {
   'course-outline': '课程教学大纲',
@@ -23,6 +24,24 @@ export default function CourseJobsPage() {
   const [jobs, setJobs] = useState<CourseArtifactJob[]>([]);
   const [artifacts, setArtifacts] = useState<CourseArtifactRecord[]>([]);
   const [error, setError] = useState('');
+  const [cancellingId, setCancellingId] = useState<string>();
+  const cancel = async (jobId: string) => {
+    setCancellingId(jobId);
+    try {
+      const response = await fetch(`/api/course-space/jobs/${jobId}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'cancel' }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || '取消失败');
+      setJobs((current) => current.map((job) => (job.id === jobId ? data.job : job)));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setCancellingId(undefined);
+    }
+  };
   const refresh = useCallback(async () => {
     try {
       const response = await fetch(`/api/course-space/${courseId}`, { cache: 'no-store' });
@@ -56,7 +75,7 @@ export default function CourseJobsPage() {
             variant="ghost"
             size="icon"
             aria-label="返回课程建设概览"
-            onClick={() => router.push(`/course-space/${courseId}`)}
+            onClick={() => router.push(`/course-space?workspace=${encodeURIComponent(courseId)}`)}
           >
             <ArrowLeft />
           </Button>
@@ -94,7 +113,7 @@ export default function CourseJobsPage() {
                 <div className="flex items-center justify-between">
                   <b>{labels[job.artifactType] || job.artifactType}</b>
                   <span className="text-sm">
-                    {job.status} · {job.progress}%
+                    {COURSE_JOB_STATUS_LABELS[job.status]} · {job.progress}%
                   </span>
                 </div>
                 <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100">
@@ -104,6 +123,31 @@ export default function CourseJobsPage() {
                   />
                 </div>
                 <p className="mt-2 text-xs text-muted-foreground">{job.message}</p>
+                {job.backgroundGeneration && (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    已完成 {job.backgroundGeneration.completedPages}/
+                    {job.backgroundGeneration.totalPages} 页
+                  </p>
+                )}
+                <div className="mt-3 flex gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => router.push(`/course-space/${courseId}/jobs/${job.id}`)}
+                  >
+                    查看进度与结果
+                  </Button>
+                  {job.backgroundGeneration && ['queued', 'running'].includes(job.status) && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={cancellingId === job.id}
+                      onClick={() => void cancel(job.id)}
+                    >
+                      {cancellingId === job.id ? '正在取消…' : '取消任务'}
+                    </Button>
+                  )}
+                </div>
                 {job.status === 'running' && (
                   <LoaderCircle className="mt-2 size-4 animate-spin text-violet-600" />
                 )}

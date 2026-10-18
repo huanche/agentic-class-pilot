@@ -80,8 +80,11 @@ export async function POST(req: NextRequest) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'stageId is required');
     }
 
-    const outline: SceneOutline = withSceneContentDuration({ ...rawOutline,
-      durationBudget: allOutlines.find((page) => page.id === rawOutline.id)?.durationBudget ?? rawOutline.durationBudget,
+    const outline: SceneOutline = withSceneContentDuration({
+      ...rawOutline,
+      durationBudget:
+        allOutlines.find((page) => page.id === rawOutline.id)?.durationBudget ??
+        rawOutline.durationBudget,
     });
 
     // ── Model resolution from request headers/body ──
@@ -119,6 +122,7 @@ export async function POST(req: NextRequest) {
             ],
             maxOutputTokens: modelInfo?.outputWindow,
             maxRetries: 0,
+            abortSignal: req.signal,
           },
           'scene-content',
           undefined,
@@ -133,6 +137,7 @@ export async function POST(req: NextRequest) {
           prompt: userPrompt,
           maxOutputTokens: modelInfo?.outputWindow,
           maxRetries: 0,
+          abortSignal: req.signal,
         },
         'scene-content',
         undefined,

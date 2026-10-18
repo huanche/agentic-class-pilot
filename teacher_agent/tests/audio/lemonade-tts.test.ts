@@ -56,7 +56,7 @@ describe('Lemonade TTS', () => {
     expect(result.format).toBe('wav');
   });
 
-  it('falls back to af_heart when no voice is provided', async () => {
+  it('defaults to Xiaoyi when no voice is provided', async () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,
       arrayBuffer: async () => wavBytes(),
@@ -66,7 +66,7 @@ describe('Lemonade TTS', () => {
     await generateTTS({ providerId: 'lemonade-tts', voice: '' }, 'hi');
 
     const body = JSON.parse(mockFetch.mock.calls[0][1].body);
-    expect(body.voice).toBe('af_heart');
+    expect(body.voice).toBe('zf_xiaoyi');
   });
 
   it('uses the selected voice consistently regardless of text language', async () => {

@@ -133,6 +133,8 @@ export interface TTSProviderConfig {
  * TTS Model Configuration for API calls
  */
 export interface TTSModelConfig {
+  /** Cooperative cancellation for server-owned generation tasks. */
+  signal?: AbortSignal;
   providerId: TTSProviderId;
   modelId?: string;
   apiKey?: string;

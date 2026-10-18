@@ -490,7 +490,12 @@ function CourseWorkspace({ workspaceCourseId }: { workspaceCourseId: string }) {
 
       const settings = useSettingsStore.getState();
       settings.setTTSEnabled(true);
-      settings.setTTSProvider('qwen-tts');
+      if (
+        !settings.ttsProvidersConfig[settings.ttsProviderId]?.isServerConfigured &&
+        !settings.ttsProvidersConfig['qwen-tts']?.serverDisabled
+      ) {
+        settings.setTTSProvider('qwen-tts');
+      }
       const profile = useUserProfileStore.getState();
       const target = scopeTitle();
       const requirement =
@@ -710,7 +715,7 @@ function CourseWorkspace({ workspaceCourseId }: { workspaceCourseId: string }) {
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => router.push(`/course-space/${selected.id}/jobs/${latestJob.id}`)}
+                    onClick={() => router.push(`/course-space/${selected.id}/jobs`)}
                   >
                     最近任务
                   </Button>
@@ -741,6 +746,7 @@ function CourseWorkspace({ workspaceCourseId }: { workspaceCourseId: string }) {
                 )}
               </div>
               <CourseProgressSummary
+                jobs={jobs}
                 course={selected}
                 artifacts={artifacts}
                 onFocus={(target) => setStatusFocus({ ...target, nonce: Date.now() })}

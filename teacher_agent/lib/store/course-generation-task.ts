@@ -3,11 +3,12 @@ export type CourseGenerationTask = {
   id: string;
   courseId: string;
   title: string;
-  status: 'running' | 'review' | 'completed' | 'failed';
+  status: 'running' | 'review' | 'completed' | 'failed' | 'cancelled';
   message: string;
   step: number;
   total: number;
   url?: string;
+  serverJobId?: string;
 };
 export const useCourseGenerationTask = create<{
   runtimeId: string | null;

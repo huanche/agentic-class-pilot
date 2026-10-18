@@ -10,7 +10,11 @@ import path from 'path';
 import { createHash } from 'crypto';
 import { nanoid } from 'nanoid';
 import { measureAudioDuration } from '@/lib/audio/audio-duration';
-import { durationMeasurementKey, durationStatus, measureScenePlaybackSeconds } from '@/lib/generation/course-duration';
+import {
+  durationMeasurementKey,
+  durationStatus,
+  measureScenePlaybackSeconds,
+} from '@/lib/generation/course-duration';
 import { createLogger } from '@/lib/logger';
 import { CLASSROOMS_DIR } from '@/lib/server/classroom-storage';
 import { generateImage } from '@/lib/media/image-providers';
@@ -23,26 +27,27 @@ import {
   getServerImageProviders,
   getServerVideoProviders,
   getServerTTSProviders,
+  isServerTTSProviderDisabled,
   resolveImageApiKey,
   resolveImageBaseUrl,
   resolveVideoApiKey,
   resolveVideoBaseUrl,
   resolveTTSApiKey,
   resolveTTSBaseUrl,
+  resolveTTSVoice,
 } from '@/lib/server/provider-config';
 import type { SceneOutline } from '@/lib/types/generation';
 import type { Scene } from '@/lib/types/stage';
 import type { SpeechAction } from '@/lib/types/action';
+import type { CoursewareVoiceSelection } from '@/lib/generation/background-courseware';
 import type { ImageProviderId } from '@/lib/media/types';
 import type { VideoProviderId } from '@/lib/media/types';
 import type { TTSProviderId } from '@/lib/audio/types';
-import {
-  filterUnspeakableSpeechActions,
-  splitLongSpeechActions,
-} from '@/lib/audio/tts-utils';
+import { filterUnspeakableSpeechActions, splitLongSpeechActions } from '@/lib/audio/tts-utils';
 import { isGeneratedMediaPlaceholder } from '@/lib/media/media-ref';
 import { VOXCPM_AUTO_VOICE_ID, VOXCPM_TTS_PROVIDER_ID } from '@/lib/audio/voxcpm';
 import { type PlatformTtsConfig } from '@/lib/server/platform-user-model-config';
+import { recordGenerationUsage } from '@/lib/server/usage-storage';
 
 const log = createLogger('ClassroomMedia');
 
@@ -92,7 +97,9 @@ const PRIVATE_ORIGIN_RE =
 function mediaServingUrl(baseUrl: string, classroomId: string, subPath: string): string {
   const publicOrigin = process.env.PLATFORM_PUBLIC_URL?.trim().replace(/\/+$/, '');
   const origin =
-    publicOrigin && PRIVATE_ORIGIN_RE.test(baseUrl) ? baseUrl.replace(PRIVATE_ORIGIN_RE, publicOrigin) : baseUrl;
+    publicOrigin && PRIVATE_ORIGIN_RE.test(baseUrl)
+      ? baseUrl.replace(PRIVATE_ORIGIN_RE, publicOrigin)
+      : baseUrl;
   return `${origin}/api/classroom-media/${classroomId}/${subPath}`;
 }
 
@@ -104,6 +111,7 @@ export async function generateMediaForClassroom(
   outlines: SceneOutline[],
   classroomId: string,
   baseUrl: string,
+  options?: { signal?: AbortSignal },
 ): Promise<Record<string, string>> {
   const mediaDir = path.join(CLASSROOMS_DIR, classroomId, 'media');
   await ensureDir(mediaDir);
@@ -130,8 +138,10 @@ export async function generateMediaForClassroom(
 
   const generateImages = async () => {
     for (const req of imageRequests) {
+      options?.signal?.throwIfAborted();
       let generated = false;
       for (const candidate of imageProviderIds) {
+        options?.signal?.throwIfAborted();
         try {
           const providerId = candidate as ImageProviderId;
           const apiKey = resolveImageApiKey(providerId);
@@ -147,6 +157,7 @@ export async function generateMediaForClassroom(
             { providerId, apiKey, baseUrl: resolveImageBaseUrl(providerId), model },
             { prompt: req.prompt, aspectRatio: req.aspectRatio || '16:9' },
           );
+          options?.signal?.throwIfAborted();
 
           let buf: Buffer;
           let ext: string;
@@ -168,6 +179,7 @@ export async function generateMediaForClassroom(
           generated = true;
           break;
         } catch (err) {
+          options?.signal?.throwIfAborted();
           log.warn(`Image generation failed for ${req.elementId} with ${candidate}:`, err);
         }
       }
@@ -179,6 +191,7 @@ export async function generateMediaForClassroom(
 
   const generateVideos = async () => {
     for (const req of videoRequests) {
+      options?.signal?.throwIfAborted();
       try {
         const providerId = videoProviderIds[0] as VideoProviderId;
         const apiKey = resolveVideoApiKey(providerId);
@@ -198,6 +211,7 @@ export async function generateMediaForClassroom(
           { providerId, apiKey, baseUrl: resolveVideoBaseUrl(providerId), model },
           normalized,
         );
+        options?.signal?.throwIfAborted();
 
         const buf = await downloadToBuffer(result.url);
         const filename = `${req.elementId}.mp4`;
@@ -205,6 +219,7 @@ export async function generateMediaForClassroom(
         mediaMap[req.elementId] = mediaServingUrl(baseUrl, classroomId, `media/${filename}`);
         log.info(`Generated video: ${filename}`);
       } catch (err) {
+        options?.signal?.throwIfAborted();
         log.warn(`Video generation failed for ${req.elementId}:`, err);
       }
     }
@@ -258,8 +273,12 @@ export function replaceMediaPlaceholders(scenes: Scene[], mediaMap: Record<strin
 // Some Qwen streaming WAV responses use sentinel RIFF/data sizes. Browsers may
 // reject the otherwise valid PCM bytes, so finalize the header before storage.
 function finalizeWav(audio: Buffer): Buffer {
-  if (audio.length < 44 || audio.toString('ascii', 0, 4) !== 'RIFF' ||
-      audio.toString('ascii', 8, 12) !== 'WAVE') return audio;
+  if (
+    audio.length < 44 ||
+    audio.toString('ascii', 0, 4) !== 'RIFF' ||
+    audio.toString('ascii', 8, 12) !== 'WAVE'
+  )
+    return audio;
   let offset = 12;
   while (offset + 8 <= audio.length) {
     const chunkSize = audio.readUInt32LE(offset + 4);
@@ -285,7 +304,14 @@ export async function generateTTSForClassroom(
   classroomId: string,
   baseUrl: string,
   ttsOverride?: PlatformTtsConfig | null,
-  options?: { isolateAudio?: boolean; languageDirective?: string },
+  options?: {
+    isolateAudio?: boolean;
+    languageDirective?: string;
+    signal?: AbortSignal;
+    failFast?: boolean;
+    recordUsage?: boolean;
+    voiceSelection?: CoursewareVoiceSelection;
+  },
 ): Promise<{ generated: number; failed: number; skipped: number }> {
   const audioDir = path.join(CLASSROOMS_DIR, classroomId, 'audio');
   await ensureDir(audioDir);
@@ -297,23 +323,32 @@ export async function generateTTSForClassroom(
   let apiKey: string;
   let byokModel: string | undefined;
   let byokVoice: string | undefined;
-  if (ttsOverride?.apiKey) {
+  const requestedByokProvider =
+    ttsOverride?.provider && TTS_PROVIDERS[ttsOverride.provider as keyof typeof TTS_PROVIDERS]
+      ? ttsOverride.provider
+      : 'qwen-tts';
+  const useByok = Boolean(
+    ttsOverride?.apiKey && !isServerTTSProviderDisabled(requestedByokProvider),
+  );
+  if (useByok && ttsOverride?.apiKey) {
     const requested = (ttsOverride.provider || '') as TTSProviderId;
     if (TTS_PROVIDERS[requested as keyof typeof TTS_PROVIDERS]) {
       providerId = requested;
     } else {
-      log.warn(`BYOK TTS provider "${ttsOverride.provider ?? "?"}" unknown, falling back to qwen-tts`);
-      providerId = "qwen-tts" as TTSProviderId;
+      log.warn(
+        `BYOK TTS provider "${ttsOverride.provider ?? '?'}" unknown, falling back to qwen-tts`,
+      );
+      providerId = 'qwen-tts' as TTSProviderId;
     }
     apiKey = ttsOverride.apiKey;
     byokModel = ttsOverride.model || undefined;
     byokVoice = ttsOverride.voice || undefined;
   } else {
     const ttsProviderIds = Object.entries(getServerTTSProviders())
-      .filter(([id, info]) => id !== "browser-native-tts" && !info.disabled)
+      .filter(([id, info]) => id !== 'browser-native-tts' && !info.disabled)
       .map(([id]) => id);
     if (ttsProviderIds.length === 0) {
-      log.warn("No server TTS provider configured, skipping TTS generation");
+      log.warn('No server TTS provider configured, skipping TTS generation');
       return { generated: 0, failed: 0, skipped: 1 };
     }
     providerId = ttsProviderIds[0] as TTSProviderId;
@@ -325,10 +360,16 @@ export async function generateTTSForClassroom(
     return { generated: 0, failed: 0, skipped: 1 };
   }
   const ttsBaseUrl =
-    (ttsOverride?.apiKey ? ttsOverride.baseUrl || undefined : resolveTTSBaseUrl(providerId)) ||
+    (useByok ? ttsOverride?.baseUrl || undefined : resolveTTSBaseUrl(providerId)) ||
     ttsProvider?.defaultBaseUrl;
+  // A submitted voice belongs to its provider. Do not pass a Kokoro voice to
+  // a different managed/BYOK provider chosen by the server.
+  const selectedVoice =
+    options?.voiceSelection?.providerId === providerId ? options.voiceSelection.voice : undefined;
   const voice =
-    byokVoice || DEFAULT_TTS_VOICES[providerId as keyof typeof DEFAULT_TTS_VOICES] || "default";
+    resolveTTSVoice(providerId, selectedVoice || byokVoice) ||
+    DEFAULT_TTS_VOICES[providerId as keyof typeof DEFAULT_TTS_VOICES] ||
+    'default';
   const format = ttsProvider?.supportedFormats?.[0] || 'mp3';
   if (providerId === VOXCPM_TTS_PROVIDER_ID && voice === VOXCPM_AUTO_VOICE_ID) {
     log.warn('VoxCPM Auto Voice requires agent context; skipping server-side TTS generation');
@@ -340,6 +381,7 @@ export async function generateTTSForClassroom(
   let skipped = 0;
 
   for (const scene of scenes) {
+    options?.signal?.throwIfAborted();
     if (!scene.actions) continue;
     const audioSeconds: Record<string, number | undefined> = {};
     const renderId = options?.isolateAudio ? nanoid(8) : undefined;
@@ -355,6 +397,7 @@ export async function generateTTSForClassroom(
     const sceneOrder = scene.order;
 
     for (const action of scene.actions) {
+      options?.signal?.throwIfAborted();
       if (action.type !== 'speech' || !(action as SpeechAction).text) {
         skipped += 1;
         continue;
@@ -369,18 +412,32 @@ export async function generateTTSForClassroom(
         const result = await generateTTS(
           {
             providerId,
-            modelId: byokModel || DEFAULT_TTS_MODELS[providerId as keyof typeof DEFAULT_TTS_MODELS] || '',
+            modelId:
+              byokModel || DEFAULT_TTS_MODELS[providerId as keyof typeof DEFAULT_TTS_MODELS] || '',
             apiKey,
             baseUrl: ttsBaseUrl,
             voice,
             speed: speechAction.speed,
             providerOptions: { languageType: options?.languageDirective },
+            signal: options?.signal
+              ? AbortSignal.any([options.signal, AbortSignal.timeout(120_000)])
+              : undefined,
           },
           speechAction.text,
         );
+        if (options?.recordUsage)
+          void recordGenerationUsage({
+            kind: 'tts',
+            unit: 'character',
+            providerId,
+            modelId: byokModel || DEFAULT_TTS_MODELS[providerId as keyof typeof DEFAULT_TTS_MODELS],
+            quantity: speechAction.text.length,
+          });
+        options?.signal?.throwIfAborted();
 
         const outputFormat = result.format || format;
-        const audio = outputFormat === 'wav' ? finalizeWav(Buffer.from(result.audio)) : result.audio;
+        const audio =
+          outputFormat === 'wav' ? finalizeWav(Buffer.from(result.audio)) : result.audio;
         audioSeconds[action.id] = measureAudioDuration(audio, outputFormat) ?? undefined;
         const filename = `${audioId}.${outputFormat}`;
         await fs.writeFile(path.join(audioDir, filename), audio);
@@ -393,19 +450,32 @@ export async function generateTTSForClassroom(
         generated += 1;
         log.info(`Generated TTS: ${filename} (${result.audio.length} bytes)`);
       } catch (err) {
+        options?.signal?.throwIfAborted();
+        if (options?.failFast) throw err;
         failed += 1;
         log.warn(`TTS generation failed for action ${action.id}:`, err);
       }
     }
-    scene.timing = { ...scene.timing, measuredDurationSec: measureScenePlaybackSeconds(scene, audioSeconds), measurementKey: durationMeasurementKey(scene) };
-    scene.timing.durationStatus = durationStatus(scene.timing.measuredDurationSec, scene.timing.plannedDurationSec ?? 0);
+    scene.timing = {
+      ...scene.timing,
+      measuredDurationSec: measureScenePlaybackSeconds(scene, audioSeconds),
+      measurementKey: durationMeasurementKey(scene),
+    };
+    scene.timing.durationStatus = durationStatus(
+      scene.timing.measuredDurationSec,
+      scene.timing.plannedDurationSec ?? 0,
+    );
   }
 
   return { generated, failed, skipped };
 }
 
 /** Publish only the chosen candidate under the stable name used by browser round-trip recovery. */
-export async function finalizeClassroomTtsAudio(scene: Scene, classroomId: string, baseUrl: string): Promise<void> {
+export async function finalizeClassroomTtsAudio(
+  scene: Scene,
+  classroomId: string,
+  baseUrl: string,
+): Promise<void> {
   const directory = path.resolve(CLASSROOMS_DIR, classroomId, 'audio');
   for (const action of scene.actions ?? []) {
     if (action.type !== 'speech') continue;
@@ -417,7 +487,8 @@ export async function finalizeClassroomTtsAudio(scene: Scene, classroomId: strin
     const previous = new URL(speech.audioUrl);
     const filename = decodeURIComponent(previous.pathname.split('/').pop() || '');
     const source = path.resolve(directory, filename);
-    if (path.dirname(source) !== directory || !filename.startsWith('tts_')) throw new Error('Invalid narration path');
+    if (path.dirname(source) !== directory || !filename.startsWith('tts_'))
+      throw new Error('Invalid narration path');
     const extension = path.extname(filename);
     const stableId = `tts_s${scene.order}_${action.id}`;
     const stableName = `${stableId}${extension}`;
@@ -440,6 +511,8 @@ export async function removeClassroomTtsAudio(scene: Scene, classroomId: string)
     if (!filename.startsWith('tts_')) continue;
     const target = path.resolve(directory, filename);
     if (path.dirname(target) !== directory) continue;
-    await fs.unlink(target).catch((error: NodeJS.ErrnoException) => { if (error.code !== 'ENOENT') throw error; });
+    await fs.unlink(target).catch((error: NodeJS.ErrnoException) => {
+      if (error.code !== 'ENOENT') throw error;
+    });
   }
 }

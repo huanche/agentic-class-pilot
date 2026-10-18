@@ -1,0 +1,8 @@
+Model: Kokoro-82M v1.0, published by hexgrad.
+Model card: https://huggingface.co/hexgrad/Kokoro-82M
+Model license: Apache License 2.0 (included as MODEL-LICENSE.txt).
+ONNX model/voices distribution: https://github.com/thewh1teagle/kokoro-onnx/releases/tag/model-files-v1.0
+Engine: https://github.com/thewh1teagle/kokoro-onnx
+Text frontend: https://github.com/hexgrad/misaki
+
+Dependency license metadata is retained in the installed Python distributions.

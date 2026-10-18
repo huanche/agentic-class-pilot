@@ -10,6 +10,19 @@ const stage = { id: 'classroom-1', name: 'Lesson' } as Stage;
 const scenes = [{ id: 'scene-1', stageId: stage.id, type: 'slide' }] as Scene[];
 
 describe('classroom server sync', () => {
+  it('keeps an unfinished server task read-only until it has completed', () => {
+    const serverStage = {
+      ...stage,
+      generationPlan: { version: 1 as const, outlines: [], complete: false, serverJobId: 'job-1' },
+    };
+    expect(
+      canSyncClassroomSnapshot(stage.id, { stage: serverStage, scenes, generationComplete: false }),
+    ).toBe(false);
+    serverStage.generationPlan.complete = true;
+    expect(
+      canSyncClassroomSnapshot(stage.id, { stage: serverStage, scenes, generationComplete: true }),
+    ).toBe(true);
+  });
   it('syncs partial and complete non-empty snapshots for the current classroom', () => {
     expect(canSyncClassroomSnapshot(stage.id, { stage, scenes, generationComplete: true })).toBe(
       true,
@@ -20,16 +33,18 @@ describe('classroom server sync', () => {
     expect(canSyncClassroomSnapshot('another', { stage, scenes, generationComplete: true })).toBe(
       false,
     );
-    expect(canSyncClassroomSnapshot(stage.id, { stage, scenes: [], generationComplete: true })).toBe(
-      false,
-    );
+    expect(
+      canSyncClassroomSnapshot(stage.id, { stage, scenes: [], generationComplete: true }),
+    ).toBe(false);
   });
 
   it('serializes writes and keeps the newest generated page list', async () => {
     vi.useFakeTimers();
     try {
       let releaseFirst!: () => void;
-      const firstWrite = new Promise<void>((resolve) => { releaseFirst = resolve; });
+      const firstWrite = new Promise<void>((resolve) => {
+        releaseFirst = resolve;
+      });
       const send = vi.fn().mockReturnValueOnce(firstWrite).mockResolvedValue(undefined);
       const queue = createClassroomSnapshotSyncQueue(send, undefined, 10);
       const twoPages = { stage, scenes: [...scenes, { ...scenes[0], id: 'scene-2' }] };

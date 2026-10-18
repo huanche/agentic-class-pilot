@@ -11,6 +11,7 @@ export function canSyncClassroomSnapshot(
 ): snapshot is ClassroomServerSnapshot & { generationComplete: boolean } {
   return (
     snapshot.stage?.id === classroomId &&
+    !(snapshot.stage.generationPlan?.serverJobId && !snapshot.stage.generationPlan.complete) &&
     snapshot.scenes.length > 0
   );
 }

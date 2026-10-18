@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kokoro 本地语音试听</title>
+<style>
+  * { box-sizing:border-box } body { margin:0;background:#f3f5fa;color:#18243a;font:16px/1.6 system-ui,"Microsoft YaHei",sans-serif }
+  main { max-width:880px;margin:40px auto;padding:28px;background:#fff;border-radius:20px;box-shadow:0 12px 45px #2233550d }
+  h1 { margin:0;font-size:28px } p { color:#59677b;margin:8px 0 22px } .badge { display:inline-block;background:#e6f5ec;color:#196540;padding:3px 12px;border-radius:30px;font-size:14px;margin-bottom:14px }
+  label { display:block;font-weight:600;margin-top:14px } textarea,select,input { font:inherit;border:1px solid #cbd2de;border-radius:8px;padding:10px;background:white;color:inherit }
+  textarea { width:100%;resize:vertical;min-height:152px } .row { display:flex;gap:20px;flex-wrap:wrap;align-items:end } .row label { flex:1;min-width:150px } select,input { width:100%;display:block }
+  button { border:0;border-radius:8px;font:inherit;padding:10px 18px;cursor:pointer;background:#e9edf6;color:#263b60 } button.primary { background:#922052;color:white;margin-top:22px } button:disabled { opacity:.5;cursor:wait } .examples { display:flex;gap:8px;flex-wrap:wrap;margin-top:10px } .examples button { font-size:14px;padding:5px 12px }
+  audio { width:100%;margin:10px 0 } #status { min-height:28px;margin-top:16px;color:#36506c } .samples { border-top:1px solid #e4e8ef;margin-top:24px;padding-top:16px } .samples p { margin:12px 0 0 } a { color:#922052 } @media(max-width:600px) { main { margin:12px;padding:20px } }
+</style>
+<main>
+  <span class="badge" id="health">正在连接本地模型…</span>
+  <h1>Kokoro 本地语音试听</h1>
+  <p>文字在这台电脑的 CPU 上合成为语音。可检查中文发音、数字、英文单词和停顿。</p>
+  <form id="form">
+    <label for="text">朗读内容</label>
+    <textarea id="text" maxlength="5000" required>同学们好，欢迎来到 Python 入门课。今天我们学习变量和数据类型。请先观察左侧的示例，再比较整数、浮点数和字符串的区别。</textarea>
+    <div class="examples">
+      <button type="button" data-example="normal">课程讲解</button>
+      <button type="button" data-example="numbers">数字和标点</button>
+      <button type="button" data-example="python">中英混读</button>
+    </div>
+    <div class="row">
+      <label for="voice">音色<select id="voice"><option value="zf_xiaoyi">小伊 · 中文女声</option></select></label>
+      <label for="speed">语速<input id="speed" type="number" min="0.5" max="2" step="0.1" value="1"></label>
+    </div>
+    <button class="primary" id="generate" type="submit">生成试听</button>
+    <div id="status" role="status" aria-live="polite">选择音色后点击生成。首次合成需要预热，耗时可能较长。</div>
+    <audio id="audio" controls preload="metadata" hidden></audio>
+    <a id="download" hidden download="kokoro-local.wav">下载本次音频</a>
+  </form>
+  <div class="samples">
+    <strong>已生成的试听样本</strong>
+    <p>默认中文女声 · 小伊</p><audio controls preload="none" src="/samples/xiaoyi.wav"></audio>
+    <p>中文女声 · 小贝</p><audio controls preload="none" src="/samples/zh-female.wav"></audio>
+    <p>中文男声 · 云希</p><audio controls preload="none" src="/samples/zh-male.wav"></audio>
+    <p>Python 与数字混读</p><audio controls preload="none" src="/samples/python.wav"></audio>
+    <p>教师端接口合成</p><audio controls preload="none" src="/samples/teacher-api.wav"></audio>
+  </div>
+  <p style="font-size:14px;margin-bottom:0">教师工作区：<a href="http://127.0.0.1:3200/course-space" target="_blank" rel="noopener">打开本地教师端</a>。TTS 服务地址：127.0.0.1:13305/v1。</p>
+</main>
+<script>
+  const $ = id => document.getElementById(id);
+  const examples = {
+    normal: '同学们好，欢迎来到 Python 入门课。今天我们学习变量和数据类型。请先观察左侧的示例，再比较整数、浮点数和字符串的区别。',
+    numbers: '中位数需要先排序。把一、二、三、四、二十按从小到大排列，中间的数是三。现在计算三点一四乘以二，结果是六点二八。',
+    python: '在 Python 中，print 用来输出结果，input 用来读取输入。变量 age 等于十八，变量 name 等于小明。请比较整数 int 和字符串 str 的区别。'
+  };
+  document.querySelectorAll('[data-example]').forEach(button => button.onclick = () => { $('text').value = examples[button.dataset.example]; });
+  Promise.all([fetch('/health').then(r=>r.json()), fetch('/v1/voices').then(r=>r.json())]).then(([health,data]) => {
+    $('health').textContent = '本地模型已就绪 · CPU · 中文默认音色';
+    $('voice').replaceChildren(...data.voices.filter(v=>v.id.startsWith('z')).map(v=>new Option(v.name,v.id)));
+    $('voice').value=health.defaultVoice;
+  }).catch(()=>{ $('health').textContent='本地服务连接失败'; });
+  let currentUrl;
+  $('form').onsubmit = async event => {
+    event.preventDefault();
+    $('generate').disabled = true; $('status').textContent='正在本地合成，请稍候…';
+    try {
+      const response=await fetch('/v1/audio/speech',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'kokoro-v1',input:$('text').value,voice:$('voice').value,speed:Number($('speed').value),response_format:'wav'})});
+      if(!response.ok) throw new Error((await response.json()).error?.message || '合成失败');
+      const blob=await response.blob();
+      if(currentUrl) URL.revokeObjectURL(currentUrl);
+      currentUrl=URL.createObjectURL(blob); $('audio').src=currentUrl; $('audio').hidden=false; $('download').href=currentUrl; $('download').hidden=false;
+      $('status').textContent=`生成完成：耗时 ${response.headers.get('X-Generation-Seconds')} 秒，音频 ${response.headers.get('X-Audio-Duration')} 秒。点击播放器收听。`;
+    } catch(error) { $('status').textContent=error.message; }
+    finally { $('generate').disabled=false; }
+  };
+</script>
+</html>

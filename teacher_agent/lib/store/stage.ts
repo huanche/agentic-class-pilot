@@ -720,7 +720,12 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
         ? {
             stage: {
               ...stage,
-              generationPlan: { version: 1, outlines, complete: generationComplete },
+              generationPlan: {
+                ...stage.generationPlan,
+                version: 1,
+                outlines,
+                complete: generationComplete,
+              },
             },
           }
         : {}),
@@ -736,7 +741,12 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
         ? {
             stage: {
               ...stage,
-              generationPlan: { version: 1, outlines, complete: generationComplete },
+              generationPlan: {
+                ...stage.generationPlan,
+                version: 1,
+                outlines,
+                complete: generationComplete,
+              },
             },
           }
         : {}),
@@ -1025,7 +1035,12 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
             outlines.length > 0
               ? {
                   ...data.stage,
-                  generationPlan: { version: 1, outlines, complete: generationComplete },
+                  generationPlan: {
+                    ...data.stage.generationPlan,
+                    version: 1,
+                    outlines,
+                    complete: generationComplete,
+                  },
                 }
               : data.stage,
           scenes: migrated,
