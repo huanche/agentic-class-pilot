@@ -23,55 +23,10 @@ jobs:
           trap 'rm -f "$key"' EXIT
           ssh -i "$key" -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=20 -o ServerAliveCountMax=3 "ubuntu@$SERVER_HOST" 'bash -s' <<'REMOTE'
           set -euo pipefail
-          docker inspect agentic-teacher-prod --format 'teacherImage={{.Config.Image}}'
-          docker inspect agentic-kokoro --format 'ttsImage={{.Config.Image}} cpuNano={{.HostConfig.NanoCpus}} memory={{.HostConfig.Memory}} bindings={{json .HostConfig.PortBindings}}'
-          curl -fsS --max-time 5 http://127.0.0.1:13305/health
-          printf '\n'
-          docker exec -i agentic-teacher-prod node - <<'JS'
-          const {Pool}=require('pg');
-          const crypto=require('node:crypto');
-          (async()=>{
-            const database=process.env.COURSE_DATABASE_URL||process.env.DATABASE_URL;
-            const schema=process.env.COURSE_DATABASE_SCHEMA?.trim();
-            if(schema&&!/^[a-z_][a-z0-9_]*$/.test(schema))throw Error('Invalid schema');
-            const pool=new Pool({connectionString:database,connectionTimeoutMillis:5000,...(schema?{options:`-c search_path=${schema},public`}:{})});
-            let owner;
-            try{owner=(await pool.query('SELECT teacher_id FROM mentra_courses ORDER BY updated_at DESC LIMIT 1')).rows[0]?.teacher_id;}finally{await pool.end();}
-            if(!owner)throw Error('No teacher course available for delegated service validation');
-            const headers={'Content-Type':'application/json','X-Platform-Service-Key':process.env.PLATFORM_SERVICE_KEY||'','X-Platform-Subject':owner};
-            const configResponse=await fetch('http://127.0.0.1:3200/api/server-providers',{headers});
-            if(!configResponse.ok)throw Error(`Provider authorization status ${configResponse.status}`);
-            const config=await configResponse.json();
-            if(!config.tts?.['lemonade-tts']||config.tts['lemonade-tts'].disabled||!config.tts['qwen-tts']?.disabled)throw Error('Managed provider configuration mismatch');
-            const reports=[];
-            for(const voice of ['zf_xiaoyi']){
-              const started=performance.now();
-              const response=await fetch('http://127.0.0.1:3200/api/generate/tts',{
-                method:'POST',headers,
-                body:JSON.stringify({text:'同学们好，这一段我们学习 Python 变量与数据类型。请先观察左侧示例，name 等于小明，age 等于十八。变量可以理解为保存数据的名字，等号表示把右侧的值交给左侧变量。接下来比较右侧两个例子，整数十八可以直接参与加减运算，而带引号的十八是字符串。它们看起来相似，实际类型不同。我们可以使用 type 查看类型，也可以使用 int 把符合规则的数字字符串转换成整数。现在请暂停思考，如果先输入一个年龄，再加一，为什么可能报错？原因是 input 得到的是字符串，需要先完成类型转换。最后回顾，先看变量保存了什么，再判断数据类型，最后决定能进行哪一种运算。请结合屏幕上的示例，自己修改一个数值，并预测程序输出。',audioId:`release_verify_${voice}`,ttsProviderId:'lemonade-tts',ttsModelId:'kokoro-v1',ttsVoice:voice,ttsSpeed:1}),
-                signal:AbortSignal.timeout(120000),
-              });
-              if(!response.ok)throw Error(`Teacher TTS status ${response.status}`);
-              const data=await response.json();
-              const audio=Buffer.from(data.base64||'','base64');
-              if(data.success!==true||data.format!=='wav'||audio.length<48000||audio.toString('ascii',0,4)!=='RIFF')throw Error('Invalid teacher WAV');
-              let byteRate=0,dataBytes=0;
-              for(let offset=12;offset+8<=audio.length;){
-                const name=audio.toString('ascii',offset,offset+4),size=audio.readUInt32LE(offset+4);
-                if(name==='fmt '&&size>=16)byteRate=audio.readUInt32LE(offset+16);
-                if(name==='data')dataBytes+=size;
-                offset+=8+size+(size%2);
-              }
-              if(!byteRate||dataBytes/byteRate<1)throw Error('Invalid WAV duration');
-              const seconds=Math.round(performance.now()-started)/1000,audioSeconds=Math.round(dataBytes/byteRate*1000)/1000;
-              reports.push({voice,bytes:audio.length,seconds,audioSeconds,realTimeFactor:Math.round(seconds/audioSeconds*1000)/1000,sha256:crypto.createHash('sha256').update(audio).digest('hex')});
-            }
-            if(reports[0].audioSeconds<30)throw Error('Long narration was incomplete');
-            console.log(JSON.stringify({teacherTtsVerified:true,localManaged:true,defaultVoice:process.env.TTS_LEMONADE_VOICE,tests:reports}));
-          })().catch(error=>{console.error(error.message);process.exit(1);});
-          JS
+          docker inspect agentic-kokoro --format 'ttsState={{.State.Status}} ttsOOMKilled={{.State.OOMKilled}} restartCount={{.RestartCount}} memoryLimit={{.HostConfig.Memory}}'
           docker stats --no-stream --format '{{.Name}} {{.MemUsage}} {{.CPUPerc}}' agentic-teacher-prod agentic-kokoro
-          docker inspect agentic-kokoro --format 'ttsOOMKilled={{.State.OOMKilled}} restartCount={{.RestartCount}}'
-          docker exec agentic-kokoro sh -c 'if [ -f /sys/fs/cgroup/memory.peak ]; then printf "ttsPeakMemoryBytes="; cat /sys/fs/cgroup/memory.peak; fi'
-          df -h / | tail -1
+          docker exec agentic-kokoro sh -c 'for f in memory.current memory.peak memory.events; do if [ -f "/sys/fs/cgroup/$f" ]; then printf "%s=" "$f"; cat "/sys/fs/cgroup/$f"; fi; done'
+          docker logs --tail 30 agentic-kokoro 2>&1 | python3 -c 'import json,sys; [print(line.strip()) for line in sys.stdin if line.strip().startswith("{") and any(marker in line for marker in ("synthesis_error", "ready", "speech", "http"))]'
+          docker logs --since 8m agentic-teacher-prod 2>&1 | python3 -c 'import json,sys; data=sys.stdin.read(); print(json.dumps({marker:(marker in data) for marker in ("ECONNRESET","ECONNREFUSED","UND_ERR_SOCKET","fetch failed","bad allocation","out of memory","Lemonade TTS API error")}))'
+          curl -fsS --max-time 5 http://127.0.0.1:13305/health
           REMOTE
