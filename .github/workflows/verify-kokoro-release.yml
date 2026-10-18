@@ -1,0 +1,75 @@
+name: verify-kokoro-release
+on:
+  push:
+    branches: [codex/cloud-kokoro-verification-20261018]
+    paths: [.github/workflows/verify-kokoro-release.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Verify deployed service and real teacher TTS requests
+        env:
+          SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+        run: |
+          set -euo pipefail
+          key="$RUNNER_TEMP/kokoro-verify-key"
+          printf '%s\n' "$SERVER_SSH_KEY" > "$key"
+          chmod 600 "$key"
+          trap 'rm -f "$key"' EXIT
+          ssh -i "$key" -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=20 -o ServerAliveCountMax=3 "ubuntu@$SERVER_HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          docker inspect agentic-teacher-prod --format 'teacherImage={{.Config.Image}}'
+          docker inspect agentic-kokoro --format 'ttsImage={{.Config.Image}} cpuNano={{.HostConfig.NanoCpus}} memory={{.HostConfig.Memory}} bindings={{json .HostConfig.PortBindings}}'
+          curl -fsS --max-time 5 http://127.0.0.1:13305/health
+          printf '\n'
+          docker exec -i agentic-teacher-prod node - <<'JS'
+          const {Pool}=require('pg');
+          const crypto=require('node:crypto');
+          (async()=>{
+            const database=process.env.COURSE_DATABASE_URL||process.env.DATABASE_URL;
+            const schema=process.env.COURSE_DATABASE_SCHEMA?.trim();
+            if(schema&&!/^[a-z_][a-z0-9_]*$/.test(schema))throw Error('Invalid schema');
+            const pool=new Pool({connectionString:database,connectionTimeoutMillis:5000,...(schema?{options:`-c search_path=${schema},public`}:{})});
+            let owner;
+            try{owner=(await pool.query('SELECT teacher_id FROM mentra_courses ORDER BY updated_at DESC LIMIT 1')).rows[0]?.teacher_id;}finally{await pool.end();}
+            if(!owner)throw Error('No teacher course available for delegated service validation');
+            const headers={'Content-Type':'application/json','X-Platform-Service-Key':process.env.PLATFORM_SERVICE_KEY||'','X-Platform-Subject':owner};
+            const configResponse=await fetch('http://127.0.0.1:3200/api/server-providers',{headers});
+            if(!configResponse.ok)throw Error(`Provider authorization status ${configResponse.status}`);
+            const config=await configResponse.json();
+            if(!config.tts?.['lemonade-tts']||config.tts['lemonade-tts'].disabled||!config.tts['qwen-tts']?.disabled)throw Error('Managed provider configuration mismatch');
+            const reports=[];
+            for(const voice of ['zf_xiaoyi','zm_yunxi']){
+              const started=performance.now();
+              const response=await fetch('http://127.0.0.1:3200/api/generate/tts',{
+                method:'POST',headers,
+                body:JSON.stringify({text:'同学们好，请观察左侧 Python 示例，再比较整数和字符串的区别。',audioId:`release_verify_${voice}`,ttsProviderId:'lemonade-tts',ttsModelId:'kokoro-v1',ttsVoice:voice,ttsSpeed:1}),
+                signal:AbortSignal.timeout(120000),
+              });
+              if(!response.ok)throw Error(`Teacher TTS status ${response.status}`);
+              const data=await response.json();
+              const audio=Buffer.from(data.base64||'','base64');
+              if(data.success!==true||data.format!=='wav'||audio.length<48000||audio.toString('ascii',0,4)!=='RIFF')throw Error('Invalid teacher WAV');
+              let byteRate=0,dataBytes=0;
+              for(let offset=12;offset+8<=audio.length;){
+                const name=audio.toString('ascii',offset,offset+4),size=audio.readUInt32LE(offset+4);
+                if(name==='fmt '&&size>=16)byteRate=audio.readUInt32LE(offset+16);
+                if(name==='data')dataBytes+=size;
+                offset+=8+size+(size%2);
+              }
+              if(!byteRate||dataBytes/byteRate<1)throw Error('Invalid WAV duration');
+              const seconds=Math.round(performance.now()-started)/1000,audioSeconds=Math.round(dataBytes/byteRate*1000)/1000;
+              reports.push({voice,bytes:audio.length,seconds,audioSeconds,realTimeFactor:Math.round(seconds/audioSeconds*1000)/1000,sha256:crypto.createHash('sha256').update(audio).digest('hex')});
+            }
+            if(reports[0].sha256===reports[1].sha256)throw Error('Voice choices produced identical audio');
+            console.log(JSON.stringify({teacherTtsVerified:true,localManaged:true,defaultVoice:process.env.TTS_LEMONADE_VOICE,tests:reports}));
+          })().catch(error=>{console.error(error.message);process.exit(1);});
+          JS
+          docker stats --no-stream --format '{{.Name}} {{.MemUsage}} {{.CPUPerc}}' agentic-teacher-prod agentic-kokoro
+          df -h / | tail -1
+          REMOTE
