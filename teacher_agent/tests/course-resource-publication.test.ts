@@ -7,6 +7,7 @@ const db = vi.hoisted(() => ({
   save: vi.fn(),
 }));
 vi.mock('@/lib/server/course-space-storage', () => ({
+  withCourseArtifactLock: async (_id: string, operation: () => Promise<unknown>) => operation(),
   readServerCourse: async () => db.course,
   readCourseArtifact: async (id: string) => db.artifacts[id],
   updateServerCourse: async (_: string, fn: any) => {

@@ -3,6 +3,7 @@ import { apiError, apiSuccess } from '@/lib/server/api-response';
 import {
   deleteServerCourse,
   CourseDeletionConflict,
+  CourseUpdateConflict,
   listCourseArtifacts,
   listCourseJobs,
   readServerCourse,
@@ -12,7 +13,10 @@ import type { CourseSpace } from '@/lib/course-space/types';
 
 export const dynamic = 'force-dynamic';
 
-export async function DELETE(_req: NextRequest, context: { params: Promise<{ courseId: string }> }) {
+export async function DELETE(
+  _req: NextRequest,
+  context: { params: Promise<{ courseId: string }> },
+) {
   const { courseId } = await context.params;
   try {
     await deleteServerCourse(courseId);
@@ -45,6 +49,17 @@ export async function PUT(req: NextRequest, context: { params: Promise<{ courseI
   if (body.id !== existing.id || body.teacherId !== existing.teacherId) {
     return apiError('INVALID_REQUEST', 400, '课程标识或教师归属不可修改');
   }
+  const archivedMaterialIds = new Set(existing.archivedMaterials?.map((item) => item.id));
+  if (
+    archivedMaterialIds.size > 0 &&
+    (body.materials.some((item) => archivedMaterialIds.has(item.id)) ||
+      body.modules.some((module) =>
+        module.lessons?.some((lesson) =>
+          lesson.materialIds?.some((id) => archivedMaterialIds.has(id)),
+        ),
+      ))
+  )
+    return apiError('INVALID_REQUEST', 409, '源文件已替换，请刷新课程后重试目录编辑');
   // Structure edits arrive as a full course object that may be a stale copy
   // (long-lived workspace tab). Publication state and the platform-synced
   // roster are server-owned: a stale save must never flip a published course
@@ -140,11 +155,18 @@ export async function PUT(req: NextRequest, context: { params: Promise<{ courseI
     ...body,
     onboarding: existing.onboarding,
     materials,
+    archivedMaterials: existing.archivedMaterials,
     modules,
     activeKnowledgeGraphVersion: existing.activeKnowledgeGraphVersion,
     status: existing.status,
     activeKnowledgePackageId: existing.activeKnowledgePackageId,
     classStudents: existing.classStudents,
   };
-  return apiSuccess({ course: await saveServerCourse(merged) });
+  try {
+    return apiSuccess({ course: await saveServerCourse(merged, existing) });
+  } catch (error) {
+    if (error instanceof CourseUpdateConflict)
+      return apiError('INVALID_REQUEST', 409, error.message);
+    throw error;
+  }
 }
