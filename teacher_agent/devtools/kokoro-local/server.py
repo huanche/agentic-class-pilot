@@ -185,7 +185,8 @@ def handler_for(engine: Engine, root: Path):
             except ValueError as error:
                 self.error(400, str(error))
             except Exception as error:
-                print(json.dumps({"event": "synthesis_error", "type": type(error).__name__}), flush=True)
+                print(json.dumps({"event": "synthesis_error", "type": type(error).__name__,
+                                  "errno": getattr(error, "errno", None)}), flush=True)
                 self.error(500, "本地合成失败，请查看项目内的 Kokoro 日志")
             finally:
                 engine.lock.release()

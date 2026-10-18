@@ -48,8 +48,12 @@ jobs:
         if: github.event_name == 'pull_request'
         run: |
           set -euo pipefail
-          docker run -d --name kokoro-ci --cpus=1 --memory=1024m --memory-swap=1024m \
-            --read-only --tmpfs /runtime:rw,nosuid,size=64m,mode=1777 \
+          runtime="$RUNNER_TEMP/kokoro-ci-runtime"
+          mkdir -p "$runtime"
+          docker run -d --name kokoro-ci --cpus=1 --memory=1024m --memory-swap=1024m --pids-limit=128 \
+            --user "$(id -u):$(id -g)" \
+            --read-only --tmpfs /tmp:rw,noexec,nosuid,size=64m \
+            -v "$runtime:/runtime" \
             -p 127.0.0.1:13305:13305 "$IMAGE:$KOKORO_TAG"
           trap 'docker logs --tail 15 kokoro-ci; docker rm -f kokoro-ci >/dev/null' EXIT
           ready=0
