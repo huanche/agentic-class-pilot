@@ -1,14 +1,12 @@
 'use client';
 
-import { useEffect, useRef, useState, type CSSProperties } from 'react';
-import { createPortal } from 'react-dom';
+import { useEffect, useRef, type CSSProperties } from 'react';
 import { useWidgetIframeStore } from '@/lib/store/widget-iframe';
 import {
   useInteractiveIframePool,
   type IframePoolEntry,
 } from '@/lib/store/interactive-iframe-pool';
 import { useSceneRuntimeErrors } from '@/lib/store/scene-runtime-errors';
-import { useStageStore } from '@/lib/store';
 
 /**
  * Stable host for interactive scene iframes (#619).
@@ -17,12 +15,12 @@ import { useStageStore } from '@/lib/store';
  * unmounts and remounts — so the iframe elements it renders survive Pro mode
  * toggles, scene switches, and any PlaybackChromeRoot remount. The in-tree
  * `InteractiveRenderer` is only a placeholder that registers content and reports
- * the on-screen rect; the actual iframes live here, portaled into a stable host
- * node and positioned over each scene's rect via `position: fixed`.
+ * the on-screen rect; the actual iframes stay here in the stable Stage subtree
+ * and are positioned over each scene's rect via `position: fixed`.
  *
- * Portal target follows `document.fullscreenElement` so the iframe stays inside
- * the fullscreen subtree during presentation mode (which calls requestFullscreen
- * on the playback stage, not on body); otherwise it lives on `document.body`.
+ * Presentation fullscreens the shared Stage ancestor, including this host.
+ * Keeping the same DOM parent preserves entered code and running activity state
+ * when entering/leaving fullscreen; changing portal targets reloads iframes.
  * A low z-index keeps it under Radix dialogs (e.g. the scene-switch confirm)
  * while still covering the canvas box during interactive playback AND Pro-mode
  * editing — the editor agent fixes interactive HTML, so the teacher must see the
@@ -30,26 +28,11 @@ import { useStageStore } from '@/lib/store';
  * (gone → hidden, never unmounted), so the document is preserved for a
  * zero-reload return.
  */
-export function InteractiveIframeHost({
-  studentPlayer = false,
-}: {
-  readonly studentPlayer?: boolean;
-}) {
+export function InteractiveIframeHost() {
   const entries = useInteractiveIframePool((s) => s.entries);
   const activeSceneId = useInteractiveIframePool((s) => s.activeSceneId);
   const reset = useInteractiveIframePool((s) => s.reset);
   const setActiveScene = useWidgetIframeStore((s) => s.setActiveScene);
-
-  // Portal into the fullscreen element when one is active (presentation mode
-  // fullscreens the stage, and a body-portaled iframe would not be part of that
-  // subtree, so it would vanish). Falls back to body otherwise.
-  const [portalTarget, setPortalTarget] = useState<Element | null>(null);
-  useEffect(() => {
-    const sync = () => setPortalTarget(document.fullscreenElement ?? document.body);
-    sync();
-    document.addEventListener('fullscreenchange', sync);
-    return () => document.removeEventListener('fullscreenchange', sync);
-  }, []);
 
   // Keep the messaging store's active scene in lock-step (its legacy fallback
   // path resolves the current widget by active scene when no id is passed).
@@ -62,9 +45,7 @@ export function InteractiveIframeHost({
   // render the previous one's stale iframes.
   useEffect(() => reset, [reset]);
 
-  if (!portalTarget) return null;
-
-  return createPortal(
+  return (
     <>
       {Object.entries(entries).map(([sceneId, entry]) => (
         <PooledIframe
@@ -72,11 +53,9 @@ export function InteractiveIframeHost({
           sceneId={sceneId}
           entry={entry}
           visible={entry.owner !== null && sceneId === activeSceneId}
-          studentPlayer={studentPlayer}
         />
       ))}
-    </>,
-    portalTarget,
+    </>
   );
 }
 
@@ -84,7 +63,6 @@ interface PooledIframeProps {
   readonly sceneId: string;
   readonly entry: IframePoolEntry;
   readonly visible: boolean;
-  readonly studentPlayer: boolean;
 }
 
 /**
@@ -104,15 +82,9 @@ interface PooledIframeProps {
  * works correctly with a null origin because the host sends with
  * targetOrigin='*'.
  */
-function PooledIframe({ sceneId, entry, visible, studentPlayer }: PooledIframeProps) {
+function PooledIframe({ sceneId, entry, visible }: PooledIframeProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const registerIframe = useWidgetIframeStore((s) => s.registerIframe);
-  const automaticDemo = useStageStore(
-    (state) =>
-      state.mode !== 'edit' &&
-      state.currentSceneId === sceneId &&
-      state.scenes.find((scene) => scene.id === sceneId)?.type === 'interactive',
-  );
 
   // Register the postMessage callback for this scene (moved here from the
   // placeholder, since the iframe now lives in the host). Stable per scene:
@@ -174,9 +146,8 @@ function PooledIframe({ sceneId, entry, visible, studentPlayer }: PooledIframePr
     zIndex: 1,
     // visibility (not display) — display:none can drop the document on re-show.
     visibility: shown ? 'visible' : 'hidden',
-    // Keep teacher presentation click-through, but let student viewers try
-    // the demo themselves while its scripted actions are playing.
-    pointerEvents: shown && (studentPlayer || !automaticDemo) ? 'auto' : 'none',
+    // The same activity stays usable in editing, playback and fullscreen.
+    pointerEvents: shown ? 'auto' : 'none',
   };
 
   return (

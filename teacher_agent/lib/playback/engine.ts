@@ -99,6 +99,10 @@ export class PlaybackEngine {
   private browserTTSPausedChunks: string[] = []; // remaining chunks saved on pause (for cancel+re-speak)
   private speechTimerRemaining: number = 0; // remaining ms (set on pause)
   private playbackGeneration: number = 0;
+  private activeActionIndex: number | null = null;
+  private actionElapsedMs = 0;
+  private actionClockStartedAt: number | null = null;
+  private speechTimerDuration = 0;
 
   constructor(
     scenes: Scene[],
@@ -144,6 +148,40 @@ export class PlaybackEngine {
     };
   }
 
+  /** Live position for the page clock. Media time freezes during buffering,
+   * follows seeking, and is independent of the cursor's next-action offset. */
+  getPlaybackPosition() {
+    const actionIndex = this.activeActionIndex ?? this.actionIndex;
+    const action = this.scenes[this.sceneIndex]?.actions?.[actionIndex];
+    const speed = this.callbacks.getPlaybackSpeed?.() || 1;
+    let elapsedMs =
+      this.actionElapsedMs +
+      (this.actionClockStartedAt === null ? 0 : Date.now() - this.actionClockStartedAt);
+    let audioDurationMs: number | null = null;
+    let speechRemainingMs: number | null = null;
+    if (action?.type === 'speech') {
+      if (this.audioPlayer.hasActiveAudio()) {
+        elapsedMs = this.audioPlayer.getCurrentTime() / speed;
+        audioDurationMs = this.audioPlayer.getDuration() || null;
+      } else if (this.speechTimerDuration > 0) {
+        speechRemainingMs = this.speechTimer
+          ? Math.max(0, this.speechTimerRemaining - (Date.now() - this.speechTimerStart))
+          : this.speechTimerRemaining;
+        elapsedMs = this.speechTimerDuration - speechRemainingMs;
+      } else if (!this.browserTTSActive) {
+        // Loading or autoplay-blocked audio has not consumed narration time.
+        elapsedMs = 0;
+      }
+    }
+    return {
+      sceneId: this.getCurrentSceneId(),
+      actionIndex,
+      elapsedMs,
+      audioDurationMs,
+      speechRemainingMs,
+    };
+  }
+
   /** Restore playback position from a snapshot */
   restoreFromSnapshot(snapshot: PlaybackSnapshot): void {
     this.sceneIndex = snapshot.sceneIndex;
@@ -160,6 +198,7 @@ export class PlaybackEngine {
 
     this.sceneIndex = 0;
     this.actionIndex = 0;
+    this.resetActionClock();
     this.invalidatePlaybackGeneration();
     this.setMode('playing');
     this.processNext();
@@ -233,6 +272,7 @@ export class PlaybackEngine {
     this.actionEngine.clearEffects();
     this.sceneIndex = 0;
     this.actionIndex = actionIndex;
+    this.resetActionClock();
     this.callbacks.onProgress?.(this.getSnapshot());
 
     if (autoplay) {
@@ -365,6 +405,7 @@ export class PlaybackEngine {
     this.speechTimerRemaining = 0;
     this.sceneIndex = 0;
     this.actionIndex = 0;
+    this.resetActionClock();
     this.savedSceneIndex = null;
     this.savedActionIndex = null;
     this.currentTopicState = null;
@@ -546,13 +587,26 @@ export class PlaybackEngine {
       this.speechTimer = null;
     }
     this.speechTimerRemaining = 0;
+    this.resetActionClock();
     this.callbacks.onProactiveHide?.();
   }
 
   private setMode(mode: EngineMode): void {
     if (this.mode === mode) return;
+    if (this.actionClockStartedAt !== null) {
+      this.actionElapsedMs += Date.now() - this.actionClockStartedAt;
+    }
+    this.actionClockStartedAt =
+      mode === 'playing' && this.activeActionIndex !== null ? Date.now() : null;
     this.mode = mode;
     this.callbacks.onModeChange?.(mode);
+  }
+
+  private resetActionClock(): void {
+    this.activeActionIndex = null;
+    this.actionElapsedMs = 0;
+    this.actionClockStartedAt = null;
+    this.speechTimerDuration = 0;
   }
 
   private restoreSavedLectureState(): void {
@@ -639,12 +693,17 @@ export class PlaybackEngine {
       // All scenes complete
       this.invalidatePlaybackGeneration();
       this.actionEngine.clearEffects();
+      this.resetActionClock();
       this.setMode('idle');
       this.callbacks.onComplete?.();
       return;
     }
 
     const { action } = current;
+    this.activeActionIndex = this.actionIndex;
+    this.actionElapsedMs = 0;
+    this.actionClockStartedAt = Date.now();
+    this.speechTimerDuration = 0;
 
     // Notify progress BEFORE advancing the cursor so the snapshot points at
     // the current action.  On restore the same action will be replayed — this
@@ -680,6 +739,7 @@ export class PlaybackEngine {
           const readingMs = estimateSpeechDurationMs(speechAction.text, { speed });
           this.speechTimerStart = Date.now();
           this.speechTimerRemaining = readingMs;
+          this.speechTimerDuration = readingMs;
           this.speechTimer = setTimeout(() => {
             if (!this.isCurrentGeneration(generation)) return;
             this.speechTimer = null;

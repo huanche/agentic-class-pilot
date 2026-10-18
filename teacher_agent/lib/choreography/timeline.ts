@@ -46,6 +46,7 @@ import {
   wbDrawCodeMs,
   wbClearMs,
   estimateSpeechDurationMs,
+  revealDurationMs,
 } from './timing';
 
 const FIRE_AND_FORGET = new Set<string>(FIRE_AND_FORGET_ACTIONS);
@@ -205,6 +206,8 @@ function actionDurationMs(action: Action, opts: ResolveTimelineOptions): number 
     case 'spotlight':
     case 'laser':
       return EFFECT_AUTO_CLEAR_MS;
+    case 'reveal':
+      return revealDurationMs(action.duration);
     case 'discussion': {
       // A discussion the engine skips outright — already consumed, or its agent
       // isn't selected — contributes no dwell (`processNext` recurses with no

@@ -57,6 +57,11 @@ export const WB_CLOSE_MS = 700;
 /** widget_* interactions (highlight/setState/annotation/reveal). */
 export const WIDGET_MS = 300;
 
+/** The same bounded reveal animation is used by playback and its timeline. */
+export function revealDurationMs(duration?: number): number {
+  return Math.max(120, Math.min(duration ?? 520, 2000));
+}
+
 /**
  * wb_draw_code — typing animation: base 800ms + 50ms/line, capped at 3000ms.
  * Verbatim from `lib/action/engine.ts` (`Math.min(800 + lines.length * 50, 3000)`).

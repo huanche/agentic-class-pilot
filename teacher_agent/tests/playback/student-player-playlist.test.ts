@@ -14,9 +14,9 @@ const scenes = [
 ];
 
 describe('student player playlist', () => {
-  it('auto-plays narrated slides and scripted demos, but waits for quiz answers', () => {
+  it('auto-plays slides but leaves interactive activities and quizzes for the learner', () => {
     expect(isAutoPlayedStudentScene(scenes[0])).toBe(true);
-    expect(isAutoPlayedStudentScene(scenes[2])).toBe(true);
+    expect(isAutoPlayedStudentScene(scenes[2])).toBe(false);
     expect(isAutoPlayedStudentScene(scenes[1])).toBe(false);
     expect(isAutoPlayedStudentScene(scenes[4])).toBe(false);
   });

@@ -11,7 +11,10 @@ import {
   calibrateCourseDuration,
   MAX_COURSE_DURATION_CORRECTIONS,
 } from '@/lib/generation/course-duration-calibration';
-import { getOutlineDurationSeconds } from '@/lib/playback/timing-display';
+import {
+  getOutlineDurationSeconds,
+  QUIZ_SECONDS_PER_QUESTION,
+} from '@/lib/playback/timing-display';
 import {
   CLASSROOM_JOBS_DIR,
   persistClassroom,
@@ -394,7 +397,7 @@ async function execute(
             : scene.type === 'interactive'
               ? 'interactive-demo'
               : 'narration-fit',
-        quizSecondsPerQuestion: scene.type === 'quiz' ? 60 : undefined,
+        quizSecondsPerQuestion: scene.type === 'quiz' ? QUIZ_SECONDS_PER_QUESTION : undefined,
         autoAdvance: true,
       };
       await report(

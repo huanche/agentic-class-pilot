@@ -133,7 +133,7 @@ export function Stage({
   // would repaint its backdrop-filter every frame while translating. A
   // pure fade keeps layout static so the shared elements land precisely.
   return (
-    <div className="relative flex flex-1 overflow-hidden">
+    <div data-classroom-stage className="relative flex flex-1 overflow-hidden">
       <AnimatePresence initial={false}>
         {mode === 'edit' && currentScene ? (
           <motion.div
@@ -178,7 +178,7 @@ export function Stage({
       {/* Keep-alive host for interactive scene iframes (#619). Lives here, above
           the mode-swap subtree, so its iframes survive Pro mode toggles and
           scene switches instead of reloading on every remount. */}
-      <InteractiveIframeHost studentPlayer={videoOnly} />
+      <InteractiveIframeHost />
     </div>
   );
 }

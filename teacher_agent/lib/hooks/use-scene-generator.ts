@@ -40,7 +40,10 @@ import {
   createAutomaticFallbackScene,
   recordAutomaticFallback,
 } from '@/lib/course-governance/governance';
-import { getOutlineDurationSeconds } from '@/lib/playback/timing-display';
+import {
+  getOutlineDurationSeconds,
+  QUIZ_SECONDS_PER_QUESTION,
+} from '@/lib/playback/timing-display';
 import {
   assessCourseDuration,
   calibrateNarrationDuration,
@@ -1105,7 +1108,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
                   : scene.type === 'interactive'
                     ? 'interactive-demo'
                     : 'narration-fit',
-              quizSecondsPerQuestion: scene.type === 'quiz' ? 60 : undefined,
+              quizSecondsPerQuestion: scene.type === 'quiz' ? QUIZ_SECONDS_PER_QUESTION : undefined,
               autoAdvance: true,
             };
 

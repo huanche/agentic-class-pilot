@@ -3,8 +3,10 @@ import {
   formatPlaybackDuration,
   getOutlineDurationSeconds,
   inferTargetDurationMinutes,
+  getSceneDurationSeconds,
 } from '@/lib/playback/timing-display';
 import type { SceneOutline } from '@/lib/types/generation';
+import type { Scene, Stage } from '@/lib/types/stage';
 
 const outline = (updates: Partial<SceneOutline> = {}): SceneOutline => ({
   id: 'outline-1',
@@ -27,7 +29,7 @@ describe('playback timing display', () => {
     expect(inferTargetDurationMinutes('Build a 30 minute lesson', 12)).toBe(30);
   });
 
-  it('uses one minute per quiz question', () => {
+  it('reserves five minutes per quiz question', () => {
     expect(
       getOutlineDurationSeconds(
         outline({
@@ -37,6 +39,30 @@ describe('playback timing display', () => {
         45,
         10,
       ),
-    ).toBe(180);
+    ).toBe(900);
+  });
+
+  it('uses five minutes per question even when an old quiz stores a shorter measured duration', () => {
+    const quiz = {
+      id: 'quiz',
+      type: 'quiz',
+      content: { type: 'quiz', questions: [{ id: 'one' }, { id: 'two' }] },
+      actions: [],
+      timing: { plannedDurationSec: 120, measuredDurationSec: 120 },
+    } as unknown as Scene;
+    expect(getSceneDurationSeconds(quiz, { timing: { budgetVersion: 1 } } as Stage, [quiz])).toBe(
+      600,
+    );
+    expect(
+      getOutlineDurationSeconds(
+        outline({
+          type: 'quiz',
+          quizConfig: { questionCount: 2, difficulty: 'easy', questionTypes: ['single'] },
+          durationBudget: { targetSeconds: 120 },
+        }),
+        28,
+        5,
+      ),
+    ).toBe(600);
   });
 });

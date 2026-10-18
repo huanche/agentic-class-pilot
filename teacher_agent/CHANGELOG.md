@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Keep interactive activities clickable in playback and fullscreen, preserve their state across fullscreen changes, and wait for manual advancement after activities.
+- Give every quiz question five minutes in both generation paths and the player.
+- Replace the course remaining countdown with a per-page clock driven by actual narration position, measured clip durations, playback speed and action navigation; label unmeasured durations as estimates.
 - Validate slide narration and focus targets together before TTS across all app generation paths; retry one failed candidate and surface unresolved alignment as a failed page.
 - Generate narration as atomic target/text segments and compile them to existing playback actions, including reveal, video and discussion, without guessing missing targets.
 - Preserve generated speech boundaries and carry their focus through provider-driven audio splitting, pause/resume, and actual speech completion.

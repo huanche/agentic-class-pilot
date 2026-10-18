@@ -3,7 +3,7 @@ import type { SceneOutline } from '@/lib/types/generation';
 import { assessCourseDuration, measuredSceneSeconds } from '@/lib/generation/course-duration';
 
 export const DEFAULT_COURSE_MINUTES = 45;
-export const QUIZ_SECONDS_PER_QUESTION = 60;
+export const QUIZ_SECONDS_PER_QUESTION = 5 * 60;
 
 export function formatPlaybackDuration(totalSeconds: number): string {
   const safe = Math.max(0, Math.round(totalSeconds));
@@ -26,10 +26,10 @@ export function getOutlineDurationSeconds(
   targetDurationMinutes: number,
   outlineCount: number,
 ): number {
-  if (outline.durationBudget) return outline.durationBudget.targetSeconds;
   if (outline.type === 'quiz') {
     return Math.max(1, outline.quizConfig?.questionCount ?? 3) * QUIZ_SECONDS_PER_QUESTION;
   }
+  if (outline.durationBudget) return outline.durationBudget.targetSeconds;
   return Math.max(
     5,
     Math.round(
@@ -43,11 +43,11 @@ export function getSceneDurationSeconds(
   stage: Stage | null,
   scenes: Scene[],
 ): number {
-  if (stage?.timing?.budgetVersion === 1 && measuredSceneSeconds(scene) != null) {
-    return measuredSceneSeconds(scene)!;
-  }
   if (scene.type === 'quiz') {
     return scene.content.questions.length * QUIZ_SECONDS_PER_QUESTION;
+  }
+  if (stage?.timing?.budgetVersion === 1 && measuredSceneSeconds(scene) != null) {
+    return measuredSceneSeconds(scene)!;
   }
   if (scene.timing?.plannedDurationSec != null) return scene.timing.plannedDurationSec;
 
@@ -70,7 +70,11 @@ export function getSceneDurationSeconds(
 
 export function getCourseDurationSeconds(stage: Stage | null, scenes: Scene[]): number {
   if (stage?.timing?.budgetVersion === 1) {
-    const report = assessCourseDuration(scenes, stage.timing.targetDurationMinutes!, stage.timing.expectedAutomaticPages ?? 0);
+    const report = assessCourseDuration(
+      scenes,
+      stage.timing.targetDurationMinutes!,
+      stage.timing.expectedAutomaticPages ?? 0,
+    );
     return report.actualSeconds ?? report.targetSeconds;
   }
   if (stage?.timing?.targetDurationMinutes != null) {
