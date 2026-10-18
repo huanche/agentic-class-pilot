@@ -24,6 +24,7 @@ jobs:
           ssh -i "$key" -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=20 -o ServerAliveCountMax=3 "ubuntu@$SERVER_HOST" 'bash -s' <<'REMOTE'
           set -euo pipefail
           docker inspect agentic-kokoro --format 'ttsState={{.State.Status}} ttsOOMKilled={{.State.OOMKilled}} restartCount={{.RestartCount}} memoryLimit={{.HostConfig.Memory}}'
+          docker events --since 15m --until "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --filter container=agentic-kokoro --filter event=oom --filter event=die --format 'ttsEvent={{.Action}} exitCode={{index .Actor.Attributes "exitCode"}} time={{.Time}}'
           docker stats --no-stream --format '{{.Name}} {{.MemUsage}} {{.CPUPerc}}' agentic-teacher-prod agentic-kokoro
           docker exec agentic-kokoro sh -c 'for f in memory.current memory.peak memory.events; do if [ -f "/sys/fs/cgroup/$f" ]; then printf "%s=" "$f"; cat "/sys/fs/cgroup/$f"; fi; done'
           docker logs --tail 30 agentic-kokoro 2>&1 | python3 -c 'import json,sys; [print(line.strip()) for line in sys.stdin if line.strip().startswith("{") and any(marker in line for marker in ("synthesis_error", "ready", "speech", "http"))]'
