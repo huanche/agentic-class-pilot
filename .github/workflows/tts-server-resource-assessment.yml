@@ -1,0 +1,96 @@
+name: tts-server-resource-assessment
+
+on:
+  push:
+    branches: [codex/tts-resource-assessment-20261018-072345]
+    paths: [.github/workflows/tts-server-resource-assessment.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - name: Inspect resources without changing services
+        env:
+          SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+        run: |
+          set -euo pipefail
+          key="$RUNNER_TEMP/tts-resource-key"
+          printf '%s\n' "$SERVER_SSH_KEY" > "$key"
+          chmod 600 "$key"
+          trap 'rm -f "$key"' EXIT
+          ssh -i "$key" -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=20 -o ServerAliveCountMax=2 -o StrictHostKeyChecking=accept-new "ubuntu@$SERVER_HOST" 'LC_ALL=C python3 -' <<'PY'
+          import os, json, pathlib, shutil, subprocess, time
+
+          def run(args, timeout=15):
+              try:
+                  p = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
+                  return {'ok': p.returncode == 0, 'stdout': p.stdout.strip() if p.returncode == 0 else ''}
+              except (OSError, subprocess.TimeoutExpired):
+                  return {'ok': False, 'stdout': ''}
+
+          def json_lines(result):
+              if not result['ok']: return []
+              values = []
+              for line in result['stdout'].splitlines():
+                  try: values.append(json.loads(line))
+                  except ValueError: pass
+              return values
+
+          def cpu_counts():
+              values = list(map(int, pathlib.Path('/proc/stat').read_text().splitlines()[0].split()[1:9]))
+              return sum(values), values[3] + values[4]
+
+          memory = {}
+          for line in pathlib.Path('/proc/meminfo').read_text().splitlines():
+              key, value = line.split(':', 1)
+              if key in ['MemTotal', 'MemAvailable', 'SwapTotal', 'SwapFree']:
+                  memory[key + 'KiB'] = int(value.split()[0])
+          cpu = pathlib.Path('/proc/cpuinfo').read_text()
+          model = next((line.split(':', 1)[1].strip() for line in cpu.splitlines() if line.startswith('model name')), 'unknown')
+          first, idle_first = cpu_counts()
+          time.sleep(1)
+          last, idle_last = cpu_counts()
+          busy = round(100 * (1 - (idle_last - idle_first) / max(last - first, 1)), 1)
+          disks = []
+          docker_root = run(['docker', 'info', '--format', '{{.DockerRootDir}}'])
+          paths = ['/']
+          if docker_root['ok'] and docker_root['stdout'].startswith('/'):
+              paths.append(docker_root['stdout'])
+          for path in paths:
+              try:
+                  usage = shutil.disk_usage(path)
+                  disks.append({'path': path, 'totalBytes': usage.total, 'usedBytes': usage.used, 'freeBytes': usage.free})
+              except OSError: pass
+          gpu_command = shutil.which('nvidia-smi')
+          gpu_query = run([gpu_command, '--query-gpu=name,memory.total,memory.used,utilization.gpu,driver_version', '--format=csv,noheader,nounits']) if gpu_command else {'ok': False, 'stdout': ''}
+          pci = []
+          for device in pathlib.Path('/sys/bus/pci/devices').glob('*'):
+              try:
+                  cls = (device / 'class').read_text().strip()
+                  if cls.startswith('0x03') or cls.startswith('0x12'):
+                      pci.append({'class': cls, 'vendor': (device / 'vendor').read_text().strip(), 'device': (device / 'device').read_text().strip()})
+              except OSError: pass
+          containers = json_lines(run(['docker', 'ps', '--format', '{{json .}}']))
+          active = [{'name': c.get('Names'), 'image': c.get('Image'), 'status': c.get('Status')} for c in containers]
+          stats = json_lines(run(['docker', 'stats', '--no-stream', '--format', '{{json .}}']))
+          stats = [{key: c.get(key) for key in ['Name', 'CPUPerc', 'MemUsage', 'MemPerc', 'PIDs']} for c in stats]
+          docker_usage = json_lines(run(['docker', 'system', 'df', '--format', '{{json .}}']))
+          report = {
+              'check': 'tts-server-resources',
+              'readOnly': True,
+              'cpu': {'logicalCpus': os.cpu_count(), 'model': model, 'sampleBusyPercent': busy, 'loadAverage': list(os.getloadavg())},
+              'memory': memory,
+              'disk': disks,
+              'gpu': {'nvidiaSmiAvailable': bool(gpu_command), 'querySucceeded': gpu_query['ok'], 'devices': gpu_query['stdout'].splitlines(), 'nvidiaDeviceNodes': [p.name for p in pathlib.Path('/dev').glob('nvidia*')], 'displayOrAcceleratorPci': pci},
+              'activeContainers': active,
+              'containerStats': stats,
+              'dockerDiskUsage': docker_usage,
+          }
+          print(json.dumps(report, ensure_ascii=True))
+          PY
