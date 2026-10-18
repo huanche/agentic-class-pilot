@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Display remaining page content time like a video player: changing speed keeps the displayed duration stable, while 2x playback consumes two content seconds per real second. Keep silent narration timers synchronized with live speed changes as well.
 - Keep interactive activities clickable in playback and fullscreen, preserve their state across fullscreen changes, and wait for manual advancement after activities.
 - Give every quiz question five minutes in both generation paths and the player.
 - Replace the course remaining countdown with a per-page clock driven by actual narration position, measured clip durations, playback speed and action navigation; label unmeasured durations as estimates.

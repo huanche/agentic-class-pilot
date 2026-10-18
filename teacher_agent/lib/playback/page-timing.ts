@@ -14,21 +14,20 @@ export interface PagePlaybackPosition {
   speechRemainingMs: number | null;
 }
 
-/** Remaining playback, rather than lesson-plan time minus a wall clock.
+/** Remaining content duration, in the same units as a video's currentTime.
  * Seeking changes the action cursor; buffering/pausing leave media time fixed.
- * Speech scales with speed; whiteboard/widget animations keep their own pace. */
+ * At 2x, audio consumes two content seconds per real second; switching speeds
+ * itself never halves/doubles the displayed duration. */
 export function remainingPagePlayback(
   scene: Scene,
   position: PagePlaybackPosition,
   durations: ReadonlyMap<string, number>,
-  speed: number,
 ): { seconds: number | null; estimated: boolean } {
   if (!scene.actions?.length) return { seconds: 0, estimated: false };
-  const rate = Number.isFinite(speed) && speed > 0 ? speed : 1;
   let estimated = false;
   let unresolvedVideo = false;
   const timeline = resolveActionTimeline([scene], {
-    playbackSpeed: rate,
+    playbackSpeed: 1,
     isDiscussionSkipped: () => true,
     onUnresolvedVideoDuration: 'zero',
     getAudioDurationMs: (action) => {

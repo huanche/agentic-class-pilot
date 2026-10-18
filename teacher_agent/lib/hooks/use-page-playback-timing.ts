@@ -11,8 +11,6 @@ import { narrationKey, remainingPagePlayback } from '@/lib/playback/page-timing'
 export function usePagePlaybackTiming(
   scene: Scene | null | undefined,
   engineRef: RefObject<PlaybackEngine | null>,
-  speed: number,
-  completed: boolean,
 ) {
   const [timing, setTiming] = useState<{
     sceneId: string;
@@ -32,19 +30,16 @@ export function usePagePlaybackTiming(
       if (action?.type === 'speech' && position?.audioDurationMs) {
         durations.set(narrationKey(action), position.audioDurationMs);
       }
-      const next = completed
-        ? { seconds: 0, estimated: false }
-        : remainingPagePlayback(
-            scene,
-            position ?? {
-              actionIndex: 0,
-              elapsedMs: 0,
-              audioDurationMs: null,
-              speechRemainingMs: null,
-            },
-            durations,
-            speed,
-          );
+      const next = remainingPagePlayback(
+        scene,
+        position ?? {
+          actionIndex: 0,
+          elapsedMs: 0,
+          audioDurationMs: null,
+          speechRemainingMs: null,
+        },
+        durations,
+      );
       setTiming((previous) =>
         previous?.sceneId === scene.id &&
         previous.seconds === next.seconds &&
@@ -91,15 +86,13 @@ export function usePagePlaybackTiming(
         }
       }
     };
-    if (!completed) {
-      void worker();
-      void worker();
-    }
+    void worker();
+    void worker();
     return () => {
       controller.abort();
       window.clearInterval(timer);
     };
-  }, [scene, engineRef, speed, completed]);
+  }, [scene, engineRef]);
 
   return timing?.sceneId === scene?.id ? timing : undefined;
 }

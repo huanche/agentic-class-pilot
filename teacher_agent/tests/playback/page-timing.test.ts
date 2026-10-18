@@ -35,13 +35,13 @@ afterEach(() => vi.useRealTimers());
 
 describe('remaining page playback', () => {
   it('does not assign planned waiting time to an activity with no narration', () => {
-    expect(remainingPagePlayback({ ...scene, actions: [] }, position, durations, 1)).toEqual({
+    expect(remainingPagePlayback({ ...scene, actions: [] }, position, durations)).toEqual({
       seconds: 0,
       estimated: false,
     });
   });
   it('uses measured clips and reveal time without adding spotlight dwell or lesson-plan padding', () => {
-    expect(remainingPagePlayback(scene, position, durations, 1)).toEqual({
+    expect(remainingPagePlayback(scene, position, durations)).toEqual({
       seconds: 56,
       estimated: false,
     });
@@ -52,33 +52,25 @@ describe('remaining page playback', () => {
         scene,
         { ...position, actionIndex: 3, audioDurationMs: 40_000 },
         durations,
-        1,
       ).seconds,
     ).toBe(35);
-    expect(remainingPagePlayback(scene, { ...position, elapsedMs: 0 }, durations, 1).seconds).toBe(
-      61,
+    expect(remainingPagePlayback(scene, { ...position, elapsedMs: 0 }, durations).seconds).toBe(61);
+    expect(remainingPagePlayback(scene, { ...position, actionIndex: 4 }, durations).seconds).toBe(
+      0,
     );
-    expect(
-      remainingPagePlayback(scene, { ...position, actionIndex: 4 }, durations, 1).seconds,
-    ).toBe(0);
-  });
-  it('scales narration at 2x while reveal animation keeps its normal pace', () => {
-    expect(
-      remainingPagePlayback(scene, { ...position, elapsedMs: 2500 }, durations, 2).seconds,
-    ).toBe(29);
   });
   it('uses the actual paused reading timer instead of recalculating the current line', () => {
     expect(
-      remainingPagePlayback(scene, { ...position, speechRemainingMs: 7000 }, durations, 1).seconds,
+      remainingPagePlayback(scene, { ...position, speechRemainingMs: 7000 }, durations).seconds,
     ).toBe(48);
   });
   it('marks missing narration as estimated and unknown video duration as unavailable', () => {
-    expect(remainingPagePlayback(scene, position, new Map(), 1).estimated).toBe(true);
+    expect(remainingPagePlayback(scene, position, new Map()).estimated).toBe(true);
     const videoScene = {
       ...scene,
       actions: [{ id: 'video', type: 'play_video', elementId: 'video' } as Action],
     };
-    expect(remainingPagePlayback(videoScene, position, durations, 1)).toEqual({
+    expect(remainingPagePlayback(videoScene, position, durations)).toEqual({
       seconds: null,
       estimated: true,
     });
@@ -126,6 +118,7 @@ describe('engine clock source', () => {
       },
       setSpeed: (value: number) => {
         speed = value;
+        engine.setPlaybackSpeed(value);
       },
       ended: () => ended(),
     };
@@ -144,7 +137,7 @@ describe('engine clock source', () => {
     expect(engine.getPlaybackPosition().elapsedMs).toBe(6000);
     setTime(15_000);
     setSpeed(2);
-    expect(engine.getPlaybackPosition().elapsedMs).toBe(7500);
+    expect(engine.getPlaybackPosition().elapsedMs).toBe(15_000);
     await engine.jumpToAction(3, { autoplay: false });
     expect(engine.getPlaybackPosition()).toMatchObject({ actionIndex: 3, elapsedMs: 0 });
     engine.stop();
@@ -163,6 +156,55 @@ describe('engine clock source', () => {
     engine.resume();
     await vi.advanceTimersByTimeAsync(200);
     expect(engine.getPlaybackPosition().speechRemainingMs).toBe(before! - 200);
+    engine.stop();
+  });
+
+  it('keeps the displayed content time stable on rate changes and consumes two seconds at 2x', async () => {
+    vi.useFakeTimers();
+    const { engine, setTime, setSpeed } = setup();
+    const remaining = () =>
+      remainingPagePlayback(scene, engine.getPlaybackPosition(), durations).seconds;
+    engine.start();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(remaining()).toBe(61);
+    setTime(5000);
+    expect(remaining()).toBe(56);
+    setSpeed(2);
+    expect(remaining()).toBe(56);
+    await vi.advanceTimersByTimeAsync(1000);
+    setTime(7000); // HTMLMediaElement.currentTime advances by 2 seconds at 2x.
+    expect(remaining()).toBe(54);
+    setSpeed(0.5);
+    expect(remaining()).toBe(54);
+    await vi.advanceTimersByTimeAsync(2000);
+    setTime(8000);
+    expect(remaining()).toBe(53);
+    engine.pause();
+    await vi.advanceTimersByTimeAsync(30_000);
+    setSpeed(1);
+    expect(remaining()).toBe(53);
+    await engine.jumpToAction(3, { autoplay: false });
+    expect(remaining()).toBe(40);
+    engine.stop();
+  });
+
+  it('retimes silent narration at 2x and 0.5x without jumping its content position', async () => {
+    vi.useFakeTimers();
+    const { engine, setSpeed } = setup(false);
+    engine.start();
+    await vi.advanceTimersByTimeAsync(250);
+    expect(engine.getPlaybackPosition().speechRemainingMs).toBe(1750);
+    setSpeed(2);
+    expect(engine.getPlaybackPosition().speechRemainingMs).toBe(1750);
+    await vi.advanceTimersByTimeAsync(500);
+    expect(engine.getPlaybackPosition().speechRemainingMs).toBe(750);
+    engine.pause();
+    await vi.advanceTimersByTimeAsync(10_000);
+    setSpeed(0.5);
+    expect(engine.getPlaybackPosition().speechRemainingMs).toBe(750);
+    engine.resume();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(engine.getPlaybackPosition().speechRemainingMs).toBe(250);
     engine.stop();
   });
 });

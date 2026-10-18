@@ -1001,14 +1001,10 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
     const playbackSpeed = useSettingsStore((s) => s.playbackSpeed);
     useEffect(() => {
       audioPlayerRef.current.setPlaybackRate(playbackSpeed);
+      engineRef.current?.setPlaybackSpeed(playbackSpeed);
     }, [playbackSpeed]);
 
-    const pageTiming = usePagePlaybackTiming(
-      currentScene,
-      engineRef,
-      playbackSpeed,
-      playbackCompleted,
-    );
+    const pageTiming = usePagePlaybackTiming(currentScene, engineRef);
 
     /**
      * Handle discussion SSE — POST /api/chat and push events to engine

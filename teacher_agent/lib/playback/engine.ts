@@ -102,7 +102,9 @@ export class PlaybackEngine {
   private activeActionIndex: number | null = null;
   private actionElapsedMs = 0;
   private actionClockStartedAt: number | null = null;
+  private actionClockRate = 1;
   private speechTimerDuration = 0;
+  private speechTimerRate = 1;
 
   constructor(
     scenes: Scene[],
@@ -148,25 +150,27 @@ export class PlaybackEngine {
     };
   }
 
-  /** Live position for the page clock. Media time freezes during buffering,
-   * follows seeking, and is independent of the cursor's next-action offset. */
+  /** Content position at normal speed, like a video player's currentTime.
+   * Changing playback speed never rescales the position or clip duration. */
   getPlaybackPosition() {
     const actionIndex = this.activeActionIndex ?? this.actionIndex;
     const action = this.scenes[this.sceneIndex]?.actions?.[actionIndex];
-    const speed = this.callbacks.getPlaybackSpeed?.() || 1;
     let elapsedMs =
       this.actionElapsedMs +
-      (this.actionClockStartedAt === null ? 0 : Date.now() - this.actionClockStartedAt);
+      (this.actionClockStartedAt === null
+        ? 0
+        : (Date.now() - this.actionClockStartedAt) * this.actionClockRate);
     let audioDurationMs: number | null = null;
     let speechRemainingMs: number | null = null;
     if (action?.type === 'speech') {
       if (this.audioPlayer.hasActiveAudio()) {
-        elapsedMs = this.audioPlayer.getCurrentTime() / speed;
+        elapsedMs = this.audioPlayer.getCurrentTime();
         audioDurationMs = this.audioPlayer.getDuration() || null;
       } else if (this.speechTimerDuration > 0) {
-        speechRemainingMs = this.speechTimer
+        const wallRemainingMs = this.speechTimer
           ? Math.max(0, this.speechTimerRemaining - (Date.now() - this.speechTimerStart))
           : this.speechTimerRemaining;
+        speechRemainingMs = wallRemainingMs * this.speechTimerRate;
         elapsedMs = this.speechTimerDuration - speechRemainingMs;
       } else if (!this.browserTTSActive) {
         // Loading or autoplay-blocked audio has not consumed narration time.
@@ -180,6 +184,33 @@ export class PlaybackEngine {
       audioDurationMs,
       speechRemainingMs,
     };
+  }
+
+  /** Keep the no-audio reading fallback in step with live speed changes.
+   * AudioPlayer's playbackRate is synchronized separately by the UI. */
+  setPlaybackSpeed(speed: number): void {
+    if (!Number.isFinite(speed) || speed <= 0) return;
+    const action =
+      this.activeActionIndex === null
+        ? null
+        : this.scenes[this.sceneIndex]?.actions?.[this.activeActionIndex];
+    if (action?.type === 'speech') {
+      if (this.actionClockStartedAt !== null) {
+        this.actionElapsedMs += (Date.now() - this.actionClockStartedAt) * this.actionClockRate;
+        this.actionClockStartedAt = Date.now();
+      }
+      this.actionClockRate = speed;
+    }
+    if (!this.speechTimerDuration || this.speechTimerRate === speed) return;
+    const running = this.speechTimer !== null;
+    const remaining = running
+      ? Math.max(0, this.speechTimerRemaining - (Date.now() - this.speechTimerStart))
+      : this.speechTimerRemaining;
+    if (this.speechTimer) clearTimeout(this.speechTimer);
+    this.speechTimer = null;
+    this.speechTimerRemaining = (remaining * this.speechTimerRate) / speed;
+    this.speechTimerRate = speed;
+    if (running) this.startReadingTimer(this.playbackGeneration);
   }
 
   /** Restore playback position from a snapshot */
@@ -366,14 +397,7 @@ export class PlaybackEngine {
         this.audioPlayer.resume();
       } else if (this.speechTimerRemaining > 0) {
         // Reading timer was paused — reschedule with remaining time
-        const generation = this.playbackGeneration;
-        this.speechTimerStart = Date.now();
-        this.speechTimer = setTimeout(() => {
-          if (!this.isCurrentGeneration(generation)) return;
-          this.speechTimer = null;
-          this.speechTimerRemaining = 0;
-          this.completeSpeech(generation);
-        }, this.speechTimerRemaining);
+        this.startReadingTimer(this.playbackGeneration);
       } else {
         // TTS finished while paused, continue to next event
         this.processNext();
@@ -594,7 +618,7 @@ export class PlaybackEngine {
   private setMode(mode: EngineMode): void {
     if (this.mode === mode) return;
     if (this.actionClockStartedAt !== null) {
-      this.actionElapsedMs += Date.now() - this.actionClockStartedAt;
+      this.actionElapsedMs += (Date.now() - this.actionClockStartedAt) * this.actionClockRate;
     }
     this.actionClockStartedAt =
       mode === 'playing' && this.activeActionIndex !== null ? Date.now() : null;
@@ -606,7 +630,19 @@ export class PlaybackEngine {
     this.activeActionIndex = null;
     this.actionElapsedMs = 0;
     this.actionClockStartedAt = null;
+    this.actionClockRate = 1;
     this.speechTimerDuration = 0;
+    this.speechTimerRate = 1;
+  }
+
+  private startReadingTimer(generation: number): void {
+    this.speechTimerStart = Date.now();
+    this.speechTimer = setTimeout(() => {
+      if (!this.isCurrentGeneration(generation)) return;
+      this.speechTimer = null;
+      this.speechTimerRemaining = 0;
+      this.completeSpeech(generation);
+    }, this.speechTimerRemaining);
   }
 
   private restoreSavedLectureState(): void {
@@ -703,6 +739,7 @@ export class PlaybackEngine {
     this.activeActionIndex = this.actionIndex;
     this.actionElapsedMs = 0;
     this.actionClockStartedAt = Date.now();
+    this.actionClockRate = action.type === 'speech' ? this.callbacks.getPlaybackSpeed?.() || 1 : 1;
     this.speechTimerDuration = 0;
 
     // Notify progress BEFORE advancing the cursor so the snapshot points at
@@ -732,20 +769,14 @@ export class PlaybackEngine {
         // Estimated reading time when no pre-generated audio (TTS disabled).
         // The estimate (CJK vs word-based pace, 2s floor, speed-adjusted) lives
         // in @/lib/choreography so the video exporter dwells identically.
-        // Cancelled on pause; resume() calls processNext directly.
+        // Pause/resume and live speed changes preserve content position.
         const scheduleReadingTimer = () => {
           if (!this.isCurrentGeneration(generation)) return;
           const speed = this.callbacks.getPlaybackSpeed?.() ?? 1;
-          const readingMs = estimateSpeechDurationMs(speechAction.text, { speed });
-          this.speechTimerStart = Date.now();
-          this.speechTimerRemaining = readingMs;
-          this.speechTimerDuration = readingMs;
-          this.speechTimer = setTimeout(() => {
-            if (!this.isCurrentGeneration(generation)) return;
-            this.speechTimer = null;
-            this.speechTimerRemaining = 0;
-            this.completeSpeech(generation);
-          }, readingMs);
+          this.speechTimerDuration = estimateSpeechDurationMs(speechAction.text);
+          this.speechTimerRate = speed;
+          this.speechTimerRemaining = this.speechTimerDuration / speed;
+          this.startReadingTimer(generation);
         };
 
         // A speech line with no text (e.g. a freshly inserted blank slide's
