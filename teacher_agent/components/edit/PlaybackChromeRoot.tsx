@@ -39,11 +39,8 @@ import { ActionEngine } from '@/lib/action/engine';
 import { createAudioPlayer } from '@/lib/utils/audio-player';
 import { useDiscussionTTS } from '@/lib/hooks/use-discussion-tts';
 import { useWidgetIframeStore } from '@/lib/store/widget-iframe';
-import {
-  formatPlaybackDuration,
-  getCourseDurationSeconds,
-  getSceneDurationSeconds,
-} from '@/lib/playback/timing-display';
+import { formatPlaybackDuration, getCourseDurationSeconds } from '@/lib/playback/timing-display';
+import { usePagePlaybackTiming } from '@/lib/hooks/use-page-playback-timing';
 import {
   isAutoPlayedStudentScene,
   isFinalStudentPlaybackSlide,
@@ -130,27 +127,19 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
     const setChatAreaCollapsed = useSettingsStore((s) => s.setChatAreaCollapsed);
     const setTTSMuted = useSettingsStore((s) => s.setTTSMuted);
     const setTTSVolume = useSettingsStore((s) => s.setTTSVolume);
-    const autoPlayLecture = useSettingsStore((s) => s.autoPlayLecture);
 
     // PlaybackEngine state
     const [engineMode, setEngineMode] = useState<EngineMode>('idle');
     // True while the autoplay policy has playback parked on a line it refuses
     // to start without an in-frame gesture (student embed without controls).
     const [audioBlocked, setAudioBlocked] = useState(false);
-    const [sceneElapsedSeconds, setSceneElapsedSeconds] = useState(0);
-    const [courseElapsedSeconds, setCourseElapsedSeconds] = useState(0);
     const [playbackCompleted, setPlaybackCompleted] = useState(false); // Distinguishes "never played" idle from "finished" idle
     const [lectureSpeech, setLectureSpeech] = useState<string | null>(null); // From PlaybackEngine (lecture)
     const [currentPlaybackActionIndex, setCurrentPlaybackActionIndex] = useState<number | null>(0);
     const emittedCompletionRef = useRef<string | null>(null);
 
     useEffect(() => {
-      if (
-        !playbackCompleted ||
-        !currentScene ||
-        (videoOnly && !isAutoPlayedStudentScene(currentScene))
-      )
-        return;
+      if (!playbackCompleted || !currentScene || !isAutoPlayedStudentScene(currentScene)) return;
       const completionKey = `${currentScene.id}:${currentPlaybackActionIndex ?? -1}`;
       if (emittedCompletionRef.current === completionKey) return;
       emittedCompletionRef.current = completionKey;
@@ -272,7 +261,6 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
     const lectureActionCounterRef = useRef(0);
     const currentPlaybackActionIndexRef = useRef<number | null>(currentPlaybackActionIndex);
     const activeSceneIdRef = useRef<string | null>(currentSceneId);
-    const sceneElapsedSecondsRef = useRef(0);
     const discussionAbortRef = useRef<AbortController | null>(null);
     const presentationIdleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const cursorSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -290,23 +278,6 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
       document.addEventListener('fullscreenchange', syncTarget);
       return () => document.removeEventListener('fullscreenchange', syncTarget);
     }, [videoOnly]);
-
-    useEffect(() => {
-      sceneElapsedSecondsRef.current = 0;
-      setSceneElapsedSeconds(0);
-    }, [currentSceneId]);
-
-    useEffect(() => {
-      const clockRunning =
-        engineMode === 'playing' || engineMode === 'live' || (playbackCompleted && autoPlayLecture);
-      if (!clockRunning) return;
-      const timer = window.setInterval(() => {
-        sceneElapsedSecondsRef.current += 1;
-        setSceneElapsedSeconds(sceneElapsedSecondsRef.current);
-        setCourseElapsedSeconds((seconds) => seconds + 1);
-      }, 1000);
-      return () => window.clearInterval(timer);
-    }, [autoPlayLecture, engineMode, playbackCompleted]);
 
     const updateCurrentPlaybackActionIndex = useCallback((actionIndex: number | null) => {
       currentPlaybackActionIndexRef.current = actionIndex;
@@ -573,7 +544,8 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
     }, [clearPresentationIdleTimer, isPresenting, isPresentationInteractionActive]);
 
     const togglePresentation = useCallback(async () => {
-      const stageElement = stageRef.current;
+      const stageElement =
+        stageRef.current?.closest<HTMLElement>('[data-classroom-stage]') ?? stageRef.current;
       if (!stageElement) return;
 
       try {
@@ -601,7 +573,9 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
 
     useEffect(() => {
       const onFullscreenChange = () => {
-        const active = document.fullscreenElement === stageRef.current;
+        const stageElement =
+          stageRef.current?.closest('[data-classroom-stage]') ?? stageRef.current;
+        const active = document.fullscreenElement === stageElement;
         setIsPresenting(active);
 
         if (!active) {
@@ -897,16 +871,8 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
             }
             // Auto-play: advance to next scene after a short pause
             const { autoPlayLecture } = useSettingsStore.getState();
-            if (videoOnly ? isAutoPlayedStudentScene(currentScene) : autoPlayLecture) {
-              const plannedSeconds = getSceneDurationSeconds(currentScene, stage, scenes);
-              // The student player is a media playlist, not a paced teacher
-              // presentation. Once narration ends, move on immediately rather
-              // than padding the slide to its lesson-plan duration.
-              const transitionDelayMs = videoOnly || (stage?.timing?.budgetVersion === 1 && isAutoPlayedStudentScene(currentScene))
-                ? currentScene.type === 'interactive'
-                  ? 1500
-                  : 300
-                : Math.max(250, (plannedSeconds - sceneElapsedSecondsRef.current) * 1000);
+            if (isAutoPlayedStudentScene(currentScene) && (videoOnly || autoPlayLecture)) {
+              const transitionDelayMs = 300;
               setTimeout(() => {
                 const stageState = useStageStore.getState();
                 if (!videoOnly && !useSettingsStore.getState().autoPlayLecture) return;
@@ -1037,21 +1003,12 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
       audioPlayerRef.current.setPlaybackRate(playbackSpeed);
     }, [playbackSpeed]);
 
-    // Interactive HTML scenes advance when their accumulated PLAYING time is
-    // exhausted. Pausing freezes both the display and the transition.
-    useEffect(() => {
-      if (videoOnly || !currentScene || currentScene.type !== 'interactive') return;
-      const durationSeconds = getSceneDurationSeconds(currentScene, stage, scenes);
-      if (sceneElapsedSeconds < durationSeconds) return;
-      engineRef.current?.stop();
-      const store = useStageStore.getState();
-      const index = store.scenes.findIndex((scene) => scene.id === currentScene.id);
-      const next = store.scenes[index + 1];
-      if (next) {
-        autoStartRef.current = true;
-        store.setCurrentSceneId(next.id);
-      }
-    }, [currentScene, sceneElapsedSeconds, scenes, stage, videoOnly]);
+    const pageTiming = usePagePlaybackTiming(
+      currentScene,
+      engineRef,
+      playbackSpeed,
+      playbackCompleted,
+    );
 
     /**
      * Handle discussion SSE — POST /api/chat and push events to engine
@@ -1080,14 +1037,6 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
       () =>
         currentScene?.actions?.find((a): a is SpeechAction => a.type === 'speech')?.text ?? null,
       [currentScene],
-    );
-
-    const currentSceneRemainingSeconds = currentScene
-      ? Math.max(0, getSceneDurationSeconds(currentScene, stage, scenes) - sceneElapsedSeconds)
-      : 0;
-    const courseRemainingSeconds = Math.max(
-      0,
-      getCourseDurationSeconds(stage, scenes) - courseElapsedSeconds,
     );
 
     // Whether the speaking agent is a student (for bubble role derivation)
@@ -1496,7 +1445,11 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
               canEdit={!!canEnterProMode}
               onToggleEditMode={onEnterProMode}
               totalDurationMinutes={Math.ceil(getCourseDurationSeconds(stage, scenes) / 60)}
-              durationSummary={stage?.timing?.budgetVersion === 1 ? <CourseDurationSummary stage={stage} scenes={scenes} /> : undefined}
+              durationSummary={
+                stage?.timing?.budgetVersion === 1 ? (
+                  <CourseDurationSummary stage={stage} scenes={scenes} />
+                ) : undefined
+              }
             />
           )}
 
@@ -1510,13 +1463,16 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
             }}
             suppressHydrationWarning
           >
-            {currentScene && !hidePlaybackTiming && (
-              <div className="pointer-events-none absolute left-1/2 top-3 z-30 -translate-x-1/2 rounded-full border border-white/60 bg-slate-950/75 px-4 py-2 text-xs font-medium text-white shadow-lg backdrop-blur-md">
-                本页 {formatPlaybackDuration(currentSceneRemainingSeconds)}
-                <span className="mx-2 text-white/35">｜</span>
-                课程剩余 {formatPlaybackDuration(courseRemainingSeconds)}
-              </div>
-            )}
+            {currentScene &&
+              ['slide', 'interactive'].includes(currentScene.type) &&
+              !hidePlaybackTiming && (
+                <div className="pointer-events-none absolute left-1/2 top-3 z-30 -translate-x-1/2 rounded-full border border-white/60 bg-slate-950/75 px-4 py-2 text-xs font-medium text-white shadow-lg backdrop-blur-md">
+                  本页{' '}
+                  {pageTiming?.seconds == null
+                    ? '时长待测'
+                    : `${pageTiming.estimated ? '约 ' : ''}${formatPlaybackDuration(pageTiming.seconds)}`}
+                </div>
+              )}
             {/* Autoplay unlock — the engine parked on a line the browser
               refuses to start without an in-frame gesture (student embeds
               have no other control to click). The click itself is the

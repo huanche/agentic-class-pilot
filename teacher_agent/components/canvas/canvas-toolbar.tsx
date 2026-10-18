@@ -347,7 +347,7 @@ export function CanvasToolbar({
                     </span>
                   </label>
                   {currentScene.type === 'quiz' && (
-                    <p className="mt-2 text-[10px] text-gray-400">练习题固定每题 60 秒。</p>
+                    <p className="mt-2 text-[10px] text-gray-400">练习题固定每题 5 分钟。</p>
                   )}
                 </div>
               )}

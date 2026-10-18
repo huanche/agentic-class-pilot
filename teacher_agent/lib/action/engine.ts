@@ -53,6 +53,7 @@ import {
   WIDGET_MS,
   wbDrawCodeMs,
   wbClearMs,
+  revealDurationMs,
 } from '@/lib/choreography';
 import katex from 'katex';
 import { createLogger } from '@/lib/logger';
@@ -301,7 +302,7 @@ export class ActionEngine {
 
   private async executeReveal(action: RevealAction): Promise<void> {
     useCanvasStore.getState().revealElement(action.elementId);
-    await delay(Math.max(120, Math.min(action.duration ?? 520, 2000)));
+    await delay(revealDurationMs(action.duration));
   }
 
   /** Schedule auto-clear for fire-and-forget effects */

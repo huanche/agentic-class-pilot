@@ -19,6 +19,7 @@ import { getCurrentModelConfig } from '@/lib/utils/model-config';
 import { createLogger } from '@/lib/logger';
 import { useStageStore } from '@/lib/store';
 import { postPlayerHostEvent } from '@/lib/integration/player-host-events';
+import { formatPlaybackDuration, QUIZ_SECONDS_PER_QUESTION } from '@/lib/playback/timing-display';
 
 const log = createLogger('QuizView');
 import type { QuizQuestion } from '@/lib/types/stage';
@@ -709,7 +710,7 @@ export function QuizView({ questions, sceneId, stageId, studentPlayer }: QuizVie
   const [hydrationVersion, setHydrationVersion] = useState(0);
   const [retrying, setRetrying] = useState(false);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
-  const [remainingSeconds, setRemainingSeconds] = useState(60);
+  const [remainingSeconds, setRemainingSeconds] = useState(QUIZ_SECONDS_PER_QUESTION);
   const viewLifetimeRef = useRef<QuizViewLifetime | null>(null);
   viewLifetimeRef.current ??= createQuizViewLifetime();
   const viewLifetime = viewLifetimeRef.current;
@@ -754,7 +755,7 @@ export function QuizView({ questions, sceneId, stageId, studentPlayer }: QuizVie
   useEffect(() => {
     if (!attemptId || phase !== 'not_started') return;
     setCurrentQuestionIndex(0);
-    setRemainingSeconds(60);
+    setRemainingSeconds(QUIZ_SECONDS_PER_QUESTION);
     setPhase('answering');
   }, [attemptId, phase]);
 
@@ -799,13 +800,13 @@ export function QuizView({ questions, sceneId, stageId, studentPlayer }: QuizVie
   const advanceQuestion = useCallback(() => {
     if (currentQuestionIndex < questions.length - 1) {
       setCurrentQuestionIndex((index) => index + 1);
-      setRemainingSeconds(60);
+      setRemainingSeconds(QUIZ_SECONDS_PER_QUESTION);
       return;
     }
     void handleSubmit();
   }, [currentQuestionIndex, handleSubmit, questions.length]);
 
-  // Every question owns an independent one-minute decision window. Missing
+  // Every question owns an independent five-minute decision window. Missing
   // answers remain absent and are graded as zero; the final timeout submits
   // the attempt automatically.
   useEffect(() => {
@@ -969,7 +970,7 @@ export function QuizView({ questions, sceneId, stageId, studentPlayer }: QuizVie
               totalPoints={totalPoints}
               onStart={() => {
                 setCurrentQuestionIndex(0);
-                setRemainingSeconds(60);
+                setRemainingSeconds(QUIZ_SECONDS_PER_QUESTION);
                 setPhase('answering');
               }}
             />
@@ -1004,7 +1005,7 @@ export function QuizView({ questions, sceneId, stageId, studentPlayer }: QuizVie
                       : 'bg-violet-50 text-violet-600 dark:bg-violet-950/40 dark:text-violet-300',
                   )}
                 >
-                  {remainingSeconds}s
+                  {formatPlaybackDuration(remainingSeconds)}
                 </span>
                 <button
                   type="button"
