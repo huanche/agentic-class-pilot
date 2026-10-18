@@ -27,11 +27,19 @@ DEFAULT_VOICE = "zf_xiaoyi"
 
 
 class Engine:
-    def __init__(self, root: Path, threads: int, model_dir: Path | None = None):
+    def __init__(self, root: Path, threads: int, model_dir: Path | None = None, max_phonemes: int = 128):
         import jieba
         import kokoro_onnx
         import onnxruntime as ort
+        from kokoro_onnx.chunker import split_phonemes
         from misaki import zh
+
+        # The pinned runtime otherwise packs up to 510 phonemes into one
+        # inference, exceeding 1 GiB for classroom paragraphs. Keep its own
+        # punctuation-aware joining and pauses, but bound each inference.
+        class BoundedKokoro(kokoro_onnx.Kokoro):
+            def _split_phonemes(self, phonemes: str) -> list[str]:
+                return split_phonemes(phonemes, max_phonemes)
 
         # Keep Jieba's dictionary cache inside this checkout as well.
         jieba.dt.tmp_dir = str(root / "tmp")
@@ -45,7 +53,7 @@ class Engine:
             sess_options=options,
             providers=["CPUExecutionProvider"],
         )
-        self.model = kokoro_onnx.Kokoro.from_session(
+        self.model = BoundedKokoro.from_session(
             session, str(model_dir / "voices-v1.0.bin")
         )
         # v1.0 weights require the legacy IPA frontend, not the v1.1 vocabulary.
@@ -53,6 +61,7 @@ class Engine:
         self.voices = sorted(self.model.get_voices())
         self.lock = threading.BoundedSemaphore(1)
         self.threads = threads
+        self.max_phonemes = max_phonemes
 
     def phonemize(self, text: str, voice: str) -> str:
         if not voice.startswith("z"):
@@ -112,7 +121,8 @@ def handler_for(engine: Engine, root: Path):
                 self.send(200, Path(__file__).with_name("listen.html").read_bytes(), "text/html; charset=utf-8")
             elif route == "/health":
                 self.send(200, {"status": "ready", "engine": "kokoro-onnx", "model": "kokoro-v1",
-                                "device": "cpu", "threads": engine.threads, "defaultVoice": DEFAULT_VOICE})
+                                "device": "cpu", "threads": engine.threads, "maxPhonemes": engine.max_phonemes,
+                                "defaultVoice": DEFAULT_VOICE})
             elif route == "/v1/models":
                 self.send(200, {"object": "list", "data": [{"id": "kokoro-v1", "object": "model", "owned_by": "local"}]})
             elif route == "/v1/voices":
@@ -195,7 +205,11 @@ def main():
     parser.add_argument("--host", choices=("127.0.0.1", "0.0.0.0"), default="127.0.0.1")
     parser.add_argument("--port", type=int, default=13305)
     parser.add_argument("--threads", type=int, default=4, choices=range(1, 17))
+    parser.add_argument("--max-phonemes", type=int, default=128,
+                        help="Maximum phonemes per inference (64-510); smaller batches bound memory")
     args = parser.parse_args()
+    if not 64 <= args.max_phonemes <= 510:
+        parser.error("--max-phonemes must be between 64 and 510")
     root = args.root.resolve()
     for folder in ("tmp", "samples", "cache/huggingface"):
         (root / folder).mkdir(parents=True, exist_ok=True)
@@ -203,7 +217,7 @@ def main():
     os.environ["TMP"] = str(root / "tmp")
     os.environ["HF_HOME"] = str(root / "cache" / "huggingface")
     os.environ["OMP_NUM_THREADS"] = str(args.threads)
-    engine = Engine(root, args.threads, args.model_dir)
+    engine = Engine(root, args.threads, args.model_dir, args.max_phonemes)
     server = ThreadingHTTPServer((args.host, args.port), handler_for(engine, root))
     server.daemon_threads = True
     print(json.dumps({"event": "ready", "url": f"http://127.0.0.1:{args.port}", "device": "cpu"}), flush=True)

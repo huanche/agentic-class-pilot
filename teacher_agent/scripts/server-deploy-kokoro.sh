@@ -93,20 +93,22 @@ wait_url http://127.0.0.1:13305/health
 
 # Measure a complete WAV, not just process liveness. No cloud API is used.
 python3 - "$SNAP" <<'PY'
-import io, json, pathlib, sys, time, urllib.request, wave
+import io, json, pathlib, subprocess, sys, time, urllib.request, wave
 root = pathlib.Path(sys.argv[1])
 started = time.perf_counter()
-payload = json.dumps({"model":"kokoro-v1","voice":"zf_xiaoyi","input":"同学们好，我是小伊。请观察左侧的示例，再比较整数和字符串的区别。","response_format":"wav"}, ensure_ascii=False).encode()
+text = subprocess.check_output(['docker','exec','agentic-kokoro','cat','/opt/kokoro/narration-smoke.txt'], text=True).strip()
+payload = json.dumps({"model":"kokoro-v1","input":text,"response_format":"wav"}, ensure_ascii=False).encode()
 request = urllib.request.Request('http://127.0.0.1:13305/v1/audio/speech', data=payload, headers={'Content-Type':'application/json'})
 with urllib.request.urlopen(request, timeout=120) as response:
     audio = response.read()
     assert response.headers.get('X-Voice') == 'zf_xiaoyi'
 with wave.open(io.BytesIO(audio)) as wav:
     duration = wav.getnframes() / wav.getframerate()
-    assert 1 < duration < 120
+    assert 30 < duration < 120
     assert wav.getframerate() == 24000
 (root / 'xiaoyi-smoke.wav').write_bytes(audio)
 report = {'voice':'zf_xiaoyi','audioSeconds':round(duration,3),'generationSeconds':round(time.perf_counter()-started,3)}
+assert subprocess.check_output(['docker','inspect','agentic-kokoro','--format','{{.RestartCount}}'], text=True).strip() == '0'
 (root / 'smoke.json').write_text(json.dumps(report))
 print(json.dumps(report))
 PY
