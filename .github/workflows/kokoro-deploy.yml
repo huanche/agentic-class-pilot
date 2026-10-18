@@ -1,0 +1,100 @@
+name: kokoro-deploy
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'teacher_agent/devtools/kokoro-local/**'
+      - 'teacher_agent/scripts/server-deploy-kokoro.sh'
+      - '.github/workflows/kokoro-deploy.yml'
+  workflow_dispatch:
+
+# Share the teacher deployment lock because switching the managed TTS requires
+# restarting the teacher process. Production runs are dispatched after teacher CI.
+concurrency:
+  group: ${{ github.event_name == 'workflow_dispatch' && 'teacher-deploy' || format('kokoro-build-{0}', github.ref) }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  IMAGE: zmzm1443/agentic-teacher
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compute TTS image tag
+        run: echo "KOKORO_TAG=kokoro-${GITHUB_SHA::7}" >> "$GITHUB_ENV"
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        if: github.event_name == 'workflow_dispatch'
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Build CPU Kokoro image
+        uses: docker/build-push-action@v6
+        with:
+          context: teacher_agent/devtools/kokoro-local
+          push: ${{ github.event_name == 'workflow_dispatch' }}
+          load: ${{ github.event_name == 'pull_request' }}
+          tags: ${{ env.IMAGE }}:${{ env.KOKORO_TAG }}
+          cache-from: type=gha,scope=kokoro-cpu
+          cache-to: type=gha,mode=max,scope=kokoro-cpu
+      - name: Smoke test the CPU image before merge
+        if: github.event_name == 'pull_request'
+        run: |
+          set -euo pipefail
+          docker run -d --name kokoro-ci --cpus=1 --memory=1024m --memory-swap=1024m \
+            --read-only --tmpfs /runtime:rw,nosuid,size=64m,mode=1777 \
+            -p 127.0.0.1:13305:13305 "$IMAGE:$KOKORO_TAG"
+          trap 'docker logs --tail 15 kokoro-ci; docker rm -f kokoro-ci >/dev/null' EXIT
+          ready=0
+          for attempt in $(seq 1 60); do
+            if curl -fsS --max-time 2 http://127.0.0.1:13305/health >/dev/null 2>&1; then ready=1; break; fi
+            sleep 2
+          done
+          [ "$ready" = 1 ]
+          python3 - <<'PY'
+          import io, json, urllib.request, wave
+          data=json.dumps({'input':'你好，我是小伊，这是容器的中文配音测试。','response_format':'wav'},ensure_ascii=False).encode()
+          request=urllib.request.Request('http://127.0.0.1:13305/v1/audio/speech',data=data,headers={'Content-Type':'application/json'})
+          with urllib.request.urlopen(request,timeout=90) as response:
+              assert response.headers.get('X-Voice') == 'zf_xiaoyi'
+              audio=response.read()
+          with wave.open(io.BytesIO(audio)) as stream:
+              assert stream.getnframes() > stream.getframerate()
+          print('CPU image produced valid Xiaoyi WAV audio within 1 CPU / 1 GiB.')
+          PY
+  deploy:
+    if: github.event_name == 'workflow_dispatch'
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy and validate internal TTS
+        env:
+          SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          key="$RUNNER_TEMP/kokoro-deploy-key"
+          printf '%s\n' "$SERVER_SSH_KEY" > "$key"
+          chmod 600 "$key"
+          trap 'rm -f "$key"' EXIT
+          scp -i "$key" -o StrictHostKeyChecking=accept-new \
+            teacher_agent/scripts/server-deploy-kokoro.sh "ubuntu@$SERVER_HOST:/tmp/server-deploy-kokoro.sh"
+          scp -i "$key" -o StrictHostKeyChecking=accept-new \
+            teacher_agent/scripts/server-wait-teacher-idle.sh "ubuntu@$SERVER_HOST:/tmp/server-wait-teacher-idle.sh"
+          ssh -i "$key" -o StrictHostKeyChecking=accept-new "ubuntu@$SERVER_HOST" \
+            "sed -i 's/\r$//' /tmp/server-deploy-kokoro.sh /tmp/server-wait-teacher-idle.sh"
+          printf '%s' "$DOCKERHUB_TOKEN" | ssh -i "$key" -o StrictHostKeyChecking=accept-new "ubuntu@$SERVER_HOST" \
+            "docker login -u '$DOCKERHUB_USERNAME' --password-stdin"
+          ssh -i "$key" -o ServerAliveInterval=20 -o ServerAliveCountMax=3 -o StrictHostKeyChecking=accept-new "ubuntu@$SERVER_HOST" \
+            "bash /tmp/server-wait-teacher-idle.sh && bash /tmp/server-deploy-kokoro.sh '$IMAGE' 'kokoro-${GITHUB_SHA::7}'"

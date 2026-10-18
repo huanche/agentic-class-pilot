@@ -27,7 +27,7 @@ DEFAULT_VOICE = "zf_xiaoyi"
 
 
 class Engine:
-    def __init__(self, root: Path, threads: int):
+    def __init__(self, root: Path, threads: int, model_dir: Path | None = None):
         import jieba
         import kokoro_onnx
         import onnxruntime as ort
@@ -39,13 +39,14 @@ class Engine:
         options = ort.SessionOptions()
         options.intra_op_num_threads = threads
         options.inter_op_num_threads = 1
+        model_dir = model_dir or root / "models"
         session = ort.InferenceSession(
-            str(root / "models" / "kokoro-v1.0.onnx"),
+            str(model_dir / "kokoro-v1.0.onnx"),
             sess_options=options,
             providers=["CPUExecutionProvider"],
         )
         self.model = kokoro_onnx.Kokoro.from_session(
-            session, str(root / "models" / "voices-v1.0.bin")
+            session, str(model_dir / "voices-v1.0.bin")
         )
         # v1.0 weights require the legacy IPA frontend, not the v1.1 vocabulary.
         self.zh = zh.ZHG2P()
@@ -190,6 +191,8 @@ def handler_for(engine: Engine, root: Path):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", type=Path, required=True)
+    parser.add_argument("--model-dir", type=Path)
+    parser.add_argument("--host", choices=("127.0.0.1", "0.0.0.0"), default="127.0.0.1")
     parser.add_argument("--port", type=int, default=13305)
     parser.add_argument("--threads", type=int, default=4, choices=range(1, 17))
     args = parser.parse_args()
@@ -200,8 +203,8 @@ def main():
     os.environ["TMP"] = str(root / "tmp")
     os.environ["HF_HOME"] = str(root / "cache" / "huggingface")
     os.environ["OMP_NUM_THREADS"] = str(args.threads)
-    engine = Engine(root, args.threads)
-    server = ThreadingHTTPServer(("127.0.0.1", args.port), handler_for(engine, root))
+    engine = Engine(root, args.threads, args.model_dir)
+    server = ThreadingHTTPServer((args.host, args.port), handler_for(engine, root))
     server.daemon_threads = True
     print(json.dumps({"event": "ready", "url": f"http://127.0.0.1:{args.port}", "device": "cpu"}), flush=True)
     try:
