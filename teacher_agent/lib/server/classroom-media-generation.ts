@@ -27,6 +27,7 @@ import {
   getServerImageProviders,
   getServerVideoProviders,
   getServerTTSProviders,
+  isServerTTSProviderDisabled,
   resolveImageApiKey,
   resolveImageBaseUrl,
   resolveVideoApiKey,
@@ -322,7 +323,14 @@ export async function generateTTSForClassroom(
   let apiKey: string;
   let byokModel: string | undefined;
   let byokVoice: string | undefined;
-  if (ttsOverride?.apiKey) {
+  const requestedByokProvider =
+    ttsOverride?.provider && TTS_PROVIDERS[ttsOverride.provider as keyof typeof TTS_PROVIDERS]
+      ? ttsOverride.provider
+      : 'qwen-tts';
+  const useByok = Boolean(
+    ttsOverride?.apiKey && !isServerTTSProviderDisabled(requestedByokProvider),
+  );
+  if (useByok && ttsOverride?.apiKey) {
     const requested = (ttsOverride.provider || '') as TTSProviderId;
     if (TTS_PROVIDERS[requested as keyof typeof TTS_PROVIDERS]) {
       providerId = requested;
@@ -352,7 +360,7 @@ export async function generateTTSForClassroom(
     return { generated: 0, failed: 0, skipped: 1 };
   }
   const ttsBaseUrl =
-    (ttsOverride?.apiKey ? ttsOverride.baseUrl || undefined : resolveTTSBaseUrl(providerId)) ||
+    (useByok ? ttsOverride?.baseUrl || undefined : resolveTTSBaseUrl(providerId)) ||
     ttsProvider?.defaultBaseUrl;
   // A submitted voice belongs to its provider. Do not pass a Kokoro voice to
   // a different managed/BYOK provider chosen by the server.

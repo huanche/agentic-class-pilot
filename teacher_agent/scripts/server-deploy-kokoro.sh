@@ -52,6 +52,8 @@ rollback() {
   if [ "$OLD_EXISTS" = 1 ] && docker container inspect "$PREVIOUS" >/dev/null 2>&1; then
     docker rename "$PREVIOUS" "$NAME"
     docker start "$NAME" >/dev/null
+  elif [ "$OLD_EXISTS" = 1 ] && [ "$NEW_STARTED" = 0 ]; then
+    docker start "$NAME" >/dev/null 2>&1 || true
   fi
   echo "Rollback files: $SNAP"
   exit 1

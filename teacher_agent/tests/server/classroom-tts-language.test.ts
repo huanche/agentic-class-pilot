@@ -4,11 +4,13 @@ const mocks = vi.hoisted(() => ({
   tts: vi.fn(async () => ({ audio: new Uint8Array(44), format: 'wav' })),
   write: vi.fn(async () => {}),
   providers: vi.fn((): Record<string, { disabled?: boolean }> => ({ 'qwen-tts': {} })),
+  disabled: vi.fn((_provider: string) => false),
 }));
 vi.mock('fs', () => ({ promises: { mkdir: vi.fn(async () => {}), writeFile: mocks.write } }));
 vi.mock('@/lib/audio/tts-providers', () => ({ generateTTS: mocks.tts }));
 vi.mock('@/lib/server/provider-config', () => ({
   getServerTTSProviders: mocks.providers,
+  isServerTTSProviderDisabled: mocks.disabled,
   resolveTTSApiKey: () => 'test',
   resolveTTSBaseUrl: () => undefined,
   resolveTTSVoice: (_provider: string, voice?: string) => voice,
@@ -19,6 +21,8 @@ beforeEach(() => {
   mocks.tts.mockClear();
   mocks.providers.mockReset();
   mocks.providers.mockReturnValue({ 'qwen-tts': {} });
+  mocks.disabled.mockReset();
+  mocks.disabled.mockReturnValue(false);
 });
 
 function narrationScene() {
@@ -33,6 +37,25 @@ function narrationScene() {
   } as unknown as Scene;
 }
 describe('server narration language', () => {
+  it('falls back to local TTS when an old per-user cloud config is force-disabled', async () => {
+    mocks.providers.mockReturnValue({ 'qwen-tts': { disabled: true }, 'lemonade-tts': {} });
+    mocks.disabled.mockImplementation((provider) => provider === 'qwen-tts');
+    await generateTTSForClassroom([narrationScene()], 'voice-stage', 'http://localhost', {
+      provider: 'qwen-tts',
+      apiKey: 'old-user-test-key',
+      voice: 'Cherry',
+      baseUrl: 'https://old-cloud-provider.example/v1',
+    });
+    expect(mocks.tts).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerId: 'lemonade-tts',
+        voice: 'zf_xiaoyi',
+        baseUrl: 'http://localhost:13305/v1',
+      }),
+      expect.any(String),
+    );
+  });
+
   it('uses the selected local voice instead of the provider default', async () => {
     mocks.providers.mockReturnValue({ 'lemonade-tts': {} });
     await generateTTSForClassroom(

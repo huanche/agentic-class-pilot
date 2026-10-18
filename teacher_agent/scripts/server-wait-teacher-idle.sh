@@ -12,7 +12,10 @@ const path = require('node:path');
   const database = process.env.COURSE_DATABASE_URL || process.env.DATABASE_URL;
   if (database && process.env.COURSE_STORAGE_MODE !== 'json') {
     const { Pool } = require('pg');
-    const pool = new Pool({ connectionString: database, connectionTimeoutMillis: 5000 });
+    const schema = process.env.COURSE_DATABASE_SCHEMA?.trim();
+    if (schema && !/^[a-z_][a-z0-9_]*$/.test(schema)) throw new Error('Invalid course schema');
+    const pool = new Pool({ connectionString: database, connectionTimeoutMillis: 5000,
+      ...(schema ? { options: `-c search_path=${schema},public` } : {}) });
     try {
       const result = await pool.query(
         "SELECT count(*)::int AS count FROM mentra_artifact_jobs WHERE status IN ('queued','running') AND updated_at > $1", [since]);
