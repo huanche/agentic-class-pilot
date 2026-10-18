@@ -96,7 +96,7 @@ import type { TTSModelConfig } from './types';
 import { throwIfQwenAccountUnavailable } from './tts-errors';
 import { qwenLanguageForText } from './qwen-language';
 import { isCustomTTSProvider } from './types';
-import { TTS_PROVIDERS } from './constants';
+import { TTS_PROVIDERS, DEFAULT_TTS_VOICES } from './constants';
 import { splitConcatenatedJsonObjects } from './json-stream';
 import {
   VOXCPM_VLLM_MODEL_ID,
@@ -206,6 +206,7 @@ async function generateOpenAITTS(
   // Use gpt-4o-mini-tts for best quality and intelligent realtime applications
   const response = await fetch(`${baseUrl}/audio/speech`, {
     method: 'POST',
+    signal: config.signal,
     headers: {
       Authorization: `Bearer ${config.apiKey}`,
       'Content-Type': 'application/json; charset=utf-8',
@@ -245,10 +246,11 @@ async function generateLemonadeTTS(
     '',
   );
   const modelId = config.modelId || TTS_PROVIDERS['lemonade-tts'].defaultModelId;
-  const voice = config.voice || 'af_heart';
+  const voice = config.voice || DEFAULT_TTS_VOICES['lemonade-tts'];
 
   const response = await fetch(`${baseUrl}/audio/speech`, {
     method: 'POST',
+    signal: config.signal,
     headers: {
       'Content-Type': 'application/json; charset=utf-8',
       ...getBackendAuthHeaders(config.apiKey),
@@ -432,6 +434,7 @@ async function postVoxCPMVLLMOmni(
 
   return fetch(getVLLMOmniSpeechUrl(baseUrl), {
     method: 'POST',
+    signal: config.signal,
     headers: {
       'Content-Type': 'application/json; charset=utf-8',
       ...getBackendAuthHeaders(config.apiKey),
@@ -577,6 +580,7 @@ async function generateAzureTTS(
 
   const response = await fetch(`${baseUrl}/cognitiveservices/v1`, {
     method: 'POST',
+    signal: config.signal,
     headers: {
       'Ocp-Apim-Subscription-Key': config.apiKey!,
       'Content-Type': 'application/ssml+xml; charset=utf-8',
@@ -605,6 +609,7 @@ async function generateGLMTTS(config: TTSModelConfig, text: string): Promise<TTS
 
   const response = await fetch(`${baseUrl}/audio/speech`, {
     method: 'POST',
+    signal: config.signal,
     headers: {
       Authorization: `Bearer ${config.apiKey}`,
       'Content-Type': 'application/json; charset=utf-8',
@@ -680,6 +685,7 @@ async function generateQwenTTS(config: TTSModelConfig, text: string): Promise<TT
 
   const response = await fetch(`${baseUrl}/services/aigc/multimodal-generation/generation`, {
     method: 'POST',
+    signal: config.signal,
     headers: {
       Authorization: `Bearer ${config.apiKey}`,
       'Content-Type': 'application/json; charset=utf-8',
@@ -722,7 +728,7 @@ async function generateQwenTTS(config: TTSModelConfig, text: string): Promise<TT
 
   // Download audio from URL
   const audioUrl = data.output.audio.url;
-  const audioResponse = await fetch(audioUrl);
+  const audioResponse = await fetch(audioUrl, { signal: config.signal });
 
   if (!audioResponse.ok) {
     throw new Error(`Failed to download audio from URL: ${audioResponse.statusText}`);
@@ -749,6 +755,7 @@ async function generateMiniMaxTTS(
   );
   const response = await fetch(`${baseUrl}/v1/t2a_v2`, {
     method: 'POST',
+    signal: config.signal,
     headers: {
       Authorization: `Bearer ${config.apiKey}`,
       'Content-Type': 'application/json; charset=utf-8',
@@ -824,6 +831,7 @@ async function generateElevenLabsTTS(
     `${baseUrl}/text-to-speech/${encodeURIComponent(config.voice)}?output_format=${outputFormat}`,
     {
       method: 'POST',
+      signal: config.signal,
       headers: {
         'xi-api-key': config.apiKey!,
         'Content-Type': 'application/json; charset=utf-8',
@@ -932,6 +940,7 @@ async function generateDoubaoTTS(
 
   const response = await fetch(`${baseUrl}/unidirectional`, {
     method: 'POST',
+    signal: config.signal,
     headers: {
       'Content-Type': 'application/json',
       ...authHeaders,

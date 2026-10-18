@@ -84,6 +84,7 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
   const setTTSProviderConfig = useSettingsStore((state) => state.setTTSProviderConfig);
   const activeProviderId = useSettingsStore((state) => state.ttsProviderId);
   const setTTSVoice = useSettingsStore((state) => state.setTTSVoice);
+  const setTTSProvider = useSettingsStore((state) => state.setTTSProvider);
   const removeCustomTTSProvider = useSettingsStore((state) => state.removeCustomTTSProvider);
 
   const ttsProvider = TTS_PROVIDERS[selectedProviderId as keyof typeof TTS_PROVIDERS];
@@ -481,6 +482,35 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
             )}
           </>
         ))}
+
+      {selectedProviderId === 'lemonade-tts' && (
+        <div className="space-y-2">
+          <Label htmlFor="local-tts-voice" className="text-sm">
+            {t('settings.ttsVoice')}
+          </Label>
+          <Select
+            value={effectiveVoice}
+            disabled={!providerEnabled}
+            onValueChange={(voice) => {
+              setTTSProvider(selectedProviderId);
+              setTTSVoice(voice);
+            }}
+          >
+            <SelectTrigger id="local-tts-voice" className="max-w-sm">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {[...ttsProvider.voices]
+                .sort((a, b) => Number(b.language === 'zh-CN') - Number(a.language === 'zh-CN'))
+                .map((voice) => (
+                  <SelectItem key={voice.id} value={voice.id}>
+                    {voice.name} · {voice.language}
+                  </SelectItem>
+                ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
 
       {/* Test TTS */}
       <div className="space-y-2">

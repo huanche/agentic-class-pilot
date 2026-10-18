@@ -81,6 +81,8 @@ Copy-Item ".env.local.example" ".env.local" -ErrorAction SilentlyContinue
 
 ## 启动项目
 
+只在本项目中修改和测试教师端，可在仓库根目录运行 `powershell -NoProfile -ExecutionPolicy Bypass -File .\start-teacher-local.ps1`，访问 `http://127.0.0.1:3200`。该开发入口使用本地文件存储，不需要先启动完整平台和数据库，详见 [教师端本地修改与测试](docs/local-teacher-development.md)。
+
 进入平台目录并运行统一启动脚本：
 
 ```powershell
@@ -163,5 +165,7 @@ Get-NetTCPConnection -State Listen -LocalPort 8088,8080,3200,8000
 - `student_agent/README.md`
 
 ## 开源说明
+
+本机 Kokoro 语音部署与试听见 [本地语音测试说明](docs/local-kokoro.md)。
 
 教师端基于 [THU-MAIC/OpenMAIC](https://github.com/THU-MAIC/OpenMAIC) 扩展。发布仓库前，请保留各上游项目的许可证与版权声明，并根据实际采用的依赖补充本仓库的许可证和第三方软件说明。

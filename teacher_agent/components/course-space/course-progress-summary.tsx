@@ -4,7 +4,8 @@ import {
   isGenerationTaskActive,
 } from '@/lib/store/course-generation-task';
 import { ListTodo, ChevronRight, LoaderCircle } from 'lucide-react';
-import type { CourseArtifactRecord, CourseSpace } from '@/lib/course-space';
+import type { CourseArtifactJob, CourseArtifactRecord, CourseSpace } from '@/lib/course-space';
+import Link from 'next/link';
 import {
   summarizeCourseProgress,
   type CourseStatusTarget,
@@ -12,15 +13,20 @@ import {
 export function CourseProgressSummary({
   course,
   artifacts,
+  jobs = [],
   onFocus,
 }: {
   course: CourseSpace;
   artifacts: CourseArtifactRecord[];
+  jobs?: CourseArtifactJob[];
   onFocus: (target: CourseStatusTarget) => void;
 }) {
   const progress = summarizeCourseProgress(course, artifacts);
   const task = useCourseGenerationTask((state) => state.task);
   const courseTask = task?.courseId === course.id && isGenerationTaskActive(task) ? task : null;
+  const serverTask = jobs.find(
+    (job) => job.backgroundGeneration && ['queued', 'running'].includes(job.status),
+  );
   return (
     <div className="flex w-full flex-wrap items-center gap-x-5 gap-y-2 border-t border-slate-200/60 pt-2 text-xs">
       <div
@@ -61,13 +67,25 @@ export function CourseProgressSummary({
       <span className="text-slate-500">
         已发布 {progress.published}/{progress.lessonTotal} 课次
       </span>
-      {courseTask && (
-        <span role="status" className="flex items-center gap-1.5 text-[#B00055]">
+      {serverTask ? (
+        <Link
+          href={`/course-space/${course.id}/jobs/${serverTask.id}`}
+          role="status"
+          className="flex items-center gap-1.5 text-[#B00055]"
+        >
           <LoaderCircle className="size-3.5 animate-spin" />
-          {courseTask.status === 'review'
-            ? '生成任务待审核'
-            : `正在生成 · 阶段${courseTask.step}/${courseTask.total}`}
-        </span>
+          后台生成 {serverTask.backgroundGeneration!.completedPages}/
+          {serverTask.backgroundGeneration!.totalPages} 页 · {serverTask.progress}%
+        </Link>
+      ) : (
+        courseTask && (
+          <span role="status" className="flex items-center gap-1.5 text-[#B00055]">
+            <LoaderCircle className="size-3.5 animate-spin" />
+            {courseTask.status === 'review'
+              ? '生成任务待审核'
+              : `正在生成 · 阶段${courseTask.step}/${courseTask.total}`}
+          </span>
+        )
       )}
       <details className="group relative ml-auto">
         <summary className="flex cursor-pointer list-none items-center gap-1.5 rounded-full border bg-white px-3 py-1.5 text-[#B00055]">

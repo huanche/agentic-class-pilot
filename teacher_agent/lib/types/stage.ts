@@ -54,6 +54,8 @@ export type Stage = DslStage & {
     version: 1;
     outlines: SceneOutline[];
     complete: boolean;
+    /** When present, only the server task may generate the remaining pages. */
+    serverJobId?: string;
   };
 };
 

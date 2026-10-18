@@ -327,11 +327,13 @@ function HomePage({
       // without ever allocating audio assets in generation-preview.
       const audioSettings = useSettingsStore.getState();
       audioSettings.setTTSEnabled(true);
-      // The normal default is browser-native-tts. PPT generation needs
-      // server-side audio assets so the generated script can be replayed in
-      // the classroom after the scene is persisted. Select the configured
-      // Qwen provider explicitly instead of relying on a stale user setting.
-      audioSettings.setTTSProvider('qwen-tts');
+      // Retain the configured managed provider for persisted narration.
+      if (
+        !audioSettings.ttsProvidersConfig[audioSettings.ttsProviderId]?.isServerConfigured &&
+        !audioSettings.ttsProvidersConfig['qwen-tts']?.serverDisabled
+      ) {
+        audioSettings.setTTSProvider('qwen-tts');
+      }
       const sessionId = nanoid();
       // Both quick-generation routes retain the source canvas. Faithful mode
       // uses it directly; Learning Skills uses it as the quality-preserving
@@ -730,7 +732,12 @@ function HomePage({
       if (conversionMode) {
         const audioSettings = useSettingsStore.getState();
         audioSettings.setTTSEnabled(true);
-        audioSettings.setTTSProvider('qwen-tts');
+        if (
+          !audioSettings.ttsProvidersConfig[audioSettings.ttsProviderId]?.isServerConfigured &&
+          !audioSettings.ttsProvidersConfig['qwen-tts']?.serverDisabled
+        ) {
+          audioSettings.setTTSProvider('qwen-tts');
+        }
       }
 
       const sessionState = {
@@ -905,16 +912,15 @@ function HomePage({
       if (!response.ok || data.success === false)
         throw new Error(data.error || '备课智能体响应失败');
       const plan = data.plan as TeacherOperationPlan | undefined;
-      if (
-        plan?.action?.type === 'create-lesson-files' &&
-        plan.action.populateContent
-      ) {
+      if (plan?.action?.type === 'create-lesson-files' && plan.action.populateContent) {
         sessionStorage.setItem(`teacher-plan:${plan.id}`, JSON.stringify(plan));
         window.parent.postMessage(
           { type: 'teacher-workbench-open-plan', courseId, plan },
           window.location.origin,
         );
-        router.push(`/course-space/${encodeURIComponent(courseId)}/prepare?draft=${encodeURIComponent(plan.id)}`);
+        router.push(
+          `/course-space/${encodeURIComponent(courseId)}/prepare?draft=${encodeURIComponent(plan.id)}`,
+        );
         setTeacherCommandResult('已创建备课计划，正在打开确认与审核页面。');
       } else if (plan?.action && plan.requiresConfirmation) {
         setPendingTeacherPlan(plan);
@@ -1226,7 +1232,10 @@ function HomePage({
             </div>
 
             <div className="px-4 pb-3">
-              <CourseDurationInput value={form.targetDuration} onChange={(value) => updateForm('targetDuration', value)} />
+              <CourseDurationInput
+                value={form.targetDuration}
+                onChange={(value) => updateForm('targetDuration', value)}
+              />
             </div>
             {/* Toolbar row */}
             <div className="px-3 pb-3 flex items-end gap-2">

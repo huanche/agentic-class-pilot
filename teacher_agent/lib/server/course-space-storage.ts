@@ -53,7 +53,12 @@ const ARTIFACTS_DIR = path.join(COURSE_SPACES_DIR, 'artifacts');
 const ARTIFACT_FILES_DIR = path.join(COURSE_SPACES_DIR, 'artifact-files');
 const KNOWLEDGE_DIR = path.join(COURSE_SPACES_DIR, 'knowledge-packages');
 
-const locks = new Map<string, Promise<void>>();
+// Next can load storage from separate route bundles; share locks within the
+// server process so a cancellation and a worker finish serialize together.
+const storageRuntime = globalThis as typeof globalThis & {
+  __courseSpaceLocks?: Map<string, Promise<void>>;
+};
+const locks = (storageRuntime.__courseSpaceLocks ??= new Map<string, Promise<void>>());
 
 async function withLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
   const previous = locks.get(key) ?? Promise.resolve();
@@ -268,7 +273,21 @@ export async function updateCourseJob(jobId: string, patch: Partial<CourseArtifa
   return withLock(`job:${jobId}`, async () => {
     const job = await readCourseJob(jobId);
     if (!job) throw new Error('Job not found');
+    // Cancellation is terminal: a late progress callback must not revive it.
+    if (job.status === 'cancelled') return job;
     return saveCourseJob({ ...job, ...patch, updatedAt: Date.now() });
+  });
+}
+
+/** Serialize the finish/cancel race under the same lock as progress updates. */
+export async function mutateCourseJob(
+  jobId: string,
+  mutate: (job: CourseArtifactJob) => Promise<CourseArtifactJob> | CourseArtifactJob,
+) {
+  return withLock(`job:${jobId}`, async () => {
+    const job = await readCourseJob(jobId);
+    if (!job) throw new Error('Job not found');
+    return saveCourseJob({ ...(await mutate(job)), updatedAt: Date.now() });
   });
 }
 
@@ -281,6 +300,7 @@ export async function updateCourseJobIfPresent(jobId: string, patch: Partial<Cou
   return withLock(`job:${jobId}`, async () => {
     const job = await readCourseJob(jobId);
     if (!job) return null;
+    if (job.status === 'cancelled') return job;
     return saveCourseJob({ ...job, ...patch, updatedAt: Date.now() });
   });
 }

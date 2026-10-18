@@ -396,10 +396,7 @@ function applyQwenImageFallback(
   const yamlEntry = yamlImageSection?.[QWEN_IMAGE_PROVIDER_ID];
   imageConfig[QWEN_IMAGE_PROVIDER_ID] = {
     apiKey,
-    baseUrl:
-      yamlEntry?.baseUrl ||
-      process.env.QWEN_BASE_URL ||
-      'https://dashscope.aliyuncs.com',
+    baseUrl: yamlEntry?.baseUrl || process.env.QWEN_BASE_URL || 'https://dashscope.aliyuncs.com',
     models: yamlEntry?.models || ['qwen-image-max'],
     proxy: yamlEntry?.proxy,
   };
@@ -633,6 +630,13 @@ export function resolveTTSModel(providerId: string, clientModel?: string): strin
   const entry = getConfig().tts[providerId];
   if (entry?.models && entry.models.length > 0) return entry.models[0];
   return clientModel;
+}
+
+/** Default voice for server jobs; explicit caller choices still take precedence. */
+export function resolveTTSVoice(providerId: string, clientVoice?: string): string | undefined {
+  if (clientVoice?.trim()) return clientVoice;
+  const prefix = Object.entries(TTS_ENV_MAP).find(([, id]) => id === providerId)?.[0];
+  return prefix ? process.env[`${prefix}_VOICE`]?.trim() || undefined : undefined;
 }
 
 // ---------------------------------------------------------------------------

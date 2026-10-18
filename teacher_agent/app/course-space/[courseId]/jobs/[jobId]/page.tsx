@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ArtifactHtmlReview } from '@/components/course-space/artifact-html-review';
 import type { CourseArtifactJob, CourseArtifactRecord } from '@/lib/course-space';
+import { COURSE_JOB_STATUS_LABELS } from '@/lib/generation/background-courseware';
 
 const labels: Record<string, string> = {
   'course-outline': '课程教学大纲',
@@ -25,6 +26,7 @@ export default function SingleCourseJobPage() {
   const [artifact, setArtifact] = useState<CourseArtifactRecord>();
   const [phase, setPhase] = useState<'generation' | 'review' | 'output'>('generation');
   const [message, setMessage] = useState('');
+  const [cancelling, setCancelling] = useState(false);
   const load = useCallback(async () => {
     try {
       const jobResponse = await fetch(`/api/course-space/jobs/${jobId}`, { cache: 'no-store' });
@@ -33,6 +35,7 @@ export default function SingleCourseJobPage() {
         throw new Error(jobData.error || '读取任务失败');
       const nextJob = jobData.job as CourseArtifactJob;
       setJob(nextJob);
+      setMessage('');
       if (nextJob.artifactId) {
         const courseResponse = await fetch(`/api/course-space/${courseId}`, { cache: 'no-store' });
         const courseData = await courseResponse.json();
@@ -60,6 +63,26 @@ export default function SingleCourseJobPage() {
     const timer = window.setInterval(() => void load(), 1800);
     return () => window.clearInterval(timer);
   }, [job, load]);
+  const cancel = async () => {
+    setCancelling(true);
+    try {
+      const response = await fetch(`/api/course-space/jobs/${jobId}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'cancel' }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || '取消失败');
+      setJob(data.job);
+      setMessage(
+        data.job.status === 'cancelled' ? '任务已取消，已完成的页面仍然保留。' : '任务已完成。',
+      );
+    } catch (reason) {
+      setMessage(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setCancelling(false);
+    }
+  };
   const review = async (action: 'save' | 'approve') => {
     if (!artifact) return;
     const response = await fetch(`/api/course-space/${courseId}/artifacts/${artifact.id}`, {
@@ -110,7 +133,10 @@ export default function SingleCourseJobPage() {
               >
                 {index < current ? (
                   <Check className="size-4" />
-                ) : index === current && phase === 'generation' ? (
+                ) : index === current &&
+                  phase === 'generation' &&
+                  job?.status !== 'failed' &&
+                  job?.status !== 'cancelled' ? (
                   <LoaderCircle className="size-4 animate-spin" />
                 ) : (
                   <span>{index + 1}</span>
@@ -129,28 +155,95 @@ export default function SingleCourseJobPage() {
           <div className="rounded-2xl border bg-white p-8 shadow-sm">
             <div className="mb-6 flex items-start justify-between">
               <div>
-                <h2 className="text-2xl font-semibold">正在生成单个教学产物</h2>
-                <p className="mt-2 text-muted-foreground">{job?.message || '正在创建任务…'}</p>
+                <h2 className="text-2xl font-semibold">
+                  {!job
+                    ? '正在读取任务'
+                    : job.status === 'cancelled'
+                      ? '任务已取消'
+                      : job?.status === 'failed'
+                        ? '生成已中断'
+                        : job?.backgroundGeneration
+                          ? '服务器正在生成完整课件'
+                          : '正在生成单个教学产物'}
+                </h2>
+                <p className="mt-2 text-muted-foreground">
+                  {job?.message || '正在读取已保存的进度…'}
+                </p>
+                {job?.backgroundGeneration && (
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    已完成 {job.backgroundGeneration.completedPages}/
+                    {job.backgroundGeneration.totalPages} 页。
+                    {['queued', 'running'].includes(job.status) &&
+                      '可以关闭页面或退出浏览器，回来后从“最近任务”查看进度。'}
+                  </p>
+                )}
               </div>
               <Sparkles className="size-8 text-violet-500" />
             </div>
-            <div className="h-3 overflow-hidden rounded-full bg-slate-100">
+            <div
+              className="h-3 overflow-hidden rounded-full bg-slate-100"
+              role="progressbar"
+              aria-label="课件生成进度"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={job?.progress || 0}
+            >
               <div
                 className="h-full rounded-full bg-gradient-to-r from-blue-500 to-violet-600 transition-all"
                 style={{ width: `${job?.progress || 0}%` }}
               />
             </div>
             <div className="mt-3 flex justify-between text-sm">
-              <span>{job?.status || 'queued'}</span>
+              <span>{job ? COURSE_JOB_STATUS_LABELS[job.status] : '读取中'}</span>
               <span>{job?.progress || 0}%</span>
             </div>
             {job?.error && (
               <div className="mt-5 rounded-lg bg-red-50 p-3 text-sm text-red-700">{job.error}</div>
             )}
+            {job?.backgroundGeneration && (
+              <div className="mt-6 flex flex-wrap gap-3">
+                {['queued', 'running'].includes(job.status) && (
+                  <Button variant="outline" disabled={cancelling} onClick={() => void cancel()}>
+                    {cancelling ? '正在取消…' : '取消未完成任务'}
+                  </Button>
+                )}
+                {job.backgroundGeneration.completedPages > 0 &&
+                  !['queued', 'running'].includes(job.status) && (
+                    <Button
+                      variant="outline"
+                      onClick={() =>
+                        router.push(`/classroom/${job.backgroundGeneration!.classroomId}`)
+                      }
+                    >
+                      查看已生成页面
+                    </Button>
+                  )}
+                <Button
+                  variant="ghost"
+                  onClick={() =>
+                    router.push(`/course-space?workspace=${encodeURIComponent(courseId)}`)
+                  }
+                >
+                  返回课程工作区
+                </Button>
+              </div>
+            )}
           </div>
         )}
         {phase === 'review' && artifact && (
           <div className="space-y-4">
+            {job?.backgroundGeneration && (
+              <div className="flex items-center justify-between rounded-xl border bg-white p-4">
+                <p className="text-sm">
+                  完整课件已生成，共 {job.backgroundGeneration.completedPages} 页。
+                </p>
+                <Button
+                  onClick={() => router.push(`/classroom/${job.backgroundGeneration!.classroomId}`)}
+                >
+                  打开课件并测试播放
+                </Button>
+              </div>
+            )}
             <div>
               <h2 className="text-2xl font-semibold">审核生成内容</h2>
               <p className="mt-1 text-sm text-muted-foreground">

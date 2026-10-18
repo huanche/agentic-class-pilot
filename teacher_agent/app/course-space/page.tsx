@@ -13,9 +13,18 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { CoursewareModeDialog } from '@/components/generation/courseware-mode-dialog';
-import { CourseDurationInput, courseDurationInputError } from '@/components/generation/course-duration-input';
+import {
+  CourseDurationInput,
+  courseDurationInputError,
+} from '@/components/generation/course-duration-input';
 import { resolveCourseMinutes } from '@/lib/generation/course-duration';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from '@/components/ui/dialog';
 import { CoursewareSourceDialog } from '@/components/course-space/courseware-source-dialog';
 import { CourseWorkspaceExplorer } from '@/components/course-space/course-workspace-explorer';
 import { CourseArtifactGallery } from '@/components/course-space/course-artifact-gallery';
@@ -112,7 +121,8 @@ export default function CourseSpacePage() {
   const [coursewareModeOpen, setCoursewareModeOpen] = useState(false);
   const [targetDuration, setTargetDuration] = useState('');
   const [pendingCourseware, setPendingCourseware] = useState<{
-    scope: CourseArtifactJob['scope']; instruction?: string;
+    scope: CourseArtifactJob['scope'];
+    instruction?: string;
   } | null>(null);
   const [coursewareSourceOpen, setCoursewareSourceOpen] = useState(false);
   const [workspacePanel, setWorkspacePanel] = useState<'generate' | 'artifacts'>('generate');
@@ -461,7 +471,12 @@ export default function CourseSpacePage() {
 
       const settings = useSettingsStore.getState();
       settings.setTTSEnabled(true);
-      settings.setTTSProvider('qwen-tts');
+      if (
+        !settings.ttsProvidersConfig[settings.ttsProviderId]?.isServerConfigured &&
+        !settings.ttsProvidersConfig['qwen-tts']?.serverDisabled
+      ) {
+        settings.setTTSProvider('qwen-tts');
+      }
       const profile = useUserProfileStore.getState();
       const target = scopeTitle();
       const requirement =
@@ -689,7 +704,7 @@ export default function CourseSpacePage() {
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => router.push(`/course-space/${selected.id}/jobs/${latestJob.id}`)}
+                    onClick={() => router.push(`/course-space/${selected.id}/jobs`)}
                   >
                     最近任务
                   </Button>
@@ -720,6 +735,7 @@ export default function CourseSpacePage() {
                 )}
               </div>
               <CourseProgressSummary
+                jobs={jobs}
                 course={selected}
                 artifacts={artifacts}
                 onFocus={(target) => setStatusFocus({ ...target, nonce: Date.now() })}
@@ -864,24 +880,40 @@ export default function CourseSpacePage() {
             : undefined
         }
       />
-      <Dialog open={Boolean(pendingCourseware)} onOpenChange={(open) => { if (!open) setPendingCourseware(null); }}>
+      <Dialog
+        open={Boolean(pendingCourseware)}
+        onOpenChange={(open) => {
+          if (!open) setPendingCourseware(null);
+        }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>设置课件播放时长</DialogTitle>
-            <DialogDescription>根据课程难易程度选择讲解时长，确认后生成审阅大纲。</DialogDescription>
+            <DialogDescription>
+              根据课程难易程度选择讲解时长，确认后生成审阅大纲。
+            </DialogDescription>
           </DialogHeader>
           <CourseDurationInput value={targetDuration} onChange={setTargetDuration} />
-          <Button disabled={launchingCourseware || Boolean(courseDurationInputError(targetDuration))}
+          <Button
+            disabled={launchingCourseware || Boolean(courseDurationInputError(targetDuration))}
             onClick={async () => {
               if (!pendingCourseware) return;
               setLaunchingCourseware(true);
               try {
-                await launchChatCoursewareFlow(pendingCourseware.scope, pendingCourseware.instruction);
+                await launchChatCoursewareFlow(
+                  pendingCourseware.scope,
+                  pendingCourseware.instruction,
+                );
                 setPendingCourseware(null);
               } catch (error) {
                 setMessage(error instanceof Error ? error.message : String(error));
-              } finally { setLaunchingCourseware(false); }
-            }}>生成课件大纲</Button>
+              } finally {
+                setLaunchingCourseware(false);
+              }
+            }}
+          >
+            生成课件大纲
+          </Button>
         </DialogContent>
       </Dialog>
     </main>

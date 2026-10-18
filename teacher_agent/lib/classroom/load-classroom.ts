@@ -88,7 +88,9 @@ function mergeServerGeneration(existing: AppDocument, payload: ClassroomPayload)
   const remotePlan = payload.stage.generationPlan;
   const outlines = outline?.outlines.length ? outline.outlines : remotePlan?.outlines;
   const complete = Boolean(remotePlan?.complete && outlines?.every((o) => orders.has(o.order)));
-  const generationPlan = outlines?.length ? { version: 1 as const, outlines, complete } : undefined;
+  const generationPlan = outlines?.length
+    ? { ...stage.generationPlan, ...remotePlan, version: 1 as const, outlines, complete }
+    : undefined;
   const planChanged =
     generationPlan && JSON.stringify(generationPlan) !== JSON.stringify(stage.generationPlan);
   const localChanges =

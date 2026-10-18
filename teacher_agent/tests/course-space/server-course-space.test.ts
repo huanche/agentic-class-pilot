@@ -20,9 +20,62 @@ afterEach(async () => {
 });
 
 describe('server course space', () => {
+  it('keeps cancellation terminal when a late worker progress update arrives', async () => {
+    const storage = await import('@/lib/server/course-space-storage');
+    await storage.saveCourseJob({
+      id: 'cancellation-test',
+      courseId: 'course',
+      teacherId: 'teacher',
+      scope: { type: 'course' },
+      artifactType: 'lesson-courseware',
+      status: 'running',
+      progress: 30,
+      message: 'generating',
+      createdAt: 1,
+      updatedAt: 1,
+    });
+    await storage.mutateCourseJob('cancellation-test', (job) => ({ ...job, status: 'cancelled' }));
+    const late = await storage.updateCourseJob('cancellation-test', {
+      status: 'review',
+      progress: 100,
+    });
+    expect(late.status).toBe('cancelled');
+    expect(late.progress).toBe(30);
+    expect((await storage.readCourseJob('cancellation-test'))?.status).toBe('cancelled');
+  });
+
+  it('serializes cancellation with a finish operation instead of publishing after cancellation wins', async () => {
+    const storage = await import('@/lib/server/course-space-storage');
+    await storage.saveCourseJob({
+      id: 'finish-race-test',
+      courseId: 'course',
+      teacherId: 'teacher',
+      scope: { type: 'course' },
+      artifactType: 'lesson-courseware',
+      status: 'running',
+      progress: 98,
+      message: 'saving',
+      createdAt: 1,
+      updatedAt: 1,
+    });
+    const publish = vi.fn();
+    await Promise.all([
+      storage.mutateCourseJob('finish-race-test', (job) => ({ ...job, status: 'cancelled' })),
+      storage.mutateCourseJob('finish-race-test', async (job) => {
+        if (job.status === 'cancelled') return job;
+        await publish();
+        return { ...job, status: 'review' };
+      }),
+    ]);
+    expect(publish).not.toHaveBeenCalled();
+    expect((await storage.readCourseJob('finish-race-test'))?.status).toBe('cancelled');
+  });
   it('persists courses and source materials with a SHA-256 fingerprint', async () => {
     const storage = await import('@/lib/server/course-space-storage');
-    const course = await storage.createServerCourse({ teacherId: 'teacher-a', title: '信号与系统' });
+    const course = await storage.createServerCourse({
+      teacherId: 'teacher-a',
+      title: '信号与系统',
+    });
     const material = await storage.storeCourseMaterial({
       courseId: course.id,
       teacherId: course.teacherId,
@@ -33,7 +86,9 @@ describe('server course space', () => {
     const restored = await storage.readServerCourse(course.id);
     expect(restored?.materials[0].id).toBe(material.id);
     expect(material.sha256).toMatch(/^[a-f0-9]{64}$/);
-    expect(await readFile(path.join(testDir, 'materials', material.id, 'source.txt'), 'utf8')).toBe('page one');
+    expect(await readFile(path.join(testDir, 'materials', material.id, 'source.txt'), 'utf8')).toBe(
+      'page one',
+    );
   });
 
   it('keeps extractor page numbers and formula text in knowledge chunks', () => {
@@ -67,7 +122,10 @@ describe('server course space', () => {
     const zip = new JSZip();
     zip.file('ppt/slides/slide1.xml', '<p:sld><a:t>课程标题</a:t><a:t>第一知识点</a:t></p:sld>');
     zip.file('ppt/slides/slide2.xml', '<p:sld><a:t>第二页</a:t><a:t>P=UI</a:t></p:sld>');
-    const parsed = await extractPptxText(Buffer.from(await zip.generateAsync({ type: 'uint8array' })), 'demo.pptx');
+    const parsed = await extractPptxText(
+      Buffer.from(await zip.generateAsync({ type: 'uint8array' })),
+      'demo.pptx',
+    );
     expect(parsed.metadata?.pageCount).toBe(2);
     expect(parsed.layout?.find((item) => item.page === 2)?.content).toBe('第二页');
     expect(parsed.text).toContain('第一知识点');

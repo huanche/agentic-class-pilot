@@ -989,7 +989,7 @@ export const TTS_PROVIDERS: Record<BuiltInTTSProviderId, TTSProviderConfig> = {
       { id: 'zf_xiaobei', name: '晓贝', language: 'zh-CN', gender: 'female' },
       { id: 'zf_xiaoni', name: '晓妮', language: 'zh-CN', gender: 'female' },
       { id: 'zf_xiaoxiao', name: '晓晓', language: 'zh-CN', gender: 'female' },
-      { id: 'zf_xiaoyi', name: '晓伊', language: 'zh-CN', gender: 'female' },
+      { id: 'zf_xiaoyi', name: '小伊', language: 'zh-CN', gender: 'female' },
       // Mandarin Chinese — male
       { id: 'zm_yunjian', name: '云健', language: 'zh-CN', gender: 'male' },
       { id: 'zm_yunxi', name: '云希', language: 'zh-CN', gender: 'male' },
@@ -1299,7 +1299,7 @@ export const DEFAULT_TTS_VOICES: Record<BuiltInTTSProviderId, string> = {
   'doubao-tts': 'zh_female_vv_uranus_bigtts',
   'elevenlabs-tts': 'EXAVITQu4vr4xnSDxMaL',
   'minimax-tts': 'female-yujie',
-  'lemonade-tts': 'af_heart',
+  'lemonade-tts': 'zf_xiaoyi',
   'browser-native-tts': 'default',
 };
 

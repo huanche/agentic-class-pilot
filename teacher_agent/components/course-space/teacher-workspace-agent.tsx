@@ -445,7 +445,7 @@ export function TeacherWorkspaceAgent({
                     onClick={() => {
                       if (activeServerJob)
                         router.push(`/course-space/${course.id}/jobs/${activeServerJob.id}`);
-                      else if (task?.status === 'completed' && task.url) router.push(task.url);
+                      else if (task?.url) router.push(task.url);
                       else router.push('/generation-preview');
                     }}
                     className="w-full min-w-0 rounded-xl border border-[#B00055]/20 bg-[#fff8fb] px-3 py-2 text-left"

@@ -84,10 +84,10 @@ import {
   initializeCourseGovernance,
   recordAutomaticFallback,
 } from '@/lib/course-governance/governance';
-import {
-  getOutlineDurationSeconds,
-} from '@/lib/playback/timing-display';
+import { getOutlineDurationSeconds } from '@/lib/playback/timing-display';
 import { planCourseDuration, resolveCourseMinutes } from '@/lib/generation/course-duration';
+import { prepareBackgroundInput } from '@/lib/generation/prepare-background-input';
+import type { CourseArtifactJob } from '@/lib/course-space/types';
 
 const log = createLogger('GenerationPreview');
 const OUTLINE_REVIEW_AUTO_CONTINUE_MS = 2500;
@@ -394,7 +394,13 @@ function GenerationPreviewContent() {
     if (isCoursewareConversion) {
       const audioSettings = useSettingsStore.getState();
       audioSettings.setTTSEnabled(true);
-      audioSettings.setTTSProvider('qwen-tts');
+      // Retain an available managed provider, including project-local Kokoro.
+      if (
+        !audioSettings.ttsProvidersConfig[audioSettings.ttsProviderId]?.isServerConfigured &&
+        !audioSettings.ttsProvidersConfig['qwen-tts']?.serverDisabled
+      ) {
+        audioSettings.setTTSProvider('qwen-tts');
+      }
     }
 
     // Create AbortController for this generation run
@@ -835,7 +841,10 @@ function GenerationPreviewContent() {
         outlines = currentSession.pptContentDraft
           ? bindPptOutlinesToReviewedPages(outlineResult.outlines, currentSession.pptContentDraft)
           : outlineResult.outlines;
-        outlines = planCourseDuration(outlines, resolveCourseMinutes(currentSession.requirements.targetDurationMinutes));
+        outlines = planCourseDuration(
+          outlines,
+          resolveCourseMinutes(currentSession.requirements.targetDurationMinutes),
+        );
         languageDirective = outlineResult.languageDirective;
         courseTitle = outlineResult.courseTitle;
         const effectiveTaskEngineMode = outlineResult.taskEngineMode;
@@ -1132,7 +1141,9 @@ function GenerationPreviewContent() {
 
       // Store stage and outlines
       const store = useStageStore.getState();
-      const targetDurationMinutes = resolveCourseMinutes(currentSession.requirements.targetDurationMinutes);
+      const targetDurationMinutes = resolveCourseMinutes(
+        currentSession.requirements.targetDurationMinutes,
+      );
       outlines = planCourseDuration(outlines, targetDurationMinutes);
       stage.timing = {
         targetDurationMinutes,
@@ -1159,6 +1170,70 @@ function GenerationPreviewContent() {
         currentSession.requirements.userNickname || currentSession.requirements.userBio
           ? `Student: ${currentSession.requirements.userNickname || 'Unknown'}${currentSession.requirements.userBio ? ` — ${currentSession.requirements.userBio}` : ''}`
           : undefined;
+
+      if (currentSession.courseSpaceContext) {
+        setStatusMessage('正在将完整生成计划与素材提交到服务器…');
+        const input = await prepareBackgroundInput({
+          sessionId: currentSession.sessionId,
+          stage,
+          outlines,
+          requirements: currentSession.requirements,
+          agents,
+          pdfImages: currentSession.pdfImages,
+          imageMapping,
+          importedSlides: importedSlides ?? undefined,
+          preferImportedCanvas: usesImportedPptCanvas,
+          narrationScripts,
+          formulaEnhancedOrders,
+          enableTTS: settings.ttsEnabled,
+          ttsVoice: {
+            providerId: settings.ttsProviderId,
+            voice: settings.ttsVoice,
+          },
+          enableMedia: Boolean(settings.imageGenerationEnabled || settings.videoGenerationEnabled),
+          enableImageGeneration: settings.imageGenerationEnabled,
+          enableVideoGeneration: settings.videoGenerationEnabled,
+        });
+        signal.throwIfAborted();
+        const headers: Record<string, string> = { 'content-type': 'application/json' };
+        if (!preferServerModel) {
+          const model = getCurrentModelConfig();
+          headers['x-model'] = model.modelString;
+          if (model.apiKey) headers['x-api-key'] = model.apiKey;
+          if (model.baseUrl) headers['x-base-url'] = model.baseUrl;
+          if (model.providerType) headers['x-provider-type'] = model.providerType;
+        }
+        const response = await fetch(
+          `/api/course-space/${currentSession.courseSpaceContext.courseId}/courseware-jobs`,
+          {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ input, scope: currentSession.courseSpaceContext.scope }),
+            signal,
+          },
+        );
+        const result = (await response.json()) as {
+          job: CourseArtifactJob;
+          url: string;
+          error?: string;
+        };
+        if (!response.ok) throw new Error(result.error || '提交后台任务失败');
+        taskFinishedRef.current = true;
+        sessionStorage.removeItem('generationSession');
+        useCourseGenerationTask.getState().setTask({
+          id: result.job.id,
+          serverJobId: result.job.id,
+          courseId: result.job.courseId,
+          title: stage.name,
+          status: 'running',
+          message: result.job.message,
+          step: result.job.backgroundGeneration?.completedPages ?? 0,
+          total: outlines.length,
+          url: result.url,
+        });
+        if (visibleRef.current) router.push(result.url);
+        return;
+      }
 
       // Generate ONLY the first scene
       store.setGeneratingOutlines(outlines);
@@ -1221,17 +1296,17 @@ function GenerationPreviewContent() {
         setCurrentStepIndex(actionsStepIdx >= 0 ? actionsStepIdx : currentStepIndex + 1);
 
         firstActionsContext = {
-            outline: contentData.effectiveOutline || firstOutline,
-            allOutlines: outlines,
-            content: contentData.content,
-            stageId: stage.id,
-            agents,
-            previousSpeeches: [],
-            userProfile,
-            languageDirective,
-            preferServerModel,
-            narrationScript: narrationScripts[firstOutline.order - 1],
-          };
+          outline: contentData.effectiveOutline || firstOutline,
+          allOutlines: outlines,
+          content: contentData.content,
+          stageId: stage.id,
+          agents,
+          previousSpeeches: [],
+          userProfile,
+          languageDirective,
+          preferServerModel,
+          narrationScript: narrationScripts[firstOutline.order - 1],
+        };
         const data = await fetchSceneActions(
           firstActionsContext,
           signal,
@@ -1369,14 +1444,12 @@ function GenerationPreviewContent() {
       taskFinishedRef.current = true;
       const tracked = useCourseGenerationTask.getState().task;
       if (tracked?.id === currentSession.sessionId)
-        useCourseGenerationTask
-          .getState()
-          .setTask({
-            ...tracked,
-            status: 'completed',
-            message: '生成完成，已保存到课程文件夹',
-            url: `/classroom/${stage.id}`,
-          });
+        useCourseGenerationTask.getState().setTask({
+          ...tracked,
+          status: 'completed',
+          message: '生成完成，已保存到课程文件夹',
+          url: `/classroom/${stage.id}`,
+        });
       sessionStorage.removeItem('generationSession');
       if (visibleRef.current) router.push(`/classroom/${stage.id}`);
     } catch (err) {
@@ -1496,7 +1569,10 @@ function GenerationPreviewContent() {
     if (isOutlineStreaming) return;
     updatePersistedSession((currentSession) => ({
       ...currentSession,
-      sceneOutlines: planCourseDuration(outlines, resolveCourseMinutes(currentSession.requirements.targetDurationMinutes)),
+      sceneOutlines: planCourseDuration(
+        outlines,
+        resolveCourseMinutes(currentSession.requirements.targetDurationMinutes),
+      ),
       previewPhase: 'review',
     }));
   };
