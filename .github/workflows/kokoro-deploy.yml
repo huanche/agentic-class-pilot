@@ -48,8 +48,12 @@ jobs:
         if: github.event_name == 'pull_request'
         run: |
           set -euo pipefail
-          docker run -d --name kokoro-ci --cpus=1 --memory=1024m --memory-swap=1024m \
-            --read-only --tmpfs /runtime:rw,nosuid,size=64m,mode=1777 \
+          runtime="$RUNNER_TEMP/kokoro-ci-runtime"
+          mkdir -p "$runtime"
+          docker run -d --name kokoro-ci --cpus=1 --memory=1024m --memory-swap=1024m --pids-limit=128 \
+            --user "$(id -u):$(id -g)" \
+            --read-only --tmpfs /tmp:rw,noexec,nosuid,size=64m \
+            -v "$runtime:/runtime" \
             -p 127.0.0.1:13305:13305 "$IMAGE:$KOKORO_TAG"
           trap 'docker logs --tail 15 kokoro-ci; docker rm -f kokoro-ci >/dev/null' EXIT
           ready=0
@@ -59,15 +63,19 @@ jobs:
           done
           [ "$ready" = 1 ]
           python3 - <<'PY'
-          import io, json, urllib.request, wave
-          data=json.dumps({'input':'你好，我是小伊，这是容器的中文配音测试。','response_format':'wav'},ensure_ascii=False).encode()
-          request=urllib.request.Request('http://127.0.0.1:13305/v1/audio/speech',data=data,headers={'Content-Type':'application/json'})
-          with urllib.request.urlopen(request,timeout=90) as response:
-              assert response.headers.get('X-Voice') == 'zf_xiaoyi'
-              audio=response.read()
-          with wave.open(io.BytesIO(audio)) as stream:
-              assert stream.getnframes() > stream.getframerate()
-          print('CPU image produced valid Xiaoyi WAV audio within 1 CPU / 1 GiB.')
+          import io, json, pathlib, subprocess, urllib.request, wave
+          long=pathlib.Path('teacher_agent/devtools/kokoro-local/narration-smoke.txt').read_text().strip()
+          for text,minimum in [('你好，我是小伊，这是容器的中文配音测试。',1),(long,30)]:
+              data=json.dumps({'input':text,'response_format':'wav'},ensure_ascii=False).encode()
+              request=urllib.request.Request('http://127.0.0.1:13305/v1/audio/speech',data=data,headers={'Content-Type':'application/json'})
+              with urllib.request.urlopen(request,timeout=120) as response:
+                  assert response.headers.get('X-Voice') == 'zf_xiaoyi'
+                  audio=response.read()
+              with wave.open(io.BytesIO(audio)) as stream:
+                  assert stream.getnframes()/stream.getframerate() > minimum
+          restarts=subprocess.check_output(['docker','inspect','kokoro-ci','--format','{{.RestartCount}}'],text=True).strip()
+          assert restarts == '0'
+          print('CPU image produced complete short and 306-character Xiaoyi WAVs within 1 CPU / 1 GiB.')
           PY
   deploy:
     if: github.event_name == 'workflow_dispatch'

@@ -11,7 +11,7 @@ RUN pip install --disable-pip-version-check -r requirements.txt
 COPY download_models.py ./
 RUN python download_models.py --root /opt/kokoro \
     && python -c "import urllib.request; urllib.request.urlretrieve('https://www.apache.org/licenses/LICENSE-2.0.txt', '/opt/kokoro/MODEL-LICENSE.txt')"
-COPY server.py listen.html MODEL-NOTICE.txt ./
+COPY server.py listen.html MODEL-NOTICE.txt narration-smoke.txt ./
 RUN mkdir -p /runtime && chown 10001:10001 /runtime
 USER 10001:10001
 EXPOSE 13305
