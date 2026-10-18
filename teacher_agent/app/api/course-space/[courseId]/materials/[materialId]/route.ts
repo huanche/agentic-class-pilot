@@ -8,7 +8,45 @@ import {
   readCourseMaterialBytes,
   readServerCourse,
   updateServerCourse,
+  storeCourseMaterial,
+  CourseMaterialReplacementConflict,
 } from '@/lib/server/course-space-storage';
+
+export async function PUT(
+  req: NextRequest,
+  context: { params: Promise<{ courseId: string; materialId: string }> },
+) {
+  const { courseId, materialId } = await context.params;
+  const course = await readServerCourse(courseId);
+  const previous = course?.materials.find((item) => item.id === materialId);
+  if (!course || !previous) return apiError('INVALID_REQUEST', 404, '课程材料不存在');
+  if (previous.classPublicationId)
+    return apiError('INVALID_REQUEST', 409, '请先取消发布，再替换源文件');
+  if (previous.status === 'parsing')
+    return apiError('INVALID_REQUEST', 409, '材料正在解析，请完成后再替换');
+  const form = await req.formData().catch(() => null);
+  const file = form?.get('file');
+  if (!(file instanceof File) || file.size === 0)
+    return apiError('INVALID_REQUEST', 400, '请选择非空文件');
+  if (file.size > 80 * 1024 * 1024)
+    return apiError('INVALID_REQUEST', 413, '课程材料不能超过 80MB');
+  try {
+    const material = await storeCourseMaterial({
+      replaceMaterialId: materialId,
+      courseId: course.id,
+      teacherId: course.teacherId,
+      purpose: previous.purpose,
+      fileName: file.name,
+      mimeType: file.type || 'application/octet-stream',
+      bytes: Buffer.from(await file.arrayBuffer()),
+    });
+    return apiSuccess({ material });
+  } catch (error) {
+    if (error instanceof CourseMaterialReplacementConflict)
+      return apiError('INVALID_REQUEST', 409, error.message);
+    throw error;
+  }
+}
 
 export async function GET(
   _req: NextRequest,

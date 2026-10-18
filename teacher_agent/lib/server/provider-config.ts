@@ -9,6 +9,7 @@ import fs from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
 import { createLogger } from '@/lib/logger';
+import { ttsConcurrency } from '@/lib/audio/tts-concurrency';
 
 const log = createLogger('ServerProviderConfig');
 
@@ -798,4 +799,15 @@ export function getParallelSceneConcurrency(): number {
   const raw = Number.parseInt(process.env.PARALLEL_SCENE_CONCURRENCY ?? '', 10);
   if (!Number.isFinite(raw) || raw <= 0) return 0;
   return Math.min(raw, 10);
+}
+
+/** TTS has its own provider quota, independent of scene-model concurrency. */
+export function getParallelTtsConcurrency(): number {
+  const explicit = process.env.PARALLEL_TTS_CONCURRENCY?.trim();
+  if (explicit) return ttsConcurrency(explicit);
+  // Preserve deployments that used the original shared switch, including serial rollback.
+  if (process.env.PARALLEL_SCENE_CONCURRENCY?.trim()) {
+    return ttsConcurrency(getParallelSceneConcurrency());
+  }
+  return ttsConcurrency(undefined);
 }

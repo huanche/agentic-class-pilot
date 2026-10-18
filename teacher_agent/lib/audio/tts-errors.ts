@@ -29,3 +29,21 @@ export function throwIfQwenAccountUnavailable(code: unknown, status?: number): v
   if (status === 401 || code === 'InvalidApiKey' || code === 'InvalidApiKey.Format')
     throw new TTSProviderAccountError(403);
 }
+
+/** Classify permanent errors from providers that still return untyped errors. */
+export function classifyTTSAccountError(error: unknown): TTSProviderAccountError | undefined {
+  if (isTTSProviderAccountError(error)) return error;
+  const message = error instanceof Error ? error.message : String(error);
+  if (
+    /\bArrearage\b|\binsufficient_quota\b|\bPaymentRequired\b|overdue.payment|余额不足|欠费/i.test(
+      message,
+    )
+  ) {
+    return new TTSProviderAccountError(402);
+  }
+  if (
+    /\bInvalidApiKey\b|\bInvalidAccessKeyId\b|\bAccessDenied\b|\bAccountDisabled\b/i.test(message)
+  ) {
+    return new TTSProviderAccountError(403);
+  }
+}

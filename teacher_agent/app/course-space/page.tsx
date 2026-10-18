@@ -1,7 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { usePathname, useRouter } from 'next/navigation';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { nanoid } from 'nanoid';
 import {
   ArrowLeft,
@@ -101,7 +101,24 @@ function buildLegacyPptDraft(extraction: CourseMaterialExtraction): PptContentDr
   };
 }
 
+function CourseSpaceRoute() {
+  const workspaceCourseId = useSearchParams().get('workspace');
+  return workspaceCourseId ? (
+    <CourseWorkspace key={workspaceCourseId} workspaceCourseId={workspaceCourseId} />
+  ) : (
+    <CourseCenter />
+  );
+}
+
 export default function CourseSpacePage() {
+  return (
+    <Suspense fallback={<main className="p-8">正在打开课程中心…</main>}>
+      <CourseSpaceRoute />
+    </Suspense>
+  );
+}
+
+function CourseWorkspace({ workspaceCourseId }: { workspaceCourseId: string }) {
   const router = useRouter();
   const pathname = usePathname();
   const isTeacherV11 = pathname.startsWith('/teacher-workspace');
@@ -129,7 +146,6 @@ export default function CourseSpacePage() {
   const [coursewareMaterialId, setCoursewareMaterialId] = useState('');
   const [launchingCourseware, setLaunchingCourseware] = useState(false);
   const [publishingCourse, setPublishingCourse] = useState(false);
-  const [workspaceCourseId, setWorkspaceCourseId] = useState<string | null | undefined>();
   const [courseAreaHeight, setCourseAreaHeight] = useState(790);
   const [statusFocus, setStatusFocus] = useState<CourseStatusTarget & { nonce: number }>();
   const [workbenchHeight, setWorkbenchHeight] = useState(500);
@@ -214,12 +230,15 @@ export default function CourseSpacePage() {
   );
 
   useEffect(() => {
-    const requestedCourseId = new URLSearchParams(window.location.search).get('workspace');
-    setWorkspaceCourseId(requestedCourseId);
-    if (!requestedCourseId) return;
-    const timer = window.setTimeout(() => void refresh(requestedCourseId), 0);
+    const timer = window.setTimeout(
+      () =>
+        void refresh(workspaceCourseId).catch((error) =>
+          setMessage(error instanceof Error ? error.message : String(error)),
+        ),
+      0,
+    );
     return () => window.clearTimeout(timer);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [workspaceCourseId]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     const active =
       selected?.materials.some((item) => item.status === 'parsing') ||
@@ -634,14 +653,6 @@ export default function CourseSpacePage() {
       setMessage(error instanceof Error ? error.message : String(error));
     }
   };
-
-  if (workspaceCourseId === undefined)
-    return (
-      <main className="flex min-h-screen items-center justify-center bg-slate-50 text-muted-foreground">
-        正在打开课程中心…
-      </main>
-    );
-  if (workspaceCourseId === null) return <CourseCenter />;
 
   return (
     <main className="relative min-h-screen overflow-hidden bg-[radial-gradient(circle_at_28%_8%,rgba(59,130,246,0.10),transparent_28%),radial-gradient(circle_at_72%_88%,rgba(176,0,85,0.08),transparent_30%),linear-gradient(to_bottom,#f8fafc,#f3f6fa)] text-slate-900">

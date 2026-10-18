@@ -2,6 +2,8 @@
 # Swap the production teacher container to a new image tag, with health check
 # and automatic rollback. Invoked by CI (.github/workflows/teacher-deploy.yml)
 # over SSH; can also be run manually on the server after `docker login`.
+# After a successful swap it also prunes old main-* tags, keeping the deployed
+# image plus one rollback slot so the disk stays flat across deploys.
 #
 # Usage: server-deploy-teacher.sh <image> <tag>
 #   e.g. server-deploy-teacher.sh zmzm1443/agentic-teacher main-ceb00dd
@@ -60,6 +62,24 @@ if wait_healthy; then
   fi
   # Reclaim layers orphaned by the swap; tagged rollback images are untouched.
   docker image prune -f >/dev/null 2>&1 || true
+
+  # Prune old deploy tags so disk usage stays flat across deploys: keep the
+  # image just deployed and one rollback slot ($PREV when distinct); delete
+  # every other main-* tag (they stay re-pullable from Docker Hub). The
+  # running image is skipped explicitly and plain `docker rmi` also refuses
+  # in-use images, so this cannot take down the live container. Best-effort:
+  # a cleanup failure must never fail a successful deploy.
+  KEEP_PREV="${PREV#"$IMAGE":}"
+  RUNNING_ID="$(docker inspect "$CONTAINER" --format '{{.Image}}' 2>/dev/null || true)"
+  echo "[cleanup] pruning old '$IMAGE:main-*' tags (keeping $TAG${KEEP_PREV:+ and $KEEP_PREV})"
+  docker images "$IMAGE" --format '{{.Tag}} {{.ID}}' | grep -E '^main-[0-9a-f]+' \
+    | while read -r t id; do
+        [ "$t" = "$TAG" ] && continue
+        [ -n "$KEEP_PREV" ] && [ "$t" = "$KEEP_PREV" ] && continue
+        [[ "$RUNNING_ID" == sha256:"$id"* ]] && continue
+        echo "[cleanup] docker rmi $IMAGE:$t"
+        docker rmi "$IMAGE:$t" >/dev/null 2>&1 || true
+      done || true
   exit 0
 fi
 

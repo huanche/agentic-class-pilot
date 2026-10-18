@@ -1,6 +1,8 @@
 'use client';
 
-import { useId, useState } from 'react';
+import { useId, useState, type ReactNode } from 'react';
+import { FolderInput, FolderOpen, Pencil, Pin, PinOff, Send, Trash2, Undo2 } from 'lucide-react';
+import { WorkspaceItemMenu, type WorkspaceMenuAction } from './workspace-item-menu';
 import { Button } from '@/components/ui/button';
 import type { CourseSpace } from '@/lib/course-space/types';
 import {
@@ -35,9 +37,14 @@ export function ResourceActions({
   course,
   onMoved,
   onPublish,
+  presentation = 'buttons',
+  pinned = false,
+  children,
+  onEdit,
+  onReveal,
 }: {
   courseId: string;
-  kind: 'artifacts' | 'materials' | 'lesson-files';
+  kind: 'artifacts' | 'materials' | 'lesson-files' | 'modules' | 'lessons';
   id: string;
   title: string;
   published: boolean;
@@ -46,14 +53,43 @@ export function ResourceActions({
   onDeleted?: () => void | Promise<void>;
   course?: CourseSpace;
   onMoved?: (lessonId: string) => void | Promise<void>;
-  onPublish: () => void;
+  onPublish?: () => void;
+  presentation?: 'buttons' | 'menu';
+  pinned?: boolean;
+  children?: ReactNode;
+  onEdit?: () => void;
+  onReveal?: () => void;
 }) {
+  const isFolder = kind === 'modules' || kind === 'lessons';
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [pendingAction, setPendingAction] = useState<'delete' | 'publication' | null>(null);
   const [moveOpen, setMoveOpen] = useState(false);
   const [targetLessonId, setTargetLessonId] = useState('');
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [newTitle, setNewTitle] = useState(title);
+  const renameInputId = useId();
   const targetSelectId = useId();
+  const updateMetadata = async (patch: { title?: string; pinned?: boolean }) => {
+    if (busy) return;
+    setBusy(true);
+    setError('');
+    try {
+      const response = await fetch(`/api/course-space/${encodeURIComponent(courseId)}/management`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ kind, id, ...patch }),
+      });
+      const result = await response.json();
+      if (!response.ok || result.success === false) throw new Error(result.error || '保存失败');
+      await onChange();
+      setRenameOpen(false);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setBusy(false);
+    }
+  };
   const lessons =
     course?.modules.flatMap((module) =>
       module.lessons.map((lesson) => ({
@@ -91,7 +127,9 @@ export function ResourceActions({
   const action = pendingAction === 'delete' ? '删除' : published ? '取消发布' : '发布到班级';
   const consequence =
     pendingAction === 'delete'
-      ? '删除后将从课程和班级资料中移除，此操作无法撤销。'
+      ? isFolder
+        ? '删除文件夹会同时移除其中的课时文件和生成产物，原始材料库记录保留。已有发布文件的目录不能删除。此操作无法撤销。'
+        : '删除后将从课程和班级资料中移除，此操作无法撤销。'
       : published
         ? '取消后学生将无法继续打开此资源，教师仍可编辑并重新发布。'
         : '发布后本课程学生可见。';
@@ -101,28 +139,37 @@ export function ResourceActions({
     setError('');
     try {
       const response = await fetch(
-        `/api/course-space/${encodeURIComponent(courseId)}/${kind}/${encodeURIComponent(id)}`,
+        isFolder
+          ? `/api/course-space/${encodeURIComponent(courseId)}/tree`
+          : `/api/course-space/${encodeURIComponent(courseId)}/${kind}/${encodeURIComponent(id)}`,
         {
-          method: remove ? 'DELETE' : 'PATCH',
+          method: isFolder ? 'POST' : remove ? 'DELETE' : 'PATCH',
           headers: { 'content-type': 'application/json' },
-          ...(!remove
+          ...(isFolder
             ? {
-                body: JSON.stringify(
-                  kind === 'materials'
-                    ? { active: !published }
-                    : {
-                        action:
-                          kind === 'artifacts'
-                            ? published
-                              ? 'deactivate'
-                              : 'activate'
-                            : published
-                              ? 'unpublish'
-                              : 'publish',
-                      },
-                ),
+                body: JSON.stringify({
+                  action: kind === 'modules' ? 'delete-module' : 'delete-lesson',
+                  [kind === 'modules' ? 'moduleId' : 'lessonId']: id,
+                }),
               }
-            : {}),
+            : !remove
+              ? {
+                  body: JSON.stringify(
+                    kind === 'materials'
+                      ? { active: !published }
+                      : {
+                          action:
+                            kind === 'artifacts'
+                              ? published
+                                ? 'deactivate'
+                                : 'activate'
+                              : published
+                                ? 'unpublish'
+                                : 'publish',
+                        },
+                  ),
+                }
+              : {}),
         },
       );
       const result = await response.json();
@@ -130,46 +177,129 @@ export function ResourceActions({
         throw new Error(result.error || `${action}失败`);
       if (remove && onDeleted) await onDeleted();
       else await onChange();
+      setPendingAction(null);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
       setBusy(false);
     }
   };
+  const actions: WorkspaceMenuAction[] = [
+    {
+      label: '重命名',
+      icon: <Pencil />,
+      disabled: busy,
+      onSelect: () => {
+        setNewTitle(title);
+        setError('');
+        setRenameOpen(true);
+      },
+    },
+    {
+      label: pinned ? '取消置顶' : '置顶',
+      icon: pinned ? <PinOff /> : <Pin />,
+      disabled: busy,
+      onSelect: () => void updateMetadata({ pinned: !pinned }),
+    },
+    ...(onEdit
+      ? [
+          {
+            label: published ? '编辑（请先取消发布）' : isFolder ? '编辑文件夹' : '编辑',
+            icon: <Pencil />,
+            onSelect: onEdit,
+            movesFocus: true,
+            disabled: busy || published,
+          },
+        ]
+      : []),
+    ...(onReveal
+      ? [{ label: '打开文件位置', icon: <FolderOpen />, onSelect: onReveal, movesFocus: true }]
+      : []),
+    ...(!isFolder && course
+      ? [
+          {
+            label: '移动到…',
+            icon: <FolderInput />,
+            disabled: busy,
+            separator: true,
+            onSelect: () => {
+              setError('');
+              setTargetLessonId('');
+              setMoveOpen(true);
+            },
+          },
+        ]
+      : []),
+    ...(!isFolder
+      ? [
+          {
+            label: published ? '取消发布' : '发布到班级',
+            icon: published ? <Undo2 /> : <Send />,
+            disabled: busy || (!published && !courseActive),
+            onSelect: () => (published ? setPendingAction('publication') : onPublish?.()),
+          },
+        ]
+      : []),
+    {
+      label: '删除',
+      icon: <Trash2 />,
+      destructive: true,
+      separator: true,
+      disabled: busy,
+      onSelect: () => {
+        setError('');
+        setPendingAction('delete');
+      },
+    },
+  ];
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      {course && (
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={busy}
-          onClick={() => {
-            setError('');
-            setTargetLessonId('');
-            setMoveOpen(true);
-          }}
-        >
-          移动
-        </Button>
+    <div className={children ? 'min-w-0 flex-1' : 'flex flex-wrap items-center gap-2'}>
+      {presentation === 'menu' ? (
+        <WorkspaceItemMenu title={title} pinned={pinned} actions={actions}>
+          {children}
+        </WorkspaceItemMenu>
+      ) : (
+        <>
+          {course && !isFolder && (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={busy}
+              onClick={() => {
+                setError('');
+                setTargetLessonId('');
+                setMoveOpen(true);
+              }}
+            >
+              移动
+            </Button>
+          )}
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={busy || (!published && !courseActive)}
+            onClick={() => (published ? setPendingAction('publication') : onPublish?.())}
+          >
+            {busy
+              ? '正在处理…'
+              : published
+                ? '取消发布'
+                : courseActive
+                  ? '发布到班级'
+                  : '请先发布课程'}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            className="text-destructive"
+            disabled={busy}
+            onClick={() => setPendingAction('delete')}
+          >
+            删除
+          </Button>
+        </>
       )}
-      <Button
-        size="sm"
-        variant="outline"
-        disabled={busy || (!published && !courseActive)}
-        onClick={() => (published ? setPendingAction('publication') : onPublish())}
-      >
-        {busy ? '正在处理…' : published ? '取消发布' : courseActive ? '发布到班级' : '请先发布课程'}
-      </Button>
-      <Button
-        size="sm"
-        variant="outline"
-        className="text-destructive"
-        disabled={busy}
-        onClick={() => setPendingAction('delete')}
-      >
-        删除
-      </Button>
-      {error && !moveOpen && (
+      {error && !moveOpen && !renameOpen && !pendingAction && (
         <span role="alert" className="text-xs text-destructive">
           {error}
         </span>
@@ -177,7 +307,7 @@ export function ResourceActions({
       <AlertDialog
         open={pendingAction !== null}
         onOpenChange={(open) => {
-          if (!open) setPendingAction(null);
+          if (!open && !busy) setPendingAction(null);
         }}
       >
         <AlertDialogContent>
@@ -187,14 +317,87 @@ export function ResourceActions({
             </AlertDialogTitle>
             <AlertDialogDescription>{consequence}</AlertDialogDescription>
           </AlertDialogHeader>
+          {error && (
+            <p role="alert" className="text-sm text-destructive">
+              {error}
+            </p>
+          )}
           <AlertDialogFooter>
-            <AlertDialogCancel>保留当前状态</AlertDialogCancel>
-            <AlertDialogAction onClick={() => void change(pendingAction === 'delete')}>
-              确认{action}
+            <AlertDialogCancel disabled={busy}>保留当前状态</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={busy}
+              onClick={(event) => {
+                event.preventDefault();
+                void change(pendingAction === 'delete');
+              }}
+            >
+              {busy ? '正在处理…' : `确认${action}`}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      <Dialog
+        open={renameOpen}
+        onOpenChange={(open) => {
+          if (!busy) setRenameOpen(open);
+        }}
+      >
+        <DialogContent className="max-w-md" showCloseButton={!busy}>
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (newTitle.trim()) void updateMetadata({ title: newTitle.trim() });
+            }}
+          >
+            <DialogHeader>
+              <DialogTitle>重命名{isFolder ? '文件夹' : '文件'}</DialogTitle>
+              <DialogDescription>
+                {kind === 'materials'
+                  ? '名称会同步显示在课程目录中，原文件扩展名将保留。'
+                  : '名称会同步显示在课程目录中。'}
+              </DialogDescription>
+            </DialogHeader>
+            <label className="mt-4 block text-sm" htmlFor={renameInputId}>
+              名称
+            </label>
+            <input
+              id={renameInputId}
+              autoFocus
+              onFocus={(event) => {
+                const extension =
+                  kind === 'materials' ? newTitle.match(/\.[a-zA-Z0-9]{1,12}$/)?.[0] : undefined;
+                event.target.setSelectionRange(
+                  0,
+                  extension ? newTitle.length - extension.length : newTitle.length,
+                );
+              }}
+              value={newTitle}
+              maxLength={180}
+              disabled={busy}
+              onChange={(event) => setNewTitle(event.target.value)}
+              className="mt-2 w-full rounded-md border bg-background px-3 py-2 text-sm"
+            />
+            {error && (
+              <p role="alert" className="mt-2 text-sm text-destructive">
+                {error}
+              </p>
+            )}
+            <DialogFooter className="mt-5">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={busy}
+                onClick={() => setRenameOpen(false)}
+              >
+                取消
+              </Button>
+              <Button type="submit" disabled={busy || !newTitle.trim()}>
+                {busy ? '保存中…' : '保存名称'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
       <Dialog
         open={moveOpen}
         onOpenChange={(open) => {
