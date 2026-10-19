@@ -259,6 +259,19 @@ def _step(sid: str, message: str = "", speaker: str = "student",
                         status=item.get("new_status", ""),
                         evidence=item.get("evidence"),
                         source=item.get("source"))
+                # 学生自评（工单 03）：只写自评列，与系统星级分开存储
+                ratings = st.get("tutoring_self_ratings") or {}
+                persisted_ratings = s.get("_persisted_self_ratings") or {}
+                for kid, val in ratings.items():
+                    if persisted_ratings.get(kid) == val:
+                        continue
+                    persistence.upsert_self_rating(
+                        session_key=sid, user_id=ctx["userId"],
+                        course_id=ctx.get("courseId", ""),
+                        publication_id=ctx.get("publicationId", ""),
+                        knowledge_point_id=kid, self_rating=int(val))
+                if ratings:
+                    s["_persisted_self_ratings"] = {**persisted_ratings, **ratings}
                 if st.get("lesson_status") == "ended" and not s.get("_completion_persisted"):
                     _persist_lesson_completion(sid)
                     s["_completion_persisted"] = True

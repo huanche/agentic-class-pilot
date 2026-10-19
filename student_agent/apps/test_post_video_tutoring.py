@@ -560,5 +560,32 @@ class TutoringEvidenceMasteryTest(unittest.TestCase):
         self.assertEqual(a["payload"]["stars_after"], 1)
 
 
+class SelfRatingPersistenceTest(unittest.TestCase):
+    """工单 03 缝 B：自评与系统星级分开存储、互不冲掉（demo 路径）。"""
+
+    def test_demo_self_rating_persists_alongside_stars(self) -> None:
+        from apps.integration import persistence
+
+        with mock.patch.dict(os.environ, {"STUDENT_DEMO_MODE": "true"}):
+            key = "test-self-rating-session"
+            path = persistence._demo_path("mastery", f"{key}-kp-x")
+            self.addCleanup(lambda: path.unlink(missing_ok=True))
+
+            persistence.upsert_self_rating(
+                session_key=key, user_id="demo", course_id="c",
+                publication_id="p", knowledge_point_id="kp-x", self_rating=4)
+            data = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(data["self_rating"], 4)
+
+            # 系统星级写入（判答结果）不冲掉自评；自评写入也不冲星级
+            persistence.upsert_mastery(
+                session_key=key, user_id="demo", course_id="c",
+                publication_id="p", knowledge_point_id="kp-x",
+                stars=3, status="理解中")
+            data2 = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(data2["stars"], 3)
+            self.assertEqual(data2["self_rating"], 4)
+
+
 if __name__ == "__main__":
     unittest.main()

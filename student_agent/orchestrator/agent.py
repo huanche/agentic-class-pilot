@@ -1792,6 +1792,16 @@ def teach(state: ClassroomState) -> dict:
                     updates["tutoring_question"] = None
                     updates["tutoring_cursor"] = (
                         0 if order else state.get("tutoring_cursor", 0)) + 1
+                    # 证据条目走既有 mastery_updates 通道：平台态由会话层写
+                    # student.knowledge_mastery（星级只升不降），demo 态进导出
+                    updates["mastery_updates"] = list(state.get("mastery_updates") or []) + [{
+                        "kp_id": kid,
+                        "new_stars": stars[kid],
+                        "new_status": STAR_STATUS.get(stars[kid], "未检测"),
+                        "evidence": ("辅导检测题答对（有提示）" if hinted
+                                     else "辅导检测题答对（无提示独立作答）"),
+                        "source": "tutoring",
+                    }]
                     judged = {"kp_id": kid, "verdict": "correct",
                               "hint_given": hinted,
                               "question": prev_question.get("question", ""),
