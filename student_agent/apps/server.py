@@ -345,6 +345,32 @@ def _record_learning_event(sid: str, event_type: str,
         print(f"[persistence] {event_type} 写入失败: {exc}")
 
 
+def _record_tutoring_event(sid: str, event_type: str, payload: dict) -> None:
+    """辅导的出题/判答事件：平台会话进 learning_events；
+    demo 会话（STUDENT_DEMO_MODE=true）走同一份 record_event 落 runtime JSON。
+    独立态（既非平台也没开 demo）不落盘——事件随会话 state 一起在
+    runtime/sessions 里，仍可追溯。"""
+    s = SESSIONS.get(sid)
+    if not s:
+        return
+    ctx = s.get("platform") or s.get("state", {}).get("platform") or {}
+    if ctx.get("userId"):
+        _record_learning_event(sid, event_type, payload)
+        return
+    try:
+        from apps.integration import config as integration_config
+        from apps.integration import persistence
+        if not integration_config.demo_mode():
+            return
+        persistence.record_event(
+            session_key=sid, user_id="demo", course_id="", publication_id="",
+            event_type=event_type, payload=payload,
+            event_id=f"{event_type}-{int(time.time() * 1000)}",
+        )
+    except Exception as exc:  # 持久化失败不阻塞课堂，但要留痕
+        print(f"[persistence] {event_type} demo 写入失败: {exc}")
+
+
 def _notify_platform_progress(sid: str, event: str) -> None:
     """课堂开始/结束时通知平台，由平台把学情同步到教师端授课管理（尽力而为）。"""
     s = SESSIONS.get(sid)
@@ -1351,9 +1377,23 @@ def send(sid: str, body: MessageIn) -> dict:
         "at": _now(),
         "phase": s["state"].get("host_phase"),
     })
+    prev_tutoring_question = (s.get("state") or {}).get("tutoring_question")
     st = _step(sid, text, "student")
     _record_learning_event(sid, event_type="student_message",
                            payload={"phase": st.get("host_phase")})
+    # 辅导的出题/判答证据（工单 03）：新题出现记 tutoring_question，
+    # 本轮判出结果记 tutoring_answer（含提示标记与升星后星级）
+    new_question = st.get("tutoring_question")
+    if new_question and new_question != prev_tutoring_question:
+        _record_tutoring_event(sid, "tutoring_question", {
+            "kp_id": new_question.get("kp_id"),
+            "question": new_question.get("question", ""),
+            "hint_given": bool(new_question.get("hint_given")),
+            "asked_at": new_question.get("asked_at"),
+        })
+    judged = st.get("tutoring_last_judgement")
+    if judged:
+        _record_tutoring_event(sid, "tutoring_answer", judged)
     return {
         "ok": True,
         "reply_text": st.get("reply_text", ""),

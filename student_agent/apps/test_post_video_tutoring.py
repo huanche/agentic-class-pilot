@@ -526,5 +526,39 @@ class TutoringEvidenceMasteryTest(unittest.TestCase):
         self.assertFalse(question["hint_given"])
 
 
+    def test_question_and_answer_events_persisted_in_demo_mode(self) -> None:
+        """出题与判答都落学习事件：demo 态写 runtime JSON
+        （平台态同一份 record_event 代码路径进 learning_events）。"""
+        from apps.integration import persistence
+
+        with mock.patch.dict(os.environ, {"STUDENT_DEMO_MODE": "true"}):
+            self._enter_tutoring()
+            self._send("那我准备好了")
+
+            def fake_chat(system: str, user: str):
+                return '{"verdict": "correct", "note": "ok"}'
+
+            with mock.patch.object(agent, "llm_available", return_value=True), \
+                    mock.patch.object(agent, "llm_chat", side_effect=fake_chat):
+                self._send("调度就是决定谁先用处理机")
+
+        path = persistence.RUNTIME_DIR / f"events-{self.sid}.json"
+        self.addCleanup(lambda: path.unlink(missing_ok=True))
+        events = json.loads(path.read_text(encoding="utf-8"))
+        types = [e["event_type"] for e in events]
+        self.assertIn("tutoring_question", types)
+        self.assertIn("tutoring_answer", types)
+
+        q = next(e for e in events if e["event_type"] == "tutoring_question")
+        self.assertEqual(q["payload"]["kp_id"], self._kp_id(1))
+        self.assertIn("小检测", q["payload"]["question"])
+        self.assertFalse(q["payload"]["hint_given"])
+
+        a = next(e for e in events if e["event_type"] == "tutoring_answer")
+        self.assertEqual(a["payload"]["verdict"], "correct")
+        self.assertFalse(a["payload"]["hint_given"])
+        self.assertEqual(a["payload"]["stars_after"], 1)
+
+
 if __name__ == "__main__":
     unittest.main()
