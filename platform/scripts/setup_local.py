@@ -10,6 +10,8 @@ secret = secrets.token_hex(32)
 teacher_password = secrets.token_hex(24)
 admin_password = secrets.token_urlsafe(18) + 'Aa1!'
 service_key = secrets.token_hex(32)
+student_password = secrets.token_hex(24)
+student_service_key = secrets.token_hex(32)
 env = f'''PROJECT_NAME=AI Education Platform
 SECRET_KEY={secret}
 DATABASE_URL=postgresql://platform:{password}@127.0.0.1:55432/education
@@ -25,6 +27,8 @@ EMAILS_FROM_EMAIL=noreply@example.com
 POSTGRES_PASSWORD={password}
 TEACHER_DB_PASSWORD={teacher_password}
 TEACHER_SERVICE_KEY={service_key}
+STUDENT_SERVICE_KEY={student_service_key}
+STUDENT_DATABASE_URL=postgresql://student:{student_password}@127.0.0.1:55432/education
 TEACHER_URL=http://127.0.0.1:3200
 MINIO_ROOT_USER=agentedu
 COURSE_OBJECT_STORAGE_MODE=minio
@@ -41,5 +45,5 @@ LLM_API_KEY=local-disabled-placeholder
 (root / 'LOCAL-ACCESS.txt').write_text(f'Platform: http://localhost:8080\nEmail: admin@example.com\nPassword: {admin_password}\nLocal mail inbox: http://localhost:58025\n', encoding='utf-8')
 init = root / 'local-db-init'
 init.mkdir(exist_ok=True)
-(init / '01-roles.sql').write_text(f"CREATE ROLE teacher LOGIN PASSWORD '{teacher_password}';\nCREATE SCHEMA teacher AUTHORIZATION teacher;\nREVOKE CREATE ON SCHEMA public FROM PUBLIC;\nALTER ROLE teacher SET search_path=teacher;\nCREATE DATABASE app_test;\n", encoding='utf-8')
+(init / '01-roles.sql').write_text(f"CREATE ROLE teacher LOGIN PASSWORD '{teacher_password}';\nCREATE SCHEMA teacher AUTHORIZATION teacher;\nREVOKE CREATE ON SCHEMA public FROM PUBLIC;\nALTER ROLE teacher SET search_path=teacher;\nCREATE ROLE student LOGIN PASSWORD '{student_password}';\nCREATE SCHEMA student AUTHORIZATION student;\nREVOKE CREATE ON SCHEMA public FROM PUBLIC;\nALTER ROLE student SET search_path=student;\nCREATE DATABASE app_test;\n", encoding='utf-8')
 print('Local configuration prepared (credentials in LOCAL-ACCESS.txt).')
