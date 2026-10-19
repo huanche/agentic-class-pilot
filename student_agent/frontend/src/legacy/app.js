@@ -228,6 +228,8 @@ function renderCourses() {
   if (!courses.length) { grid.textContent = "目前没有已选课程。"; return; }
   courses.forEach(function (course) {
     var available = availableLessons(course);
+    /* 卡片与课程级反馈入口包在同一格子里：反馈入口只在全部课时完成时出现 */
+    var cell = makeNode("div", "course-cell");
     var card = makeNode("button", "course-tile");
     card.type = "button";
     card.appendChild(makeNode("span", "course-tile__stripe"));
@@ -244,7 +246,34 @@ function renderCourses() {
     card.appendChild(stats);
     card.appendChild(makeNode("span", "course-tile__action", "进入课程  →"));
     card.addEventListener("click", function () { go(courseHash(course.courseId)); });
-    grid.appendChild(card);
+    cell.appendChild(card);
+
+    var allDone = course.lessons.length > 0 && course.lessons.every(function (item) {
+      return item.status === "completed" || lessonEndedFlag(item.lessonId);
+    });
+    if (allDone) {
+      var fbBtn = makeNode("button", "course-feedback-btn");
+      fbBtn.type = "button";
+      fbBtn.textContent = "查看课程反馈";
+      var panel = makeNode("div", "course-feedback-panel");
+      panel.hidden = true;
+      panel.appendChild(makeNode("div", "course-feedback-panel__title",
+        "各课时课后反馈（最新版）"));
+      course.lessons.forEach(function (item) {
+        var row = makeNode("a", "course-feedback-row");
+        row.href = "#/review/" + encodeURIComponent(course.courseId)
+          + "/" + encodeURIComponent(item.lessonId);
+        row.textContent = item.title + " · 查看反馈 →";
+        panel.appendChild(row);
+      });
+      fbBtn.addEventListener("click", function (event) {
+        event.stopPropagation();
+        panel.hidden = !panel.hidden;
+      });
+      cell.appendChild(fbBtn);
+      cell.appendChild(panel);
+    }
+    grid.appendChild(cell);
   });
 }
 

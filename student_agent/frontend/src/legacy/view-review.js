@@ -16,8 +16,9 @@
    ═══════════════════════════════════════════════════════════ */
 
 import { $, el, renderInline } from "./ui.js";
-import { fetchLessonReport, STAR_LABELS, REPORT_WEAK_STARS } from "./api.js";
+import { fetchLessonReport, fetchTutoringReport, STAR_LABELS, REPORT_WEAK_STARS } from "./api.js";
 import { labelOf } from "./phases.js";
+import { renderTutoringReportCard } from "./tutoring-report.js";
 
 export function createView(ctx) {
 
@@ -34,6 +35,11 @@ export function createView(ctx) {
   var stageList = $("report-stages");
   var stageCard = $("report-stage-card");
   var adviceList = $("report-advice");
+
+  /* 课后辅导反馈卡（工单 05）：挂在学情报告下方，明确结束过才有 */
+  var tutoringBox = el("div", "tfeedback-box");
+  tutoringBox.hidden = true;
+  content.appendChild(tutoringBox);
 
   /* 每次 enter 都会 +1。请求回来时对不上就丢弃 ——
      renderRoute 在 hash 变化时都会调 enter，来回切页时会有竞态。 */
@@ -180,6 +186,17 @@ export function createView(ctx) {
     renderStages(snapshots);
     renderAdvice(points);
     showState("content");
+
+    /* 学情报告就绪后再拉辅导反馈；404（没结束过）就保持收起 */
+    var mySeq = requestSeq;
+    tutoringBox.hidden = false;
+    tutoringBox.replaceChildren();
+    fetchTutoringReport(ctx.sessionId).then(function (report) {
+      if (mySeq !== requestSeq || !report) return;
+      renderTutoringReportCard(tutoringBox, report);
+    }).catch(function () {
+      /* 反馈拉不到不影响学情报告本身 */
+    });
   }
 
   /* ── 取数 ──────────────────────────────────────────────── */
