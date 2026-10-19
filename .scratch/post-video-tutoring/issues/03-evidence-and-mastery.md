@@ -4,7 +4,7 @@
 
 **Blocked by:** 01
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 - [ ] 出题事件按持久化分层落库（demo JSON / 平台 learning_events），含题目摘要、考点、时间、提示标记
 - [ ] 有效作答更新对应知识点系统星级；非作答消息（追问/求助/闲聊）不更新（各有测试例）

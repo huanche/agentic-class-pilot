@@ -506,6 +506,9 @@ class ClassroomState(TypedDict):
     tutoring_self_ratings: dict[str, int]   # 学生自评 1–5 星（只表达意愿，与系统星级分开存储）
     tutoring_planned_minutes: int           # 当前计划时长（分钟）：学生报的时长，或进辅导时的默认值
     tutoring_planned_end_at: str | None     # 计划结束时间戳：学生报时长那一刻起算；未报时从进辅导起按默认时长起算
+    tutoring_cursor: int                    # 复习游标：tutoring_order 里当前推进到第几个（判对 +1）
+    tutoring_question: dict | None          # 当前检测题 {kp_id, question, asked_at, hint_given}
+    tutoring_last_judgement: dict | None    # 本轮作答判定（会话层据此落学习事件；无判定为 None）
 
     # ── 输出 ──
     reply_text: str
@@ -1247,6 +1250,41 @@ _TUTORING_QUES_PAT = re.compile(r"[?？]|为什么|怎么|什么意思|是什么
 _TUTORING_HELP_PAT = re.compile(r"不懂|不会|没听懂|不明白|帮我|讲讲|讲一下|解释|教教我")
 
 
+def _tutoring_diagnostic_question(title: str) -> str:
+    """知识点的检测题骨架：无模型也能问（题目本身是确定性交付）。"""
+    return f"小检测：请用自己的话说说「{title}」讲的是什么，最好举个例子。"
+
+
+def _tutoring_judge(question: dict, answer: str) -> tuple[str, str]:
+    """判定学生作答：correct / wrong / unclear。
+
+    模型可用时由模型判定（输出一行 JSON）；没有模型宁可 unclear——
+    不瞎判，星级不动。判定是唯一入口，测试在此 mock。
+    """
+    if not llm_available():
+        return "unclear", ""
+    raw = llm_chat(
+        "你是课堂里的 AI 辅导老师，正在判定学生对检测题的作答。"
+        "只输出一行 JSON：{\"verdict\": \"correct|wrong|unclear\", \"note\": \"一句话依据\"}。"
+        "correct=答对了核心；wrong=答错或说反；unclear=答非所问或太简短没法判定。",
+        f"检测题：{question.get('question', '')}\n学生作答：{answer}\n"
+        "请给出一行 JSON 判定：",
+    )
+    if not raw:
+        return "unclear", ""
+    m = re.search(r"\{.*\}", raw, re.S)
+    if not m:
+        return "unclear", ""
+    try:
+        data = json.loads(m.group(0))
+    except ValueError:
+        return "unclear", ""
+    verdict = str(data.get("verdict", "")).strip().lower()
+    if verdict not in ("correct", "wrong", "unclear"):
+        return "unclear", ""
+    return verdict, str(data.get("note", ""))[:120]
+
+
 def tutoring_default_minutes() -> int:
     """默认规划时长（分钟）：AGENT_TUTORING_DEFAULT_MINUTES，默认 15。"""
     raw = (os.environ.get("AGENT_TUTORING_DEFAULT_MINUTES") or "").strip() or "15"
@@ -1319,6 +1357,7 @@ def tutoring_public(state: ClassroomState, now_iso: str | None = None,
         delta = (datetime.fromisoformat(end)
                  - datetime.fromisoformat(now_iso)).total_seconds()
         remaining = max(0, round(delta * float(time_scale or 1.0)))
+    question = state.get("tutoring_question")
     return {
         "knowledge_points": [
             {"no": i, "kp_id": kid, "title": title}
@@ -1330,6 +1369,17 @@ def tutoring_public(state: ClassroomState, now_iso: str | None = None,
             for kid, stars in (state.get("tutoring_self_ratings") or {}).items()
             if kid in no_of
         },
+        "stars": {
+            str(no_of[kid]): int(v)
+            for kid, v in (state.get("kp_stars") or {}).items()
+            if kid in no_of
+        },
+        "question": ({
+            "kp_no": no_of[question["kp_id"]],
+            "kp_id": question["kp_id"],
+            "text": question.get("question", ""),
+            "hint_given": bool(question.get("hint_given")),
+        } if question and question.get("kp_id") in no_of else None),
         "planned_minutes": int(state.get("tutoring_planned_minutes") or 0),
         "planned_end_at": end,
         "remaining_seconds": remaining,
@@ -1716,15 +1766,97 @@ def teach(state: ClassroomState) -> dict:
 
             kind = (
                 "end" if _TUTORING_END_PAT.search(msg)
+                else "time_change" if duration
+                else "self_eval" if new_ratings
+                else "kp_select" if order
                 else "followup" if _TUTORING_QUES_PAT.search(msg)
                 else "help" if _TUTORING_HELP_PAT.search(msg)
                 else "answer"
             )
-            if confirms:
+
+            # ── 检测题机制（工单 03）：出题 → 判答 → 升星/追问 → 推进 ──
+            prev_question = state.get("tutoring_question")
+            judged: dict | None = None
+            stars = dict(state.get("kp_stars") or {})
+            if kind == "answer" and prev_question:
+                verdict, _note = _tutoring_judge(prev_question, msg)
+                kid = prev_question.get("kp_id") or ""
+                if verdict == "correct":
+                    hinted = bool(prev_question.get("hint_given"))
+                    current = int(stars.get(kid, 0))
+                    # 无提示独立答对 +1（封顶 5）；提示后答对最多记到 3 星——
+                    # 「提示下能做对」对应草拟量规的 3 星（量规文件在工单 04 落地）。
+                    stars[kid] = (min(5, current + 1) if not hinted
+                                  else max(current, min(3, current + 1)))
+                    updates["kp_stars"] = stars
+                    updates["tutoring_question"] = None
+                    updates["tutoring_cursor"] = (
+                        0 if order else state.get("tutoring_cursor", 0)) + 1
+                    judged = {"kp_id": kid, "verdict": "correct",
+                              "hint_given": hinted,
+                              "question": prev_question.get("question", ""),
+                              "stars_after": stars[kid]}
+                elif verdict == "wrong":
+                    # 答错不降星、不换知识点：标记已提示，转入针对错误的追问/讲解
+                    carried = dict(prev_question)
+                    carried["hint_given"] = True
+                    updates["tutoring_question"] = carried
+                    judged = {"kp_id": kid, "verdict": "wrong", "hint_given": True,
+                              "question": prev_question.get("question", ""),
+                              "stars_after": stars.get(kid, 0)}
+                # unclear：不判、不记事件、不动状态
+            updates["tutoring_last_judgement"] = judged
+
+            # 当前聚焦的知识点（本轮指定了顺序 → 游标归零；判对 → 已推进）
+            order_now = order or state.get("tutoring_order") or [k for k, _t in catalog]
+            cursor_now = updates.get("tutoring_cursor",
+                                     0 if order else state.get("tutoring_cursor", 0))
+            in_range = 0 <= cursor_now < len(order_now)
+            active = order_now[cursor_now] if in_range else (
+                order_now[-1] if order_now else "")
+            title = title_of.get(active, "刚才视频的内容")
+
+            def _ask_diagnostic() -> None:
+                updates["tutoring_question"] = {
+                    "kp_id": active,
+                    "question": _tutoring_diagnostic_question(title),
+                    "asked_at": state.get("now"),
+                    "hint_given": False,
+                }
+
+            if judged and judged["verdict"] == "correct":
+                if in_range:
+                    _ask_diagnostic()
+                    body = (
+                        "答得漂亮——记你一星。我们接着看"
+                        f"「{title}」：{updates['tutoring_question']['question']}"
+                    )
+                else:
+                    body = (
+                        "这节课的知识点都过完了！还有想再问的吗？"
+                        "没有的话说一声，我们就可以收尾。"
+                    )
+            elif judged and judged["verdict"] == "wrong":
                 body = (
-                    "".join(confirms)
-                    + f"我们先从「{title}」开始："
-                    "你先说说对它的理解，我看看哪里需要补一补。"
+                    "嗯，这个说法有问题，先别急着往下。我们退一步想："
+                    f"「{title}」最关键的一点是什么？用自己的话再试一次。"
+                )
+            elif kind == "answer" and prev_question:
+                body = (
+                    "我没能确定你的意思，再说详细一点——"
+                    f"针对「{title}」的这题：{prev_question.get('question', '')}"
+                )
+            elif kind == "answer" or confirms:
+                pending = prev_question
+                if not pending:
+                    _ask_diagnostic()
+                    q_text = updates["tutoring_question"]["question"]
+                else:
+                    q_text = pending.get("question", "")
+                body = "".join(confirms) + (
+                    q_text if q_text
+                    else f"我们先从「{title}」开始："
+                         "你先说说对它的理解，我看看哪里需要补一补。"
                 )
             elif kind == "end":
                 # 结束的正式动作（生成反馈并入库）是工单 05 的活，这里只承接。
@@ -1732,21 +1864,17 @@ def teach(state: ClassroomState) -> dict:
                     f"好，那我们准备收尾。最后把「{title}」再快速过一遍；"
                     "确认要结束的时候再说一声。"
                 )
-            elif kind in ("followup", "help"):
+            else:
                 snippet = msg.strip().strip("？?。，,、")[:24]
                 body = (
                     f"你提到的「{snippet}」正是复习「{title}」的好切入点："
                     "先说说你现在已经理解的部分，我从你卡住的地方讲起。"
                 )
-            else:
-                body = (
-                    "好，就按你说的来。我们先从「{title}」开始："
-                    "你先说说对它的理解，我看看哪里需要补一补。"
-                )
             plain = timeup_note + body
 
+            pending_now = updates.get("tutoring_question", prev_question)
             order_text = "、".join(
-                title_of.get(kid, kid) for kid in (order or active_order)
+                title_of.get(kid, kid) for kid in (order or order_now)
             ) or "按目录顺序"
             directive = (
                 "课后辅导阶段，学生发了消息。先按已确认的安排回应，再回应这句本身。\n"
@@ -1760,6 +1888,13 @@ def teach(state: ClassroomState) -> dict:
                    if kind == "end" else "")
                 + ("学生提出了问题或求助：直接回答或讲解，只依据本课已发布内容。\n"
                    if kind in ("followup", "help") else "")
+                + (f"当前检测题（无模型时也要照问）：{pending_now.get('question', '')}\n"
+                   if pending_now and pending_now.get("question") else "")
+                + (f"学生刚刚答对了检测题（{'有提示' if judged['hint_given'] else '无提示'}），"
+                   "已升星并进入下一个知识点。\n"
+                   if judged and judged["verdict"] == "correct" else "")
+                + ("学生刚刚答错了检测题，请针对他的错误具体追问或讲解。\n"
+                   if judged and judged["verdict"] == "wrong" else "")
                 + "讲解与提问都严格落在这份清单内；学生没说的安排由你自行决定。"
             )
         else:
@@ -2449,6 +2584,9 @@ def initial_state(session_id: str, student_id: str = "student-001",
         "tutoring_self_ratings": {},
         "tutoring_planned_minutes": 0,
         "tutoring_planned_end_at": None,
+        "tutoring_cursor": 0,
+        "tutoring_question": None,
+        "tutoring_last_judgement": None,
         "reply_text": "",
         "speech_kind": "none",
         "advance_reason": None,

@@ -411,5 +411,120 @@ class TutoringIntentTimeTest(unittest.TestCase):
         self.assertTrue(answer.json()["reply_text"].strip())
 
 
+class TutoringEvidenceMasteryTest(unittest.TestCase):
+    """工单 03（作答证据与星级）的缝 A 回归。
+
+    出题/判答在骨架层：出题确定性（无模型也能问），判答走可 mock 的
+    _tutoring_judge（模型给出 correct/wrong/unclear 判定）。
+    """
+
+    sid = "test-tutoring-mastery"
+    student_id = "test-tutoring-mastery-student"
+
+    def setUp(self) -> None:
+        patcher = mock.patch.dict(os.environ, {"AGENT_LLM_API_KEY": ""})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.client = TestClient(server.app)
+        server.SESSIONS.pop(self.sid, None)
+        server._path(self.sid).unlink(missing_ok=True)
+        self.addCleanup(self._cleanup)
+
+    def _cleanup(self) -> None:
+        session = server.SESSIONS.pop(self.sid, None)
+        if session:
+            session["stop"].set()
+        server._path(self.sid).unlink(missing_ok=True)
+
+    def _begin_demo_lesson(self) -> None:
+        lesson_id = self.client.get(
+            "/api/student/courses").json()["courses"][0]["lessons"][0]["lessonId"]
+        started = self.client.post("/api/session/start", json={
+            "session_id": self.sid, "lesson_id": lesson_id,
+            "student_id": self.student_id,
+        })
+        self.assertEqual(started.status_code, 200, started.text)
+        begun = self.client.post(f"/api/session/{self.sid}/begin")
+        self.assertEqual(begun.status_code, 200, begun.text)
+
+    def _enter_tutoring(self) -> None:
+        self._begin_demo_lesson()
+        done = self.client.post(f"/api/session/{self.sid}/media/done", json={})
+        self.assertEqual(done.status_code, 200, done.text)
+
+    def _state(self) -> dict:
+        return self.client.get(f"/api/session/{self.sid}/state").json()
+
+    def _send(self, text: str):
+        return self.client.post(
+            f"/api/session/{self.sid}/message", json={"text": text})
+
+    def _kp_id(self, no: int) -> str:
+        tutoring = self._state()["tutoring"]
+        return next(kp["kp_id"] for kp in tutoring["knowledge_points"]
+                    if kp["no"] == no)
+
+    def test_diagnostic_question_asked_and_correct_answer_advances(self) -> None:
+        """进入知识点后 AI 摆出检测题；判答为对 → 星级 +1、清题、推进到
+        顺序中的下一个知识点并出新题。"""
+        self._enter_tutoring()
+
+        # 学生表示就绪（非意愿消息）→ AI 对第一个知识点出检测题
+        ready = self._send("那我准备好了")
+        self.assertIn("小检测", ready.json()["reply_text"])
+        self.assertIn("调度是什么", ready.json()["reply_text"])
+        question1 = self._state()["tutoring"]["question"]
+        self.assertEqual(question1["kp_no"], 1)
+        self.assertFalse(question1["hint_given"])
+
+        # 判答走 mock 的模型：返回 correct
+        def fake_chat(system: str, user: str):
+            return '{"verdict": "correct", "note": "讲得对"}'
+
+        with mock.patch.object(agent, "llm_available", return_value=True), \
+                mock.patch.object(agent, "llm_chat", side_effect=fake_chat):
+            judged = self._send("调度就是决定谁先用处理机")
+
+        # 第一个知识点升到 1 星（无提示独立答对）
+        self.assertEqual(self._state()["stars"].get(self._kp_id(1)), 1,
+                         self._state()["stars"])
+        # 清题 + 推进：新题落在顺序中的第二个知识点上
+        question2 = self._state()["tutoring"]["question"]
+        self.assertEqual(question2["kp_no"], 2)
+
+    def test_wrong_answer_marks_hint_and_keeps_question(self) -> None:
+        """判答为错 → 星级不动、不换知识点，题标记为已提示（后续追问）。"""
+        self._enter_tutoring()
+        self._send("那我准备好了")
+
+        def fake_chat(system: str, user: str):
+            return '{"verdict": "wrong", "note": "说反了"}'
+
+        with mock.patch.object(agent, "llm_available", return_value=True), \
+                mock.patch.object(agent, "llm_chat", side_effect=fake_chat):
+            self._send("调度就是随便乱选")
+
+        state = self._state()
+        # 答错不产生星级条目（无证据无条目），等价 0 星
+        self.assertEqual(state["stars"].get(self._kp_id(1), 0), 0)
+        question = state["tutoring"]["question"]
+        self.assertEqual(question["kp_no"], 1)
+        self.assertTrue(question["hint_given"])
+
+    def test_non_answer_messages_do_not_touch_stars(self) -> None:
+        """追问/求助/意愿类消息不是作答：不出判定、星级不动、题保留。"""
+        self._enter_tutoring()
+        self._send("那我准备好了")
+
+        self._send("这个知识点能再讲讲吗？")
+
+        state = self._state()
+        # 非作答消息不产生星级条目
+        self.assertEqual(state["stars"].get(self._kp_id(1), 0), 0)
+        question = state["tutoring"]["question"]
+        self.assertEqual(question["kp_no"], 1)
+        self.assertFalse(question["hint_given"])
+
+
 if __name__ == "__main__":
     unittest.main()
