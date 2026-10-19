@@ -39,6 +39,7 @@ try {
       ],
       order: [2, 1, 3],
       self_ratings: {2: 2},
+      stars: {2: 1},
       planned_minutes: 15,
       remaining_seconds: 14 * 60 + 5,
     });
@@ -55,6 +56,7 @@ try {
   assert.ok(result.html.indexOf('三级调度') < result.html.indexOf('调度是什么'),
     `学生指定的顺序（先 2 再 1）应体现在渲染顺序：${result.html}`);
   assert.ok(result.html.includes('自评 2★'), `自评要展示：${result.html}`);
+  assert.ok(result.html.includes('系统 1★'), `答对后的系统星级要展示：${result.html}`);
   assert.ok(result.html.includes('tm-current'), `当前复习项要高亮：${result.html}`);
   assert.ok(result.html.includes('&lt;script&gt;') && !result.html.includes('<script>alert'),
     `标题必须 HTML 转义：${result.html}`);

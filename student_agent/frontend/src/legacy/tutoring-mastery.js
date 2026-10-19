@@ -26,12 +26,16 @@ export function renderTutoringMastery(el, tutoring) {
   kps.forEach(function (kp) { byNo[kp.no] = kp; });
   var order = (tutoring.order || []).filter(function (no) { return byNo[no]; });
   var ratings = tutoring.self_ratings || {};
+  var stars = tutoring.stars || {};
   var rows = order.map(function (no, index) {
     var kp = byNo[no];
     var rating = ratings[no];
+    var star = stars[no];
     return '<li class="tm-item' + (index === 0 ? " tm-current" : "") + '">'
       + '<span class="tm-no">' + no + '</span>'
       + '<span class="tm-title">' + escapeHtml(kp.title) + '</span>'
+      + (typeof star === "number" && star > 0
+          ? '<span class="tm-stars">系统 ' + star + "★</span>" : "")
       + (rating ? '<span class="tm-self">自评 ' + rating + "★</span>" : "")
       + "</li>";
   });
