@@ -35,7 +35,18 @@ export async function writeJsonFileAtomic(filePath: string, data: unknown) {
   const tempFilePath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
   const content = JSON.stringify(data, null, 2);
   await fs.writeFile(tempFilePath, content, 'utf-8');
-  await fs.rename(tempFilePath, filePath);
+  // Windows readers/virus scanners can briefly deny replacing an open file.
+  // Keep the atomic rename (and the original file) intact while retrying only transient failures.
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await fs.rename(tempFilePath, filePath);
+      return;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (attempt >= 6 || !['EPERM', 'EACCES', 'EBUSY'].includes(code || '')) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 25 * 2 ** attempt));
+    }
+  }
 }
 
 export function buildRequestOrigin(req: NextRequest): string {

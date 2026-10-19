@@ -148,7 +148,7 @@ export function Stage({
               scene={currentScene}
               isEditable={isEditable}
               onToggleEditMode={toggleHandler}
-              hideAgentPanel={forceEditMode}
+              pageReview={forceEditMode}
             />
           </motion.div>
         ) : (

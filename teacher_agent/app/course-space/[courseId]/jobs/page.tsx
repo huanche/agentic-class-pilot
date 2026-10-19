@@ -80,7 +80,7 @@ export default function CourseJobsPage() {
             <ArrowLeft />
           </Button>
           <div>
-            <h1 className="text-xl font-semibold">生成任务与审核</h1>
+            <h1 className="text-xl font-semibold">任务记录</h1>
             <p className="text-sm text-muted-foreground">
               {course?.title || '课程'} · 生成进度、结果检查与审核入口
             </p>

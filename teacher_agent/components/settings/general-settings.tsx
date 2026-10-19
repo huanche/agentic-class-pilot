@@ -1,9 +1,16 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useId } from 'react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { UsageDashboard } from './usage-dashboard';
 import {
   AlertDialog,
@@ -16,6 +23,8 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Loader2, Trash2, AlertTriangle } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
+import { supportedLocales, type Locale } from '@/lib/i18n';
+import { useTheme } from '@/lib/hooks/use-theme';
 import { clearDatabase } from '@/lib/utils/database';
 import { useSettingsStore } from '@/lib/store/settings';
 import { useUserProfileStore } from '@/lib/store/user-profile';
@@ -49,7 +58,10 @@ async function clearPersistedStore(persistApi: PersistApi, fallbackName: string)
 }
 
 export function GeneralSettings() {
-  const { t } = useI18n();
+  const { t, locale, setLocale } = useI18n();
+  const { theme, setTheme } = useTheme();
+  const languageId = useId();
+  const themeId = useId();
 
   // Clear cache state
   const [showClearDialog, setShowClearDialog] = useState(false);
@@ -111,6 +123,39 @@ export function GeneralSettings() {
 
   return (
     <div className="flex flex-col gap-8">
+      <div className="divide-y rounded-xl border bg-background">
+        <div className="flex flex-wrap items-center justify-between gap-3 p-4">
+          <Label htmlFor={languageId}>{t('settings.language')}</Label>
+          <Select value={locale} onValueChange={(value) => setLocale(value as Locale)}>
+            <SelectTrigger id={languageId} className="w-48">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {supportedLocales.map((language) => (
+                <SelectItem key={language.code} value={language.code}>
+                  {language.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-3 p-4">
+          <Label htmlFor={themeId}>{t('settings.theme')}</Label>
+          <Select value={theme} onValueChange={(value) => setTheme(value as typeof theme)}>
+            <SelectTrigger id={themeId} className="w-48">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {(['light', 'dark', 'system'] as const).map((value) => (
+                <SelectItem key={value} value={value}>
+                  {t(`settings.themeOptions.${value}`)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
       {/* Usage statistics dashboard */}
       <UsageDashboard />
 

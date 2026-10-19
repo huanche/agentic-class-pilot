@@ -6,8 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Move classroom language and theme controls into System Settings, leaving a single settings entry in the classroom header and opening the system section directly.
+- Merge live courseware generation progress into the existing generate button, with task details and background cancellation in a popover. Move task history to the adjacent overflow menu and restore saved progress when returning to a course.
+- Remove repeated teacher-workspace subtitles, the version badge and visible file breadcrumb. Keep file-location navigation on the courseware title, and hide duration diagnostics in the embedded teacher review header.
+- Show a compact publication confirmation for courseware already assigned to a lesson. Reuse saved lesson metadata and request details only when missing, changed, or rejected by publication validation; remove the duplicate confirmation checkbox.
+- Reuse the courseware publication control to open the class after publishing, replacing the separate class-view menu entry. Keep course statistics under the course overview.
+- Publish courseware with one teacher confirmation: record approval and initialize the student publication channel automatically. Remove separate courseware approval and channel-opening controls.
+- Simplify the existing teacher workspace without replacing its visual style: collapse advanced tools and course management, and expose page-specific feedback, regeneration and readable restore controls inside the original editor.
+- Generate courseware directly from a selected lesson, choosing existing course materials, a default 28-minute duration and optional supplementary instructions before outline review. Keep chat and PPT conversion available.
+
 ### Fixed
 
+- Use only explicitly selected courseware sources, preserve the selected lesson context, and surface unreadable sources instead of silently generating with incomplete material. Retry transient file-replacement failures in local JSON storage.
 - Display remaining page content time like a video player: changing speed keeps the displayed duration stable, while 2x playback consumes two content seconds per real second. Keep silent narration timers synchronized with live speed changes as well.
 - Keep interactive activities clickable in playback and fullscreen, preserve their state across fullscreen changes, and wait for manual advancement after activities.
 - Give every quiz question five minutes in both generation paths and the player.

@@ -49,6 +49,7 @@ import { RegenerateSceneUI } from './regenerate-scene-tool-ui';
 import { EditInteractiveHtmlUI } from './edit-interactive-html-tool-ui';
 import { EditElementsUI } from './edit-elements-tool-ui';
 import { ReadSceneContentUI } from './read-tool-ui';
+import { PageReviewDraft, PageReviewHints } from './page-review-hints';
 
 const MIN_WIDTH = 320;
 const MAX_WIDTH = 640;
@@ -172,6 +173,7 @@ interface AgentPanelProps {
    * RightRailTabs) owns the rail chrome.
    */
   readonly naked?: boolean;
+  readonly pageReview?: boolean;
 }
 
 export function AgentPanel({
@@ -186,6 +188,7 @@ export function AgentPanel({
   deleteSessionAndRefresh,
   refreshSessions,
   naked,
+  pageReview = false,
 }: AgentPanelProps) {
   const { t } = useI18n();
 
@@ -259,6 +262,7 @@ export function AgentPanel({
   if (naked) {
     return (
       <AssistantRuntimeProvider runtime={runtime}>
+        {pageReview && <PageReviewDraft sceneId={scene?.id} />}
         <ReadSceneContentUI />
         <RegenerateSceneActionsUI />
         <RegenerateSceneUI />
@@ -268,31 +272,37 @@ export function AgentPanel({
         <ThreadPrimitive.Root className="relative flex min-h-0 flex-1 flex-col">
           <ThreadPrimitive.Viewport className="flex-1 space-y-6 overflow-y-auto px-4 py-5 scroll-smooth">
             <ThreadPrimitive.Empty>
-              <div className="mx-auto mt-12 flex max-w-[268px] flex-col">
-                <p className="text-center text-sm font-medium text-foreground">
-                  {t(emptyTitleKey)}
-                </p>
-                <p className="mt-1.5 text-center text-[12px] leading-relaxed text-muted-foreground">
-                  {t(emptyLeadKey)}
-                </p>
-                <div className="mt-5 space-y-3">
-                  {capabilityKeys.map(({ label, examples }) => (
-                    <div key={label} className="flex flex-col gap-0.5">
-                      <span className="text-[12px] font-semibold text-foreground">{t(label)}</span>
-                      <span className="text-[11.5px] leading-relaxed text-[#5b1fa8]/70 dark:text-violet-300/70">
-                        {t(examples)}
-                      </span>
-                    </div>
-                  ))}
+              {pageReview ? (
+                <PageReviewHints sceneType={scene?.type} canSend={canSend} />
+              ) : (
+                <div className="mx-auto mt-12 flex max-w-[268px] flex-col">
+                  <p className="text-center text-sm font-medium text-foreground">
+                    {t(emptyTitleKey)}
+                  </p>
+                  <p className="mt-1.5 text-center text-[12px] leading-relaxed text-muted-foreground">
+                    {t(emptyLeadKey)}
+                  </p>
+                  <div className="mt-5 space-y-3">
+                    {capabilityKeys.map(({ label, examples }) => (
+                      <div key={label} className="flex flex-col gap-0.5">
+                        <span className="text-[12px] font-semibold text-foreground">
+                          {t(label)}
+                        </span>
+                        <span className="text-[11.5px] leading-relaxed text-[#5b1fa8]/70 dark:text-violet-300/70">
+                          {t(examples)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="mt-5 text-[11px] leading-relaxed text-muted-foreground/80">
+                    {t(emptyBoundaryKey)}
+                  </p>
+                  <p className="mt-2 inline-flex items-center gap-1 text-[11px] text-muted-foreground/70">
+                    <Sparkles className="size-3 text-[#5b1fa8]/60 dark:text-violet-300/60" />
+                    {t('edit.agent.empty.comingSoon')}
+                  </p>
                 </div>
-                <p className="mt-5 text-[11px] leading-relaxed text-muted-foreground/80">
-                  {t(emptyBoundaryKey)}
-                </p>
-                <p className="mt-2 inline-flex items-center gap-1 text-[11px] text-muted-foreground/70">
-                  <Sparkles className="size-3 text-[#5b1fa8]/60 dark:text-violet-300/60" />
-                  {t('edit.agent.empty.comingSoon')}
-                </p>
-              </div>
+              )}
             </ThreadPrimitive.Empty>
 
             <ThreadPrimitive.Messages components={{ UserMessage, AssistantMessage }} />
@@ -305,7 +315,9 @@ export function AgentPanel({
           <div className="px-3 pb-3 pt-1">
             {!canSend ? (
               <p className="mb-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-[11.5px] leading-relaxed text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100">
-                {unsupportedMessage}
+                {pageReview
+                  ? '此类页面暂不支持 AI 单页修改，请使用页面编辑工具调整。'
+                  : unsupportedMessage}
               </p>
             ) : null}
             <ComposerPrimitive.Root className="rounded-[10px] border border-border bg-card shadow-sm transition-[border-color,box-shadow] focus-within:border-violet-400 focus-within:ring-[3px] focus-within:ring-violet-500/10 dark:focus-within:ring-violet-500/20">
@@ -320,20 +332,30 @@ export function AgentPanel({
               <ComposerPrimitive.Input
                 minRows={1}
                 maxRows={6}
-                autoFocus={canSend}
+                autoFocus={canSend && !pageReview}
                 disabled={!canSend}
-                placeholder={t(placeholderKey)}
+                aria-label={pageReview ? '本页修改建议' : undefined}
+                placeholder={
+                  pageReview
+                    ? '例如：用成绩变量替换年龄示例，并把讲解讲得更具体…'
+                    : t(placeholderKey)
+                }
                 className="block w-full resize-none bg-transparent px-3 pb-1 pt-2 text-[13px] leading-5 text-foreground outline-none placeholder:text-muted-foreground/50 disabled:cursor-not-allowed disabled:opacity-60"
               />
               <div className="flex items-center px-2 pb-2 pt-0.5">
                 <div className="ml-auto flex items-center gap-1">
-                  <VoiceInputButton disabled={!canSend} />
+                  {!pageReview && <VoiceInputButton disabled={!canSend} />}
                   <ThreadPrimitive.If running={false}>
                     <ComposerPrimitive.Send
                       disabled={!canSend}
-                      className="grid size-[30px] shrink-0 place-items-center rounded-lg bg-primary text-white transition-colors hover:opacity-90 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground/50"
+                      aria-label={pageReview ? '提交本页修改建议' : undefined}
+                      className={cn(
+                        'flex h-[30px] min-w-[30px] shrink-0 items-center justify-center gap-1 rounded-lg bg-primary px-2 text-xs text-white transition-colors hover:opacity-90 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground/50',
+                        pageReview && 'bg-[#B00055]',
+                      )}
                     >
                       <ArrowUp className="size-4" />
+                      {pageReview && '提交建议'}
                     </ComposerPrimitive.Send>
                   </ThreadPrimitive.If>
                   <ThreadPrimitive.If running>

@@ -31,7 +31,7 @@ export function ResourceActions({
   id,
   title,
   published,
-  courseActive,
+  publicationLabel = '发布到班级',
   onChange,
   onDeleted,
   course,
@@ -42,13 +42,14 @@ export function ResourceActions({
   children,
   onEdit,
   onReveal,
+  extraActions = [],
 }: {
   courseId: string;
   kind: 'artifacts' | 'materials' | 'lesson-files' | 'modules' | 'lessons';
   id: string;
   title: string;
   published: boolean;
-  courseActive: boolean;
+  publicationLabel?: string;
   onChange: () => void | Promise<void>;
   onDeleted?: () => void | Promise<void>;
   course?: CourseSpace;
@@ -59,6 +60,7 @@ export function ResourceActions({
   children?: ReactNode;
   onEdit?: () => void;
   onReveal?: () => void;
+  extraActions?: WorkspaceMenuAction[];
 }) {
   const isFolder = kind === 'modules' || kind === 'lessons';
   const [busy, setBusy] = useState(false);
@@ -185,6 +187,7 @@ export function ResourceActions({
     }
   };
   const actions: WorkspaceMenuAction[] = [
+    ...extraActions,
     {
       label: '重命名',
       icon: <Pencil />,
@@ -233,9 +236,9 @@ export function ResourceActions({
     ...(!isFolder
       ? [
           {
-            label: published ? '取消发布' : '发布到班级',
+            label: published ? '取消发布' : publicationLabel,
             icon: published ? <Undo2 /> : <Send />,
-            disabled: busy || (!published && !courseActive),
+            disabled: busy || (!published && course?.status === 'archived'),
             onSelect: () => (published ? setPendingAction('publication') : onPublish?.()),
           },
         ]
@@ -277,16 +280,10 @@ export function ResourceActions({
           <Button
             size="sm"
             variant="outline"
-            disabled={busy || (!published && !courseActive)}
+            disabled={busy || (!published && course?.status === 'archived')}
             onClick={() => (published ? setPendingAction('publication') : onPublish?.())}
           >
-            {busy
-              ? '正在处理…'
-              : published
-                ? '取消发布'
-                : courseActive
-                  ? '发布到班级'
-                  : '请先发布课程'}
+            {busy ? '正在处理…' : published ? '取消发布' : publicationLabel}
           </Button>
           <Button
             size="sm"

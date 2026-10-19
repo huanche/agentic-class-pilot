@@ -55,10 +55,12 @@ import { useThinkingTimers } from './thinking-timers';
 import { useSceneRuntimeErrors } from '@/lib/store/scene-runtime-errors';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { editElementsApplyCorrectionKey } from './edit-elements-result';
+import { reviewSceneContext } from './review-scene-context';
 
 export interface UseAgentRuntimeOptions {
   scene?: { id: string; title: string };
   isSendDisabled?: boolean;
+  currentSceneOnly?: boolean;
 }
 
 /** A prior conversation turn sent to the server so the agent has memory. */
@@ -573,7 +575,11 @@ export function useAgentRuntime(opts: UseAgentRuntimeOptions) {
             message: userText,
             scene: opts.scene,
             history,
-            sceneContextMap,
+            sceneContextMap: reviewSceneContext(
+              sceneContextMap,
+              opts.scene?.id,
+              !!opts.currentSceneOnly,
+            ),
             // Selection-aware edit_elements: prefer "this title" against the
             // current canvas selection (trusted client state, not model-authored).
             selection: useCanvasStore.getState().activeElementIdList,
@@ -667,7 +673,7 @@ export function useAgentRuntime(opts: UseAgentRuntimeOptions) {
         }
       }
     },
-    [buildAssistant, handleEvent, opts.scene, t],
+    [buildAssistant, handleEvent, opts.scene, opts.currentSceneOnly, t],
   );
 
   // Stop the current response: abort the fetch (cancels the server stream) and
