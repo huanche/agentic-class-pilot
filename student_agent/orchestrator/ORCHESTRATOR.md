@@ -31,6 +31,11 @@ lesson-plan.json   ──→   runtime/DIALOGUE-LOG.md  ──→  每轮读 →
 > `prompt.md`。「问什么」由 `TMISSION.md` 检验问题 → `KNOWLEDGE-BASE.md` 检测问题
 > 提供，「及格线」由 `MASTERY-STAR-RULES.md` 通用标准提供。
 
+> **课后辅导（`tutoring`）例外**：不在 `lesson-plan.json` 的 `stages[]` 里声明，
+> 由 `load_plan` 在全局开关开启（`AGENT_POST_VIDEO_TUTORING`，默认开启）时
+> 替换复述/探究/讨论三幕注入序列末尾；没有 stages/ 目录、没有时间预算出口
+> （唯一出口是明确结束）。开关关闭即回到原编排，三幕代码保留不删。
+
 ---
 
 ## 2. 状态 Schema（LangGraph `State`）
@@ -50,7 +55,7 @@ class ClassroomState(TypedDict):
     # ── 编排器核心（对应 DIALOGUE-LOG.md 字段）──
     host_phase: Literal[
         "uninitialized", "intro", "guided_learning",
-        "recap_discussion", "deep_inquiry", "class_discussion", "ending"
+        "recap_discussion", "deep_inquiry", "class_discussion", "tutoring", "ending"
     ]
     active_segment_id: str | None
     stage_started_at: str          # ISO8601，本幕开始时刻

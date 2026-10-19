@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 - [ ] 开关开启：视频完成 → 进入辅导阶段（而非复述），AI 开场消息（知识点+编号+征询意愿）自动到达，学生无需点击任何按钮
 - [ ] 开关关闭：回到原有编排（复述→探究→讨论），行为与现状一致

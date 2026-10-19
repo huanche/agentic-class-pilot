@@ -64,8 +64,18 @@ STAGE_NAMES = {
     "recap_discussion": "复述阶段",
     "deep_inquiry": "深层探究阶段",
     "class_discussion": "全班讨论阶段",
+    "tutoring": "课后辅导",
 }
 STAR_STATUS = {1: "已接触", 2: "初步理解", 3: "理解中", 4: "接近掌握"}
+
+# 全局开关：视频最终播完 → 进入「课后辅导」（默认开启）。
+# 关闭时回到原有编排（复述 → 探究 → 讨论）；三个旧阶段的代码保留不删。
+TUTORING_ENV_VAR = "AGENT_POST_VIDEO_TUTORING"
+
+
+def post_video_tutoring_enabled() -> bool:
+    return os.environ.get(TUTORING_ENV_VAR, "1").strip().lower() \
+        not in ("0", "false", "no", "off")
 
 # 外部事件取值（会话层注入 `external_event`）
 EVENT_BEGIN = "begin"            # 课堂开始
@@ -431,7 +441,7 @@ class ClassroomState(TypedDict):
     # ── 编排器核心 ──
     host_phase: Literal[
         "uninitialized", "intro", "guided_learning",
-        "recap_discussion", "deep_inquiry", "class_discussion", "ending",
+        "recap_discussion", "deep_inquiry", "class_discussion", "tutoring", "ending",
     ]
     active_segment_id: str | None
     stage_started_at: str
@@ -736,6 +746,15 @@ def load_plan(state: ClassroomState) -> dict:
     enabled = [s for s in plan["stages"] if s.get("enabled")]
     policy = plan["advance_policy"]
 
+    # 全局开关开启：视频讲解之后的复述/探究/讨论三个阶段下线，
+    # 换成一个「课后辅导」阶段接住视频播完的时刻。开关关闭时序列原样，
+    # 旧编排（复述→探究→讨论）一分不改地回来。
+    stage_sequence = [s["id"] for s in enabled]
+    if post_video_tutoring_enabled():
+        kept = [sid for sid in stage_sequence
+                if sid not in ("recap_discussion", "deep_inquiry", "class_discussion")]
+        stage_sequence = kept + ["tutoring"]
+
     # 星级基线：平台会话从 student schema 读该学生的掌握度（跨课次延续）。
     # 非平台会话没有 userId，无从落库，基线为空（每节课从 0 星起）。
     kp_stars: dict[str, int] = {}
@@ -756,7 +775,7 @@ def load_plan(state: ClassroomState) -> dict:
     return {
         "lesson_plan": plan,
         "host_phase": "intro",
-        "remaining_stages": [s["id"] for s in enabled],
+        "remaining_stages": stage_sequence,
         "stage_budget_minutes": 0.0,
         "advance_when": "budget",
         "lesson_started_at": state["now"],
@@ -1166,6 +1185,75 @@ def llm_polish(state: ClassroomState, directive: str) -> str | None:
     )
 
 
+def _lesson_kp_catalog(state: ClassroomState) -> list[tuple[str, str]]:
+    """本节课的知识点目录（保序去重）：[(kp_id, 标题), …]。
+
+    顺序 = 课时声明的知识点在前，段落里出现的知识点按段落顺序补在后。
+    平台计划的知识点内联在 plan 里；上传/旧式课时从课时文件读段落；
+    标题统一走 kp_title（上传课时 > 平台注册表 > KNOWLEDGE-BASE.md）。
+    """
+    plan = state.get("lesson_plan") or {}
+    ids: list[str] = []
+    for kp in plan.get("knowledge_points") or []:
+        kid = str(kp.get("kp_id") or kp.get("id") or "").strip()
+        if kid:
+            ids.append(kid)
+    from apps.integration import prompt_context
+    if prompt_context.is_platform_plan(plan):
+        segments = plan.get("segments", [])
+    else:
+        lesson = load_lesson(state.get("lesson_id") or "")
+        segments = lesson[1] if lesson else []
+    for seg in segments:
+        for kid in seg.get("knowledge_point_ids") or []:
+            kid = str(kid).strip()
+            if kid:
+                ids.append(kid)
+    lesson_id = state.get("lesson_id")
+    return [(kid, kp_title(kid, lesson_id)) for kid in dict.fromkeys(ids)]
+
+
+def _tutoring_opening_skeleton(state: ClassroomState) -> str:
+    """开场消息的确定性骨架：知识点固定编号列表 + 征询意愿（全部可省略）。"""
+    catalog = _lesson_kp_catalog(state)
+    if catalog:
+        listing = "\n".join(f"{i}. {title}" for i, (_kid, title) in enumerate(catalog, 1))
+        intro = f"本节课的知识点：\n{listing}"
+    else:
+        intro = "这节课没有登记知识点，我们就按刚才视频讲的内容来复习。"
+    return (
+        "视频全部看完啦！接下来是课后辅导：我围绕你自己的情况，"
+        "把这节课的内容再过一遍。\n\n"
+        f"{intro}\n\n"
+        "你可以先告诉我（都可以省略，不说我就自己安排）：\n"
+        "- 想按什么顺序复习，比如「先 2 再 1」；\n"
+        "- 哪个编号的知识点还没听懂；\n"
+        "- 给自己的掌握情况自评几颗星（1–5 星）；\n"
+        "- 打算复习多长时间，比如「复习 15 分钟」。"
+    )
+
+
+def tutoring_opening(state: ClassroomState) -> tuple[str, bool]:
+    """课后辅导的开场消息。结构与内容由确定性骨架定死，LLM 只做润色。
+
+    与 stage_opening 的 NO_LLM_NOTICE 降级不同：编号列表本身就是确定性内容，
+    模型不在时把骨架原样说给学生（而不是一句"没接入模型"）——
+    开场是辅导阶段的硬性交付，不能因为模型缺席就空窗。
+    """
+    plain = _tutoring_opening_skeleton(state)
+    if not llm_available():
+        return plain, False
+    polished = llm_chat(
+        "你是课堂里的 AI 辅导老师。讲解视频刚播完，现在要开始一对一的课后辅导，"
+        "请把给出的开场信息润色成自然、亲切的口语。"
+        "必须逐条保留全部知识点编号与标题原文，不得增删知识点、不得改动编号；"
+        "征询的意愿项（复习顺序、没听懂的编号、自评星级、复习时长）一个都不能丢，"
+        "且都要保持「可以不说」的口吻。不要用 Markdown，不要提系统内部情况。",
+        f"开场信息：\n{plain}\n\n直接输出你要对学生说的话：",
+    )
+    return (polished.strip(), True) if polished else (plain, False)
+
+
 def stage_opening(state: ClassroomState, next_phase: str) -> tuple[str, bool]:
     """切幕时说给学生听的开场白。
 
@@ -1446,6 +1534,29 @@ def teach(state: ClassroomState) -> dict:
         plain = wrap_line + "进入全班讨论，请老师主导。"
         directive = "宣布进入全班讨论环节，请老师来主导。"
 
+    elif phase == "tutoring":
+        # 工单 01 的最小闭环：确定性承接学生的开场意愿并进入复习；
+        # 消息分类、时间预算、自评与星级都是后续工单，这里不做判定。
+        updates["current_target"] = None
+        updates["current_question"] = None
+        if msg.strip():
+            catalog = _lesson_kp_catalog(state)
+            first_title = catalog[0][1] if catalog else "刚才视频的内容"
+            plain = (
+                f"好，就按你说的来。我们先从「{first_title}」开始："
+                "你先说说对它的理解，我看看哪里需要补一补。"
+            )
+            listing = "、".join(f"{i}. {title}" for i, (_kid, title) in enumerate(catalog, 1))
+            directive = (
+                "课后辅导阶段刚开始，学生回复了开场征询（可能包含复习顺序、自评星级、"
+                "复习时长，也可能什么都没说）。先简短确认他的安排，然后从第一个"
+                "要复习的知识点开始辅导：请他讲讲自己的理解，或直接针对它提问。\n"
+                f"本节课知识点（固定编号，不得增删、不得改号）：{listing}\n"
+                "讲解与提问都严格落在这份清单内；学生没说的安排由你自行决定。"
+            )
+        else:
+            speak = False          # 心跳轮静默，辅导只回应学生
+
     elif phase == "ending":
         stars = state.get("kp_stars", {})
         lines = ["这节课到这里。最后看一眼你的掌握情况："]
@@ -1688,6 +1799,12 @@ def judge_advance(state: ClassroomState) -> dict:
         if state.get("segment_cursor", 0) >= total:
             return {"target_phase": _next_phase(state), "advance_reason": "讲解素材已全部播完"}
 
+    if phase == "tutoring":
+        # 课后辅导没有时间出口：到点只改变教学安排（后续工单），
+        # 不因时间预算把学生踢出会话。外部事件（下一环节/结束本节课）
+        # 在上面已经判过，老师按钮仍然有效。
+        return {"target_phase": None, "advance_reason": "课后辅导进行中，等待学生明确结束"}
+
     if phase == "intro":
         return {"target_phase": _next_phase(state), "advance_reason": "开场完成"}
 
@@ -1788,8 +1905,11 @@ def advance_stage(state: ClassroomState) -> dict:
     # 会直接显示给学生，既有编号味又说漏了不该让学生操心的预算。
     # 例外：video 模式切进讲解阶段**不开口**——起课铃一响直接放视频，
     # AI 第一句话留给复述板块（有头有尾从那里开始）。
+    # 切进「课后辅导」说的是知识点编号开场（骨架定结构，LLM 只润色）。
     if nxt == "guided_learning" and stage_delivery(state) == "video":
         opening, gen = "", False
+    elif nxt == "tutoring":
+        opening, gen = tutoring_opening(state)
     else:
         opening, gen = stage_opening(state, nxt)
     out = {
