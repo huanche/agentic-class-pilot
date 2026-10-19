@@ -19,6 +19,9 @@ if (Test-Path -LiteralPath $studentEnv) {
   }
 }
 if (-not $env:STUDENT_SERVICE_KEY) { throw 'STUDENT_SERVICE_KEY is missing from platform .env' }
+& (Join-Path $suiteRoot 'platform\scripts\validate-platform-env.ps1') -PlatformEnv $platformEnv `
+  -Required @('STUDENT_SERVICE_KEY') `
+  -Recommended @('STUDENT_DATABASE_URL', 'STUDENT_TOKEN_SIGNING_KEY')
 
 $env:PLATFORM_AUTH_URL = 'http://127.0.0.1:8080/api/v1'
 $env:STUDENT_DEMO_MODE = 'false'

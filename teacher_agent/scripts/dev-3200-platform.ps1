@@ -8,6 +8,9 @@ $platformEnv = Join-Path $suiteRoot 'platform\.env'
 Get-Content -LiteralPath $platformEnv | ForEach-Object {
   if ($_ -match '^([^#=]+)=(.*)$') { Set-Item -Path "Env:$($matches[1])" -Value $matches[2] }
 }
+& (Join-Path $suiteRoot 'platform\scripts\validate-platform-env.ps1') -PlatformEnv $platformEnv `
+  -Required @('TEACHER_SERVICE_KEY', 'TEACHER_DB_PASSWORD') `
+  -Recommended @('MINIO_ROOT_PASSWORD', 'PLATFORM_PUBLIC_URL')
 # Phase 3: the platform-auth profile runs on the shared PostgreSQL (teacher schema,
 # DML only — migrations own the DDL). No silent JSON fallback in this mode.
 $env:COURSE_STORAGE_MODE = 'postgres'
