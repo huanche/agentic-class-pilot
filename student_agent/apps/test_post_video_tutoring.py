@@ -775,6 +775,178 @@ class TutoringEndFeedbackTest(unittest.TestCase):
         self.assertEqual(r.status_code, 404)
 
 
+class TutoringResumeTest(unittest.TestCase):
+    """工单 06（恢复与续聊）：全链路、重启恢复、换设备同会话、二次结束出 v2。"""
+
+    sid = "test-tutoring-resume"
+    student_id = "test-tutoring-resume-student"
+
+    def setUp(self) -> None:
+        patcher = mock.patch.dict(os.environ, {
+            "AGENT_LLM_API_KEY": "", "STUDENT_DEMO_MODE": "true"})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.client = TestClient(server.app)
+        server.SESSIONS.pop(self.sid, None)
+        server._path(self.sid).unlink(missing_ok=True)
+        from apps.integration import persistence
+        for name in ("events", "report-versions"):
+            persistence._demo_path(name, self.sid).unlink(missing_ok=True)
+            self.addCleanup(persistence._demo_path(name, self.sid).unlink,
+                            missing_ok=True)
+        self.addCleanup(self._cleanup)
+
+    def _cleanup(self) -> None:
+        session = server.SESSIONS.pop(self.sid, None)
+        if session:
+            session["stop"].set()
+        server._path(self.sid).unlink(missing_ok=True)
+
+    def _begin_demo_lesson(self) -> None:
+        lesson_id = self.client.get(
+            "/api/student/courses").json()["courses"][0]["lessons"][0]["lessonId"]
+        started = self.client.post("/api/session/start", json={
+            "session_id": self.sid, "lesson_id": lesson_id,
+            "student_id": self.student_id,
+        })
+        self.assertEqual(started.status_code, 200, started.text)
+        begun = self.client.post(f"/api/session/{self.sid}/begin")
+        self.assertEqual(begun.status_code, 200, begun.text)
+
+    def _enter_tutoring(self) -> None:
+        self._begin_demo_lesson()
+        done = self.client.post(f"/api/session/{self.sid}/media/done", json={})
+        self.assertEqual(done.status_code, 200, done.text)
+
+    def _send(self, text: str):
+        return self.client.post(
+            f"/api/session/{self.sid}/message", json={"text": text})
+
+    def _state(self) -> dict:
+        return self.client.get(f"/api/session/{self.sid}/state").json()
+
+    def _answer_judged(self, verdict: str, text: str = "我的作答") -> None:
+        def fake_chat(system: str, user: str):
+            if "判定" in system:
+                return json.dumps({"verdict": verdict}, ensure_ascii=False)
+            if "出" in system:
+                return "新题：请再举一个例子说明。"
+            return "好的。"
+
+        with mock.patch.object(agent, "llm_available", return_value=True), \
+                mock.patch.object(agent, "llm_chat", side_effect=fake_chat):
+            self._send(text)
+
+    def _kp_id(self, no: int) -> str:
+        tutoring = self._state()["tutoring"]
+        return next(kp["kp_id"] for kp in tutoring["knowledge_points"]
+                    if kp["no"] == no)
+
+    def test_full_chain_two_versions(self) -> None:
+        """视频完→开场→意愿→作答升星→结束 v1→续聊→再作答→再结束 v2。"""
+        from apps.integration import persistence
+
+        self._enter_tutoring()
+        # 意愿：顺序（先2再1）+ 时长
+        self._send("先复习 2，再 1。想复习 15 分钟。")
+        # 就绪 → 对顺序第一个知识点（2 号）出题
+        self._send("准备好了")
+        q1 = self._state()["tutoring"]["question"]
+        self.assertEqual(q1["kp_no"], 2)
+        # 答对（无提示新题）→ 升星 + 推进到下一个知识点
+        self._answer_judged("correct", "三级调度就是高中低三级各管一段")
+        self.assertEqual(self._state()["stars"].get(self._kp_id(2)), 1)
+        self.assertEqual(self._state()["tutoring"]["question"]["kp_no"], 1)
+
+        # 明确结束 → v1
+        end = self._send("今天就到这")
+        self.assertEqual(end.json()["phase"], "ending")
+        v1 = self.client.get(f"/api/session/{self.sid}/tutoring-report").json()
+        self.assertEqual(v1["version"], 1)
+
+        # 继续辅导：回原会话，题和星级都在
+        resumed = self.client.post(f"/api/session/{self.sid}/resume-tutoring")
+        self.assertEqual(resumed.status_code, 200, resumed.text)
+        state = self._state()
+        self.assertEqual(state["phase"], "tutoring")
+        self.assertEqual(state["tutoring"]["question"]["kp_no"], 1)
+        self.assertEqual(state["stars"].get(self._kp_id(2)), 1)
+        self.assertTrue(state["tutoring"]["remaining_seconds"] <= 900)
+
+        # 续聊中新的有效作答继续升星，再次明确结束 → v2
+        self._answer_judged("correct", "调度就是决定谁先用处理机")
+        self.assertEqual(self._state()["stars"].get(self._kp_id(1)), 1)
+        self._send("就到这吧")
+        v2 = self.client.get(f"/api/session/{self.sid}/tutoring-report").json()
+        self.assertEqual(v2["version"], 2)
+        self.assertEqual(v2["payload"]["stats"].get("correct"), 2)
+        # 旧版可追溯（demo 落盘的版本列表）
+        versions = json.loads(
+            persistence._demo_path("report-versions", self.sid)
+            .read_text(encoding="utf-8"))
+        self.assertEqual([v["version"] for v in versions], [1, 2])
+
+    def test_restart_restores_tutoring_with_clock_intact(self) -> None:
+        """重启（注册表清空→从磁盘恢复）：阶段/题目/计划时间戳都在，
+        剩余时间按服务端时间戳重新换算，不清零。"""
+        self._enter_tutoring()
+        self._send("准备好了")
+        before = self._state()
+        planned_end = before["tutoring"]["planned_end_at"]
+        question_text = before["tutoring"]["question"]["text"]
+
+        session = server.SESSIONS.pop(self.sid, None)   # 模拟进程重启
+        if session:
+            session["stop"].set()
+
+        after = self._state()
+        self.assertEqual(after["phase"], "tutoring")
+        self.assertEqual(after["tutoring"]["question"]["text"], question_text)
+        self.assertEqual(after["tutoring"]["planned_end_at"], planned_end)
+        self.assertIsNotNone(after["tutoring"]["remaining_seconds"])
+        self.assertTrue(after["tutoring"]["remaining_seconds"] <= 900)
+
+    def test_resume_rejected_without_tutoring(self) -> None:
+        """没上过辅导的课（老师直接下课）不能恢复。"""
+        self._begin_demo_lesson()
+        ended = self.client.post(f"/api/session/{self.sid}/end", json={})
+        self.assertEqual(ended.status_code, 200, ended.text)
+
+        resumed = self.client.post(f"/api/session/{self.sid}/resume-tutoring")
+        self.assertEqual(resumed.status_code, 409)
+
+    def test_platform_sessions_derive_deterministic_sid(self) -> None:
+        """平台态：同一（用户,课程,课时）两次进入得到**同一**会话号——
+        换设备天然回到原辅导会话。launch/上下文按桩注入。"""
+        from apps.integration import course_adapter, launch_context, platform_client
+        fixture = json.loads(FIXTURE.read_text(encoding="utf-8"))
+        lesson_id = course_adapter.from_platform_payload(fixture).lessons[0].id
+        payload = {"uid": "u-cross-device", "cid": fixture["courseId"],
+                   "rid": "room-1", "pub": {"publicationId": "pub-1", "version": 1}}
+
+        def fake_start(launch_token=None, lesson_id=None, student_id=None):
+            return self.client.post("/api/session/start", json={
+                "launch_token": "fake.token.sig",
+                "lesson_id": lesson_id,
+                "student_id": student_id or "ignored",
+            })
+
+        with mock.patch.object(launch_context, "verify_launch_token",
+                               return_value=payload), \
+                mock.patch.object(platform_client, "fetch_learning_context",
+                                  return_value=fixture):
+            first = fake_start(lesson_id=lesson_id)
+            sid1 = first.json()["session_id"]
+            server.SESSIONS.pop(sid1, None)   # 换设备：无内存、无 localStorage
+            second = fake_start(lesson_id=lesson_id)
+            sid2 = second.json()["session_id"]
+
+        self.assertTrue(sid1.startswith("plat-"), sid1)
+        self.assertEqual(sid1, sid2, "同一身份+课时必须落回同一会话")
+        self.addCleanup(server._path(sid1).unlink, missing_ok=True)
+        self.addCleanup(server.SESSIONS.pop, sid1, None)
+
+
 class SelfRatingPersistenceTest(unittest.TestCase):
     """工单 03 缝 B：自评与系统星级分开存储、互不冲掉（demo 路径）。"""
 

@@ -416,6 +416,22 @@ function ctxFor() {
     showStage: setStage,
     toast: showToast,
     goHome: function () { go(lessonHash(currentCourseId, currentLessonId)); },
+    getClassHash: function () { return partHash("class"); },
+    /* 继续辅导（工单 06）：清「课时已结束」标记、把内存里的课时状态复原，
+       然后直接回课堂。不能靠整页 reload——路由改道永远先落在课时 hub；
+       也要就地同步模块阶段，否则 openLessonRoute 看到 ending 会开新会话。 */
+    reopenClassroom: function () {
+      try { localStorage.removeItem("ai-learn.lessonEnded." + currentLessonId); } catch (e) {}
+      var course = courseById(currentCourseId);
+      var item = course && course.lessons.find(function (entry) {
+        return entry.lessonId === currentLessonId;
+      });
+      if (item && item.status === "completed") item.status = "current";
+      hostPhase = "tutoring";
+      currentStage = "chat";
+      nextStage = null;
+      go(partHash("class"));
+    },
     getReviewHash: function () { return partHash("review"); },
     getReplayHash: function () { return partHash("replay"); }
   };

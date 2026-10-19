@@ -16,7 +16,7 @@
    ═══════════════════════════════════════════════════════════ */
 
 import { $, el, renderInline } from "./ui.js";
-import { fetchLessonReport, fetchTutoringReport, STAR_LABELS, REPORT_WEAK_STARS } from "./api.js";
+import { fetchLessonReport, fetchTutoringReport, resumeTutoring, STAR_LABELS, REPORT_WEAK_STARS } from "./api.js";
 import { labelOf } from "./phases.js";
 import { renderTutoringReportCard } from "./tutoring-report.js";
 
@@ -36,10 +36,11 @@ export function createView(ctx) {
   var stageCard = $("report-stage-card");
   var adviceList = $("report-advice");
 
-  /* 课后辅导反馈卡（工单 05）：挂在学情报告下方，明确结束过才有 */
+  /* 课后辅导反馈卡（工单 05）：挂在学情报告下方（content 的兄弟位）——
+     学情报告为空（empty 态隐藏 content）时反馈卡也要能独立显示 */
   var tutoringBox = el("div", "tfeedback-box");
   tutoringBox.hidden = true;
-  content.appendChild(tutoringBox);
+  if (content.parentNode) content.parentNode.appendChild(tutoringBox);
 
   /* 每次 enter 都会 +1。请求回来时对不上就丢弃 ——
      renderRoute 在 hash 变化时都会调 enter，来回切页时会有竞态。 */
@@ -167,6 +168,29 @@ export function createView(ctx) {
     var points = report.knowledge_points || [];
     var snapshots = report.stage_snapshots || [];
 
+    /* 辅导反馈卡独立于学情报告渲染：明确结束过就展示（empty 态也要有） */
+    var mySeq = requestSeq;
+    tutoringBox.hidden = false;
+    tutoringBox.replaceChildren();
+    fetchTutoringReport(ctx.sessionId).then(function (report2) {
+      if (mySeq !== requestSeq || !report2) return;
+      renderTutoringReportCard(tutoringBox, report2);
+      /* 明确结束过的辅导可以返回继续聊（工单 06） */
+      var resumeBtn = el("button", "tfeedback__resume");
+      resumeBtn.type = "button";
+      resumeBtn.textContent = "继续辅导";
+      resumeBtn.addEventListener("click", function () {
+        resumeTutoring(ctx.sessionId).then(function () {
+          ctx.reopenClassroom();
+        }).catch(function () {
+          ctx.toast("继续辅导暂时不可用，稍后再试");
+        });
+      });
+      tutoringBox.appendChild(resumeBtn);
+    }).catch(function () {
+      /* 反馈拉不到不影响学情报告本身 */
+    });
+
     /* knowledge_points 为空 = 这节课没有产生任何掌握记录 */
     if (!points.length && !snapshots.length) {
       showState("empty");
@@ -186,17 +210,6 @@ export function createView(ctx) {
     renderStages(snapshots);
     renderAdvice(points);
     showState("content");
-
-    /* 学情报告就绪后再拉辅导反馈；404（没结束过）就保持收起 */
-    var mySeq = requestSeq;
-    tutoringBox.hidden = false;
-    tutoringBox.replaceChildren();
-    fetchTutoringReport(ctx.sessionId).then(function (report) {
-      if (mySeq !== requestSeq || !report) return;
-      renderTutoringReportCard(tutoringBox, report);
-    }).catch(function () {
-      /* 反馈拉不到不影响学情报告本身 */
-    });
   }
 
   /* ── 取数 ──────────────────────────────────────────────── */

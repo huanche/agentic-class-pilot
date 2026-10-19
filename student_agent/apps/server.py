@@ -1215,7 +1215,19 @@ def start(body: StartIn) -> dict:
             lesson_id = platform_context["courseId"]
 
     # 先校验再动注册表，非法 id 不该留下任何痕迹（_path 里还有一道兜底）
-    sid = _safe_sid(body.session_id) if body.session_id else f"cls-{uuid.uuid4().hex[:8]}"
+    if body.session_id:
+        sid = _safe_sid(body.session_id)
+    elif platform_context and lesson_id:
+        # 平台态：会话号由（用户, 课程, 课时）确定性派生 —— 换设备/换浏览器后
+        # 再进同一课时，落回**同一个**辅导会话（磁盘可恢复），而不是新开一个。
+        digest = hashlib.sha1("|".join([
+            str(platform_context.get("userId") or ""),
+            str(platform_context.get("courseId") or ""),
+            str(lesson_id),
+        ]).encode("utf-8")).hexdigest()[:16]
+        sid = f"plat-{digest}"
+    else:
+        sid = f"cls-{uuid.uuid4().hex[:8]}"
     created = False
     with _REGISTRY_LOCK:
         if sid not in SESSIONS:
@@ -1501,6 +1513,31 @@ def state(sid: str) -> dict:
         if st.get("host_phase") == "tutoring" else None,
         "available_actions": ACTIONS.get(status, []),
     }
+
+
+@app.post("/api/session/{sid}/resume-tutoring")
+def resume_tutoring(sid: str) -> dict:
+    """返回原辅导会话继续聊（工单 06）。
+
+    明确结束过的课后辅导可以重新打开：计划时间戳、星级、证据、已见题、
+    消息全部保留；再次明确结束会生成新版反馈（旧版可查）。
+    """
+    s = _get(sid)
+    with s["lock"]:
+        st = s["state"]
+        # 「进过辅导」的判据：计划时间戳在进辅导那一刻必然设置（默认时长），
+        # 学生开场就结束（没出过题、没报过顺序）也算进过。
+        has_tutoring = bool(st.get("tutoring_planned_end_at"))
+        if st.get("host_phase") != "ending" or not has_tutoring:
+            raise HTTPException(409, "当前没有可恢复的课后辅导")
+        st["host_phase"] = "tutoring"
+        st["student_status"] = "active"
+        if st.get("lesson_status") == "ended":
+            st["lesson_status"] = "running"
+        st["stage_started_at"] = _now()
+        s["state"] = st
+        _persist(sid, st)
+    return {"ok": True, "phase": "tutoring", "status": st.get("lesson_status")}
 
 
 @app.get("/api/session/{sid}/tutoring-report")

@@ -179,6 +179,11 @@ export function fetchTutoringReport(sessionId) {
     });
 }
 
+/* 返回原辅导会话继续聊：时间/星级/证据/已见题保留，再次结束出新版反馈。 */
+export function resumeTutoring(sessionId) {
+  return request("POST", sessionUrl(sessionId, "/resume-tutoring"));
+}
+
 /* 0–5 星标签。口径取自后端 rules/interaction/MASTERY-STAR-RULES.md，
    那份文件自称「唯一权威规则，任何页面不得另算一套」——
    这里不重算星级，只是补一张标签查表：后端决定星级的 STAR_STATUS 缺少
