@@ -1239,6 +1239,29 @@ def _parse_tutoring_order(msg: str, catalog: list[tuple[str, str]]) -> list[str]
     return ids + rest
 
 
+def _parse_tutoring_self_ratings(msg: str, catalog: list[tuple[str, str]],
+                                 active_kid: str | None = None) -> dict[str, int]:
+    """「2 我给自己 2 分」「第 3 个评 4 星」式自评：知识点编号 → 星级（1–5）。
+
+    不带编号的「自评 3 分」记到当前正在复习的知识点上。
+    自评只表达学生意愿，不进系统星级（kp_stars）。
+    """
+    ratings: dict[str, int] = {}
+    n = len(catalog)
+    for m in re.finditer(
+            r"(?:第\s*)?([0-9]+)\s*(?:号|个)?\s*(?:我\s*)?(?:给\s*)?自己\s*"
+            r"(?:评\s*|打\s*)?(?:是\s*|为\s*)?([0-9]+)\s*[分星颗]",
+            msg):
+        no, stars = int(m.group(1)), int(m.group(2))
+        if 1 <= no <= n and 1 <= stars <= 5:
+            ratings[catalog[no - 1][0]] = stars
+    for m in re.finditer(r"自评\s*(?:为\s*)?([0-9]+)\s*[分星颗]", msg):
+        stars = int(m.group(1))
+        if 1 <= stars <= 5 and active_kid:
+            ratings.setdefault(active_kid, stars)
+    return ratings
+
+
 def tutoring_public(state: ClassroomState) -> dict:
     """/api/session/{sid}/state 的 tutoring 块：固定编号目录 + 当前复习顺序。
 
@@ -1254,6 +1277,11 @@ def tutoring_public(state: ClassroomState) -> dict:
             for i, (kid, title) in enumerate(catalog, 1)
         ],
         "order": [no_of[kid] for kid in order if kid in no_of],
+        "self_ratings": {
+            str(no_of[kid]): stars
+            for kid, stars in (state.get("tutoring_self_ratings") or {}).items()
+            if kid in no_of
+        },
     }
 
 
@@ -1594,15 +1622,30 @@ def teach(state: ClassroomState) -> dict:
             active_order = order or state.get("tutoring_order") or []
             active = active_order[0] if active_order else (catalog[0][0] if catalog else "")
             title = title_of.get(active, "刚才视频的内容")
+            new_ratings = _parse_tutoring_self_ratings(msg, catalog, active)
+            if new_ratings:
+                updates["tutoring_self_ratings"] = {
+                    **(state.get("tutoring_self_ratings") or {}), **new_ratings,
+                }
+            confirms: list[str] = []
             if order and len(order) > 1:
                 head = "再".join(f"「{title_of[kid]}」" for kid in order[:2])
-                confirm = f"好，就按你说的顺序：先{head}（其余按课件顺序）。"
+                confirms.append(f"好，就按你说的顺序：先{head}（其余按课件顺序）。")
             elif order:
-                confirm = f"好，那就先复习「{title}」。"
-            else:
-                confirm = "好，就按你说的来。"
+                confirms.append(f"好，那就先复习「{title}」。")
+            if new_ratings:
+                rated = "、".join(
+                    f"「{title_of.get(kid, kid)}」{stars} 星"
+                    for kid, stars in new_ratings.items()
+                )
+                confirms.append(
+                    f"你的自评我记下了（{rated}）——它代表你的感觉，"
+                    "系统星级还是看你实际作答。"
+                )
+            if not confirms:
+                confirms.append("好，就按你说的来。")
             plain = (
-                f"{confirm}我们先从「{title}」开始："
+                f"{''.join(confirms)}我们先从「{title}」开始："
                 "你先说说对它的理解，我看看哪里需要补一补。"
             )
             order_text = "、".join(

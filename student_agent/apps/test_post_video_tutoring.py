@@ -286,5 +286,23 @@ class TutoringIntentTimeTest(unittest.TestCase):
         self.assertNotIn("我们先从「调度是什么」", answer.json()["reply_text"])
 
 
+    def test_self_rating_recorded_separately_from_system_stars(self) -> None:
+        """「2 我给自己 2 分」：自评按知识点记录，且与系统星级分开存储。"""
+        self._enter_tutoring()
+
+        answer = self.client.post(
+            f"/api/session/{self.sid}/message",
+            json={"text": "2 我给自己 2 分。"},
+        )
+
+        self.assertEqual(answer.status_code, 200, answer.text)
+        tutoring = self._state()["tutoring"]
+        self.assertEqual(tutoring["self_ratings"], {"2": 2})
+        # 自评只表达意愿：系统星级（stars）不因此产生任何条目
+        self.assertEqual(self._state()["stars"], {})
+        # 回复确认记下了自评
+        self.assertIn("自评", answer.json()["reply_text"])
+
+
 if __name__ == "__main__":
     unittest.main()
