@@ -63,7 +63,7 @@ jobs:
           docker inspect "$teacher" --format '{{json .HostConfig}}' > "$backup/teacher-host-config.json"
           mapfile -t databases < <(docker exec "$pg" sh -ceu 'export PGPASSWORD="${POSTGRES_PASSWORD:-}"; exec psql -U "${POSTGRES_USER:-postgres}" -d postgres -Atc "SELECT datname FROM pg_database WHERE NOT datistemplate ORDER BY datname"')
           [[ ${#databases[@]} -gt 0 ]]
-          estimate="$(du -sk /home/ubuntu/teacher-agent-data | awk '{print $1}')"
+          estimate="$(docker exec -u 0 "$teacher" du -sk /app/data | awk '{print $1}')"
           database_kb="$(docker exec "$pg" sh -ceu 'export PGPASSWORD="${POSTGRES_PASSWORD:-}"; exec psql -U "${POSTGRES_USER:-postgres}" -d postgres -Atc "SELECT (sum(pg_database_size(datname))/1024)::bigint FROM pg_database WHERE NOT datistemplate"')"
           available="$(df -Pk "$backup" | awk 'NR==2 {print $4}')"
           [[ "$estimate" =~ ^[0-9]+$ && "$database_kb" =~ ^[0-9]+$ && "$available" =~ ^[0-9]+$ ]]
