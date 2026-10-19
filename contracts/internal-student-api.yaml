@@ -1,0 +1,133 @@
+# =====================================================================
+# 平台暴露给学生端的内部接口约定（唯一来源）
+# =====================================================================
+# 实现位置：platform/backend/app/api/routes/student_bridge.py、user_model_config.py
+# 调用方：student_agent/apps/integration/platform_client.py、launch_context.py
+# 变更规则：只允许新增字段；修改/删除已有字段属于破坏性变更，必须评审并升版本。
+#   学习上下文（learning-context）自带 schemaVersion 字段，为全系统第一个
+#   版本化契约；其余端点本次起纳入同一套变更规则。
+openapi: 3.1.0
+info:
+  title: Internal Student API
+  version: 1.0.0
+  description: >
+    平台与学生端之间的服务接口约定。路径以 /api/v1 为前缀。
+    认证：请求头 X-Student-Service-Key = 平台 .env 的 STUDENT_SERVICE_KEY。
+    所有端点 fail-closed：密钥错误 403；数据库不可用 503。
+servers:
+  - url: http://127.0.0.1:8080/api/v1
+paths:
+  /internal/student/authorize:
+    post:
+      summary: 学生请求授权（Cookie 或进入凭证二选一）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                cookie: { type: string, nullable: true }
+                launch_token: { type: string, nullable: true, description: 平台签发的课堂进入凭证 }
+                course_id: { type: string, format: uuid, nullable: true }
+                classroom_id: { type: string, nullable: true }
+      responses:
+        "200":
+          description: 授权通过（含归一化的可信身份）
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [userId, role, isAdmin]
+                properties:
+                  userId: { type: string, format: uuid }
+                  role: { type: string }
+                  isAdmin: { type: boolean }
+        "401": { description: 凭证无效/过期 }
+        "403": { description: 未选课、课件未发布或服务密钥错误 }
+        "503": { description: 平台数据库不可用 }
+  /internal/student/learning-context:
+    post:
+      summary: 课堂学习上下文（版本化数据面，schemaVersion = 1）
+      description: >
+        学生端启动课堂会话时调用。返回教师端已发布内容的完整投影：
+        知识包、课堂场景、课时结构与引用素材。客户端必须校验
+        schemaVersion；只加字段不改语义，破坏性变更升版本。
+      security: [{ studentServiceKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [launch_token]
+              properties:
+                launch_token: { type: string }
+      responses:
+        "200":
+          description: 学习上下文
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [schemaVersion, userId, courseId, publication, knowledgePackage, lessons]
+                properties:
+                  schemaVersion: { type: integer, enum: [1] }
+                  userId: { type: string, format: uuid }
+                  courseId: { type: string, format: uuid }
+                  courseTitle: { type: string }
+                  publication:
+                    type: object
+                    properties:
+                      id: { type: string, nullable: true }
+                      version: { type: integer }
+                  knowledgePackage:
+                    type: object
+                    properties:
+                      title: { type: string }
+                      summary: { type: string }
+                      entries:
+                        type: array
+                        items:
+                          type: object
+                  classroom:
+                    type: object
+                    nullable: true
+                    properties:
+                      playbackToken: { type: string, nullable: true, description: 课件回放凭证（平台签发，教师端校验） }
+                  lessons: { type: array, items: { type: object } }
+                  grounding: { type: object }
+        "401": { description: 凭证无效/过期 }
+        "403": { description: 未选课或内容未发布 }
+        "503": { description: 平台数据库不可用 }
+  /internal/student/learning-progress:
+    post:
+      summary: 课堂进度事件上报（平台据此计算真实进度并推送教师端）
+      description: event 仅接受 "started" / "ended"。
+      security: [{ studentServiceKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user_id, course_id, event]
+              properties:
+                user_id: { type: string, format: uuid }
+                course_id: { type: string, format: uuid }
+                session_key: { type: string, nullable: true }
+                classroom_id: { type: string, nullable: true }
+                event: { type: string, enum: [started, ended] }
+      responses:
+        "200":
+          description: 已受理（进度计算与教师端推送为平台侧后续动作）
+          content:
+            application/json:
+              schema: { type: object }
+        "403": { description: 服务密钥错误 }
+components:
+  securitySchemes:
+    studentServiceKey:
+      type: apiKey
+      in: header
+      name: X-Student-Service-Key
