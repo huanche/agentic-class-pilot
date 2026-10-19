@@ -1,0 +1,79 @@
+name: teacher-studio-verification-20261019
+on:
+  push:
+    branches: [codex/backup-teacher-chat-20261019]
+    paths: [.github/workflows/teacher-studio-verification-20261019.yml]
+permissions:
+  contents: read
+concurrency:
+  group: teacher-deploy
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Verify production version source health and backup
+        env:
+          SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+        run: |
+          set -euo pipefail
+          key="$RUNNER_TEMP/teacher-verify-key"
+          printf '%s\n' "$SERVER_SSH_KEY" > "$key"
+          chmod 600 "$key"
+          trap 'rm -f "$key"' EXIT
+          ssh -i "$key" -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=20 -o ServerAliveCountMax=3 "ubuntu@$SERVER_HOST" "bash -s -- '151affd166706135bb44a68b9eb2ac63e88f1b04' '39275653852'" <<'REMOTE'
+          set -euo pipefail
+          expected="${1:?release SHA required}"
+          backup_run="${2:?backup run required}"
+          [[ "$expected" =~ ^[a-f0-9]{40}$ && "$backup_run" =~ ^[0-9]+$ ]]
+          repo=/opt/agentic-class-pilot
+          backup="$repo/.runtime/backups/teacher-chat-20261019-$backup_run"
+          test -s "$backup/BACKUP_COMPLETE"
+          (cd "$backup" && sha256sum -c SHA256SUMS >/dev/null)
+          image="$(docker inspect agentic-teacher-prod --format '{{.Config.Image}}')"
+          test "$image" = "zmzm1443/agentic-teacher:main-${expected:0:7}"
+          echo "VERIFY_IMAGE $image"
+          test -z "$(git -C "$repo" status --porcelain --untracked-files=no)"
+          git -C "$repo" fetch origin
+          git -C "$repo" merge --ff-only "$expected"
+          test "$(git -C "$repo" rev-parse HEAD)" = "$expected"
+          echo "VERIFY_SOURCE $expected"
+          docker exec -i agentic-teacher-prod node - <<'JS'
+          const fs=require('node:fs');
+          const path=require('node:path');
+          const files=fs.readdirSync('/app/.next/static/chunks',{recursive:true}).filter(p=>p.endsWith('.js'));
+          const required=['新对话','历史会话','补充要求与操作','生成课件','任务记录'];
+          const removed=['我可以按你的要求启动教学大纲','可访问本课程全部','模型设置用于兼容模式','对话、课程文件管理与历史记录'];
+          const checks=Object.fromEntries(required.map(value=>[value,false]));
+          const stale=Object.fromEntries(removed.map(value=>[value,false]));
+          for(const file of files){
+            const text=fs.readFileSync(path.join('/app/.next/static/chunks',file),'utf8');
+            for(const value of required)if(text.includes(value))checks[value]=true;
+            for(const value of removed)if(text.includes(value))stale[value]=true;
+          }
+          if(Object.values(checks).some(value=>!value))throw new Error('Release UI text missing from production assets');
+          if(Object.values(stale).some(Boolean))throw new Error('Removed supplementary chat copy is still in production assets');
+          console.log('VERIFY_UI '+JSON.stringify(checks));
+          console.log('VERIFY_REMOVED_COPY '+JSON.stringify(stale));
+          console.log('VERIFY_CONFIG '+JSON.stringify({databaseConfigured:Boolean(process.env.COURSE_DATABASE_URL||process.env.DATABASE_URL),localTtsConfigured:Boolean(process.env.TTS_LEMONADE_BASE_URL),defaultVoice:process.env.TTS_LEMONADE_VOICE}));
+          JS
+          for endpoint in http://127.0.0.1:3200/api/health http://127.0.0.1:8080/health http://127.0.0.1:13305/health; do
+            code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "$endpoint")"
+            echo "VERIFY_HEALTH $endpoint $code"
+            test "$code" = 200
+          done
+          docker inspect agentic-kokoro --format 'VERIFY_TTS image={{.Config.Image}} state={{.State.Status}} oomKilled={{.State.OOMKilled}}'
+          for endpoint in https://agenticclasspilot.com/teacher/api/health https://agenticclasspilot.com/health; do
+            code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "$endpoint")"
+            echo "VERIFY_PUBLIC $endpoint $code"
+            [[ "$code" = 200 || "$code" = 401 ]]
+          done
+          echo "VERIFY_BACKUP $backup"
+          previous="$(cat "$backup/previous-teacher-image.txt")"
+          test "$previous" = 'zmzm1443/agentic-teacher:main-6927f84'
+          docker image inspect "$previous" >/dev/null
+          echo "VERIFY_ROLLBACK $previous"
+          echo 'VERIFY_OK teacher chat cleanup is live; source and backup verified'
+          REMOTE
