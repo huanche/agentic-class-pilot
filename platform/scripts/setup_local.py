@@ -13,6 +13,7 @@ service_key = secrets.token_hex(32)
 student_password = secrets.token_hex(24)
 student_service_key = secrets.token_hex(32)
 student_token_signing_key = secrets.token_hex(32)
+minio_password = secrets.token_hex(24)
 env = f'''PROJECT_NAME=AI Education Platform
 SECRET_KEY={secret}
 DATABASE_URL=postgresql://platform:{password}@127.0.0.1:55432/education
@@ -27,6 +28,7 @@ SMTP_TLS=false
 EMAILS_FROM_EMAIL=noreply@example.com
 POSTGRES_PASSWORD={password}
 TEACHER_DB_PASSWORD={teacher_password}
+MINIO_ROOT_PASSWORD={minio_password}
 TEACHER_SERVICE_KEY={service_key}
 STUDENT_SERVICE_KEY={student_service_key}
 STUDENT_TOKEN_SIGNING_KEY={student_token_signing_key}

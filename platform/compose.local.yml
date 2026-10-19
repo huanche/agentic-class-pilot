@@ -31,7 +31,9 @@ services:
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-agentedu}
-      MINIO_ROOT_PASSWORD: ${TEACHER_DB_PASSWORD}
+      # 凭据独立（问题6.4）：优先独立的 MINIO_ROOT_PASSWORD；
+      # 旧环境未配置时回落 TEACHER_DB_PASSWORD（过渡兼容）
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-${TEACHER_DB_PASSWORD}}
     ports:
       - "127.0.0.1:59000:9000"
       - "127.0.0.1:59001:9001"
