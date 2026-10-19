@@ -4,7 +4,7 @@
 
 **Blocked by:** 03
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [ ] 出新题前查已见清单并在出题上下文中带入避开信息；同一学生的已见题不被重复出（桩测两轮出题不重样）
 - [ ] 量规配置文件落地，改量规不改代码；1/3/5 星用已定文案，2/4 星草稿在评论中标注待过目
@@ -13,3 +13,29 @@
 - [ ] 默认规划时长挪入同一配置域（如 02 已实现为独立配置则合并）
 
 ## Comments
+
+### 2026-10-20 Claude（工单 04 实施）
+
+**⚠️ 待用户过目：量规 2/4 星草稿文案**（`orchestrator/rules/TUTORING-RUBRIC.json`，标了 DRAFT）：
+- 2 星：能认出但不能自己讲：见到说法能判断对错，独立解释则说不清
+- 4 星：能独立做对已见题型：无需提示能答对，但尚未经未见过的新题确认
+1/3/5 星为对齐时已定文案。改文字直接改 JSON，不用动代码。
+
+**做了什么**（3 个红-绿切片）
+
+- 量规配置文件 `rules/TUTORING-RUBRIC.json`：default_minutes（15，env AGENT_TUTORING_DEFAULT_MINUTES 仍可覆盖）、hinted_max_stars（3）、stale_question_max_stars（4）、五档量规文案。加载器带内置默认值兜底，文件缺失/损坏不炸。
+- 5 星门槛落在判对升星处：有提示 ≤ hinted_max_stars；见过的题（was_fresh=False）≤ stale_question_max_stars；只有「未见新题 + 无提示 + 独立答对」能到 5。四情形测试：新鲜无提示→5、见过→4、有提示→3 不再升、答错→不动。
+- 新题去重：每个知识点一个确定性三题题池（`_tutoring_question_pool`）；接模型时 `_tutoring_pick_question` 优先让模型出题——**已见题干清单（tutoring_asked，每题一记）喂进出题 prompt 让它避开**；题池耗尽复用旧题标 was_fresh=False（封顶 4）。
+- 答错两段式（方案原文：答错先追问/讲解，之后安排无提示新题确认）：第一次错同题标记提示追问；连续错转「讲解 + 换未见新题」，新题不带提示，答对按正常路径升星。
+- 量规小图标：掌握条每个知识点一枚 ⓘ；悬停显示/移开隐藏（CSS）、键盘聚焦显示（:focus + 兄弟选择器）、触屏点击切换（tm-open 类 + aria-expanded）。**不用 hidden 属性**——globals.css:54 把 [hidden] 定为 display:none!important 会压掉悬停/聚焦规则（这是本次踩到的坑，已注释在代码里）。
+
+**测试结果**
+
+- 缝 A：`apps.test_post_video_tutoring` 扩到 27 用例（5 星门槛四情形、双错换新题、LLM 生成收到已见清单、题池耗尽不新鲜、默认时长读量规文件+env 覆盖）。连同 api_integration 共 58 全过。
+- 组件：量规图标三态（规则存在断言 + 聚焦/失焦/点击开合真实交互）过；前端已重建发布。
+- 过程事故（已修复入档）：PS5.1 Get-Content/Set-Content 把测试文件中文写坏过一次，从 git 恢复后用 Edit 工具重放；一次测试红着被 `;` 链提交（16bba82），紧随补了 903cf93 修复。
+
+**给后续票的注意事项**
+
+- 票 05：结束时挂着的 `tutoring_question` 与 `tutoring_asked` 一并进反馈的「未完成检测」区；`mastery_updates` 里的 evidence（含提示标记）直接可用。
+- 票 06：`tutoring_asked` 在 state 里，会随会话落盘/恢复自动延续——跨会话去重天然成立；平台态如需跨课次去重，查 learning_events 的 tutoring_question 事件。
