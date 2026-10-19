@@ -749,7 +749,6 @@ function CourseWorkspace({ workspaceCourseId }: { workspaceCourseId: string }) {
                   <span className="block text-sm font-medium text-slate-700">
                     补充要求与更多操作
                   </span>
-                  <span className="text-xs text-slate-400">对话、课程文件管理与历史记录</span>
                 </span>
                 <ChevronDown
                   className={`size-4 text-slate-400 transition ${workbenchOpen ? 'rotate-180' : ''}`}

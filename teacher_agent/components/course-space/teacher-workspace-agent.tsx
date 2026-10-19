@@ -1,13 +1,12 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Bot,
   Brain,
   CheckCircle2,
   Circle,
-  FolderOpen,
   Globe2,
   ImagePlus,
   LoaderCircle,
@@ -18,7 +17,6 @@ import {
   Send,
   Square,
   Settings,
-  ShieldCheck,
   X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -104,26 +102,13 @@ export function TeacherWorkspaceAgent({
       window.clearInterval(timer);
     };
   }, [course.id]);
-  const initialMessage = useMemo<Message>(
-    () => ({
-      role: 'assistant',
-      content: `你好，我是“${course.title}”的课程操作智能体。课程材料、结构、知识图谱与中间产物已作为插件接入。我可以按你的要求启动教学大纲、教学计划、课件、讲稿、习题和评分量规工作，也可以创建、移动或删除课程文件。生成任务会直接进入标准生成—审核—可视化流程；结构变更与删除操作会先提交计划供你确认。`,
-    }),
-    [course.title],
-  );
   const [sessionId, setSessionId] = useState(() => `teacher-${course.id}-default`);
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      role: 'assistant',
-      content: `你好，我是“${course.title}”的课程操作智能体。课程材料、结构、知识图谱与中间产物已作为插件接入。我可以按你的要求启动教学大纲、教学计划、课件、讲稿、习题和评分量规工作，也可以创建、移动或删除课程文件。生成任务会直接进入标准生成—审核—可视化流程；结构变更与删除操作会先提交计划供你确认。`,
-    },
-  ]);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const voiceInputBaseRef = useRef<string | null>(null);
   const [attachments, setAttachments] = useState<ScreenshotAttachment[]>([]);
   const [loading, setLoading] = useState(false);
-  const [mode, setMode] = useState('DeepSeek Harness');
   const [deepInteraction, setDeepInteraction] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<SettingsSection | undefined>();
@@ -145,24 +130,6 @@ export function TeacherWorkspaceAgent({
     const data = (await response.json()) as { sessions?: SessionSummary[] };
     if (response.ok) setSessions(data.sessions ?? []);
   }, [course.id]);
-  const workingLocation = useMemo(() => {
-    if (activeScope.type === 'course') return course.title;
-    if (activeScope.type === 'module') {
-      const courseModule = course.modules.find((item) => item.id === activeScope.moduleId);
-      return courseModule ? `${course.title} / ${courseModule.title}` : course.title;
-    }
-    for (const courseModule of course.modules) {
-      const lesson = courseModule.lessons.find((item) => item.id === activeScope.lessonId);
-      if (lesson) return `${course.title} / ${courseModule.title} / ${lesson.title}`;
-    }
-    return course.title;
-  }, [activeScope, course]);
-  const accessibleFolderCount = useMemo(
-    () =>
-      course.modules.length +
-      course.modules.reduce((count, courseModule) => count + courseModule.lessons.length, 0),
-    [course.modules],
-  );
   const addImageFiles = (incoming: File[]) => {
     const files = incoming
       .filter(
@@ -196,7 +163,7 @@ export function TeacherWorkspaceAgent({
   }, [course.id, loadSessions]);
   useEffect(() => {
     let active = true;
-    setMessages([initialMessage]);
+    setMessages([]);
     void fetch(`/api/course-space/${course.id}/agent?sessionId=${encodeURIComponent(sessionId)}`, {
       cache: 'no-store',
     })
@@ -208,7 +175,7 @@ export function TeacherWorkspaceAgent({
     return () => {
       active = false;
     };
-  }, [course.id, initialMessage, sessionId]);
+  }, [course.id, sessionId]);
   useEffect(() => {
     conversationEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }, [messages, loading]);
@@ -267,7 +234,6 @@ export function TeacherWorkspaceAgent({
           },
         ]);
         setAttachments([]);
-        setMode('课程操作智能体');
         void loadSessions().catch(() => undefined);
         return;
       }
@@ -305,13 +271,6 @@ export function TeacherWorkspaceAgent({
       setMessages([...next, { role: 'assistant', content: responseText, plan: responsePlan }]);
       void loadSessions().catch(() => undefined);
       setAttachments([]);
-      setMode(
-        data.mode === 'course-operator'
-          ? '课程操作智能体'
-          : data.mode === 'deepseek-harness'
-            ? 'DeepSeek Harness'
-            : '模型兼容模式',
-      );
     } catch (error) {
       setMessages([
         ...next,
@@ -380,7 +339,7 @@ export function TeacherWorkspaceAgent({
   const startNewSession = () => {
     const nextSessionId = `teacher-${course.id}-${Date.now().toString(36)}`;
     setSessionId(nextSessionId);
-    setMessages([initialMessage]);
+    setMessages([]);
     setInput('');
     setAttachments([]);
   };
@@ -396,30 +355,10 @@ export function TeacherWorkspaceAgent({
             </div>
             <div>
               <h3 className="font-semibold">备课工作智能体</h3>
-              <p className="text-xs text-muted-foreground">
-                DeepSeek Harness · 课程材料、结构、知识图谱与产物已连接
-              </p>
             </div>
           </div>
-          <span className="rounded-full border border-emerald-100 bg-emerald-50 px-2.5 py-1 text-[11px] text-emerald-700">
-            {mode}
-          </span>
         </div>
       )}
-      <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-b border-slate-100 bg-[#fff8fb] px-5 py-3 text-xs">
-        <div className="flex min-w-0 items-center gap-2 text-slate-700">
-          <FolderOpen className="size-4 shrink-0 text-[#B00055]" />
-          <span className="shrink-0 font-medium">当前工作位置</span>
-          <span className="truncate text-[#8F0046]">{workingLocation}</span>
-        </div>
-        <div className="ml-auto flex items-center gap-1.5 text-slate-500">
-          <span className="mr-2 rounded-full border border-emerald-100 bg-emerald-50 px-2 py-1 text-[10px] font-medium text-emerald-700">
-            {mode}
-          </span>
-          <ShieldCheck className="size-4 text-emerald-600" />
-          可访问本课程全部 {accessibleFolderCount} 个文件夹
-        </div>
-      </div>
       <div className="flex min-h-0 flex-1">
         <aside className="flex w-64 shrink-0 flex-col border-r border-slate-100 bg-slate-50/80">
           <div className="border-b border-slate-100 p-3">
@@ -428,9 +367,10 @@ export function TeacherWorkspaceAgent({
               variant="outline"
               className="w-full justify-start rounded-xl bg-white"
               onClick={startNewSession}
+              title="开始独立对话，保留历史记录、课程文件和后台任务"
             >
               <MessageSquarePlus className="mr-2 size-4 text-[#B00055]" />
-              新备课会话
+              新对话
             </Button>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto p-2">
@@ -490,7 +430,7 @@ export function TeacherWorkspaceAgent({
                   <MessageSquare className="mt-0.5 size-3.5 shrink-0" />
                   <span className="min-w-0">
                     <span className="block truncate text-xs font-medium">
-                      {session.title || '新备课会话'}
+                      {session.title || '新对话'}
                     </span>
                     <span className="mt-1 block text-[10px] text-slate-400">
                       {new Date(session.updatedAt).toLocaleString('zh-CN', {
@@ -504,9 +444,7 @@ export function TeacherWorkspaceAgent({
                 </button>
               ))}
               {!sessions.length && (
-                <p className="px-3 py-5 text-xs leading-5 text-slate-400">
-                  发送第一条消息后，会话将保存在这里。
-                </p>
+                <p className="px-3 py-5 text-xs leading-5 text-slate-400">暂无对话</p>
               )}
             </div>
           </div>
@@ -794,13 +732,6 @@ export function TeacherWorkspaceAgent({
                 </div>
               </div>
             </div>
-            <p className="mt-2 text-[11px] text-muted-foreground">
-              麦克风开启后会边听边显示文字，再次点击停止 · 可上传或 Ctrl+V 粘贴截图 · Enter 发送
-            </p>
-            <p className="mt-1 text-[11px] text-muted-foreground">
-              模型设置用于兼容模式，平台个人模型配置与阶段路由优先；Harness
-              使用独立模型配置。网页检索结果可用于两种模式。
-            </p>
           </div>
         </div>
       </div>
