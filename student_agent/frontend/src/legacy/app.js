@@ -22,6 +22,7 @@ import { createStage as createSummaryStage } from "./stage-summary.js";
 import { createStage as createReflectStage } from "./stage-reflect.js";
 import { createStage as createDiscussStage } from "./stage-discuss.js";
 import { createStage as createDoneStage } from "./stage-done.js";
+import { mountTutoringMastery, renderTutoringMastery } from "./tutoring-mastery.js";
 
 
 /* ═══════════════════════════════════════════════════════════
@@ -348,6 +349,7 @@ var currentStage = "idle";
 var owners = {};
 var classStage = null;    /* 课堂模块实例：idle/chat/video 三个子阶段共用 */
 var reviewView = null;    /* 课后（内容待定） */
+var tutoringMasteryEl = null;  /* 课后辅导掌握条：挂在聊天面板顶部，跟轮询刷新 */
 
 /* 页头那枚状态胶囊 —— 进度轨删掉后，这是学生判断「现在在哪一步」
    的唯一依据，所以每一幕切换都要更新它。 */
@@ -420,6 +422,16 @@ function applyServerTurn(res) {
   if (!isKnown(phase)) {
     console.warn("[app] 后端下发了不认识的 host_phase，已忽略：" + phase);
     return;
+  }
+
+  /* 课后辅导掌握条：每次轮询都刷新——倒计时和自评的变化不会伴随阶段变化，
+     所以必须放在「阶段没变就早退」之前维护。 */
+  if (res.tutoring && phase === "tutoring") {
+    if (!tutoringMasteryEl) tutoringMasteryEl = mountTutoringMastery($(PANE.chat));
+    if (tutoringMasteryEl) renderTutoringMastery(tutoringMasteryEl, res.tutoring);
+  } else if (tutoringMasteryEl) {
+    tutoringMasteryEl.remove();
+    tutoringMasteryEl = null;
   }
 
   if (phase === hostPhase) return;      /* 没变，什么都不做 */

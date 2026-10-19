@@ -1661,3 +1661,39 @@ body::before { background: none; }
 @media (max-width: 780px) {
   .join-fab { right: 16px; bottom: 16px; }
 }
+
+/* ── 课后辅导掌握条（工单 02 外壳：剩余时间 + 编号顺序 + 自评）── */
+.tutoring-mastery {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--hairline);
+  background: var(--surface-solid);
+  border-radius: var(--r-lg) var(--r-lg) 0 0;
+  font-size: 13px;
+}
+.tm-head { color: var(--brand); font-weight: 600; white-space: nowrap; }
+.tm-clock { font-variant-numeric: tabular-nums; }
+.tm-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.tm-item { display: inline-flex; align-items: center; gap: 5px; color: var(--muted, inherit); }
+.tm-no {
+  display: inline-block;
+  min-width: 18px;
+  text-align: center;
+  border-radius: 999px;
+  background: var(--bg);
+  border: 1px solid var(--surface-border);
+  font-size: 11px;
+  line-height: 16px;
+}
+.tm-current { color: var(--brand-strong, inherit); font-weight: 600; }
+.tm-self { font-size: 11px; opacity: 0.8; }
