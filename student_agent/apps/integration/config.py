@@ -28,6 +28,14 @@ def student_service_key() -> str:
     return _clean("STUDENT_SERVICE_KEY")
 
 
+def token_signing_key() -> str:
+    """凭证签名密钥：优先独立的 STUDENT_TOKEN_SIGNING_KEY（问题6.3）。
+
+    未配置时回落到通道密钥（过渡兼容），与平台侧回落逻辑保持对称——
+    两侧必须使用同一把钥匙，否则签名校验必然失败。"""
+    return _clean("STUDENT_TOKEN_SIGNING_KEY") or student_service_key()
+
+
 def student_database_url() -> str:
     return _clean("STUDENT_DATABASE_URL")
 

@@ -11,6 +11,7 @@ Two surfaces:
 import hashlib
 import hmac
 import json
+import logging
 import secrets
 import base64
 import time
@@ -40,8 +41,21 @@ def check_student_service_key(value: str | None) -> None:
 
 # --- launch tokens: HMAC-signed, self-contained, short-lived -----------------
 
+def _token_signing_key() -> str:
+    """凭证签名密钥：优先用独立的 STUDENT_TOKEN_SIGNING_KEY（问题6.3）。
+
+    未配置时回落到通道密钥 STUDENT_SERVICE_KEY（过渡兼容，不中断现有部署），
+    并记录告警——生产环境应显式配置独立签名密钥。"""
+    if settings.STUDENT_TOKEN_SIGNING_KEY:
+        return settings.STUDENT_TOKEN_SIGNING_KEY
+    logging.getLogger(__name__).warning(
+        "STUDENT_TOKEN_SIGNING_KEY 未配置，凭证签名回落使用通道密钥"
+        "（建议在 .env 中配置独立签名密钥，实现通道认证与凭证签名分离）")
+    return settings.STUDENT_SERVICE_KEY
+
+
 def _launch_signature(payload_json: str) -> str:
-    key = (settings.STUDENT_SERVICE_KEY or "").encode()
+    key = (_token_signing_key() or "").encode()
     return hmac.new(key, payload_json.encode(), hashlib.sha256).hexdigest()
 
 

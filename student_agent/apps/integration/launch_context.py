@@ -12,7 +12,7 @@ import json
 import time
 from typing import Any, Dict
 
-from .config import student_service_key
+from .config import token_signing_key
 
 
 class LaunchTokenError(ValueError):
@@ -25,7 +25,7 @@ def _signature(payload_json: str, key: str) -> str:
 
 def verify_launch_token(token: str) -> Dict[str, Any]:
     """Validate signature + expiry and return the platform payload."""
-    key = student_service_key()
+    key = token_signing_key()
     if not key:
         raise LaunchTokenError("launch token 入口未配置（正式模式 fail closed）")
     encoded, _, signature = token.partition(".")
