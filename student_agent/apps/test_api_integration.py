@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import tempfile
 import time
@@ -20,6 +21,12 @@ class StudentApiIntegrationTest(unittest.TestCase):
     sid = "test-student-api-integration"
 
     def setUp(self) -> None:
+        # 本类是**原有编排**（复述→探究→讨论）的回归：课后辅导开关默认开启，
+        # 这里显式关掉，走开关关闭的那条路径（apps/test_post_video_tutoring.py
+        # 负责开关开启后的行为）。
+        patcher = mock.patch.dict(os.environ, {"AGENT_POST_VIDEO_TUTORING": "0"})
+        patcher.start()
+        self.addCleanup(patcher.stop)
         self.client = TestClient(server.app)
         server.SESSIONS.pop(self.sid, None)
         server._path(self.sid).unlink(missing_ok=True)
@@ -155,6 +162,11 @@ class TeacherLessonApiTest(unittest.TestCase):
     student_id = "test-teacher-lesson-student"
 
     def setUp(self) -> None:
+        # 课时上传/问自己问题的链路断言的是复述编排 → 关掉课后辅导开关
+        # （默认开启），与 StudentApiIntegrationTest 同理。
+        patcher = mock.patch.dict(os.environ, {"AGENT_POST_VIDEO_TUTORING": "0"})
+        patcher.start()
+        self.addCleanup(patcher.stop)
         self.client = TestClient(server.app)
         server.SESSIONS.pop(self.sid, None)
         server._path(self.sid).unlink(missing_ok=True)
@@ -601,6 +613,10 @@ class RecapStrategyTest(unittest.TestCase):
     ANSWER = "高级调度把作业调入内存，低级调度从就绪队列选一个进程上 CPU，中级调度负责对换"
 
     def setUp(self) -> None:
+        # 复述阶段的判定回归：显式关掉课后辅导开关，走复述编排。
+        patcher = mock.patch.dict(os.environ, {"AGENT_POST_VIDEO_TUTORING": "0"})
+        patcher.start()
+        self.addCleanup(patcher.stop)
         self.addCleanup(lambda: shutil.rmtree(
             agent.ROOT / "runtime" / "students" / self.student_id, ignore_errors=True))
 

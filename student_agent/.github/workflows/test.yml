@@ -33,7 +33,7 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: Backend integration test
-        run: python -m unittest apps.test_api_integration -v
+        run: python -m unittest apps.test_api_integration apps.test_post_video_tutoring -v
         env:
           AGENT_LLM_API_KEY: ""
 
