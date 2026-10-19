@@ -39,7 +39,8 @@ from agent import (  # noqa: E402
     EVENT_BEGIN, EVENT_MEDIA_DONE, EVENT_NEXT_STAGE, EVENT_END_LESSON,
     STAGE_NAMES, STAR_STATUS, build_graph, initial_state, is_uploaded_lesson,
     kp_title, lesson_source_label, list_lesson_ids, load_lesson,
-    run_turn_stateless, safe_lesson_id, save_lesson, validate_plan,
+    run_turn_stateless, safe_lesson_id, save_lesson, tutoring_public,
+    validate_plan,
 )
 from llm_override import set_llm_override  # noqa: E402
 
@@ -1405,6 +1406,8 @@ def state(sid: str) -> dict:
         "played_media": st.get("played_media") or [],
         "remaining_stages": st.get("remaining_stages") or [],
         "next_stage": (st.get("remaining_stages") or [None])[0],
+        # 课后辅导：固定编号目录 + 复习顺序（掌握条的渲染依据）
+        "tutoring": tutoring_public(st) if st.get("host_phase") == "tutoring" else None,
         "available_actions": ACTIONS.get(status, []),
     }
 

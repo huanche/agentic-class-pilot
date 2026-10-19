@@ -220,5 +220,71 @@ class PlatformPlanTutoringTest(unittest.TestCase):
         self.assertIn("1. 心理沙盘游戏初识", done["reply_text"])
 
 
+class TutoringIntentTimeTest(unittest.TestCase):
+    """工单 02（意愿与时间预算）的缝 A 回归。
+
+    关掉模型跑：意愿解析是确定性骨架层，直接断言记录与回复结构。
+    """
+
+    sid = "test-tutoring-intent"
+    student_id = "test-tutoring-intent-student"
+
+    def setUp(self) -> None:
+        patcher = mock.patch.dict(os.environ, {"AGENT_LLM_API_KEY": ""})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.client = TestClient(server.app)
+        server.SESSIONS.pop(self.sid, None)
+        server._path(self.sid).unlink(missing_ok=True)
+        self.addCleanup(self._cleanup)
+
+    def _cleanup(self) -> None:
+        session = server.SESSIONS.pop(self.sid, None)
+        if session:
+            session["stop"].set()
+        server._path(self.sid).unlink(missing_ok=True)
+
+    def _begin_demo_lesson(self) -> None:
+        lesson_id = self.client.get(
+            "/api/student/courses").json()["courses"][0]["lessons"][0]["lessonId"]
+        started = self.client.post("/api/session/start", json={
+            "session_id": self.sid, "lesson_id": lesson_id,
+            "student_id": self.student_id,
+        })
+        self.assertEqual(started.status_code, 200, started.text)
+        begun = self.client.post(f"/api/session/{self.sid}/begin")
+        self.assertEqual(begun.status_code, 200, begun.text)
+
+    def _enter_tutoring(self) -> None:
+        self._begin_demo_lesson()
+        done = self.client.post(f"/api/session/{self.sid}/media/done", json={})
+        self.assertEqual(done.status_code, 200, done.text)
+        self.assertEqual(done.json()["phase"], "tutoring")
+
+    def _state(self) -> dict:
+        return self.client.get(f"/api/session/{self.sid}/state").json()
+
+    def test_student_order_is_respected_and_recorded(self) -> None:
+        """学生指定「先 2 再 1」：顺序被记录（其余按目录补齐），
+        回复确认从学生选的第一个知识点开始。"""
+        self._enter_tutoring()
+
+        answer = self.client.post(
+            f"/api/session/{self.sid}/message",
+            json={"text": "先复习 2，再 1。"},
+        )
+
+        self.assertEqual(answer.status_code, 200, answer.text)
+        tutoring = self._state()["tutoring"]
+        # 固定编号目录：ch3 演示课共 6 个知识点
+        self.assertEqual([kp["no"] for kp in tutoring["knowledge_points"]],
+                         [1, 2, 3, 4, 5, 6])
+        # 学生指定的在前，没提的按目录顺序补后
+        self.assertEqual(tutoring["order"], [2, 1, 3, 4, 5, 6])
+        # 回复从学生选的第一个（2 = 三级调度）开始辅导
+        self.assertIn("三级调度", answer.json()["reply_text"])
+        self.assertNotIn("我们先从「调度是什么」", answer.json()["reply_text"])
+
+
 if __name__ == "__main__":
     unittest.main()

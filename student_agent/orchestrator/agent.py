@@ -500,6 +500,12 @@ class ClassroomState(TypedDict):
     dialogue_log: Annotated[list[dict], operator.add]  # 整课对话记录 [{"role": student/ai, "text"}]
                                                         # 供下课前的 LLM 掌握度评定使用
 
+    # ── 课后辅导（工单 02：意愿与时间预算）──
+    # ⚠️ 同上：LangGraph 只保留本 TypedDict 声明过的键，新键必须在此声明。
+    tutoring_order: list[str]               # 复习顺序（kp_id 列表，学生指定在前，其余按目录补齐）
+    tutoring_self_ratings: dict[str, int]   # 学生自评 1–5 星（只表达意愿，与系统星级分开存储）
+    tutoring_planned_end_at: str | None     # 计划结束时间戳：学生报时长那一刻起算；未报时从进辅导起按默认时长起算
+
     # ── 输出 ──
     reply_text: str
     speech_kind: Literal["none", "auto"]
@@ -1213,6 +1219,44 @@ def _lesson_kp_catalog(state: ClassroomState) -> list[tuple[str, str]]:
     return [(kid, kp_title(kid, lesson_id)) for kid in dict.fromkeys(ids)]
 
 
+def _parse_tutoring_order(msg: str, catalog: list[tuple[str, str]]) -> list[str] | None:
+    """「先 2 再 1」式复习顺序：按开场给的固定编号点名，映射回 kp_id。
+
+    只认目录范围内的编号；未提到的知识点按目录顺序补在后。
+    没点名任何编号 → None（学生没有表达顺序意愿）。
+    """
+    first = re.search(r"先\s*(?:复习\s*|从\s*|看\s*)?([0-9]+)", msg)
+    if not first:
+        return None
+    picked = [int(first.group(1))]
+    for m in re.finditer(r"再\s*(?:复习\s*|从\s*|看\s*)?([0-9]+)", msg[first.end():]):
+        picked.append(int(m.group(1)))
+    deduped = list(dict.fromkeys(no for no in picked if 1 <= no <= len(catalog)))
+    if not deduped:
+        return None
+    ids = [catalog[no - 1][0] for no in deduped]
+    rest = [kid for kid, _title in catalog if kid not in ids]
+    return ids + rest
+
+
+def tutoring_public(state: ClassroomState) -> dict:
+    """/api/session/{sid}/state 的 tutoring 块：固定编号目录 + 当前复习顺序。
+
+    编号是开场消息里给学生的那套固定数字编号（目录序，1 起），
+    前端掌握条照它渲染，不用自己再算。
+    """
+    catalog = _lesson_kp_catalog(state)
+    no_of = {kid: i for i, (kid, _title) in enumerate(catalog, 1)}
+    order = state.get("tutoring_order") or [kid for kid, _title in catalog]
+    return {
+        "knowledge_points": [
+            {"no": i, "kp_id": kid, "title": title}
+            for i, (kid, title) in enumerate(catalog, 1)
+        ],
+        "order": [no_of[kid] for kid in order if kid in no_of],
+    }
+
+
 def _tutoring_opening_skeleton(state: ClassroomState) -> str:
     """开场消息的确定性骨架：知识点固定编号列表 + 征询意愿（全部可省略）。"""
     catalog = _lesson_kp_catalog(state)
@@ -1535,23 +1579,41 @@ def teach(state: ClassroomState) -> dict:
         directive = "宣布进入全班讨论环节，请老师来主导。"
 
     elif phase == "tutoring":
-        # 工单 01 的最小闭环：确定性承接学生的开场意愿并进入复习；
-        # 消息分类、时间预算、自评与星级都是后续工单，这里不做判定。
+        # 工单 02：意愿解析（顺序/自评/时长）在确定性骨架层完成，LLM 只润色。
+        # 确认类内容（顺序/时长/自评的记录确认）与开场同理是硬性交付：
+        # 模型缺席时骨架原文说给学生，不给 NO_LLM_NOTICE（见下方 fallback）。
         updates["current_target"] = None
         updates["current_question"] = None
         if msg.strip():
             catalog = _lesson_kp_catalog(state)
-            first_title = catalog[0][1] if catalog else "刚才视频的内容"
+            listing = "、".join(f"{i}. {t}" for i, (_kid, t) in enumerate(catalog, 1))
+            title_of = {kid: t for kid, t in catalog}
+            order = _parse_tutoring_order(msg, catalog)
+            if order:
+                updates["tutoring_order"] = order
+            active_order = order or state.get("tutoring_order") or []
+            active = active_order[0] if active_order else (catalog[0][0] if catalog else "")
+            title = title_of.get(active, "刚才视频的内容")
+            if order and len(order) > 1:
+                head = "再".join(f"「{title_of[kid]}」" for kid in order[:2])
+                confirm = f"好，就按你说的顺序：先{head}（其余按课件顺序）。"
+            elif order:
+                confirm = f"好，那就先复习「{title}」。"
+            else:
+                confirm = "好，就按你说的来。"
             plain = (
-                f"好，就按你说的来。我们先从「{first_title}」开始："
+                f"{confirm}我们先从「{title}」开始："
                 "你先说说对它的理解，我看看哪里需要补一补。"
             )
-            listing = "、".join(f"{i}. {title}" for i, (_kid, title) in enumerate(catalog, 1))
+            order_text = "、".join(
+                title_of.get(kid, kid) for kid in (order or active_order)
+            ) or "按目录顺序"
             directive = (
-                "课后辅导阶段刚开始，学生回复了开场征询（可能包含复习顺序、自评星级、"
-                "复习时长，也可能什么都没说）。先简短确认他的安排，然后从第一个"
-                "要复习的知识点开始辅导：请他讲讲自己的理解，或直接针对它提问。\n"
+                "课后辅导阶段，学生回复了开场征询（可能包含复习顺序、自评星级、"
+                "复习时长，也可能什么都没说）。先简短确认他的安排，然后从当前"
+                "要复习的第一个知识点开始辅导：请他讲讲自己的理解，或直接针对它提问。\n"
                 f"本节课知识点（固定编号，不得增删、不得改号）：{listing}\n"
+                f"已确认的复习顺序（从先到后）：{order_text}\n"
                 "讲解与提问都严格落在这份清单内；学生没说的安排由你自行决定。"
             )
         else:
@@ -1619,7 +1681,7 @@ def teach(state: ClassroomState) -> dict:
             updates["llm_used"] = True
             return updates
 
-    updates["reply_text"] = NO_LLM_NOTICE if not llm_available() else plain
+    updates["reply_text"] = NO_LLM_NOTICE if (not llm_available() and phase != "tutoring") else plain
     updates["llm_used"] = False
     return updates
 
@@ -2231,6 +2293,9 @@ def initial_state(session_id: str, student_id: str = "student-001",
         "kp_meta": {},
         "stage_snapshots": [],
         "dialogue_log": [],
+        "tutoring_order": [],
+        "tutoring_self_ratings": {},
+        "tutoring_planned_end_at": None,
         "reply_text": "",
         "speech_kind": "none",
         "advance_reason": None,
