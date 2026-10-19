@@ -1240,6 +1240,13 @@ def _parse_tutoring_order(msg: str, catalog: list[tuple[str, str]]) -> list[str]
     return ids + rest
 
 
+# 七分类的骨架层信号：结束 / 追问 / 求助（自评、选点、改时间由各自解析器识别）。
+# 答题是兜底类：不是以上任何一类、又不是意愿表达的消息，交给工单 03 的判答链。
+_TUTORING_END_PAT = re.compile(r"就到这|到此为止|今天先到|先这样|下课|结束吧|复习完[了成]|收尾吧")
+_TUTORING_QUES_PAT = re.compile(r"[?？]|为什么|怎么|什么意思|是什么|怎么办|如何|哪.*(问题|不懂)")
+_TUTORING_HELP_PAT = re.compile(r"不懂|不会|没听懂|不明白|帮我|讲讲|讲一下|解释|教教我")
+
+
 def tutoring_default_minutes() -> int:
     """默认规划时长（分钟）：AGENT_TUTORING_DEFAULT_MINUTES，默认 15。"""
     raw = (os.environ.get("AGENT_TUTORING_DEFAULT_MINUTES") or "").strip() or "15"
@@ -1651,9 +1658,9 @@ def teach(state: ClassroomState) -> dict:
         directive = "宣布进入全班讨论环节，请老师来主导。"
 
     elif phase == "tutoring":
-        # 工单 02：意愿解析（顺序/自评/时长）在确定性骨架层完成，LLM 只润色。
-        # 确认类内容（顺序/时长/自评的记录确认）与开场同理是硬性交付：
-        # 模型缺席时骨架原文说给学生，不给 NO_LLM_NOTICE（见下方 fallback）。
+        # 工单 02：意愿解析（顺序/自评/时长）+ 七类消息分流，全在确定性骨架层；
+        # LLM 只润色与答疑。确认类内容是硬性交付：模型缺席时骨架原文说给学生
+        # （见下方 tutoring fallback）。
         updates["current_target"] = None
         updates["current_question"] = None
         if msg.strip():
@@ -1671,6 +1678,21 @@ def teach(state: ClassroomState) -> dict:
                 updates["tutoring_self_ratings"] = {
                     **(state.get("tutoring_self_ratings") or {}), **new_ratings,
                 }
+            duration = _parse_tutoring_duration(msg)
+            if duration:
+                updates["tutoring_planned_minutes"] = duration
+                updates["tutoring_planned_end_at"] = _iso_plus_minutes(
+                    state["now"], duration, float(state.get("time_scale") or 1.0))
+
+            # 时间预算只改教学安排：到点在回复里加一句关照，绝不关会话。
+            end_at = state.get("tutoring_planned_end_at")
+            time_up = bool(end_at) and (
+                datetime.fromisoformat(state["now"])
+                >= datetime.fromisoformat(end_at))
+            timeup_note = (
+                "时间差不多到了——还有想再问的吗？没有的话说一声，我们就可以收尾。\n"
+                if time_up else "")
+
             confirms: list[str] = []
             if order and len(order) > 1:
                 head = "再".join(f"「{title_of[kid]}」" for kid in order[:2])
@@ -1686,31 +1708,59 @@ def teach(state: ClassroomState) -> dict:
                     f"你的自评我记下了（{rated}）——它代表你的感觉，"
                     "系统星级还是看你实际作答。"
                 )
-            duration = _parse_tutoring_duration(msg)
             if duration:
-                updates["tutoring_planned_minutes"] = duration
-                updates["tutoring_planned_end_at"] = _iso_plus_minutes(
-                    state["now"], duration, float(state.get("time_scale") or 1.0))
                 confirms.append(
                     f"好，那就复习 {duration} 分钟——到点我不会赶你走，"
                     "只会问问你还想继续哪里。"
                 )
-            if not confirms:
-                confirms.append("好，就按你说的来。")
-            plain = (
-                f"{''.join(confirms)}我们先从「{title}」开始："
-                "你先说说对它的理解，我看看哪里需要补一补。"
+
+            kind = (
+                "end" if _TUTORING_END_PAT.search(msg)
+                else "followup" if _TUTORING_QUES_PAT.search(msg)
+                else "help" if _TUTORING_HELP_PAT.search(msg)
+                else "answer"
             )
+            if confirms:
+                body = (
+                    "".join(confirms)
+                    + f"我们先从「{title}」开始："
+                    "你先说说对它的理解，我看看哪里需要补一补。"
+                )
+            elif kind == "end":
+                # 结束的正式动作（生成反馈并入库）是工单 05 的活，这里只承接。
+                body = (
+                    f"好，那我们准备收尾。最后把「{title}」再快速过一遍；"
+                    "确认要结束的时候再说一声。"
+                )
+            elif kind in ("followup", "help"):
+                snippet = msg.strip().strip("？?。，,、")[:24]
+                body = (
+                    f"你提到的「{snippet}」正是复习「{title}」的好切入点："
+                    "先说说你现在已经理解的部分，我从你卡住的地方讲起。"
+                )
+            else:
+                body = (
+                    "好，就按你说的来。我们先从「{title}」开始："
+                    "你先说说对它的理解，我看看哪里需要补一补。"
+                )
+            plain = timeup_note + body
+
             order_text = "、".join(
                 title_of.get(kid, kid) for kid in (order or active_order)
             ) or "按目录顺序"
             directive = (
-                "课后辅导阶段，学生回复了开场征询（可能包含复习顺序、自评星级、"
-                "复习时长，也可能什么都没说）。先简短确认他的安排，然后从当前"
-                "要复习的第一个知识点开始辅导：请他讲讲自己的理解，或直接针对它提问。\n"
+                "课后辅导阶段，学生发了消息。先按已确认的安排回应，再回应这句本身。\n"
                 f"本节课知识点（固定编号，不得增删、不得改号）：{listing}\n"
                 f"已确认的复习顺序（从先到后）：{order_text}\n"
-                "讲解与提问都严格落在这份清单内；学生没说的安排由你自行决定。"
+                + (f"学生本轮更新了复习时长：{duration} 分钟，从这条消息时刻起算。\n"
+                   if duration else "")
+                + ("时间预算已到点：先温和地问他还想继续哪里，不催促结束。\n"
+                   if time_up else "")
+                + ("学生表达了结束意愿：确认后按结束流程收尾。\n"
+                   if kind == "end" else "")
+                + ("学生提出了问题或求助：直接回答或讲解，只依据本课已发布内容。\n"
+                   if kind in ("followup", "help") else "")
+                + "讲解与提问都严格落在这份清单内；学生没说的安排由你自行决定。"
             )
         else:
             speak = False          # 心跳轮静默，辅导只回应学生

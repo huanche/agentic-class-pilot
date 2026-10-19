@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import os
 import unittest
+from datetime import datetime, timedelta
 from pathlib import Path
 from unittest import mock
 
@@ -338,6 +339,76 @@ class TutoringIntentTimeTest(unittest.TestCase):
 
         self.assertEqual(tutoring["planned_minutes"], 5)
         self.assertLessEqual(tutoring["remaining_seconds"], 300)
+
+
+    def _backdate_plan(self, minutes: int) -> None:
+        """把已生效的计划结束时间拨回 minutes 分钟前，模拟时间流逝。"""
+        s = server.SESSIONS[self.sid]
+        s["state"]["tutoring_planned_end_at"] = (
+            datetime.now().astimezone() - timedelta(minutes=minutes)
+        ).isoformat(timespec="seconds")
+
+    def test_new_duration_resets_planned_end(self) -> None:
+        """中途「再复习 10 分钟」：按新消息时刻重设计划结束（不是累加）。"""
+        self._enter_tutoring()
+        self.client.post(f"/api/session/{self.sid}/message",
+                         json={"text": "想复习 15 分钟。"})
+        self._backdate_plan(30)
+
+        answer = self.client.post(
+            f"/api/session/{self.sid}/message",
+            json={"text": "再复习 10 分钟。"},
+        )
+
+        tutoring = self._state()["tutoring"]
+        self.assertEqual(tutoring["planned_minutes"], 10)
+        self.assertTrue(570 <= tutoring["remaining_seconds"] <= 600,
+                        tutoring["remaining_seconds"])
+        self.assertIn("10", answer.json()["reply_text"])
+
+    def test_time_up_checks_in_but_keeps_session(self) -> None:
+        """计划时间到：回复变成到点关照（询问还有没有问题），会话不关。"""
+        self._enter_tutoring()
+        self._backdate_plan(5)
+
+        answer = self.client.post(
+            f"/api/session/{self.sid}/message",
+            json={"text": "时间片轮转是什么意思？"},
+        )
+
+        state = self._state()
+        self.assertEqual(state["phase"], "tutoring")
+        self.assertEqual(state["status"], "running")
+        self.assertIn("时间差不多到了", answer.json()["reply_text"])
+
+    def test_question_routed_to_help_flow_not_intent_confirm(self) -> None:
+        """提问/求助不落进意愿确认模板，走答疑承接并回应学生问的点。"""
+        self._enter_tutoring()
+
+        answer = self.client.post(
+            f"/api/session/{self.sid}/message",
+            json={"text": "我不太懂多级反馈队列，帮我讲讲"},
+        )
+
+        reply = answer.json()["reply_text"]
+        self.assertIn("多级反馈队列", reply)
+        self.assertNotIn("就按你说的来", reply)
+        self.assertEqual(self._state()["phase"], "tutoring")
+
+    def test_end_phrasing_kept_open_until_ticket_05(self) -> None:
+        """「今天就到这」被识别为结束意愿，但结束动作是 05 号工单的活：
+        现在只承接、不下课。"""
+        self._enter_tutoring()
+
+        answer = self.client.post(
+            f"/api/session/{self.sid}/message",
+            json={"text": "今天就到这吧。"},
+        )
+
+        state = self._state()
+        self.assertEqual(state["phase"], "tutoring")
+        self.assertEqual(state["status"], "running")
+        self.assertTrue(answer.json()["reply_text"].strip())
 
 
 if __name__ == "__main__":
