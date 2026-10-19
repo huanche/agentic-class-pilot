@@ -57,7 +57,7 @@ jobs:
           mkdir "$backup/config"
           cp /home/ubuntu/teacher-prod.env "$backup/config/teacher-prod.env"
           cp "$repo/platform/.env" "$backup/config/platform.env"
-          cp "$repo/teacher_agent/server-providers.yml" "$backup/config/server-providers.yml"
+          docker cp "$teacher:/app/server-providers.yml" "$backup/config/server-providers.yml"
           chmod 600 "$backup"/config/*
           docker inspect "$teacher" --format '{{json .Mounts}}' > "$backup/teacher-mounts.json"
           docker inspect "$teacher" --format '{{json .HostConfig}}' > "$backup/teacher-host-config.json"
