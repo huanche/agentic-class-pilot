@@ -4,7 +4,7 @@
 
 **Blocked by:** 02, 03
 
-**Status:** claimed
+**Status:** resolved
 
 - [ ] 明确结束（学生主动 / AI 到点询问后确认）→ 生成反馈入库；同一次结束不重复入库（幂等）
 - [ ] 平台 alembic 迁移：after_class_reports 支持多版本 + 教师视角摘要字段；demo 态 JSON 同步支持多版本
@@ -15,3 +15,31 @@
 - [ ] 缝 A 覆盖：结束触发、幂等、版本递增
 
 ## Comments
+
+### 2026-10-20 Claude（工单 05 实施）
+
+**⚠️ 待用户过目：反馈栏目结构草稿**（`tutoring_feedback_payload`，`orchestrator/agent.py`）：
+概览（复习约 X 分钟（计划 Y）· 出题 n 道 · 答对 a · 答错 w）→ 知识点列表（编号、标题、系统星、自评、依据条数）→ 未完成检测 → 后续建议。教师摘要（入库不展示）：`课后辅导：复习约 X 分钟，答题 n 道（对 a / 错 w，其中提示后答对 h）；k 个知识点中 s 个达 3 星以上；薄弱点：…`。要改栏目直接说，改 `tutoring_feedback_payload` 一处。
+
+**做了什么**（2 个切片）
+
+- 结束判定（judge_advance 的 tutoring 守卫）：结束短语直接触发；到点后的短确认（「没有了」「可以了」「好」）也算——只在计划时间已过时算数，避免平时随口一句「好」就下课。tutoring→ending 切换的那一轮生成反馈（幂等：ending 里再说「结束」不重复入库；再次生成要等 06 的返回续聊拉回 tutoring）。
+- 反馈入库：迁移 `final08` 把 `after_class_reports` 改为 `(session_key, report_kind, version)` 主键并加 `teacher_summary` 列；旧课时报告（kind=lesson）行为不变；辅导反馈（kind=tutoring）append-only，每次明确结束一版。demo 态写 `runtime/integration/report-versions-<sid>.json`；独立态尽力而为（会话缓存 + 素材随 state 落盘）。`GET /api/session/{sid}/tutoring-report` 读最新版。
+- 前端：课后页（view-review）在学情报告下方渲染反馈卡（学生视角，教师摘要不出现）；课程卡在**全部课时完成**时出现「查看课程反馈」按钮，展开列出各课时 → 各自课后页看最新版反馈。辅导阶段 UI 本来就没有返回/退出类按钮，唯一出口就是明确结束（typing 或到点确认），无新增出口。
+- 答题统计（tutoring_stats：correct/wrong/hinted_correct）在判答处累积，进反馈。
+
+**测试结果**
+
+- 缝 A：`apps.test_post_video_tutoring` 扩到 29 用例（结束→v1 入库+教师摘要、幂等不升版、404、02 时代的「结束暂不下课」旧断言更新为新契约）。连同 api_integration 共 60 全过。
+- 组件：`tutoring-report.mjs`（版本/统计/星级/依据/未完成/建议/转义/教师摘要不外露/null 清空）过；前端已重建发布。
+- e2e：辅导流程 2 过（未新增 e2e——结束全链路的端到端回归在工单 06）。
+
+**演示路径（本地 8088）**
+
+进辅导 → 随便聊两句 → 说「今天就到这」→ 过场到下课总结 → 点「去课后」→ 学情报告下方出现「课后辅导反馈（第 1 版）」卡。全部课时完成后，课程列表卡片下方出现「查看课程反馈」。
+
+**给工单 06 的注意事项**
+
+- 返回续聊的核心状态都在 state 里持久（消息/星级/自评/已见题/计划时间），会话 JSON 落盘重启可恢复；重开辅导要把 host_phase 拉回 tutoring 且**不得**再次触发反馈生成（生成只挂在 tutoring→ending 切换轮，重开后再次明确结束会自然生成 v2——append_report_version 的版本号自增，幂等键防重放）。
+- 「继续辅导」入口建议放课后页反馈卡旁边（tutoringBox 容器已在那里）；调用方式：POST 消息端点直接可用（ending 阶段消息不掉线），需要一个把 phase 拉回 tutoring 的动作（新端点或结束短语判定复用）。
+- 平台库记得跑 alembic 升级到 final08（本地测试库也要）。
