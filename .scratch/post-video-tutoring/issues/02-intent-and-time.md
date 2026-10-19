@@ -4,7 +4,7 @@
 
 **Blocked by:** 01
 
-**Status:** claimed
+**Status:** resolved
 
 - [ ] 七类消息各至少一例在缝 A 有测试，分流正确
 - [ ] "先 2 再 1。2 我给自己 2 分，想复习 15 分钟" → 顺序、自评、计划结束时间戳全部记录；自评不污染系统星级
@@ -15,3 +15,29 @@
 - [ ] 刷新页面后剩余时间不清零（服务端时间戳为准）
 
 ## Comments
+
+### 2026-10-20 Claude（工单 02 实施）
+
+**做了什么**（5 个红-绿切片）
+
+- 意愿解析全在确定性骨架层（`orchestrator/agent.py`）：`_parse_tutoring_order`（「先 2 再 1」→ 顺序映射回 kp_id，没提的按目录补后）、`_parse_tutoring_self_ratings`（「2 我给自己 2 分」「第 3 个评 4 星」，不带编号的「自评 X」记到当前知识点）、`_parse_tutoring_duration`（「想复习 15 分钟」「再复习 10 分钟」；要求数字前有复习/学/打算类动词，避免把「还有 5 分钟吗」误判成改时长）。
+- 七类分流：自评/选点/改时间由解析器识别，结束/追问/求助由三个模式集判定，其余落答题类（03 的判答链接管）。确认类回复是硬性交付——模型缺席时骨架原文说给学生（与开场同例，tutoring 阶段不再给 NO_LLM_NOTICE）。
+- 时间预算：`tutoring_planned_minutes` + `tutoring_planned_end_at`（服务端时间戳）。学生报时长那一刻重设；未报时进辅导即按默认 15 分钟起算（`AGENT_TUTORING_DEFAULT_MINUTES` 可配）；演练倍速下墙钟等比缩短（与全课计时约定一致）。到点只在回复里加「时间差不多到了——还有想再问的吗」的关照，绝不关会话（judge_advance 的辅导守卫未动）。
+- `/state` 新增 `tutoring` 块：固定编号目录、顺序、自评、planned_minutes、planned_end_at、remaining_seconds（api.js 的 `...state` 透传，前端零适配）。
+- 前端掌握条外壳（`src/legacy/tutoring-mastery.js`）：挂在 `#stage-chat` 第一个子节点、每 2 秒轮询刷新（接线在 applyServerTurn 的「阶段没变」早退**之前**，否则倒计时会冻结）；渲染编号顺序 + 当前项高亮 + mm:ss 倒计时 + 自评；标题 HTML 转义。
+
+**测试结果**
+
+- 缝 A：`apps.test_post_video_tutoring` 扩到 17 用例（七类分流各至少一例、时长重设、默认可配、到点不关会话、结束意愿只承接不下课）；连同 `apps.test_api_integration` 共 48 全过（AGENT_LLM_API_KEY=""）。
+- 组件：`tests/component/tutoring-mastery.mjs`（顺序/倒计时/高亮/转义）过；`构建前端.cmd` 已重跑发布 apps/static/app。
+- e2e：`npx playwright test` 默认配置 2 过（含辅导中刷新恢复）。
+
+**演示路径（本地 8088）**
+
+进辅导后输入「先复习 2，再 1。2 我给自己 2 分，想复习 15 分钟。」→ 掌握条立刻变为 2→1 顺序、2 号带「自评 2★」、倒计时 15:00 起跳；中途说「再复习 10 分钟」→ 倒计时重置为 10:00；把系统时间等过去（或演示时把 planned_end 拨回）后发任意消息 → 回复开头出现到点关照，会话不掉线。
+
+**给后续票的注意事项**
+
+- 票 03：掌握条外壳的渲染函数签名是 `renderTutoringMastery(el, tutoring)`——星级数据加进 `tutoring_public` 的返回（如 `stars`/`star_labels`）即可直接渲染；`tutoring_self_ratings` state 键已就位，你的自评**存储列**（knowledge_mastery 加列）与之对接。答题类消息现在落 generic 承接，判答链接管时替换 `kind == "answer"` 分支即可。
+- 票 04：默认时长目前是独立 env（`AGENT_TUTORING_DEFAULT_MINUTES`），量规配置文件落地时把它收编进同一配置域。
+- 票 05：结束意愿已识别（`kind == "end"`，回复只承接不执行）；正式结束动作挂这个分支。directive 里已带「学生表达了结束意愿」标记。
