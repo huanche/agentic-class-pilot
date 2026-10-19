@@ -190,10 +190,20 @@ export function createStage(ctx) {
     /* ⚠️ 这一轮服务端要**现场让模型生成老师的下一句话**，实测 20–35 秒
        （平台态更慢：每轮要带上 1 万多字的已发布课程上下文）。
        视频播完后没有可点的按钮了，这里靠状态文字告诉学生在等什么；
-       幂等守卫会挡掉重复通知。 */
-    setPlayerStatus(how === "ended"
-      ? "视频已播完，正在请老师准备下一环节…（约需 20–30 秒）"
-      : "已通知老师，正在准备下一环节…（约需 20–30 秒）");
+       幂等守卫会挡掉重复通知。
+
+       播完之后要去「课后辅导」时，这段等待就是辅导的过渡态——
+       文案告诉学生接下来是围绕自己的复习对话，而不是"等老师准备"。 */
+    var toTutoring = ctx.getNextStage && ctx.getNextStage() === "tutoring";
+    if (toTutoring) {
+      setPlayerStatus(how === "ended"
+        ? "视频已播完，正在进入课后辅导…（AI 老师正在为你准备开场，约需 20–30 秒）"
+        : "正在进入课后辅导…（AI 老师正在为你准备开场，约需 20–30 秒）");
+    } else {
+      setPlayerStatus(how === "ended"
+        ? "视频已播完，正在请老师准备下一环节…（约需 20–30 秒）"
+        : "已通知老师，正在准备下一环节…（约需 20–30 秒）");
+    }
 
     notifyMediaDone(ctx.sessionId, sceneId, eventId).then(function (res) {
       if (res && res.message && res.message.text && !ctx.replySeenByPoll(res)) {
@@ -210,7 +220,10 @@ export function createStage(ctx) {
   function startVideo(replay) {
     replayMode = replay === true;
     $("btn-exit-replay").hidden = !replayMode;
-    showPane("video");
+    /* 走统一的舞台切换（而不是本地 showPane）：currentStage 必须真的
+       变成 "video"，后端把阶段切走（如视频完进入课后辅导）时，
+       applyServerTurn 才不会把「目标界面 == 当前界面」误判成不用动。 */
+    ctx.showStage("video");
     ctx.setStatus(replayMode ? "课程回放" : "教学视频");
 
     videoEndNotified = false;     /* 重进视频页时重置 */
@@ -307,7 +320,13 @@ export function createStage(ctx) {
           introDone = true;
           appendIntroAction();
         }
-        ctx.setStatus(introDone ? "引导学习" : "课程介绍");
+        /* 状态胶囊由 setStage 按 host_phase 统一设置；只有讲解阶段的
+           两个子状态（介绍对话/引导学习）在这里覆盖。进「课后辅导」时
+           chat 界面被复用，胶囊必须保持「课后辅导」，不能被盖回「引导学习」。 */
+        var phase = ctx.getPhase();
+        if (!phase || phase === "guided_learning" || phase === "intro") {
+          ctx.setStatus(introDone ? "引导学习" : "课程介绍");
+        }
       } else if (stage === "video") {
         showPane("video");
         ctx.setStatus("教学视频");

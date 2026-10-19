@@ -94,6 +94,9 @@ var catalogPromise = null;
 
 /* 后端当前说的那一幕。null 表示还没跟后端对过话 */
 var hostPhase = null;
+/* 后端说的「下一幕」（remaining_stages[0]）。视频播完前，它告诉前端
+   播完之后会去哪：tutoring = 课后辅导，recap_discussion = 原有编排。 */
+var nextStage = null;
 var messageCursor = 0;
 var pollTimer = null;
 
@@ -275,6 +278,7 @@ function selectLesson(course, item) {
     sessionId = loadSessionId(item.lessonId);
     lesson = null;
     hostPhase = null;
+    nextStage = null;
     messageCursor = 0;
     resetClassroom();
   }
@@ -364,6 +368,9 @@ function ctxFor() {
     get lessonId() { return currentLessonId; },
     getLesson: function () { return lesson; },
     getPhase: function () { return hostPhase; },
+    /* 视频播完后的下一幕（后端 remaining_stages[0]），播放器收尾文案用它区分
+       「进入课后辅导」和「等老师准备下一环节」 */
+    getNextStage: function () { return nextStage; },
     /* 后端每轮返回后统一交给这里 —— 「完全跟随」的落点 */
     applyServerTurn: applyServerTurn,
     /* POST 响应里的回复是否已被轮询链路投递过。回复是本轮最后一条消息，
@@ -408,6 +415,7 @@ function applyServerTurn(res) {
   if (typeof res.total === "number") messageCursor = Math.max(messageCursor, res.total);
 
   var phase = res.hostPhase;
+  if (typeof res.next_stage === "string") nextStage = res.next_stage;
 
   if (!isKnown(phase)) {
     console.warn("[app] 后端下发了不认识的 host_phase，已忽略：" + phase);
@@ -522,6 +530,7 @@ function openLessonRoute() {
     if (hostPhase === "ending") {
       sessionId = renewSessionId(currentLessonId);
       hostPhase = null;
+      nextStage = null;
       messageCursor = 0;
       resetClassroom();
       lesson = null;
@@ -551,6 +560,7 @@ function openLessonRoute() {
       stopSession(sessionId).catch(function () { /* 停不掉也别挡住上课 */ });
       sessionId = renewSessionId(requestedLessonId);
       hostPhase = null;
+      nextStage = null;
       messageCursor = 0;
       resetClassroom();
       return startSession({ sessionId: sessionId, lessonId: requestedLessonId });
