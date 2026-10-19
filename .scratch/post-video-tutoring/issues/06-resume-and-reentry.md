@@ -4,7 +4,7 @@
 
 **Blocked by:** 05
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [ ] 刷新页面 + 重启学生端服务后，辅导会话恢复且剩余计划时间不清零（服务端时间戳）
 - [ ] 换设备（另一浏览器身份/launch 会话）打开同一课时进入同一辅导会话
@@ -13,3 +13,28 @@
 - [ ] 端到端回归：视频完→开场→意愿→作答升星→结束→反馈→续聊→再结束→新版反馈，全链路一条测试走通（确定性桩）
 
 ## Comments
+
+### 2026-10-20 Claude（工单 06 实施）
+
+**做了什么**
+
+- `POST /api/session/{sid}/resume-tutoring`：把明确结束过的辅导会话拉回 tutoring（lesson_status 同步回 running）。「进过辅导」的判据是 `tutoring_planned_end_at`（进辅导那一刻必设默认时长）——学生开场就结束、没出过题也能续。计划时间戳、星级、证据、已见题、消息全部保留；再次明确结束走 05 的同一生成路径出 v2。
+- 换设备：平台态会话号由（用户, 课程, 课时）SHA1 确定性派生（`plat-<hash16>`），不带显式 session_id 的 start 落同一个号——换浏览器/换设备再进同一课时，直接落回原辅导会话（磁盘恢复）。测试用 launch/上下文桩验证两次进入同号。**注意：平台已有随机 `cls-*` 会话不受影响；新派生只对「不传 session_id 的平台 start」生效。**
+- 前端「继续辅导」：课后页反馈卡下方按钮 → resume → `ctx.reopenClassroom()`：清 `ai-learn.lessonEnded.*` 标记、内存课时状态复原 completed→current、模块 hostPhase 就地置 tutoring（**关键**：openLessonRoute 看到 ending 会 renewSessionId 开新会话）、直跳课堂聊天。不能用整页 reload——路由改道永远先落课时 hub。
+- e2e 第三条：视频完→开场→明确结束→done→课后页反馈卡（第 1 版）→继续辅导→回到聊天→继续发言有回复。
+
+**测试结果**
+
+- 缝 A：全链路一条测试（开场→意愿（先2再1+15分钟）→出题→判对升星+推进→结束 v1→续聊（题/星级/剩余时间都在）→再判对→再结束 v2→demo 落盘版本列表 [1,2]）；重启恢复（注册表清空→磁盘恢复，阶段/题/时间戳一致，剩余时间服务端换算不清零）；无辅导可恢复 409；平台确定性会话号。模块扩到 33 用例，连同 api_integration 共 64 全过。
+- e2e：3/3 过（新增续聊全链路）。组件 2 个测试过。前端已重建发布。
+
+**踩坑记录（给后来人）**
+
+1. 路由改道（app.js renderRoute）永远把不匹配的 class/review 弹到**课时 hub**，不会直送目标；课后态的解除必须同时清 localStorage 标记 + 内存 item.status + 模块 hostPhase。
+2. openLessonRoute 对 hostPhase==="ending" 会开新会话（重修设计）——续聊必须先改模块阶段再导航。
+3. e2e 改前端源码后必须先跑 构建前端.cmd，playwright 起的是静态产物。
+
+**遗留（诚实记录）**
+
+- 升星判答的 e2e 覆盖：e2e 后端无模型（judge=unclear 不升星），升星全链路由缝 A 的 mock 判答覆盖；接了模型的部署再补真 e2e。
+- resume 按钮点击后有一次「done 态→chat」的短暂切换闪动（setStage 顺序所致），可在后续 polish。
