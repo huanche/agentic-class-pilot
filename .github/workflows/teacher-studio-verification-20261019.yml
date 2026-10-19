@@ -10,7 +10,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   verify:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     timeout-minutes: 8
     steps:
       - name: Verify production version source health and backup
