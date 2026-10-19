@@ -1285,9 +1285,48 @@ def _tutoring_judge(question: dict, answer: str) -> tuple[str, str]:
     return verdict, str(data.get("note", ""))[:120]
 
 
+DEFAULT_TUTORING_RUBRIC = {
+    "default_minutes": 15,
+    "hinted_max_stars": 3,
+    "stale_question_max_stars": 4,
+    "rubric": {
+        "1": "仅接触过概念：听过讲解，但说不出内容",
+        "2": "能认出但不能自己讲：见到说法能判断对错，独立解释则说不清",
+        "3": "提示下能做对：经追问或提示后能答对检测题",
+        "4": "能独立做对已见题型：无需提示能答对，但尚未经未见过的新题确认",
+        "5": "无提示独立做对未见新题：未见过、无提示、独立答对，并满足本条量规",
+    },
+}
+
+_TUTORING_RUBRIC_CACHE: dict | None = None
+
+
+def _tutoring_rubric() -> dict:
+    """课后辅导量规与节奏配置：rules/TUTORING-RUBRIC.json，缺失/损坏回退内置默认。"""
+    global _TUTORING_RUBRIC_CACHE
+    if _TUTORING_RUBRIC_CACHE is not None:
+        return _TUTORING_RUBRIC_CACHE
+    loaded = dict(DEFAULT_TUTORING_RUBRIC)
+    try:
+        path = Path(__file__).resolve().parent / "rules" / "TUTORING-RUBRIC.json"
+        data = json.loads(path.read_text(encoding="utf-8"))
+        for key in ("default_minutes", "hinted_max_stars", "stale_question_max_stars"):
+            if isinstance(data.get(key), int):
+                loaded[key] = data[key]
+        if isinstance(data.get("rubric"), dict):
+            loaded["rubric"] = {
+                str(k): str(v) for k, v in data["rubric"].items()}
+    except (OSError, ValueError):
+        pass
+    _TUTORING_RUBRIC_CACHE = loaded
+    return loaded
+
+
 def tutoring_default_minutes() -> int:
-    """默认规划时长（分钟）：AGENT_TUTORING_DEFAULT_MINUTES，默认 15。"""
-    raw = (os.environ.get("AGENT_TUTORING_DEFAULT_MINUTES") or "").strip() or "15"
+    """默认规划时长（分钟）：env AGENT_TUTORING_DEFAULT_MINUTES 覆盖量规文件值。"""
+    raw = (os.environ.get("AGENT_TUTORING_DEFAULT_MINUTES") or "").strip()
+    if not raw:
+        raw = str(_tutoring_rubric().get("default_minutes", 15))
     try:
         return max(1, int(float(raw)))
     except ValueError:
@@ -1784,10 +1823,16 @@ def teach(state: ClassroomState) -> dict:
                 if verdict == "correct":
                     hinted = bool(prev_question.get("hint_given"))
                     current = int(stars.get(kid, 0))
-                    # 无提示独立答对 +1（封顶 5）；提示后答对最多记到 3 星——
-                    # 「提示下能做对」对应草拟量规的 3 星（量规文件在工单 04 落地）。
-                    stars[kid] = (min(5, current + 1) if not hinted
-                                  else max(current, min(3, current + 1)))
+                    # 5 星门槛（量规）：有提示 ≤3；见过的题 ≤4；
+                    # 只有「未见新题 + 无提示 + 独立答对」才可能到 5。
+                    rub = _tutoring_rubric()
+                    if hinted:
+                        cap = int(rub.get("hinted_max_stars", 3))
+                    elif not prev_question.get("was_fresh", True):
+                        cap = int(rub.get("stale_question_max_stars", 4))
+                    else:
+                        cap = 5
+                    stars[kid] = max(current, min(cap, current + 1))
                     updates["kp_stars"] = stars
                     updates["tutoring_question"] = None
                     updates["tutoring_cursor"] = (

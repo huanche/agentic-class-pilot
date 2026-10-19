@@ -560,6 +560,74 @@ class TutoringEvidenceMasteryTest(unittest.TestCase):
         self.assertEqual(a["payload"]["stars_after"], 1)
 
 
+    def _answer_judged(self, verdict: str, text: str = "我的作答") -> None:
+        def fake_chat(system: str, user: str):
+            return json.dumps({"verdict": verdict, "note": "stub"}, ensure_ascii=False)
+
+        with mock.patch.object(agent, "llm_available", return_value=True), \
+                mock.patch.object(agent, "llm_chat", side_effect=fake_chat):
+            self._send(text)
+
+    def _seed_stars(self, kp: str, value: int) -> None:
+        s = server.SESSIONS[self.sid]
+        s["state"]["kp_stars"] = {**s["state"].get("kp_stars", {}), kp: value}
+
+    def _reset_session(self) -> None:
+        """子场景间重置会话：同一测试方法里多次「开始上课」会 409。"""
+        session = server.SESSIONS.pop(self.sid, None)
+        if session:
+            session["stop"].set()
+        server._path(self.sid).unlink(missing_ok=True)
+
+    def test_five_stars_gate_three_cases(self) -> None:
+        """升 5 星必须「未见新题 + 无提示 + 答对」，三种不满足各一例。"""
+        # ① 首次见到的题、无提示、答对 → 可升 5
+        self._reset_session()
+        self._enter_tutoring()
+        self._send("那我准备好了")
+        kp1 = self._kp_id(1)
+        self._seed_stars(kp1, 4)
+        self._answer_judged("correct")
+        self.assertEqual(self._state()["stars"].get(kp1), 5)
+
+        # ② 见过的题（was_fresh=False）→ 封顶 4
+        self._reset_session()
+        self._enter_tutoring()
+        self._send("那我准备好了")
+        kp1 = self._kp_id(1)
+        self._seed_stars(kp1, 4)
+        server.SESSIONS[self.sid]["state"]["tutoring_question"]["was_fresh"] = False
+        self._answer_judged("correct")
+        self.assertEqual(self._state()["stars"].get(kp1), 4)
+
+        # ③ 有提示 → 最多 3：已在 3 星时不再升
+        self._reset_session()
+        self._enter_tutoring()
+        self._send("那我准备好了")
+        kp1 = self._kp_id(1)
+        self._seed_stars(kp1, 3)
+        server.SESSIONS[self.sid]["state"]["tutoring_question"]["hint_given"] = True
+        self._answer_judged("correct")
+        self.assertEqual(self._state()["stars"].get(kp1), 3)
+
+        # ④ 答错 → 不升星
+        self._reset_session()
+        self._enter_tutoring()
+        self._send("那我准备好了")
+        kp1 = self._kp_id(1)
+        self._seed_stars(kp1, 4)
+        self._answer_judged("wrong")
+        self.assertEqual(self._state()["stars"].get(kp1), 4)
+
+    def test_default_minutes_reads_rubric_file(self) -> None:
+        """默认时长收编进量规配置域：文件值生效，env 仍可覆盖。"""
+        rubric_default = agent._tutoring_rubric().get("default_minutes")
+        self.assertEqual(rubric_default, 15)
+        with mock.patch.dict(os.environ, {"AGENT_TUTORING_DEFAULT_MINUTES": "7"}):
+            self.assertEqual(agent.tutoring_default_minutes(), 7)
+        self.assertEqual(agent.tutoring_default_minutes(), rubric_default)
+
+
 class SelfRatingPersistenceTest(unittest.TestCase):
     """工单 03 缝 B：自评与系统星级分开存储、互不冲掉（demo 路径）。"""
 
