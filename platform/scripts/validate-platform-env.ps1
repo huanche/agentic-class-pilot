@@ -1,4 +1,4 @@
-# Validate platform .env before a service launcher starts.
+﻿# Validate platform .env before a service launcher starts.
 # Usage (from a launcher script):
 #   & (Join-Path $suiteRoot 'platform\scripts\validate-platform-env.ps1') `
 #       -PlatformEnv $platformEnv -Required @('TEACHER_SERVICE_KEY') `
@@ -23,12 +23,11 @@ Get-Content -LiteralPath $PlatformEnv | ForEach-Object {
 }
 $missing = @($Required | Where-Object { -not $present.ContainsKey($_) })
 if ($missing.Count -gt 0) {
-  throw ("platform .env 缺少必需变量：{0}。`n请运行 platform/scripts/setup_local.py 重新生成，" +
-         "或参照 platform/.env.example 手工补齐。") -f ($missing -join ', ')
+  $msg = "platform .env 缺少必需变量：" + ($missing -join ', ') + "。请运行 platform/scripts/setup_local.py 重新生成，或参照 platform/.env.example 手工补齐。"
+  throw $msg
 }
 $missingRecommended = @($Recommended | Where-Object { -not $present.ContainsKey($_) })
 if ($missingRecommended.Count -gt 0) {
-  Write-Host ("警告：platform .env 缺少推荐变量 {0}（当前有回落兼容，建议补齐以完成密钥分离）。" +
-              "") -f ($missingRecommended -join ', ') -ForegroundColor Yellow
+  Write-Warning "platform .env 缺少推荐变量 $($missingRecommended -join ', ')（当前有回落兼容，建议补齐以完成密钥分离）。"
 }
 Write-Host "platform .env 校验通过（必需 $($Required.Count) 项齐全）。"
