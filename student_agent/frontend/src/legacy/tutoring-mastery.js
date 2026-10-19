@@ -27,6 +27,10 @@ export function renderTutoringMastery(el, tutoring) {
   var order = (tutoring.order || []).filter(function (no) { return byNo[no]; });
   var ratings = tutoring.self_ratings || {};
   var stars = tutoring.stars || {};
+  var rubric = tutoring.rubric || {};
+  var rubricText = Object.keys(rubric).sort().map(function (k) {
+    return k + "★ " + escapeHtml(rubric[k]);
+  }).join("\n");
   var rows = order.map(function (no, index) {
     var kp = byNo[no];
     var rating = ratings[no];
@@ -37,6 +41,11 @@ export function renderTutoringMastery(el, tutoring) {
       + (typeof star === "number" && star > 0
           ? '<span class="tm-stars">系统 ' + star + "★</span>" : "")
       + (rating ? '<span class="tm-self">自评 ' + rating + "★</span>" : "")
+      + (rubricText
+          ? '<button type="button" class="tm-rubric" aria-label="评分标准"'
+            + ' aria-expanded="false" title="评分标准">ⓘ</button>'
+            + '<span class="tm-rubric-text">' + rubricText + "</span>"
+          : "")
       + "</li>";
   });
   var remaining = formatRemaining(tutoring.remaining_seconds);
@@ -44,6 +53,24 @@ export function renderTutoringMastery(el, tutoring) {
     '<div class="tm-head">复习剩余 <span class="tm-clock">'
     + (remaining || "--:--") + "</span></div>"
     + '<ol class="tm-list">' + rows.join("") + "</ol>";
+
+  /* 触屏点击切换（悬停/键盘聚焦由 CSS 处理）；重渲染只换 innerHTML，
+     容器上的监听器绑一次就够。不用 hidden 属性——globals.css 把
+     [hidden] 定成了 display:none!important，会压掉悬停/聚焦的显示规则。 */
+  if (!el.__tmBound) {
+    el.addEventListener("click", function (event) {
+      var btn = event.target && event.target.closest ? event.target.closest(".tm-rubric") : null;
+      if (!btn || !el.contains(btn)) return;
+      var item = btn.parentElement;
+      var text = item && item.querySelector(".tm-rubric-text");
+      if (!text) return;
+      var opening = !text.classList.contains("tm-open");
+      text.classList.toggle("tm-open", opening);
+      btn.setAttribute("aria-expanded", opening ? "true" : "false");
+      if (!opening) btn.blur();   // 关闭时移开焦点，否则 :focus 规则会把它继续撑着
+    });
+    el.__tmBound = true;
+  }
 }
 
 export function mountTutoringMastery(host) {

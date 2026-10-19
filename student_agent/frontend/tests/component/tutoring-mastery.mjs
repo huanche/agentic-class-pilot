@@ -17,7 +17,13 @@ try {
     const path = new URL(route.request().url()).pathname;
     if (path === '/') {
       return route.fulfill({contentType: 'text/html',
-        body: '<body><div class="stage stage--chat" id="stage-chat"><div class="chat" id="chat-log"></div><form class="composer" id="composer"></form></div></body>'});
+        body: '<head><link rel="stylesheet" href="/globals.css">'
+          + '<style>.tm-item{display:block;width:220px;height:26px}.tm-head{display:block;height:20px}</style></head>'
+          + '<body><div class="stage stage--chat" id="stage-chat"><div class="chat" id="chat-log"></div><form class="composer" id="composer"></form></div></body>'});
+    }
+    if (path === '/globals.css') {
+      return route.fulfill({contentType: 'text/css',
+        body: readFileSync('src/app/globals.css', 'utf8')});
     }
     if (path === '/tutoring-mastery.js') {
       return route.fulfill({contentType: 'application/javascript',
@@ -40,6 +46,11 @@ try {
       order: [2, 1, 3],
       self_ratings: {2: 2},
       stars: {2: 1},
+      rubric: {
+        1: '仅接触过概念',
+        3: '提示下能做对',
+        5: '无提示独立做对未见新题',
+      },
       planned_minutes: 15,
       remaining_seconds: 14 * 60 + 5,
     });
@@ -61,7 +72,55 @@ try {
   assert.ok(result.html.includes('&lt;script&gt;') && !result.html.includes('<script>alert'),
     `标题必须 HTML 转义：${result.html}`);
 
-  console.log('Tutoring mastery bar: order, countdown, self-rating, escaping all rendered.');
+  /* 量规小图标：三态可查看 */
+  const icon = page.locator('.tm-rubric').first();
+  const rubricText = page.locator('.tm-rubric-text').first();
+  await assert.doesNotReject(() => icon.waitFor({state: 'attached'}), '量规图标要存在');
+  assert.equal(await icon.getAttribute('aria-label'), '评分标准');
+  assert.ok(result.html.includes('5★ 无提示独立做对未见新题'), `量规文本要渲染：${result.html}`);
+  assert.equal(await page.evaluate(
+    () => getComputedStyle(document.querySelector('.tm-rubric-text')).display),
+    'none', '默认隐藏（悬停/聚焦/点击才显示）');
+
+  // 悬停显示/移开隐藏是纯 CSS 行为；无头 Chromium 的 :hover 命中不稳定，
+  // 这里断言规则本身存在且默认隐藏（配合上面的 hidden 断言构成契约），
+  // 真实浏览器行为由规则保证。
+  const hoverRules = await page.evaluate(() => {
+    const found = [];
+    for (const sheet of document.styleSheets) {
+      try {
+        for (const rule of sheet.cssRules) {
+          if (rule.selectorText && rule.selectorText.includes('.tm-item:hover .tm-rubric-text')) {
+            found.push(rule.selectorText + '{display:' + rule.style.display + '}');
+          }
+        }
+      } catch (e) {}
+    }
+    return found;
+  });
+  assert.ok(hoverRules.some(r => r.includes('display:block')),
+    `悬停显示规则必须存在：${JSON.stringify(hoverRules)}`);
+
+  await page.focus('.tm-rubric');                     // 键盘聚焦显示
+  await assert.doesNotReject(() => rubricText.waitFor({state: 'visible'}),
+    '键盘聚焦应显示量规');
+  await page.evaluate(() => document.activeElement.blur());
+  await assert.doesNotReject(() => rubricText.waitFor({state: 'hidden'}),
+    '失焦应收起量规');
+
+  await icon.click();                                 // 触屏点击切换
+  await assert.doesNotReject(() => rubricText.waitFor({state: 'visible'}),
+    '点击应打开量规');
+  assert.equal(await icon.getAttribute('aria-expanded'), 'true');
+  await icon.click();
+  // 点击后鼠标仍悬在图标上（:hover 也会显示），移开后再断言收起——
+  // 触屏没有 hover，真实语义就是「点第二下即收起」
+  await page.mouse.move(5, 5);
+  await assert.doesNotReject(() => rubricText.waitFor({state: 'hidden'}),
+    '再点应收起量规');
+  assert.equal(await icon.getAttribute('aria-expanded'), 'false');
+
+  console.log('Tutoring mastery bar: order, countdown, self-rating, escaping, rubric icon all rendered.');
 } finally {
   await browser.close();
 }

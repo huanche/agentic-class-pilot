@@ -1458,6 +1458,8 @@ def tutoring_public(state: ClassroomState, now_iso: str | None = None,
         "planned_minutes": int(state.get("tutoring_planned_minutes") or 0),
         "planned_end_at": end,
         "remaining_seconds": remaining,
+        # 评分标准（量规）：掌握条的小图标悬停/聚焦/点击展示
+        "rubric": _tutoring_rubric().get("rubric") or {},
     }
 
 

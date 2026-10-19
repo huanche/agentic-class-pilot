@@ -1697,3 +1697,36 @@ body::before { background: none; }
 }
 .tm-current { color: var(--brand-strong, inherit); font-weight: 600; }
 .tm-self { font-size: 11px; opacity: 0.8; }
+
+/* 量规小图标（工单 04）：悬停显示/移开隐藏、键盘聚焦可查、触屏点击切换 */
+.tm-item { position: relative; }
+.tm-rubric {
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--brand);
+  padding: 0 2px;
+  line-height: 1;
+}
+.tm-rubric-text {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 5;
+  background: var(--surface-solid);
+  border: 1px solid var(--surface-border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 12px;
+  font-weight: 400;
+  white-space: pre-line;
+  max-width: 320px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+}
+.tm-item:hover .tm-rubric-text,
+.tm-rubric:focus + .tm-rubric-text,
+.tm-rubric-text.tm-open {
+  display: block;
+}
