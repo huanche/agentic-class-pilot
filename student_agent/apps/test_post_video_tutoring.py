@@ -661,18 +661,21 @@ class TutoringEvidenceMasteryTest(unittest.TestCase):
         def fake_chat(system: str, user: str):
             if "判定" in system:
                 return json.dumps({"verdict": "wrong"}, ensure_ascii=False)
-            captured["user"] = user
+            captured.setdefault("users", []).append(user)
             return "LLM 新题：请举例说明调度决策的三个输入。"
 
         with mock.patch.object(agent, "llm_available", return_value=True), \
                 mock.patch.object(agent, "llm_chat", side_effect=fake_chat):
-            self._send("第一次：我随便说说")   # 判错 → 追问（不生成）
-            self._send("第二次：还是不会")     # 再错 → 生成新题
+            self._send("第一次：我觉得是随便挑一个")   # 判错 → 追问（不生成）
+            self._send("第二次：还是同一个答案")       # 再错 → 生成新题
 
         q2 = self._state()["tutoring"]["question"]
         self.assertIn("LLM 新题", q2["text"])
         self.assertTrue(q2["was_fresh"])
-        self.assertIn(q1, captured.get("user", ""))   # 已见题喂给了生成 prompt
+        # 已见题干喂给了出题 prompt（收集全部非判答调用，别被润色覆盖）
+        self.assertTrue(
+            any(q1 in u for u in captured.get("users", [])),
+            captured.get("users"))
 
     def test_exhausted_pool_reuses_without_freshness(self) -> None:
         """确定性题池耗尽后复用旧题：was_fresh=False，升星封顶 4。"""
