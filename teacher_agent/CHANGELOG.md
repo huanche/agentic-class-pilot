@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Remove repeated location, welcome and technical help text from supplementary teacher chat. Rename the existing independent-conversation entry to “新对话” while preserving saved conversations and background tasks.
 - Move classroom language and theme controls into System Settings, leaving a single settings entry in the classroom header and opening the system section directly.
 - Merge live courseware generation progress into the existing generate button, with task details and background cancellation in a popover. Move task history to the adjacent overflow menu and restore saved progress when returning to a course.
 - Remove repeated teacher-workspace subtitles, the version badge and visible file breadcrumb. Keep file-location navigation on the courseware title, and hide duration diagnostics in the embedded teacher review header.
