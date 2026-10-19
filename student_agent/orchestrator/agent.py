@@ -28,7 +28,7 @@ import os
 import re
 import sys
 import urllib.request
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Annotated, Literal, TypedDict
 
@@ -504,6 +504,7 @@ class ClassroomState(TypedDict):
     # ⚠️ 同上：LangGraph 只保留本 TypedDict 声明过的键，新键必须在此声明。
     tutoring_order: list[str]               # 复习顺序（kp_id 列表，学生指定在前，其余按目录补齐）
     tutoring_self_ratings: dict[str, int]   # 学生自评 1–5 星（只表达意愿，与系统星级分开存储）
+    tutoring_planned_minutes: int           # 当前计划时长（分钟）：学生报的时长，或进辅导时的默认值
     tutoring_planned_end_at: str | None     # 计划结束时间戳：学生报时长那一刻起算；未报时从进辅导起按默认时长起算
 
     # ── 输出 ──
@@ -1239,6 +1240,38 @@ def _parse_tutoring_order(msg: str, catalog: list[tuple[str, str]]) -> list[str]
     return ids + rest
 
 
+def tutoring_default_minutes() -> int:
+    """默认规划时长（分钟）：AGENT_TUTORING_DEFAULT_MINUTES，默认 15。"""
+    raw = (os.environ.get("AGENT_TUTORING_DEFAULT_MINUTES") or "").strip() or "15"
+    try:
+        return max(1, int(float(raw)))
+    except ValueError:
+        return 15
+
+
+def _iso_plus_minutes(iso: str, minutes: float, scale: float = 1.0) -> str:
+    """从 iso 起「minutes 分钟学生时间」后的墙钟时间戳。
+
+    演练倍速（time_scale>1）下墙钟等比缩短，与全课计时约定一致；
+    生产环境 scale=1，就是自然的分钟数。
+    """
+    return (datetime.fromisoformat(iso)
+            + timedelta(minutes=minutes / max(scale, 0.001))).isoformat()
+
+
+def _parse_tutoring_duration(msg: str) -> int | None:
+    """「想复习 15 分钟」「再复习 10 分钟」：复习时长（分钟）。
+
+    要求数字前有复习/学/打算之类的动词，避免把「还有 5 分钟吗」
+    误判成改时长。
+    """
+    m = re.search(r"(?:复习|学习|学|看|聊|打算|花|用|再)\s*([0-9]+)\s*分钟", msg)
+    if not m:
+        return None
+    minutes = int(m.group(1))
+    return minutes if 1 <= minutes <= 240 else None
+
+
 def _parse_tutoring_self_ratings(msg: str, catalog: list[tuple[str, str]],
                                  active_kid: str | None = None) -> dict[str, int]:
     """「2 我给自己 2 分」「第 3 个评 4 星」式自评：知识点编号 → 星级（1–5）。
@@ -1262,15 +1295,23 @@ def _parse_tutoring_self_ratings(msg: str, catalog: list[tuple[str, str]],
     return ratings
 
 
-def tutoring_public(state: ClassroomState) -> dict:
-    """/api/session/{sid}/state 的 tutoring 块：固定编号目录 + 当前复习顺序。
+def tutoring_public(state: ClassroomState, now_iso: str | None = None,
+                    time_scale: float = 1.0) -> dict:
+    """/api/session/{sid}/state 的 tutoring 块：固定编号目录 + 复习顺序 + 时间预算。
 
     编号是开场消息里给学生的那套固定数字编号（目录序，1 起），
-    前端掌握条照它渲染，不用自己再算。
+    前端掌握条照它渲染，不用自己再算。remaining_seconds 是学生时间
+    （服务端时间戳换算，刷新/换设备不清零）。
     """
     catalog = _lesson_kp_catalog(state)
     no_of = {kid: i for i, (kid, _title) in enumerate(catalog, 1)}
     order = state.get("tutoring_order") or [kid for kid, _title in catalog]
+    end = state.get("tutoring_planned_end_at")
+    remaining = None
+    if end and now_iso:
+        delta = (datetime.fromisoformat(end)
+                 - datetime.fromisoformat(now_iso)).total_seconds()
+        remaining = max(0, round(delta * float(time_scale or 1.0)))
     return {
         "knowledge_points": [
             {"no": i, "kp_id": kid, "title": title}
@@ -1282,6 +1323,9 @@ def tutoring_public(state: ClassroomState) -> dict:
             for kid, stars in (state.get("tutoring_self_ratings") or {}).items()
             if kid in no_of
         },
+        "planned_minutes": int(state.get("tutoring_planned_minutes") or 0),
+        "planned_end_at": end,
+        "remaining_seconds": remaining,
     }
 
 
@@ -1641,6 +1685,15 @@ def teach(state: ClassroomState) -> dict:
                 confirms.append(
                     f"你的自评我记下了（{rated}）——它代表你的感觉，"
                     "系统星级还是看你实际作答。"
+                )
+            duration = _parse_tutoring_duration(msg)
+            if duration:
+                updates["tutoring_planned_minutes"] = duration
+                updates["tutoring_planned_end_at"] = _iso_plus_minutes(
+                    state["now"], duration, float(state.get("time_scale") or 1.0))
+                confirms.append(
+                    f"好，那就复习 {duration} 分钟——到点我不会赶你走，"
+                    "只会问问你还想继续哪里。"
                 )
             if not confirms:
                 confirms.append("好，就按你说的来。")
@@ -2039,6 +2092,12 @@ def advance_stage(state: ClassroomState) -> dict:
         "advance_reason": state.get("advance_reason"),
         "llm_used": gen,
     }
+    if nxt == "tutoring":
+        # 未报时长先按默认规划时长起算；学生随后报时长会按那条消息时刻重设。
+        default_min = tutoring_default_minutes()
+        out["tutoring_planned_minutes"] = default_min
+        out["tutoring_planned_end_at"] = _iso_plus_minutes(
+            now, default_min, float(state.get("time_scale") or 1.0))
     # 进入提问阶段：当场把第一问挂起来并说出口。不然前端拿到 current_question=None，
     # 老师按节奏切幕后学生干等一轮心跳（默认 10 秒）才听到题目。
     if nxt in ("recap_discussion", "deep_inquiry"):
@@ -2338,6 +2397,7 @@ def initial_state(session_id: str, student_id: str = "student-001",
         "dialogue_log": [],
         "tutoring_order": [],
         "tutoring_self_ratings": {},
+        "tutoring_planned_minutes": 0,
         "tutoring_planned_end_at": None,
         "reply_text": "",
         "speech_kind": "none",

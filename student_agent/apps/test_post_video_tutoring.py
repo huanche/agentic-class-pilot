@@ -304,5 +304,41 @@ class TutoringIntentTimeTest(unittest.TestCase):
         self.assertIn("自评", answer.json()["reply_text"])
 
 
+    def test_duration_sets_planned_end_at(self) -> None:
+        """「想复习 15 分钟」：从这条消息时刻起算计划结束时间。"""
+        self._enter_tutoring()
+
+        answer = self.client.post(
+            f"/api/session/{self.sid}/message",
+            json={"text": "想复习 15 分钟。"},
+        )
+
+        self.assertEqual(answer.status_code, 200, answer.text)
+        tutoring = self._state()["tutoring"]
+        self.assertEqual(tutoring["planned_minutes"], 15)
+        # 服务端时间戳：倒计时只是展示换算，刚说完应剩约 15 分钟
+        remaining = tutoring["remaining_seconds"]
+        self.assertGreaterEqual(remaining, 870)
+        self.assertLessEqual(remaining, 900)
+        self.assertIn("15", answer.json()["reply_text"])
+
+    def test_default_duration_applies_at_entry(self) -> None:
+        """没报时长：进辅导那一刻按默认时长（15 分钟）起算。"""
+        self._enter_tutoring()
+
+        tutoring = self._state()["tutoring"]
+        self.assertEqual(tutoring["planned_minutes"], 15)
+        self.assertTrue(0 <= tutoring["remaining_seconds"] <= 900)
+
+    def test_default_minutes_configurable(self) -> None:
+        """默认规划时长可用环境变量改。"""
+        with mock.patch.dict(os.environ, {"AGENT_TUTORING_DEFAULT_MINUTES": "5"}):
+            self._enter_tutoring()
+            tutoring = self._state()["tutoring"]
+
+        self.assertEqual(tutoring["planned_minutes"], 5)
+        self.assertLessEqual(tutoring["remaining_seconds"], 300)
+
+
 if __name__ == "__main__":
     unittest.main()

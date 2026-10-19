@@ -1406,8 +1406,9 @@ def state(sid: str) -> dict:
         "played_media": st.get("played_media") or [],
         "remaining_stages": st.get("remaining_stages") or [],
         "next_stage": (st.get("remaining_stages") or [None])[0],
-        # 课后辅导：固定编号目录 + 复习顺序（掌握条的渲染依据）
-        "tutoring": tutoring_public(st) if st.get("host_phase") == "tutoring" else None,
+        # 课后辅导：固定编号目录 + 复习顺序 + 时间预算（掌握条的渲染依据）
+        "tutoring": tutoring_public(st, _now(), s.get("time_scale", 1.0))
+        if st.get("host_phase") == "tutoring" else None,
         "available_actions": ACTIONS.get(status, []),
     }
 
