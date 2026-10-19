@@ -1,0 +1,271 @@
+# =====================================================================
+# 网关路由规则 · 唯一来源（只维护这一个文件）
+# =====================================================================
+# 修改路由后重新生成衍生文件：
+#   python platform/scripts/gen_routing.py
+# 只检查、不写文件（CI 用）：
+#   python platform/scripts/gen_routing.py --check
+#
+# 以下 generated/ 目录内的片段文件全部由脚本生成，请勿手改：
+#   platform/deployment/generated/gateway-routes-production.conf
+#   platform/deployment/generated/gateway-routes-local-standard.conf
+#   platform/deployment/generated/gateway-routes-local-extended.conf
+#
+# 重要说明：三个环境的路由清单本来就不相同（这是历史现状，本文件如实记录）。
+# 差异属于"本地配置副本内容不一致"，是否统一由团队另行决策，本脚本不做改动。
+
+# ---------------------------------------------------------------------
+# 服务地址（按环境写法区分）
+# ---------------------------------------------------------------------
+services:
+  platform:
+    local: host.docker.internal:8080
+    compose: platform-api:8000
+  teacher:
+    local: host.docker.internal:3200
+    compose: teacher-agent:3200
+  student:
+    local: host.docker.internal:8000
+
+# ---------------------------------------------------------------------
+# 环境清单（每个环境一份路由表，顺序与现有 Caddyfile 完全一致）
+# ---------------------------------------------------------------------
+environments:
+
+  # ---------------------------------------------------------------
+  # 生产：刻意简化的拓扑（compose 服务名直连）。
+  # 注意：生产清单中学生端没有任何路由（与本地不同）——已知现状。
+  # ---------------------------------------------------------------
+  production:
+    caddyfile: Caddyfile
+    upstream: compose
+    routes:
+      - type: proxy
+        path: /api/*
+        service: platform
+      - type: proxy
+        path: /teacher/*
+        service: teacher
+      - type: fallback
+        service: platform
+
+  # ---------------------------------------------------------------
+  # 本机标准版（{$APP_DOMAIN} 站点）。
+  # 已知现状：缺少 /api/student/* 与 /api/lesson*（local-extended 有），
+  # 这两类请求在本配置下会兜底送至教师端。
+  # 是否补齐 = 待团队决策，本脚本原样保留。
+  # ---------------------------------------------------------------
+  local-standard:
+    caddyfile: Caddyfile.local
+    upstream: local
+    routes:
+      - comment:
+          - Stable public prefixes. The upstream services keep their native paths,
+          - which keeps this gateway independent from their business code.
+        type: redirect
+        path: /teacher
+        to: /
+        code: 302
+      - type: handle_path
+        path: /teacher/*
+        service: teacher
+      - type: redirect
+        path: /student-agent/app
+        to: /app?{query}
+        code: 302
+      - type: proxy
+        path: /app*
+        service: student
+      - blank_before: true
+        comment:
+          - Next.js emits root-level assets and some root-level page links. These
+          - routes are unambiguous in the current platform topology.
+        type: proxy
+        path: /_next/*
+        service: teacher
+      - comment:
+          - Public static assets of the teacher agent (agent avatars etc.).
+        type: proxy
+        path: /avatars/*
+        service: teacher
+      - type: redirect
+        path: /mentra-icon.svg
+        to: /brand-mark.png
+        code: 302
+      - type: redirect
+        path: /brand-mark.png
+        to: /app/brand-mark.png
+        code: 302
+      - type: redirect
+        path: /icon.svg
+        to: /brand-mark.png
+        code: 302
+      - type: redirect
+        path: /favicon.ico
+        to: /brand-mark.png
+        code: 302
+      - type: redirect
+        path: /apple-icon.png
+        to: /brand-mark.png
+        code: 302
+      - type: redirect
+        path: /mentra-logo.svg
+        to: /brand-mark.png
+        code: 302
+      - type: proxy
+        path: /logo-horizontal.png
+        service: teacher
+      - type: proxy
+        path: /teacher-workspace*
+        service: teacher
+      - type: proxy
+        path: /course-space*
+        service: teacher
+      - type: proxy
+        path: /classroom-player*
+        service: teacher
+      - comment:
+          - Native teacher-app page paths used by internal router.push calls; without
+          - these the platform SPA fallback answers and shows its 404 view.
+        type: proxy
+        path: /classes*
+        service: teacher
+      - type: proxy
+        path: /settings*
+        service: teacher
+      - type: proxy
+        path: /classroom*
+        service: teacher
+      - type: proxy
+        path: /prepare*
+        service: teacher
+      - type: proxy
+        path: /review*
+        service: teacher
+      - type: proxy
+        path: /generation-preview*
+        service: teacher
+      - blank_before: true
+        comment:
+          - API routing by path prefix only. A previous Referer-based matcher
+          - "(^http://localhost:8088/...) silently broke after the domain migration:"
+          - teacher API calls fell through to the platform and 404'd. Ownership is
+          - "disjoint: platform owns /api/v1/*, the student agent owns /api/session/*,"
+          - and every other /api/* path is teacher-agent surface (generate,
+          - classroom-media, course-space, classes, server-providers, access-code, ...).
+        type: proxy
+        path: /api/v1/*
+        service: platform
+      - type: proxy
+        path: /api/session/*
+        service: student
+      - type: proxy
+        path: /api/*
+        service: teacher
+      - blank_before: true
+        type: fallback
+        service: platform
+
+  # ---------------------------------------------------------------
+  # 本机扩展版（http://localhost:8088 站点，容器内开发用）。
+  # 与 local-standard 的差异：多两条学生端路由
+  # （/api/student/* 与 /api/lesson*）。是否回补到 local-standard = 待团队决策。
+  # ---------------------------------------------------------------
+  local-extended:
+    caddyfile: Caddyfile.dev
+    upstream: local
+    routes:
+      - type: redirect
+        path: /teacher
+        to: /
+        code: 302
+      - type: handle_path
+        path: /teacher/*
+        service: teacher
+      - type: redirect
+        path: /student-agent/app
+        to: /app?{query}
+        code: 302
+      - type: proxy
+        path: /app*
+        service: student
+      - blank_before: true
+        type: proxy
+        path: /_next/*
+        service: teacher
+      - type: proxy
+        path: /avatars/*
+        service: teacher
+      - type: redirect
+        path: /mentra-icon.svg
+        to: /brand-mark.png
+        code: 302
+      - type: redirect
+        path: /brand-mark.png
+        to: /app/brand-mark.png
+        code: 302
+      - type: redirect
+        path: /icon.svg
+        to: /brand-mark.png
+        code: 302
+      - type: redirect
+        path: /favicon.ico
+        to: /brand-mark.png
+        code: 302
+      - type: redirect
+        path: /apple-icon.png
+        to: /brand-mark.png
+        code: 302
+      - type: redirect
+        path: /mentra-logo.svg
+        to: /brand-mark.png
+        code: 302
+      - type: proxy
+        path: /logo-horizontal.png
+        service: teacher
+      - type: proxy
+        path: /teacher-workspace*
+        service: teacher
+      - type: proxy
+        path: /course-space*
+        service: teacher
+      - type: proxy
+        path: /classroom-player*
+        service: teacher
+      - type: proxy
+        path: /classes*
+        service: teacher
+      - type: proxy
+        path: /settings*
+        service: teacher
+      - type: proxy
+        path: /classroom*
+        service: teacher
+      - type: proxy
+        path: /prepare*
+        service: teacher
+      - type: proxy
+        path: /review*
+        service: teacher
+      - type: proxy
+        path: /generation-preview*
+        service: teacher
+      - blank_before: true
+        type: proxy
+        path: /api/v1/*
+        service: platform
+      - type: proxy
+        path: /api/session/*
+        service: student
+      - type: proxy
+        path: /api/student/*
+        service: student
+      - type: proxy
+        path: /api/lesson*
+        service: student
+      - type: proxy
+        path: /api/*
+        service: teacher
+      - blank_before: true
+        type: fallback
+        service: platform
