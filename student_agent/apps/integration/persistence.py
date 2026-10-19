@@ -247,8 +247,9 @@ def read_self_ratings(user_id: str, course_id: str,
 
 
 def upsert_report(session_key: str, user_id: str, course_id: str,
-                  publication_id: str, payload: dict) -> None:
-    """课后报告：session_key 主键，重复下课覆盖为最新。"""
+                  publication_id: str, payload: dict,
+                  report_kind: str = "lesson") -> None:
+    """课后报告（课时维度，kind=lesson）：重复下课覆盖为该 kind 的最新版。"""
     if config.demo_mode():
         path = _demo_path("report", session_key)
         path.write_text(json.dumps(payload, ensure_ascii=False, indent=1), encoding="utf-8")
@@ -256,9 +257,79 @@ def upsert_report(session_key: str, user_id: str, course_id: str,
     with _db() as connection:
         connection.execute(
             "INSERT INTO student.after_class_reports "
-            "(session_key, user_id, course_id, publication_id, payload) "
-            "VALUES (%s,%s,%s,%s,%s) "
-            "ON CONFLICT (session_key) DO UPDATE SET payload = EXCLUDED.payload, created_at = now()",
+            "(session_key, user_id, course_id, publication_id, payload, report_kind, version) "
+            "VALUES (%s,%s,%s,%s,%s,%s,1) "
+            "ON CONFLICT (session_key, report_kind, version) DO UPDATE SET "
+            "payload = EXCLUDED.payload, created_at = now()",
             (session_key, user_id, course_id, publication_id,
-             json.dumps(payload, ensure_ascii=False)))
+             json.dumps(payload, ensure_ascii=False), report_kind))
         connection.commit()
+
+
+def append_report_version(session_key: str, user_id: str, course_id: str,
+                          publication_id: str, payload: dict,
+                          teacher_summary: str | None = None,
+                          report_kind: str = "tutoring") -> int:
+    """追加一版报告（辅导反馈）：每次明确结束一版，只增不改。
+
+    返回新版本号。demo 态写 runtime JSON 列表文件；生产态
+    (session_key, report_kind, version) 主键天然防重放。
+    """
+    created = int(time.time() * 1000)
+    if config.demo_mode():
+        path = _demo_path("report-versions", session_key)
+        versions = []
+        if path.exists():
+            try:
+                versions = json.loads(path.read_text(encoding="utf-8"))
+            except ValueError:
+                versions = []
+        version = len(versions) + 1
+        versions.append({"version": version, "payload": payload,
+                         "teacher_summary": teacher_summary,
+                         "created_at": created})
+        path.write_text(json.dumps(versions, ensure_ascii=False, indent=1),
+                        encoding="utf-8")
+        return version
+    with _db() as connection:
+        row = connection.execute(
+            "SELECT COALESCE(MAX(version), 0) FROM student.after_class_reports "
+            "WHERE session_key = %s AND report_kind = %s",
+            (session_key, report_kind)).fetchone()
+        version = int(row[0]) + 1 if row else 1
+        connection.execute(
+            "INSERT INTO student.after_class_reports "
+            "(session_key, user_id, course_id, publication_id, payload, "
+            " report_kind, version, teacher_summary) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
+            (session_key, user_id, course_id, publication_id,
+             json.dumps(payload, ensure_ascii=False), report_kind,
+             version, teacher_summary))
+        connection.commit()
+    return version
+
+
+def read_latest_report(session_key: str,
+                       report_kind: str = "tutoring") -> Optional[Dict[str, Any]]:
+    """某类报告的最新一版（无则 None）。"""
+    if config.demo_mode():
+        path = _demo_path("report-versions", session_key)
+        if not path.exists():
+            return None
+        try:
+            versions = json.loads(path.read_text(encoding="utf-8"))
+        except ValueError:
+            return None
+        return versions[-1] if versions else None
+    with _db() as connection:
+        row = connection.execute(
+            "SELECT version, payload, teacher_summary, created_at "
+            "FROM student.after_class_reports "
+            "WHERE session_key = %s AND report_kind = %s "
+            "ORDER BY version DESC LIMIT 1",
+            (session_key, report_kind)).fetchone()
+    if not row:
+        return None
+    return {"version": int(row[0]), "payload": row[1],
+            "teacher_summary": row[2],
+            "created_at": row[3].isoformat() if row[3] else None}

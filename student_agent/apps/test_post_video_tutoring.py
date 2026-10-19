@@ -395,9 +395,9 @@ class TutoringIntentTimeTest(unittest.TestCase):
         self.assertNotIn("就按你说的来", reply)
         self.assertEqual(self._state()["phase"], "tutoring")
 
-    def test_end_phrasing_kept_open_until_ticket_05(self) -> None:
-        """「今天就到这」被识别为结束意愿，但结束动作是 05 号工单的活：
-        现在只承接、不下课。"""
+    def test_end_phrasing_ends_tutoring(self) -> None:
+        """「今天就到这」= 明确结束（工单 05 已落地）：切到 ending 并有回复。
+        反馈入库的完整断言见 TutoringEndFeedbackTest。"""
         self._enter_tutoring()
 
         answer = self.client.post(
@@ -405,9 +405,8 @@ class TutoringIntentTimeTest(unittest.TestCase):
             json={"text": "今天就到这吧。"},
         )
 
-        state = self._state()
-        self.assertEqual(state["phase"], "tutoring")
-        self.assertEqual(state["status"], "running")
+        self.assertEqual(answer.status_code, 200, answer.text)
+        self.assertEqual(answer.json()["phase"], "ending")
         self.assertTrue(answer.json()["reply_text"].strip())
 
 
@@ -694,6 +693,86 @@ class TutoringEvidenceMasteryTest(unittest.TestCase):
         self._send("再考我一个")
         q = self._state()["tutoring"]["question"]
         self.assertFalse(q["was_fresh"])
+
+
+class TutoringEndFeedbackTest(unittest.TestCase):
+    """工单 05（明确结束与反馈）的缝 A 回归：结束触发、幂等、最新版读取。"""
+
+    sid = "test-tutoring-end"
+    student_id = "test-tutoring-end-student"
+
+    def setUp(self) -> None:
+        patcher = mock.patch.dict(os.environ, {
+            "AGENT_LLM_API_KEY": "", "STUDENT_DEMO_MODE": "true"})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.client = TestClient(server.app)
+        server.SESSIONS.pop(self.sid, None)
+        server._path(self.sid).unlink(missing_ok=True)
+        from apps.integration import persistence
+        for name in ("events", "report-versions"):
+            persistence._demo_path(name, self.sid).unlink(missing_ok=True)
+            self.addCleanup(persistence._demo_path(name, self.sid).unlink,
+                            missing_ok=True)
+        self.addCleanup(self._cleanup)
+
+    def _cleanup(self) -> None:
+        session = server.SESSIONS.pop(self.sid, None)
+        if session:
+            session["stop"].set()
+        server._path(self.sid).unlink(missing_ok=True)
+
+    def _begin_demo_lesson(self) -> None:
+        lesson_id = self.client.get(
+            "/api/student/courses").json()["courses"][0]["lessons"][0]["lessonId"]
+        started = self.client.post("/api/session/start", json={
+            "session_id": self.sid, "lesson_id": lesson_id,
+            "student_id": self.student_id,
+        })
+        self.assertEqual(started.status_code, 200, started.text)
+        begun = self.client.post(f"/api/session/{self.sid}/begin")
+        self.assertEqual(begun.status_code, 200, begun.text)
+
+    def _enter_tutoring(self) -> None:
+        self._begin_demo_lesson()
+        done = self.client.post(f"/api/session/{self.sid}/media/done", json={})
+        self.assertEqual(done.status_code, 200, done.text)
+        self.assertEqual(done.json()["phase"], "tutoring")
+
+    def _send(self, text: str):
+        return self.client.post(
+            f"/api/session/{self.sid}/message", json={"text": text})
+
+    def test_explicit_end_generates_versioned_report_once(self) -> None:
+        """明确结束 → 生成 v1 反馈（学生视角 + 教师摘要）；重复说不重复入库。"""
+        self._enter_tutoring()
+        self._send("那我准备好了")
+
+        end = self._send("今天就到这吧")
+
+        self.assertEqual(end.status_code, 200, end.text)
+        self.assertEqual(end.json()["phase"], "ending")
+        report = self.client.get(f"/api/session/{self.sid}/tutoring-report")
+        self.assertEqual(report.status_code, 200, report.text)
+        body = report.json()
+        self.assertEqual(body["version"], 1)
+        payload = body["payload"]
+        self.assertEqual(len(payload["knowledge_points"]), 6)
+        self.assertEqual(payload["knowledge_points"][0]["system_stars"], 0)
+        self.assertEqual(payload["planned_minutes"], 15)
+        self.assertTrue(payload["advice"])
+        self.assertIn("课后辅导", body["teacher_summary"])
+        self.assertIn("unfinished_question", payload)
+
+        # 幂等：已进入 ending 后再说「结束」不产生 v2
+        self._send("结束吧")
+        again = self.client.get(f"/api/session/{self.sid}/tutoring-report").json()
+        self.assertEqual(again["version"], 1)
+
+    def test_report_404_before_any_end(self) -> None:
+        self._enter_tutoring()
+        r = self.client.get(f"/api/session/{self.sid}/tutoring-report")
+        self.assertEqual(r.status_code, 404)
 
 
 class SelfRatingPersistenceTest(unittest.TestCase):

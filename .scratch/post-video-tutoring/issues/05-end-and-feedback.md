@@ -4,7 +4,7 @@
 
 **Blocked by:** 02, 03
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 - [ ] 明确结束（学生主动 / AI 到点询问后确认）→ 生成反馈入库；同一次结束不重复入库（幂等）
 - [ ] 平台 alembic 迁移：after_class_reports 支持多版本 + 教师视角摘要字段；demo 态 JSON 同步支持多版本

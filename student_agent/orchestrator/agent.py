@@ -510,6 +510,7 @@ class ClassroomState(TypedDict):
     tutoring_question: dict | None          # 当前检测题 {kp_id, question, asked_at, hint_given, was_fresh, wrong_count}
     tutoring_last_judgement: dict | None    # 本轮作答判定（会话层据此落学习事件；无判定为 None）
     tutoring_asked: list[str]               # 已见题干清单（出题去重：新题必须避开）
+    tutoring_stats: dict                    # 答题统计 {correct, wrong, hinted_correct}（反馈报告用）
 
     # ── 输出 ──
     reply_text: str
@@ -1463,6 +1464,65 @@ def tutoring_public(state: ClassroomState, now_iso: str | None = None,
     }
 
 
+def tutoring_feedback_payload(state: ClassroomState,
+                              trigger_text: str = "") -> tuple[dict, str]:
+    """明确结束时生成完整反馈（确定性骨架，工单 05）。
+
+    返回 (学生视角 payload, 教师视角摘要)。栏目结构为草稿
+    （工单评论里标注待用户过目）：各知识点终值星级与证据、复习用时、
+    答题统计、未完成检测、后续建议。
+    """
+    catalog = _lesson_kp_catalog(state)
+    no_of = {kid: i for i, (kid, _t) in enumerate(catalog, 1)}
+    stars = state.get("kp_stars") or {}
+    ratings = state.get("tutoring_self_ratings") or {}
+    evidence_by_kp: dict[str, list[str]] = {}
+    for item in state.get("mastery_updates") or []:
+        if item.get("source") == "tutoring":
+            evidence_by_kp.setdefault(item.get("kp_id", ""), []).append(
+                item.get("evidence") or "")
+    kps = [{
+        "no": no_of.get(kid), "kp_id": kid, "title": title,
+        "system_stars": int(stars.get(kid, 0)),
+        "self_rating": ratings.get(kid),
+        "evidence": [e for e in evidence_by_kp.get(kid, []) if e],
+    } for kid, title in catalog]
+    stats = dict(state.get("tutoring_stats") or {})
+    planned = int(state.get("tutoring_planned_minutes") or 0)
+    end_at = state.get("tutoring_planned_end_at")
+    remaining_minutes = 0.0
+    if end_at:
+        delta = (datetime.fromisoformat(end_at)
+                 - datetime.fromisoformat(state["now"])).total_seconds()
+        remaining_minutes = max(0.0, delta / 60 * float(state.get("time_scale") or 1.0))
+    actual = max(0, planned - int(round(remaining_minutes)))
+    weak = [k["title"] for k in kps if k["system_stars"] <= 2]
+    strong = sum(1 for k in kps if k["system_stars"] >= 3)
+    payload = {
+        "schema": "tutoring-feedback/1",
+        "trigger": (trigger_text or "").strip()[:60],
+        "planned_minutes": planned,
+        "actual_minutes": actual,
+        "asked_questions": len(state.get("tutoring_asked") or []),
+        "stats": stats,
+        "knowledge_points": kps,
+        "unfinished_question": (state.get("tutoring_question") or {}).get("question"),
+        "advice": ("课后优先复习：" + "、".join(weak)) if weak
+                  else "各知识点掌握均衡，保持练习。",
+        "generated_at": state.get("now"),
+    }
+    teacher_summary = (
+        f"课后辅导：复习约 {actual} 分钟，答题 "
+        f"{len(state.get('tutoring_asked') or [])} 道"
+        f"（对 {stats.get('correct', 0)} / 错 {stats.get('wrong', 0)}，"
+        f"其中提示后答对 {stats.get('hinted_correct', 0)}）；"
+        f"{len(kps)} 个知识点中 {strong} 个达 3 星以上"
+        + (f"；薄弱点：{'、'.join(weak)}" if weak else "")
+        + "。"
+    )
+    return payload, teacher_summary
+
+
 def _tutoring_opening_skeleton(state: ClassroomState) -> str:
     """开场消息的确定性骨架：知识点固定编号列表 + 征询意愿（全部可省略）。"""
     catalog = _lesson_kp_catalog(state)
@@ -1857,10 +1917,15 @@ def teach(state: ClassroomState) -> dict:
             judged: dict | None = None
             wrong_replaced = False
             stars = dict(state.get("kp_stars") or {})
+            stats = dict(state.get("tutoring_stats") or {})
             if kind == "answer" and prev_question:
                 verdict, _note = _tutoring_judge(prev_question, msg)
                 kid = prev_question.get("kp_id") or ""
                 if verdict == "correct":
+                    stats["correct"] = int(stats.get("correct", 0)) + 1
+                    if bool(prev_question.get("hint_given")):
+                        stats["hinted_correct"] = int(stats.get("hinted_correct", 0)) + 1
+                    updates["tutoring_stats"] = stats
                     hinted = bool(prev_question.get("hint_given"))
                     current = int(stars.get(kid, 0))
                     # 5 星门槛（量规）：有提示 ≤3；见过的题 ≤4；
@@ -1896,6 +1961,8 @@ def teach(state: ClassroomState) -> dict:
                     # 连续错：讲解并安排**未见过的新题**确认（方案：答错追问/讲解
                     # 之后安排无提示新题）。新题本身不带提示，答对按正常路径升星。
                     if int(prev_question.get("wrong_count", 0)) >= 1:
+                        stats["wrong"] = int(stats.get("wrong", 0)) + 1
+                        updates["tutoring_stats"] = stats
                         title_w = title_of.get(kid, "刚才视频的内容")
                         text, fresh = _tutoring_pick_question(title_w, seen)
                         updates["tutoring_question"] = {
@@ -1910,6 +1977,8 @@ def teach(state: ClassroomState) -> dict:
                                   "question": prev_question.get("question", ""),
                                   "stars_after": stars.get(kid, 0)}
                     else:
+                        stats["wrong"] = int(stats.get("wrong", 0)) + 1
+                        updates["tutoring_stats"] = stats
                         carried = dict(prev_question)
                         carried["hint_given"] = True
                         carried["wrong_count"] = 1
@@ -2268,9 +2337,18 @@ def judge_advance(state: ClassroomState) -> dict:
             return {"target_phase": _next_phase(state), "advance_reason": "讲解素材已全部播完"}
 
     if phase == "tutoring":
-        # 课后辅导没有时间出口：到点只改变教学安排（后续工单），
-        # 不因时间预算把学生踢出会话。外部事件（下一环节/结束本节课）
-        # 在上面已经判过，老师按钮仍然有效。
+        # 课后辅导没有时间出口：到点只改变教学安排，不因时间预算把学生踢出会话。
+        # 唯一出口 = 学生明确结束（工单 05）：直接说结束，或到点关照后的确认
+        # （「没有了」「可以了」这类短确认只在计划时间已过后算数）。外部事件
+        # （下一环节/结束本节课）在上面已经判过，老师按钮仍然有效。
+        msg = (state.get("student_message") or "").strip()
+        end_at = state.get("tutoring_planned_end_at")
+        time_up = bool(end_at) and (
+            datetime.fromisoformat(state["now"]) >= datetime.fromisoformat(end_at))
+        confirmed = time_up and re.fullmatch(
+            r"(?:没有[了]?|没了|不用了|不用|好了?|可以了?|行|嗯+|[。！!，, ])*", msg)
+        if _TUTORING_END_PAT.search(msg) or (msg and confirmed):
+            return {"target_phase": "ending", "advance_reason": "学生明确结束课后辅导"}
         return {"target_phase": None, "advance_reason": "课后辅导进行中，等待学生明确结束"}
 
     if phase == "intro":
@@ -2713,6 +2791,7 @@ def initial_state(session_id: str, student_id: str = "student-001",
         "tutoring_question": None,
         "tutoring_last_judgement": None,
         "tutoring_asked": [],
+        "tutoring_stats": {},
         "reply_text": "",
         "speech_kind": "none",
         "advance_reason": None,

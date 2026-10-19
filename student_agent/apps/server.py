@@ -39,8 +39,8 @@ from agent import (  # noqa: E402
     EVENT_BEGIN, EVENT_MEDIA_DONE, EVENT_NEXT_STAGE, EVENT_END_LESSON,
     STAGE_NAMES, STAR_STATUS, build_graph, initial_state, is_uploaded_lesson,
     kp_title, lesson_source_label, list_lesson_ids, load_lesson,
-    run_turn_stateless, safe_lesson_id, save_lesson, tutoring_public,
-    validate_plan,
+    run_turn_stateless, safe_lesson_id, save_lesson, tutoring_feedback_payload,
+    tutoring_public, validate_plan,
 )
 from llm_override import set_llm_override  # noqa: E402
 
@@ -382,6 +382,37 @@ def _record_tutoring_event(sid: str, event_type: str, payload: dict) -> None:
         )
     except Exception as exc:  # 持久化失败不阻塞课堂，但要留痕
         print(f"[persistence] {event_type} demo 写入失败: {exc}")
+
+
+def _generate_tutoring_feedback(sid: str, trigger_text: str, st: dict) -> None:
+    """学生明确结束课后辅导：生成完整反馈并入库（多版本，只增不改）。
+
+    平台态/演示态走 append_report_version；独立态（无库无 demo）尽力而为：
+    写库失败不拦下课，反馈留在会话缓存里（素材随会话 state 落盘）。
+    教师视角摘要一并入库（本次不建教师端页面）。
+    """
+    payload, teacher_summary = tutoring_feedback_payload(st, trigger_text)
+    s = SESSIONS.get(sid)
+    ctx = (s.get("platform") if s else None) or (st.get("platform") or {})
+    reports = (s or {}).get("tutoring_reports") or []
+    version = len(reports) + 1
+    try:
+        from apps.integration import persistence
+        version = persistence.append_report_version(
+            session_key=sid, user_id=ctx.get("userId", "demo"),
+            course_id=ctx.get("courseId", ""), publication_id=ctx.get("publicationId", ""),
+            payload=payload, teacher_summary=teacher_summary)
+    except Exception as exc:  # 持久化失败不拦下课，但要留痕
+        print(f"[persistence] 辅导反馈写入失败: {exc}")
+    if s is not None:
+        s["tutoring_reports"] = reports + [{
+            "version": version, "payload": payload,
+            "teacher_summary": teacher_summary,
+        }]
+    _record_tutoring_event(sid, "tutoring_feedback", {
+        "version": version, "trigger": payload.get("trigger"),
+        "actual_minutes": payload.get("actual_minutes"),
+    })
 
 
 def _notify_platform_progress(sid: str, event: str) -> None:
@@ -1391,6 +1422,7 @@ def send(sid: str, body: MessageIn) -> dict:
         "phase": s["state"].get("host_phase"),
     })
     prev_tutoring_question = (s.get("state") or {}).get("tutoring_question")
+    prev_phase = (s.get("state") or {}).get("host_phase")
     st = _step(sid, text, "student")
     _record_learning_event(sid, event_type="student_message",
                            payload={"phase": st.get("host_phase")})
@@ -1407,6 +1439,11 @@ def send(sid: str, body: MessageIn) -> dict:
     judged = st.get("tutoring_last_judgement")
     if judged:
         _record_tutoring_event(sid, "tutoring_answer", judged)
+    # 明确结束（工单 05）：tutoring → ending 的那次切换生成完整反馈并入库。
+    # 只认切换那一轮——后续在 ending 里再说「结束」不会重复入库（幂等），
+    # 再次生成要等工单 06 的返回续聊把阶段拉回 tutoring 之后。
+    if prev_phase == "tutoring" and st.get("host_phase") == "ending":
+        _generate_tutoring_feedback(sid, text, st)
     return {
         "ok": True,
         "reply_text": st.get("reply_text", ""),
@@ -1464,6 +1501,25 @@ def state(sid: str) -> dict:
         if st.get("host_phase") == "tutoring" else None,
         "available_actions": ACTIONS.get(status, []),
     }
+
+
+@app.get("/api/session/{sid}/tutoring-report")
+def tutoring_report(sid: str) -> dict:
+    """课后辅导反馈（最新版）：课后页与课程级入口的展示数据。"""
+    s = _get(sid)
+    cached = s.get("tutoring_reports") or []
+    if cached:
+        last = cached[-1]
+        return {"version": last["version"], "payload": last["payload"],
+                "teacher_summary": last["teacher_summary"]}
+    try:
+        from apps.integration import persistence
+        report = persistence.read_latest_report(sid)
+        if report:
+            return report
+    except Exception as exc:  # 读取失败按没有处理，不拦展示
+        print(f"[persistence] 辅导反馈读取失败: {exc}")
+    raise HTTPException(status_code=404, detail="暂无课后辅导反馈")
 
 
 @app.delete("/api/session/{sid}")
