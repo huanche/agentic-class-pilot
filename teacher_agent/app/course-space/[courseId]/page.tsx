@@ -306,7 +306,6 @@ export default function CourseOnboardingPage() {
                       id={item.id}
                       title={item.name}
                       published={Boolean(item.classPublicationId)}
-                      courseActive={course.status === 'active'}
                       onChange={load}
                       onPublish={() =>
                         setPublicationTarget({

@@ -88,4 +88,17 @@ describe('course progress projection', () => {
     expect(result.materialReady).toBe(0);
     expect(result.todos[0].title).toContain('重试解析');
   });
+  it('offers direct publication instead of a separate courseware approval task', () => {
+    const draft = {
+      id: 'draft',
+      type: 'lesson-courseware',
+      status: 'review',
+    } as CourseArtifactRecord;
+    const todos = summarizeCourseProgress(course(), [draft]).todos;
+    expect(todos).toContainEqual({
+      title: '1份课件待发布',
+      target: { folder: 'courseware', fileId: 'draft' },
+    });
+    expect(todos.some((todo) => todo.title.includes('教学文件待审核'))).toBe(false);
+  });
 });

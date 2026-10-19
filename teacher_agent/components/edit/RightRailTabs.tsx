@@ -37,6 +37,7 @@ export interface RightRailTabsProps {
   readonly switchSession: (id: string) => Promise<void>;
   readonly deleteSessionAndRefresh: (id: string) => Promise<void>;
   readonly refreshSessions: () => Promise<void>;
+  readonly pageReview?: boolean;
 }
 
 /**
@@ -64,6 +65,7 @@ export function RightRailTabs({
   switchSession,
   deleteSessionAndRefresh,
   refreshSessions,
+  pageReview = false,
 }: RightRailTabsProps) {
   const { t } = useI18n();
   const showAiTab = shouldRenderAgentPanel({ agentEnabled, hasMessages, isRunning });
@@ -71,13 +73,13 @@ export function RightRailTabs({
 
   // When the AI tab becomes unavailable (e.g. PBL scene), fall back to agents tab.
   // Render-time setState: React re-renders immediately before painting.
-  if (!showAiTab && activeTab === 'ai') {
+  if (!pageReview && !showAiTab && activeTab === 'ai') {
     setActiveTab('agents');
   }
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(pageReview);
 
   const railRef = useRef<HTMLElement>(null);
-  const [width, setWidth] = useState(DEFAULT_WIDTH);
+  const [width, setWidth] = useState(pageReview ? MIN_WIDTH : DEFAULT_WIDTH);
   const dragRef = useRef<{
     startX: number;
     startW: number;
@@ -120,16 +122,22 @@ export function RightRailTabs({
     document.body.style.cursor = '';
   }, []);
 
-  if (collapsed) {
+  if (collapsed && !pageReview) {
     return (
       <aside
-        onClick={() => setCollapsed(false)}
-        title={t('edit.agent.expand')}
+        aria-label={pageReview ? '本页审查' : undefined}
         className="group/rail relative flex h-full w-11 shrink-0 cursor-pointer flex-col items-center gap-3 border-l border-gray-100 bg-white/80 pt-3 backdrop-blur-xl transition-colors hover:bg-violet-50/40 dark:border-gray-800 dark:bg-slate-900/80 dark:hover:bg-violet-500/5 shadow-[-2px_0_24px_rgba(0,0,0,0.02)]"
       >
-        <span className="grid size-8 place-items-center rounded-lg text-[#5b1fa8] transition-colors group-hover/rail:bg-violet-100/70 dark:text-violet-300 dark:group-hover/rail:bg-violet-500/15">
+        <button
+          type="button"
+          onClick={() => setCollapsed(false)}
+          title={pageReview ? '修改本页' : t('edit.agent.expand')}
+          aria-label={pageReview ? '修改本页' : t('edit.agent.expand')}
+          className="flex items-center gap-3 rounded-lg px-2 py-1 text-[#5b1fa8] transition-colors hover:bg-violet-100/70 dark:text-violet-300 dark:hover:bg-violet-500/15 flex-col"
+        >
           <PanelRightOpen className="size-4" />
-        </span>
+          {pageReview && <span className="text-xs [writing-mode:vertical-rl]">修改本页</span>}
+        </button>
       </aside>
     );
   }
@@ -145,133 +153,163 @@ export function RightRailTabs({
     switchSession,
     deleteSessionAndRefresh,
     refreshSessions,
+    pageReview,
   };
 
   return (
-    <aside
-      ref={railRef}
-      style={{ width }}
-      className="relative flex h-full shrink-0 flex-col border-l border-gray-100 bg-white/80 backdrop-blur-xl dark:border-gray-800 dark:bg-slate-900/80 shadow-[-2px_0_24px_rgba(0,0,0,0.02)]"
-    >
-      {/* Resize handle */}
-      <div
-        onPointerDown={onResizeStart}
-        onPointerMove={onResizeMove}
-        onPointerUp={onResizeEnd}
-        onPointerCancel={onResizeEnd}
-        className="group absolute left-0 top-0 bottom-0 z-10 w-1.5 cursor-col-resize touch-none transition-colors hover:bg-violet-400/30 active:bg-violet-500/50 dark:hover:bg-violet-500/30"
+    <div className={cn('relative h-full shrink-0', pageReview && 'w-11')}>
+      <aside
+        ref={railRef}
+        style={{ width: pageReview && collapsed ? 44 : width }}
+        className={cn(
+          'relative flex h-full shrink-0 flex-col border-l border-gray-100 bg-white/80 backdrop-blur-xl dark:border-gray-800 dark:bg-slate-900/80 shadow-[-2px_0_24px_rgba(0,0,0,0.02)]',
+          pageReview && 'absolute right-0 top-0 z-40 bg-white shadow-xl dark:bg-slate-900',
+        )}
       >
-        <div className="absolute left-0.5 top-1/2 h-8 w-0.5 -translate-y-1/2 rounded-full bg-gray-300 transition-colors group-hover:bg-violet-400 dark:bg-gray-600 dark:group-hover:bg-violet-500" />
-      </div>
-
-      {/* Tab strip — single header row, no nested header */}
-      <div className="flex h-10 shrink-0 items-center gap-1 border-b border-gray-100 px-2 dark:border-gray-800">
-        <div
-          role="tablist"
-          className="flex items-center gap-0.5 rounded-lg bg-zinc-100/80 p-0.5 dark:bg-zinc-800"
-        >
-          {showAiTab && (
-            <RailTabButton
-              label={t('edit.agent.title')}
-              active={activeTab === 'ai'}
-              onClick={() => setActiveTab('ai')}
-            />
-          )}
-          <RailTabButton
-            label={t('edit.roster.title')}
-            icon={<UsersRound className="size-[15px]" />}
-            active={activeTab === 'agents'}
-            onClick={() => setActiveTab('agents')}
-          />
-        </div>
-
-        {/* Spacer + conditional AI-tab actions */}
-        <div className="flex flex-1 items-center justify-end gap-0.5">
-          {activeTab === 'ai' && (
-            <>
-              <Popover onOpenChange={(open) => open && void refreshSessions()}>
-                <PopoverTrigger asChild>
-                  <button
-                    type="button"
-                    title={t('edit.agent.sessionHistory')}
-                    aria-label={t('edit.agent.sessionHistory')}
-                    className="grid size-7 place-items-center rounded-md text-muted-foreground/55 transition-colors hover:bg-muted hover:text-foreground"
-                  >
-                    <History className="size-4" />
-                  </button>
-                </PopoverTrigger>
-                <PopoverContent align="end" className="w-72 p-1">
-                  {sessions.length === 0 ? (
-                    <p className="px-3 py-6 text-center text-xs text-muted-foreground">
-                      {t('edit.agent.sessionEmpty')}
-                    </p>
-                  ) : (
-                    <ul className="max-h-80 overflow-y-auto">
-                      {sessions.map((s) => (
-                        <li key={s.id} className="group flex items-center gap-1">
-                          <button
-                            type="button"
-                            onClick={() => void switchSession(s.id)}
-                            className={cn(
-                              'flex-1 truncate rounded-md px-2 py-1.5 text-left text-[13px] transition-colors hover:bg-muted',
-                              s.id === activeSessionId
-                                ? 'bg-muted font-medium text-foreground'
-                                : 'text-muted-foreground',
-                            )}
-                          >
-                            {s.title || t('edit.agent.sessionUntitled')}
-                          </button>
-                          <button
-                            type="button"
-                            title={t('edit.agent.sessionDelete')}
-                            aria-label={t('edit.agent.sessionDelete')}
-                            onClick={() => void deleteSessionAndRefresh(s.id)}
-                            className="grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground/40 opacity-0 transition-opacity hover:text-red-500 group-hover:opacity-100"
-                          >
-                            <Trash2 className="size-3.5" />
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </PopoverContent>
-              </Popover>
-
-              {hasMessages && (
-                <button
-                  type="button"
-                  onClick={clearThread}
-                  title={t('edit.agent.newConversation')}
-                  aria-label={t('edit.agent.newConversation')}
-                  className="grid size-7 place-items-center rounded-md text-muted-foreground/55 transition-colors hover:bg-muted hover:text-foreground"
-                >
-                  <SquarePen className="size-4" />
-                </button>
-              )}
-            </>
-          )}
-
-          {/* Collapse button always visible */}
+        {pageReview && collapsed && (
           <button
             type="button"
-            onClick={() => setCollapsed(true)}
-            title={t('edit.agent.collapse')}
-            aria-label={t('edit.agent.collapse')}
-            className="grid size-7 place-items-center rounded-md text-muted-foreground/55 transition-colors hover:bg-muted hover:text-foreground"
+            aria-label="修改本页"
+            title="修改本页"
+            onClick={() => setCollapsed(false)}
+            className="mx-auto mt-3 flex flex-col items-center gap-3 rounded-lg px-2 py-2 text-[#5b1fa8] hover:bg-violet-50 dark:text-violet-300"
           >
-            <PanelRightClose className="size-4" />
+            <PanelRightOpen className="size-4" />
+            <span className="text-xs [writing-mode:vertical-rl]">修改本页</span>
           </button>
-        </div>
-      </div>
+        )}
+        {/* Keep feedback drafts and the active run mounted when review is collapsed. */}
+        <div className={cn('flex min-h-0 flex-1 flex-col', collapsed && 'hidden')}>
+          {/* Resize handle */}
+          <div
+            onPointerDown={onResizeStart}
+            onPointerMove={onResizeMove}
+            onPointerUp={onResizeEnd}
+            onPointerCancel={onResizeEnd}
+            className="group absolute left-0 top-0 bottom-0 z-10 w-1.5 cursor-col-resize touch-none transition-colors hover:bg-violet-400/30 active:bg-violet-500/50 dark:hover:bg-violet-500/30"
+          >
+            <div className="absolute left-0.5 top-1/2 h-8 w-0.5 -translate-y-1/2 rounded-full bg-gray-300 transition-colors group-hover:bg-violet-400 dark:bg-gray-600 dark:group-hover:bg-violet-500" />
+          </div>
 
-      {/* Tab content — both mounted, non-active hidden via CSS for state preservation */}
-      <div className={cn('flex flex-1 min-h-0 flex-col', activeTab !== 'ai' && 'hidden')}>
-        <AgentPanel naked {...agentPanelProps} />
-      </div>
-      <div className={cn('flex flex-1 min-h-0 flex-col', activeTab !== 'agents' && 'hidden')}>
-        <AgentRosterPanel />
-      </div>
-    </aside>
+          {/* Keep the existing editor chrome; embedded teacher review only exposes page editing. */}
+          <div className="flex h-10 shrink-0 items-center gap-1 border-b border-gray-100 px-2 dark:border-gray-800">
+            <div
+              role="tablist"
+              className="flex items-center gap-0.5 rounded-lg bg-zinc-100/80 p-0.5 dark:bg-zinc-800"
+            >
+              {(showAiTab || pageReview) && (
+                <RailTabButton
+                  label={pageReview ? '修改本页' : t('edit.agent.title')}
+                  active={pageReview || activeTab === 'ai'}
+                  onClick={() => setActiveTab('ai')}
+                />
+              )}
+              {!pageReview && (
+                <RailTabButton
+                  label={t('edit.roster.title')}
+                  icon={<UsersRound className="size-[15px]" />}
+                  active={activeTab === 'agents'}
+                  onClick={() => setActiveTab('agents')}
+                />
+              )}
+            </div>
+
+            {/* Spacer + conditional AI-tab actions */}
+            <div className="flex flex-1 items-center justify-end gap-0.5">
+              {(pageReview || activeTab === 'ai') && (
+                <>
+                  <Popover onOpenChange={(open) => open && void refreshSessions()}>
+                    <PopoverTrigger asChild>
+                      <button
+                        type="button"
+                        title={t('edit.agent.sessionHistory')}
+                        aria-label={t('edit.agent.sessionHistory')}
+                        className="grid size-7 place-items-center rounded-md text-muted-foreground/55 transition-colors hover:bg-muted hover:text-foreground"
+                      >
+                        <History className="size-4" />
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent align="end" className="w-72 p-1">
+                      {sessions.length === 0 ? (
+                        <p className="px-3 py-6 text-center text-xs text-muted-foreground">
+                          {t('edit.agent.sessionEmpty')}
+                        </p>
+                      ) : (
+                        <ul className="max-h-80 overflow-y-auto">
+                          {sessions.map((s) => (
+                            <li key={s.id} className="group flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => void switchSession(s.id)}
+                                className={cn(
+                                  'flex-1 truncate rounded-md px-2 py-1.5 text-left text-[13px] transition-colors hover:bg-muted',
+                                  s.id === activeSessionId
+                                    ? 'bg-muted font-medium text-foreground'
+                                    : 'text-muted-foreground',
+                                )}
+                              >
+                                {s.title || t('edit.agent.sessionUntitled')}
+                              </button>
+                              <button
+                                type="button"
+                                title={t('edit.agent.sessionDelete')}
+                                aria-label={t('edit.agent.sessionDelete')}
+                                onClick={() => void deleteSessionAndRefresh(s.id)}
+                                className="grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground/40 opacity-0 transition-opacity hover:text-red-500 group-hover:opacity-100"
+                              >
+                                <Trash2 className="size-3.5" />
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </PopoverContent>
+                  </Popover>
+
+                  {hasMessages && (
+                    <button
+                      type="button"
+                      onClick={clearThread}
+                      title={t('edit.agent.newConversation')}
+                      aria-label={t('edit.agent.newConversation')}
+                      className="grid size-7 place-items-center rounded-md text-muted-foreground/55 transition-colors hover:bg-muted hover:text-foreground"
+                    >
+                      <SquarePen className="size-4" />
+                    </button>
+                  )}
+                </>
+              )}
+
+              {/* Collapse button always visible */}
+              <button
+                type="button"
+                onClick={() => setCollapsed(true)}
+                title={t('edit.agent.collapse')}
+                aria-label={t('edit.agent.collapse')}
+                className="grid size-7 place-items-center rounded-md text-muted-foreground/55 transition-colors hover:bg-muted hover:text-foreground"
+              >
+                <PanelRightClose className="size-4" />
+              </button>
+            </div>
+          </div>
+
+          {/* Tab content — both mounted, non-active hidden via CSS for state preservation */}
+          <div
+            className={cn(
+              'flex flex-1 min-h-0 flex-col',
+              !pageReview && activeTab !== 'ai' && 'hidden',
+            )}
+          >
+            <AgentPanel naked {...agentPanelProps} />
+          </div>
+          {!pageReview && (
+            <div className={cn('flex flex-1 min-h-0 flex-col', activeTab !== 'agents' && 'hidden')}>
+              <AgentRosterPanel />
+            </div>
+          )}
+        </div>
+      </aside>
+    </div>
   );
 }
 

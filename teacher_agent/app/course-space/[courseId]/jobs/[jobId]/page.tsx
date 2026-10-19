@@ -174,7 +174,7 @@ export default function SingleCourseJobPage() {
                     已完成 {job.backgroundGeneration.completedPages}/
                     {job.backgroundGeneration.totalPages} 页。
                     {['queued', 'running'].includes(job.status) &&
-                      '可以关闭页面或退出浏览器，回来后从“最近任务”查看进度。'}
+                      '可以关闭页面或退出浏览器，回来后从“…”里的“任务记录”查看进度。'}
                   </p>
                 )}
               </div>

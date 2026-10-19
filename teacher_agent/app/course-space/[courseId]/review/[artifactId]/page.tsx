@@ -150,12 +150,14 @@ export default function ArtifactReviewPage() {
                 >
                   保存修改
                 </Button>
-                <Button
-                  disabled={artifact.status === 'published'}
-                  onClick={() => void review('approve')}
-                >
-                  审核通过
-                </Button>
+                {artifact.type !== 'lesson-courseware' && (
+                  <Button
+                    disabled={artifact.status === 'published'}
+                    onClick={() => void review('approve')}
+                  >
+                    审核通过
+                  </Button>
+                )}
                 <ResourceActions
                   courseId={courseId}
                   course={course}
@@ -163,7 +165,9 @@ export default function ArtifactReviewPage() {
                   id={artifact.id}
                   title={artifact.title}
                   published={Boolean(artifact.classPublicationId)}
-                  courseActive={course?.status === 'active'}
+                  publicationLabel={
+                    artifact.type === 'lesson-courseware' ? '发布课件' : '发布到班级'
+                  }
                   onPublish={() => setPublishOpen(true)}
                   onChange={load}
                   onDeleted={() => router.push(source)}

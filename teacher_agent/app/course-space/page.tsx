@@ -1,31 +1,22 @@
 'use client';
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { nanoid } from 'nanoid';
-import {
-  ArrowLeft,
-  CheckCircle2,
-  GripHorizontal,
-  LayoutGrid,
-  LoaderCircle,
-  PackageCheck,
-} from 'lucide-react';
+import { ArrowLeft, ChevronDown, GripHorizontal, LayoutGrid } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { CoursewareModeDialog } from '@/components/generation/courseware-mode-dialog';
-import {
-  CourseDurationInput,
-  courseDurationInputError,
-} from '@/components/generation/course-duration-input';
 import { resolveCourseMinutes } from '@/lib/generation/course-duration';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from '@/components/ui/dialog';
 import { CoursewareSourceDialog } from '@/components/course-space/courseware-source-dialog';
+import { CoursewareGenerationDialog } from '@/components/course-space/courseware-generation-dialog';
+import {
+  createCoursewareGenerationSession,
+  type CoursewareGenerationOptions,
+} from '@/lib/course-space/courseware-generation';
+import {
+  useCourseGenerationTask,
+  isGenerationTaskActive,
+} from '@/lib/store/course-generation-task';
 import { CourseWorkspaceExplorer } from '@/components/course-space/course-workspace-explorer';
 import { CourseArtifactGallery } from '@/components/course-space/course-artifact-gallery';
 import { CourseWorkLocationPicker } from '@/components/course-space/course-work-location-picker';
@@ -33,6 +24,7 @@ import { TeacherWorkspaceAgent } from '@/components/course-space/teacher-workspa
 import { postSaasHostMessage } from '@/lib/integration/host-bridge';
 import { CourseProgressSummary } from '@/components/course-space/course-progress-summary';
 import type { CourseStatusTarget } from '@/lib/course-space/course-progress';
+import { reconcileCoursewareTaskSnapshot } from '@/lib/course-space/courseware-task-progress';
 import { CourseCenter } from '@/components/course-space/course-center';
 import type { Slide } from '@openmaic/dsl';
 import type * as MaicImport from '@openmaic/importer';
@@ -120,8 +112,6 @@ export default function CourseSpacePage() {
 
 function CourseWorkspace({ workspaceCourseId }: { workspaceCourseId: string }) {
   const router = useRouter();
-  const pathname = usePathname();
-  const isTeacherV11 = pathname.startsWith('/teacher-workspace');
   const repository = useMemo(() => new ApiCourseSpaceRepository(), []);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const verticalSplitRef = useRef<HTMLDivElement>(null);
@@ -143,12 +133,22 @@ function CourseWorkspace({ workspaceCourseId }: { workspaceCourseId: string }) {
   } | null>(null);
   const [coursewareSourceOpen, setCoursewareSourceOpen] = useState(false);
   const [workspacePanel, setWorkspacePanel] = useState<'generate' | 'artifacts'>('generate');
+  const [workbenchOpen, setWorkbenchOpen] = useState(false);
+  const [workbenchMounted, setWorkbenchMounted] = useState(false);
   const [coursewareMaterialId, setCoursewareMaterialId] = useState('');
   const [launchingCourseware, setLaunchingCourseware] = useState(false);
-  const [publishingCourse, setPublishingCourse] = useState(false);
   const [courseAreaHeight, setCourseAreaHeight] = useState(790);
   const [statusFocus, setStatusFocus] = useState<CourseStatusTarget & { nonce: number }>();
   const [workbenchHeight, setWorkbenchHeight] = useState(500);
+  const generationTask = useCourseGenerationTask((state) => state.task);
+  useEffect(() => {
+    const current = useCourseGenerationTask.getState().task;
+    const updated = reconcileCoursewareTaskSnapshot(current, jobs);
+    if (updated && updated !== current) useCourseGenerationTask.getState().setTask(updated);
+  }, [jobs, generationTask?.serverJobId]);
+  const generationLocked =
+    isGenerationTaskActive(generationTask) ||
+    jobs.some((job) => ['queued', 'running'].includes(job.status));
   const selected = courses.find((course) => course.id === selectedId);
   const needsOnboarding = Boolean(selected?.onboarding && !selected.onboarding.completedAt);
   useEffect(() => {
@@ -263,21 +263,6 @@ function CourseWorkspace({ workspaceCourseId }: { workspaceCourseId: string }) {
     await refresh(course.id);
   };
 
-  const publishCourse = async () => {
-    if (!selected || publishingCourse) return;
-    setPublishingCourse(true);
-    setMessage('');
-    try {
-      await api(await fetch(`/api/course-space/${selected.id}/publish`, { method: 'POST' }));
-      await refresh(selected.id);
-      setMessage('课程已发布到授课班级通道。教师激活的资料将在班级详情中显示。');
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : String(error));
-    } finally {
-      setPublishingCourse(false);
-    }
-  };
-
   const addModule = async () => {
     if (!selected || !newModuleTitle.trim()) return;
     const now = Date.now();
@@ -352,9 +337,23 @@ function CourseWorkspace({ workspaceCourseId }: { workspaceCourseId: string }) {
         }),
       );
       setMessage('材料解析任务已启动，页码、公式和来源指纹将写入课程知识底座。');
-      await refresh(selected.id);
+      // The parse worker starts after its HTTP response. Show parsing immediately
+      // so the existing poller remains active even before the first server write.
+      setCourses((items) =>
+        items.map((course) =>
+          course.id === selected.id
+            ? {
+                ...course,
+                materials: course.materials.map((material) =>
+                  material.id === materialId ? { ...material, status: 'parsing' } : material,
+                ),
+              }
+            : course,
+        ),
+      );
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
+      throw error;
     }
   };
 
@@ -371,21 +370,23 @@ function CourseWorkspace({ workspaceCourseId }: { workspaceCourseId: string }) {
     }
     return { type: 'course' };
   };
-  const updateGenerationScope = (scope: CourseArtifactJob['scope']) =>
-    setGenerationScope(
-      scope.type === 'course'
-        ? 'course'
-        : scope.type === 'module'
-          ? `module:${scope.moduleId}`
-          : `lesson:${scope.lessonId}`,
-    );
+  const updateGenerationScope = useCallback(
+    (scope: CourseArtifactJob['scope']) =>
+      setGenerationScope(
+        scope.type === 'course'
+          ? 'course'
+          : scope.type === 'module'
+            ? `module:${scope.moduleId}`
+            : `lesson:${scope.lessonId}`,
+      ),
+    [],
+  );
 
   const coursewareMaterials =
     selected?.materials.filter((item) => item.status === 'ready' && /\.pptx?$/i.test(item.name)) ??
     [];
   const selectedCoursewareMaterial =
     coursewareMaterials.find((item) => item.id === coursewareMaterialId) ?? coursewareMaterials[0];
-  const latestJob = [...jobs].sort((a, b) => b.createdAt - a.createdAt)[0];
   const activeScope = resolveGenerationScope();
   const activeScopeKey =
     activeScope.type === 'course'
@@ -545,57 +546,39 @@ function CourseWorkspace({ workspaceCourseId }: { workspaceCourseId: string }) {
 
   const launchChatCoursewareFlow = async (
     scope: CourseArtifactJob['scope'],
-    instruction?: string,
+    options: CoursewareGenerationOptions,
   ) => {
     if (!selected) return;
-    const scopeName =
-      scope.type === 'course'
-        ? selected.title
-        : scope.type === 'module'
-          ? selected.modules.find((item) => item.id === scope.moduleId)?.title || selected.title
-          : selected.modules
-              .flatMap((item) => item.lessons)
-              .find((item) => item.id === scope.lessonId)?.title || selected.title;
+    // Revalidate sources and active jobs in case another tab changed the course while the dialog was open.
+    const detail = await api<{ course: CourseSpace; jobs: CourseArtifactJob[] }>(
+      await fetch(`/api/course-space/${selected.id}`, { cache: 'no-store' }),
+    );
+    if (
+      isGenerationTaskActive(useCourseGenerationTask.getState().task) ||
+      detail.jobs.some((job) => ['queued', 'running'].includes(job.status))
+    ) {
+      throw new Error('当前有课件任务正在生成，请完成或取消后再试。');
+    }
     const profile = useUserProfileStore.getState();
-    const sourceMaterials = selected.materials
-      .filter((item) => item.status === 'ready')
-      .slice(0, 6);
-    const sourceSections = await Promise.all(
-      sourceMaterials.map(async (material) => {
-        try {
-          const { extraction } = await api<{ extraction: CourseMaterialExtraction }>(
-            await fetch(`/api/course-space/${selected.id}/materials/${material.id}/extraction`, {
+    const session = await createCoursewareGenerationSession(
+      {
+        ...options,
+        course: detail.course,
+        scope,
+        sessionId: nanoid(),
+        userNickname: profile.nickname || undefined,
+        userBio: profile.bio || undefined,
+      },
+      async (materialId) =>
+        (
+          await api<{ extraction: CourseMaterialExtraction }>(
+            await fetch(`/api/course-space/${selected.id}/materials/${materialId}/extraction`, {
               cache: 'no-store',
             }),
-          );
-          return `【${material.name}】\n${extraction.text.slice(0, 12000)}`;
-        } catch {
-          return '';
-        }
-      }),
+          )
+        ).extraction,
     );
-    const requirement = instruction?.trim() || `请为“${scopeName}”生成课时 PPT / 互动课件。`;
-    sessionStorage.setItem(
-      'generationSession',
-      JSON.stringify({
-        sessionId: nanoid(),
-        requirements: {
-          targetDurationMinutes: resolveCourseMinutes(targetDuration),
-          requirement: `${requirement}\n\n课程：${selected.title}；当前课时范围：${scopeName}。请先生成可供教师审阅的课件大纲，再根据确认的大纲制作课件。`,
-          userNickname: profile.nickname || undefined,
-          userBio: profile.bio || undefined,
-          webSearch: false,
-          interactiveMode: false,
-        },
-        pdfText: sourceSections.filter(Boolean).join('\n\n').slice(0, 60000),
-        pdfImages: [],
-        imageStorageIds: [],
-        sceneOutlines: undefined,
-        currentStep: 'generating',
-        previewPhase: 'preparing',
-        courseSpaceContext: { courseId: selected.id, scope },
-      }),
-    );
+    sessionStorage.setItem('generationSession', JSON.stringify(session));
     router.push('/generation-preview');
   };
 
@@ -617,6 +600,10 @@ function CourseWorkspace({ workspaceCourseId }: { workspaceCourseId: string }) {
             : `lesson:${requestedScope.lessonId}`,
       );
     const includesCourseware = artifactTypes.includes('lesson-courseware');
+    if (includesCourseware && (generationLocked || launchingCourseware)) {
+      setMessage('当前有课件任务正在生成，请完成或取消后再试。');
+      return;
+    }
     if (entry === 'lecturer-ppt') {
       setCoursewareSourceOpen(true);
       return;
@@ -669,26 +656,9 @@ function CourseWorkspace({ workspaceCourseId }: { workspaceCourseId: string }) {
           </Button>
           <img src="/brand-mark.png" alt="MENTRA" className="size-9" />
           <div className="h-7 w-px bg-slate-200" />
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-lg font-semibold">教师课程工作区</h1>
-              <span
-                className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${isTeacherV11 ? 'border-[#B00055]/20 bg-[#B00055]/5 text-[#B00055]' : 'border-slate-200 bg-slate-50 text-slate-500'}`}
-              >
-                教师端 {isTeacherV11 ? 'v1.1' : 'v1.0'}
-              </span>
-            </div>
-            <p className="text-xs text-muted-foreground">课程结构、智能体协作与历史教学产物</p>
-          </div>
+          <h1 className="text-lg font-semibold">教师课程工作区</h1>
         </div>
         <div className="flex items-center gap-3">
-          <Button
-            variant="outline"
-            className="rounded-full bg-white/70"
-            onClick={() => router.push('/course-space')}
-          >
-            课程中心
-          </Button>
           <div className="rounded-full border bg-white/70 px-3 py-1.5 text-xs text-muted-foreground">
             默认教师
           </div>
@@ -698,162 +668,162 @@ function CourseWorkspace({ workspaceCourseId }: { workspaceCourseId: string }) {
         {selected && (
           <div className="mx-auto max-w-[1760px] space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-3 px-1">
-              <div>
-                <h2 className="text-xl font-semibold">{selected.title}</h2>
-                <p className="text-xs text-muted-foreground">
-                  按课程—模块—课时浏览课件、知识点与教学文件
-                </p>
-              </div>
-              <div className="flex items-center gap-2 text-xs">
-                <span className="rounded-full border bg-white px-3 py-1.5">
-                  {selected.modules.length} 模块
-                </span>
-                <span className="rounded-full border bg-white px-3 py-1.5">
-                  {artifacts.length} 产物
-                </span>
-                {latestJob && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => router.push(`/course-space/${selected.id}/jobs`)}
-                  >
-                    最近任务
-                  </Button>
-                )}
-                <Button
-                  size="sm"
-                  className="bg-[#B00055] hover:bg-[#8F0046]"
-                  disabled={publishingCourse || selected.status === 'active'}
-                  onClick={() => void publishCourse()}
-                >
-                  {publishingCourse ? (
-                    <LoaderCircle className="mr-2 size-4 animate-spin" />
-                  ) : selected.status === 'active' ? (
-                    <CheckCircle2 className="mr-2 size-4" />
-                  ) : (
-                    <PackageCheck className="mr-2 size-4" />
-                  )}
-                  {selected.status === 'active' ? 'Class 通道已开启' : '开启 Class 通道'}
-                </Button>
-                {selected.status === 'active' && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => router.push(`/classes/${selected.id}`)}
-                  >
-                    查看授课班级
-                  </Button>
-                )}
-              </div>
-              <CourseProgressSummary
-                jobs={jobs}
-                course={selected}
-                artifacts={artifacts}
-                onFocus={(target) => setStatusFocus({ ...target, nonce: Date.now() })}
-              />
+              <h2 className="text-xl font-semibold">{selected.title}</h2>
             </div>
+            <details className="group rounded-xl border border-white/80 bg-white/60 px-4 py-2">
+              <summary className="flex cursor-pointer list-none items-center gap-2 text-xs text-slate-500">
+                <ChevronDown className="size-3.5 transition group-open:rotate-180" />
+                课程概况与待办
+              </summary>
+              <div className="pb-1 pt-2">
+                <div className="mb-2 flex gap-3 text-xs text-slate-500">
+                  <span>{selected.modules.length} 模块</span>
+                  <span>{artifacts.length} 个教学文件</span>
+                </div>
+                <CourseProgressSummary
+                  jobs={jobs}
+                  course={selected}
+                  artifacts={artifacts}
+                  onFocus={(target) => setStatusFocus({ ...target, nonce: Date.now() })}
+                />
+              </div>
+            </details>
             <CourseWorkspaceExplorer
               focusRequest={statusFocus}
               course={selected}
               artifacts={artifacts}
+              jobs={jobs}
               height={courseAreaHeight}
               showOriginBadges
               onGenerate={(type, scope) => void requestGeneration(type, scope)}
+              generationLocked={generationLocked || launchingCourseware}
               onCourseChange={saveStructure}
               onRefresh={() => refresh(selected.id)}
               onScopeChange={updateGenerationScope}
             />
-            <div
-              ref={verticalSplitRef}
-              role="separator"
-              aria-label="调整课件区与教师工作台高度"
-              aria-orientation="horizontal"
-              aria-valuemin={420}
-              aria-valuemax={1100}
-              aria-valuenow={courseAreaHeight}
-              tabIndex={0}
-              onPointerDown={startVerticalResize}
-              onKeyDown={(event) => {
-                if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
-                event.preventDefault();
-                const delta = event.key === 'ArrowDown' ? 20 : -20;
-                const limited = Math.min(
-                  1100 - courseAreaHeight,
-                  workbenchHeight - 300,
-                  Math.max(420 - courseAreaHeight, delta),
-                );
-                const nextTop = courseAreaHeight + limited;
-                const nextBottom = workbenchHeight - limited;
-                setCourseAreaHeight(nextTop);
-                setWorkbenchHeight(nextBottom);
-                window.localStorage.setItem('mentra.course-area-height', String(nextTop));
-                window.localStorage.setItem('mentra.workbench-height', String(nextBottom));
-              }}
-              className="group relative -my-2 flex h-7 cursor-row-resize touch-none items-center justify-center outline-none"
-            >
-              <div className="h-1 w-24 rounded-full bg-slate-300 transition group-hover:bg-[#B00055] group-focus:bg-[#B00055]" />
-              <GripHorizontal className="absolute size-4 text-slate-400 opacity-0 transition group-hover:opacity-100 group-focus:opacity-100" />
-            </div>
-            <section className="overflow-visible rounded-[26px] border border-white/80 bg-white/75 shadow-sm backdrop-blur-xl">
-              <div className="flex items-center justify-between gap-3 border-b bg-white/85 px-4 py-3">
-                <div
-                  className="inline-flex rounded-xl bg-slate-100 p-1"
-                  role="tablist"
-                  aria-label="教师工作区视图"
-                >
-                  <button
-                    type="button"
-                    role="tab"
-                    aria-selected={workspacePanel === 'generate'}
-                    onClick={() => setWorkspacePanel('generate')}
-                    className={`flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium transition ${workspacePanel === 'generate' ? 'bg-white text-[#B00055] shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
-                  >
-                    <LayoutGrid className="size-4" />
-                    教师工作台
-                  </button>
-                  <button
-                    type="button"
-                    role="tab"
-                    aria-selected={workspacePanel === 'artifacts'}
-                    onClick={() => setWorkspacePanel('artifacts')}
-                    className={`flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium transition ${workspacePanel === 'artifacts' ? 'bg-white text-[#B00055] shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
-                  >
-                    <LayoutGrid className="size-4" />
-                    历史产物缩略图
-                  </button>
-                </div>
-                {workspacePanel === 'generate' ? (
-                  <CourseWorkLocationPicker
-                    course={selected}
-                    scope={activeScope}
-                    onChange={updateGenerationScope}
-                  />
-                ) : (
-                  <p className="text-xs text-muted-foreground">
-                    当前课程共 {artifacts.length} 个教学产物
-                  </p>
-                )}
+            {workbenchOpen && (
+              <div
+                ref={verticalSplitRef}
+                role="separator"
+                aria-label="调整课件区与教师工作台高度"
+                aria-orientation="horizontal"
+                aria-valuemin={420}
+                aria-valuemax={1100}
+                aria-valuenow={courseAreaHeight}
+                tabIndex={0}
+                onPointerDown={startVerticalResize}
+                onKeyDown={(event) => {
+                  if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+                  event.preventDefault();
+                  const delta = event.key === 'ArrowDown' ? 20 : -20;
+                  const limited = Math.min(
+                    1100 - courseAreaHeight,
+                    workbenchHeight - 300,
+                    Math.max(420 - courseAreaHeight, delta),
+                  );
+                  const nextTop = courseAreaHeight + limited;
+                  const nextBottom = workbenchHeight - limited;
+                  setCourseAreaHeight(nextTop);
+                  setWorkbenchHeight(nextBottom);
+                  window.localStorage.setItem('mentra.course-area-height', String(nextTop));
+                  window.localStorage.setItem('mentra.workbench-height', String(nextBottom));
+                }}
+                className="group relative -my-2 flex h-7 cursor-row-resize touch-none items-center justify-center outline-none"
+              >
+                <div className="h-1 w-24 rounded-full bg-slate-300 transition group-hover:bg-[#B00055] group-focus:bg-[#B00055]" />
+                <GripHorizontal className="absolute size-4 text-slate-400 opacity-0 transition group-hover:opacity-100 group-focus:opacity-100" />
               </div>
-              <div className="p-3">
-                {workspacePanel === 'generate' ? (
-                  <div style={{ height: workbenchHeight }}>
-                    <TeacherWorkspaceAgent
-                      course={selected}
-                      activeScope={activeScope}
-                      embedded
-                      onGenerate={(type, scope, entry, instruction) =>
-                        void requestGeneration(type, scope, entry, instruction)
-                      }
-                      onOperationComplete={() => refresh(selected.id)}
-                      onOpenKnowledgeGraph={() =>
-                        router.push(
-                          `/course-space/${encodeURIComponent(selected.id)}/knowledge-graph/manage`,
-                        )
-                      }
-                    />
-                  </div>
-                ) : (
-                  <CourseArtifactGallery courseId={selected.id} artifacts={artifacts} embedded />
+            )}
+            <section className="overflow-visible rounded-[26px] border border-white/80 bg-white/75 shadow-sm backdrop-blur-xl">
+              <button
+                type="button"
+                aria-expanded={workbenchOpen}
+                aria-controls="teacher-extra-tools"
+                onClick={() => {
+                  setWorkbenchMounted(true);
+                  setWorkbenchOpen((open) => !open);
+                }}
+                className="flex w-full items-center justify-between gap-3 rounded-[26px] px-5 py-3 text-left hover:bg-white/70"
+              >
+                <span>
+                  <span className="block text-sm font-medium text-slate-700">
+                    补充要求与更多操作
+                  </span>
+                  <span className="text-xs text-slate-400">对话、课程文件管理与历史记录</span>
+                </span>
+                <ChevronDown
+                  className={`size-4 text-slate-400 transition ${workbenchOpen ? 'rotate-180' : ''}`}
+                />
+              </button>
+              <div id="teacher-extra-tools" hidden={!workbenchOpen}>
+                {workbenchMounted && (
+                  <>
+                    <div className="flex items-center justify-between gap-3 border-b bg-white/85 px-4 py-3">
+                      <div
+                        className="inline-flex rounded-xl bg-slate-100 p-1"
+                        role="tablist"
+                        aria-label="教师工作区视图"
+                      >
+                        <button
+                          type="button"
+                          role="tab"
+                          aria-selected={workspacePanel === 'generate'}
+                          onClick={() => setWorkspacePanel('generate')}
+                          className={`flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium transition ${workspacePanel === 'generate' ? 'bg-white text-[#B00055] shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+                        >
+                          <LayoutGrid className="size-4" />
+                          补充要求与操作
+                        </button>
+                        <button
+                          type="button"
+                          role="tab"
+                          aria-selected={workspacePanel === 'artifacts'}
+                          onClick={() => setWorkspacePanel('artifacts')}
+                          className={`flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium transition ${workspacePanel === 'artifacts' ? 'bg-white text-[#B00055] shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+                        >
+                          <LayoutGrid className="size-4" />
+                          历史课件与文件
+                        </button>
+                      </div>
+                      {workspacePanel === 'generate' ? (
+                        <CourseWorkLocationPicker
+                          course={selected}
+                          scope={activeScope}
+                          onChange={updateGenerationScope}
+                        />
+                      ) : (
+                        <p className="text-xs text-muted-foreground">
+                          当前课程共 {artifacts.length} 个教学产物
+                        </p>
+                      )}
+                    </div>
+                    <div className="p-3">
+                      {workspacePanel === 'generate' ? (
+                        <div style={{ height: workbenchHeight }}>
+                          <TeacherWorkspaceAgent
+                            course={selected}
+                            activeScope={activeScope}
+                            embedded
+                            onGenerate={(type, scope, entry, instruction) =>
+                              void requestGeneration(type, scope, entry, instruction)
+                            }
+                            onOperationComplete={() => refresh(selected.id)}
+                            onOpenKnowledgeGraph={() =>
+                              router.push(
+                                `/course-space/${encodeURIComponent(selected.id)}/knowledge-graph/manage`,
+                              )
+                            }
+                          />
+                        </div>
+                      ) : (
+                        <CourseArtifactGallery
+                          courseId={selected.id}
+                          artifacts={artifacts}
+                          embedded
+                        />
+                      )}
+                    </div>
+                  </>
                 )}
               </div>
             </section>
@@ -891,42 +861,24 @@ function CourseWorkspace({ workspaceCourseId }: { workspaceCourseId: string }) {
             : undefined
         }
       />
-      <Dialog
-        open={Boolean(pendingCourseware)}
-        onOpenChange={(open) => {
-          if (!open) setPendingCourseware(null);
-        }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>设置课件播放时长</DialogTitle>
-            <DialogDescription>
-              根据课程难易程度选择讲解时长，确认后生成审阅大纲。
-            </DialogDescription>
-          </DialogHeader>
-          <CourseDurationInput value={targetDuration} onChange={setTargetDuration} />
-          <Button
-            disabled={launchingCourseware || Boolean(courseDurationInputError(targetDuration))}
-            onClick={async () => {
-              if (!pendingCourseware) return;
-              setLaunchingCourseware(true);
-              try {
-                await launchChatCoursewareFlow(
-                  pendingCourseware.scope,
-                  pendingCourseware.instruction,
-                );
-                setPendingCourseware(null);
-              } catch (error) {
-                setMessage(error instanceof Error ? error.message : String(error));
-              } finally {
-                setLaunchingCourseware(false);
-              }
-            }}
-          >
-            生成课件大纲
-          </Button>
-        </DialogContent>
-      </Dialog>
+      {pendingCourseware && selected && (
+        <CoursewareGenerationDialog
+          course={selected}
+          scope={pendingCourseware.scope}
+          initialInstruction={pendingCourseware.instruction}
+          generationLocked={generationLocked}
+          onClose={() => setPendingCourseware(null)}
+          onParse={parseMaterial}
+          onSubmit={async (options) => {
+            setLaunchingCourseware(true);
+            try {
+              await launchChatCoursewareFlow(pendingCourseware.scope, options);
+            } finally {
+              setLaunchingCourseware(false);
+            }
+          }}
+        />
+      )}
     </main>
   );
 }

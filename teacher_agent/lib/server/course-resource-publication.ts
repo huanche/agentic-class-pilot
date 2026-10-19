@@ -7,6 +7,7 @@ import {
   updateServerCourse,
   updateCourseJobIfPresent,
 } from './course-space-storage';
+import { publishCourseChannel } from './course-channel-publication';
 export type PublicationRequest = Omit<CoursePublicationPlacement, 'confirmedAt'> & {
   newLessonTitle?: string;
 };
@@ -63,7 +64,8 @@ export async function publishCourseResource(
 ) {
   validatePlacement(input);
   const course = await readServerCourse(courseId);
-  if (!course || course.status !== 'active') throw new Error('请先开启课程 Class 通道');
+  if (!course) throw new Error('课程不存在');
+  if (course.status === 'archived') throw new Error('归档课程不能发布');
   placementForLesson(course, input);
   const artifact = kind === 'artifact' ? await readCourseArtifact(id) : undefined;
   const resource =
@@ -81,6 +83,12 @@ export async function publishCourseResource(
     throw new Error('课件必须以课件类型发布');
   if (kind !== 'artifact' && input.resourceType === 'courseware')
     throw new Error('只有生成的互动课件可以发布为课件');
+  const ensureStudentPublication = async () => {
+    if (course.status === 'active') return;
+    const latest = await readServerCourse(course.id);
+    if (!latest) throw new Error('课程不存在');
+    if (latest.status !== 'active') await publishCourseChannel(latest);
+  };
   if (resource.classPublicationId && resource.publicationPlacement) {
     const previous = resource.publicationPlacement;
     if (
@@ -89,6 +97,9 @@ export async function publishCourseResource(
       )
     )
       throw new Error('已确认发布的文件不能更改归属，请发布新版本');
+    // Retry initialization if a previous publish saved the resource but failed
+    // before creating the student package. Preserve the original publication id.
+    await ensureStudentPublication();
     return resource;
   }
   const now = Date.now();
@@ -112,6 +123,7 @@ export async function publishCourseResource(
     updatedAt: now,
   };
   const updated = await updateServerCourse(course.id, (current) => {
+    if (current.status === 'archived') throw new Error('归档课程不能发布');
     placementForLesson(current, input);
     const modules = current.modules.map((courseModule) => ({
       ...courseModule,
@@ -195,8 +207,10 @@ export async function publishCourseResource(
       status: 'approved',
       message: '教师已确认课时归属并发布',
     });
+    await ensureStudentPublication();
     return saved;
   }
+  await ensureStudentPublication();
   return kind === 'material'
     ? updated.materials.find((item) => item.id === id)!
     : updated.modules

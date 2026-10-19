@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { useRouter } from 'next/navigation';
 import {
   BookOpen,
   ChevronDown,
@@ -9,8 +10,8 @@ import {
   ExternalLink,
   FileText,
   Folder,
-  FolderOpen,
   GripVertical,
+  History,
   Plus,
   Pin,
   Presentation,
@@ -20,6 +21,8 @@ import {
 import { Button } from '@/components/ui/button';
 import { ResourcePublicationDialog, type PublicationTarget } from './resource-publication-dialog';
 import { ResourceActions } from './resource-actions';
+import { WorkspaceItemMenu } from './workspace-item-menu';
+import { CoursewareGenerationButton } from './courseware-generation-button';
 import { SourceFileEditor } from './source-file-editor';
 import { courseWorkspaceUrl, withTeacherReturn } from '@/lib/course-space/navigation';
 import type {
@@ -124,9 +127,7 @@ function ClassPublicationBadge({
             ? 'cursor-pointer border-[#B00055]/25 bg-white text-[#B00055] hover:bg-[#B00055] hover:text-white'
             : 'border-slate-200 bg-slate-50 text-slate-500'
       }`}
-      title={
-        published ? `已发布到 Class 通道 · 唯一标志 ${publicationId}` : '尚未发布到 Class 通道'
-      }
+      title={published ? `已发布给学生 · 唯一标志 ${publicationId}` : '尚未发布给学生'}
     >
       {published ? `已发布·${publicationId!.slice(-6)}` : '未发布'}
     </span>
@@ -136,7 +137,9 @@ function ClassPublicationBadge({
 export function CourseWorkspaceExplorer({
   course,
   artifacts,
-  onGenerate: _onGenerate,
+  jobs = [],
+  onGenerate,
+  generationLocked = false,
   onCourseChange,
   onRefresh,
   onScopeChange,
@@ -146,7 +149,9 @@ export function CourseWorkspaceExplorer({
 }: {
   course: CourseSpace;
   artifacts: CourseArtifactRecord[];
+  jobs?: CourseArtifactJob[];
   onGenerate: (type: CourseArtifactType, scope?: CourseArtifactJob['scope']) => void;
+  generationLocked?: boolean;
   onCourseChange: (course: CourseSpace) => Promise<void>;
   onRefresh: () => Promise<void>;
   onScopeChange?: (scope: CourseArtifactJob['scope']) => void;
@@ -159,6 +164,7 @@ export function CourseWorkspaceExplorer({
     lessonId?: string;
   };
 }) {
+  const router = useRouter();
   const firstLesson = course.modules.flatMap((item) => item.lessons)[0];
   const initialArtifact = [...artifacts].sort(
     (a, b) => artifactPriority(b) - artifactPriority(a) || b.updatedAt - a.updatedAt,
@@ -167,6 +173,9 @@ export function CourseWorkspaceExplorer({
     initialArtifact?.scope ??
       (firstLesson ? { type: 'lesson', lessonId: firstLesson.id } : { type: 'course' }),
   );
+  useEffect(() => {
+    onScopeChange?.(scope);
+  }, [scope, onScopeChange]);
   const [expanded, setExpanded] = useState(
     () =>
       new Set(
@@ -527,7 +536,11 @@ export function CourseWorkspaceExplorer({
     const lessonFile = file.courseFile;
     const resource = artifact ?? material ?? lessonFile;
     if (!resource) return;
-    if (resource.classPublicationId && resource.publicationPlacement) {
+    if (
+      course.status === 'active' &&
+      resource.classPublicationId &&
+      resource.publicationPlacement
+    ) {
       setTreeMessage('此文件已按确认的课时归属发布。');
       return;
     }
@@ -898,7 +911,19 @@ export function CourseWorkspaceExplorer({
     }
   };
   const filesById = useMemo(() => new Map(allFiles.map((file) => [file.id, file])), [allFiles]);
-  const renderFileActions = (id: string, children?: ReactNode, location = true) => {
+  const taskHistoryActions = [
+    {
+      label: '任务记录',
+      icon: <History />,
+      onSelect: () => router.push(`/course-space/${encodeURIComponent(course.id)}/jobs`),
+    },
+  ];
+  const renderFileActions = (
+    id: string,
+    children?: ReactNode,
+    location = true,
+    includeTaskHistory = false,
+  ) => {
     const file = filesById.get(id);
     if (!file) return null;
     const resource = file.artifact ?? file.material ?? file.courseFile!;
@@ -913,8 +938,9 @@ export function CourseWorkspaceExplorer({
           title={file.title}
           pinned={resource.pinned}
           published={Boolean(resource.classPublicationId) || file.artifact?.status === 'published'}
-          courseActive={course.status === 'active'}
+          publicationLabel={file.artifact?.type === 'lesson-courseware' ? '发布课件' : '发布到班级'}
           onChange={onRefresh}
+          extraActions={includeTaskHistory ? taskHistoryActions : undefined}
           onEdit={() => editFile(file)}
           onReveal={() => revealFile(file)}
           onPublish={() => void publishFileToClass(file)}
@@ -966,7 +992,6 @@ export function CourseWorkspaceExplorer({
         title={item.title}
         pinned={item.pinned}
         published={false}
-        courseActive={course.status === 'active'}
         onChange={onRefresh}
         onReveal={() => revealFolder(kind, item.id)}
         onDeleted={async () => {
@@ -1015,6 +1040,12 @@ export function CourseWorkspaceExplorer({
   const locationLabel = [course.title, currentModule?.title, currentLesson?.title]
     .filter(Boolean)
     .join(' / ');
+  const selectedLesson =
+    scope.type === 'lesson'
+      ? course.modules
+          .flatMap((module) => module.lessons)
+          .find((lesson) => lesson.id === scope.lessonId)
+      : undefined;
 
   return (
     <div className="overflow-hidden rounded-[26px] border border-white/80 bg-white/90 shadow-[0_28px_80px_-42px_rgba(15,23,42,.45)] backdrop-blur-xl">
@@ -1031,7 +1062,6 @@ export function CourseWorkspaceExplorer({
               <BookOpen className="size-4" />
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-semibold">{course.title}</p>
-                <p className="text-[10px] text-white/65">课程文件空间</p>
               </div>
               <button
                 title="让智能体创建课程结构"
@@ -1623,22 +1653,56 @@ export function CourseWorkspaceExplorer({
         <section className="flex min-h-0 min-w-0 flex-col bg-[#f5f6f8]">
           <div className="flex min-h-11 shrink-0 flex-wrap items-center justify-between gap-2 border-b bg-white px-4 py-1.5">
             <div className="min-w-0 flex-1">
-              <p className="truncate text-xs font-medium text-slate-700">
-                {selectedFile?.title || folderView}
-              </p>
-              {currentFile && (
-                <button
-                  onClick={() => revealFile(currentFile)}
-                  title={`打开文件位置：${locationLabel}`}
-                  className="mt-0.5 flex max-w-full items-center gap-1 text-[10px] text-slate-500 hover:text-[#B00055]"
-                >
-                  <FolderOpen className="size-3 shrink-0" />
-                  <span className="truncate">{locationLabel}</span>
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={() => currentFile && revealFile(currentFile)}
+                disabled={!currentFile}
+                title={currentFile ? `打开文件位置：${locationLabel}` : undefined}
+                className="block max-w-full truncate text-left text-xs font-medium text-slate-700 enabled:hover:text-[#B00055]"
+              >
+                {selectedFile?.title ||
+                  (folderView === 'AI课件' && selectedLesson?.title) ||
+                  folderView}
+              </button>
             </div>
             <div className="flex flex-wrap items-center gap-2">
+              <CoursewareGenerationButton
+                course={course}
+                lessonId={folderView === 'AI课件' ? selectedLesson?.id : undefined}
+                jobs={jobs}
+                generationLocked={generationLocked}
+                onGenerate={(lessonId) =>
+                  onGenerate('lesson-courseware', { type: 'lesson', lessonId })
+                }
+                onRefresh={onRefresh}
+                onOpenResult={(job) => {
+                  const file = job.artifactId ? filesById.get(job.artifactId) : undefined;
+                  if (file) revealFile(file);
+                  else
+                    router.push(
+                      `/course-space/${encodeURIComponent(course.id)}/jobs/${encodeURIComponent(job.id)}`,
+                    );
+                }}
+              />
+              {selectedFile?.artifact?.type === 'lesson-courseware' &&
+                (course.status === 'active' &&
+                selectedFile.artifact.classPublicationId &&
+                selectedFile.artifact.publicationPlacement ? (
+                  <Button size="sm" className="bg-[#B00055] hover:bg-[#8F0046]" asChild>
+                    <a href={`/classes/${encodeURIComponent(course.id)}`}>已发布 · 查看班级</a>
+                  </Button>
+                ) : (
+                  <Button
+                    size="sm"
+                    className="bg-[#B00055] hover:bg-[#8F0046]"
+                    disabled={course.status === 'archived'}
+                    onClick={() => void publishFileToClass()}
+                  >
+                    {course.status === 'archived' ? '课程已归档' : '发布课件'}
+                  </Button>
+                ))}
               {selectedFile &&
+                selectedFile.artifact?.type !== 'lesson-courseware' &&
                 (selectedFile.courseFile?.classPublicationId ||
                   selectedFile.artifact?.classPublicationId ||
                   selectedFile.material?.classPublicationId) &&
@@ -1647,7 +1711,7 @@ export function CourseWorkspaceExplorer({
                   <Button
                     size="sm"
                     variant="outline"
-                    disabled={course.status !== 'active'}
+                    disabled={course.status === 'archived'}
                     onClick={() => void publishFileToClass()}
                   >
                     确认课时归属并发布
@@ -1665,13 +1729,18 @@ export function CourseWorkspaceExplorer({
                   </Button>
                 )}
               {(selectedFile?.courseFile || selectedFile?.artifact) &&
+                selectedFile?.artifact?.type !== 'lesson-courseware' &&
                 !selectedFile?.courseFile?.classPublicationId &&
                 selectedFile?.artifact?.status !== 'published' && (
                   <Button size="sm" disabled={reviewBusy} onClick={() => void reviewSelected(true)}>
                     审核通过{selectedFile?.courseFile ? '，下一项' : ''}
                   </Button>
                 )}
-              {selectedFile && renderFileActions(selectedFile.id)}
+              {selectedFile ? (
+                renderFileActions(selectedFile.id, undefined, true, true)
+              ) : (
+                <WorkspaceItemMenu title="课件操作" actions={taskHistoryActions} />
+              )}
               {selectedFile?.artifact?.classroomUrl && (
                 <Button size="sm" variant="outline" asChild>
                   <a
@@ -1807,7 +1876,9 @@ export function CourseWorkspaceExplorer({
                     ? '上一页上传的资料会自动保存在这里'
                     : folderView === '课程大纲'
                       ? '生成的课程大纲将保存在这里'
-                      : '可通过课程操作入口启动标准课件生成流程'}
+                      : selectedLesson
+                        ? '点击右上角“生成课件”，选择已有资料、讲解时长和补充要求'
+                        : '先在左侧选择课时，再点击“生成课件”'}
                 </p>
               </div>
             )}
@@ -1822,7 +1893,11 @@ export function CourseWorkspaceExplorer({
           onClose={() => setPublicationTarget(undefined)}
           onPublished={async () => {
             await onRefresh();
-            setTreeMessage('文件已按确认的周次与课时归档并发布。');
+            setTreeMessage(
+              publicationTarget.resourceType === 'courseware'
+                ? '课件已确认并发布，学生现在可以查看。'
+                : '文件已按确认的周次与课时归档并发布。',
+            );
           }}
         />
       )}
