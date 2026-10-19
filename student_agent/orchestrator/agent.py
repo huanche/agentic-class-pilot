@@ -2345,8 +2345,14 @@ def judge_advance(state: ClassroomState) -> dict:
         end_at = state.get("tutoring_planned_end_at")
         time_up = bool(end_at) and (
             datetime.fromisoformat(state["now"]) >= datetime.fromisoformat(end_at))
-        confirmed = time_up and re.fullmatch(
-            r"(?:没有[了]?|没了|不用了|不用|好了?|可以了?|行|嗯+|[。！!，, ])*", msg)
+        # 到点后的短确认只在没有挂起检测题时才算结束——学生对着题答「好/行」
+        # 是作答，不是确认下课。
+        confirmed = (time_up and not state.get("tutoring_question")
+                     and msg and re.fullmatch(
+                         r"(?:没有[了]?|没了|不用了?|好了?|可以了?|行|嗯+)"
+                         r"(?:[。！!，, ]*(?:没有[了]?|没了|不用了?|好了?|可以了?|行|嗯+))*"
+                         r"[。！!，, ]*",
+                         msg))
         if _TUTORING_END_PAT.search(msg) or (msg and confirmed):
             return {"target_phase": "ending", "advance_reason": "学生明确结束课后辅导"}
         return {"target_phase": None, "advance_reason": "课后辅导进行中，等待学生明确结束"}
