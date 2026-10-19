@@ -507,8 +507,9 @@ class ClassroomState(TypedDict):
     tutoring_planned_minutes: int           # 当前计划时长（分钟）：学生报的时长，或进辅导时的默认值
     tutoring_planned_end_at: str | None     # 计划结束时间戳：学生报时长那一刻起算；未报时从进辅导起按默认时长起算
     tutoring_cursor: int                    # 复习游标：tutoring_order 里当前推进到第几个（判对 +1）
-    tutoring_question: dict | None          # 当前检测题 {kp_id, question, asked_at, hint_given}
+    tutoring_question: dict | None          # 当前检测题 {kp_id, question, asked_at, hint_given, was_fresh, wrong_count}
     tutoring_last_judgement: dict | None    # 本轮作答判定（会话层据此落学习事件；无判定为 None）
+    tutoring_asked: list[str]               # 已见题干清单（出题去重：新题必须避开）
 
     # ── 输出 ──
     reply_text: str
@@ -1250,9 +1251,43 @@ _TUTORING_QUES_PAT = re.compile(r"[?？]|为什么|怎么|什么意思|是什么
 _TUTORING_HELP_PAT = re.compile(r"不懂|不会|没听懂|不明白|帮我|讲讲|讲一下|解释|教教我")
 
 
-def _tutoring_diagnostic_question(title: str) -> str:
-    """知识点的检测题骨架：无模型也能问（题目本身是确定性交付）。"""
-    return f"小检测：请用自己的话说说「{title}」讲的是什么，最好举个例子。"
+def _tutoring_question_pool(title: str) -> list[str]:
+    """同知识点的确定性题池：出题去重的兜底（无模型/生成失败时轮换）。"""
+    return [
+        f"小检测：请用自己的话说说「{title}」讲的是什么，最好举个例子。",
+        f"换个角度考考你：「{title}」和不用它会差在哪？说说你的理解。",
+        f"再确认一下：如果让你给同学解释「{title}」，你会怎么讲？举一个具体例子。",
+    ]
+
+
+def _tutoring_generate_question(title: str, seen: list[str]) -> str | None:
+    """模型出题：把已见题干喂进 prompt 避开；失败返回 None 走题池。"""
+    if not llm_available():
+        return None
+    seen_block = "\n".join(f"- {s}" for s in seen) or "（还没有问过题）"
+    raw = llm_chat(
+        "你是课堂里的 AI 辅导老师，要为学生出一个知识检测题。"
+        "题目必须考查给定的知识点、适合口头作答、一句话问完。"
+        "不得与已问过的题目重复或高度相似。只输出题目本身，不要编号不要解释。",
+        f"知识点：{title}\n已问过的题（必须避开）：\n{seen_block}\n请出下一道检测题：",
+    )
+    text = (raw or "").strip()
+    return text or None
+
+
+def _tutoring_pick_question(title: str, seen: list[str]) -> tuple[str, bool]:
+    """选题：优先模型生成（避开已见），失败走确定性题池轮换。
+
+    返回 (题干, 是否未见)。题池耗尽后复用旧题，标记不新鲜——
+    答对也封顶 4 星（量规的 stale_question_max_stars）。
+    """
+    generated = _tutoring_generate_question(title, seen)
+    if generated and generated not in seen:
+        return generated, True
+    for q in _tutoring_question_pool(title):
+        if q not in seen:
+            return q, True
+    return _tutoring_question_pool(title)[0], False
 
 
 def _tutoring_judge(question: dict, answer: str) -> tuple[str, str]:
@@ -1418,6 +1453,7 @@ def tutoring_public(state: ClassroomState, now_iso: str | None = None,
             "kp_id": question["kp_id"],
             "text": question.get("question", ""),
             "hint_given": bool(question.get("hint_given")),
+            "was_fresh": bool(question.get("was_fresh", True)),
         } if question and question.get("kp_id") in no_of else None),
         "planned_minutes": int(state.get("tutoring_planned_minutes") or 0),
         "planned_end_at": end,
@@ -1813,9 +1849,11 @@ def teach(state: ClassroomState) -> dict:
                 else "answer"
             )
 
-            # ── 检测题机制（工单 03）：出题 → 判答 → 升星/追问 → 推进 ──
+            # ── 检测题机制（工单 03/04）：出题 → 判答 → 升星/追问讲解 → 换新题 → 推进 ──
             prev_question = state.get("tutoring_question")
+            seen = list(state.get("tutoring_asked") or [])
             judged: dict | None = None
+            wrong_replaced = False
             stars = dict(state.get("kp_stars") or {})
             if kind == "answer" and prev_question:
                 verdict, _note = _tutoring_judge(prev_question, msg)
@@ -1852,13 +1890,31 @@ def teach(state: ClassroomState) -> dict:
                               "question": prev_question.get("question", ""),
                               "stars_after": stars[kid]}
                 elif verdict == "wrong":
-                    # 答错不降星、不换知识点：标记已提示，转入针对错误的追问/讲解
-                    carried = dict(prev_question)
-                    carried["hint_given"] = True
-                    updates["tutoring_question"] = carried
-                    judged = {"kp_id": kid, "verdict": "wrong", "hint_given": True,
-                              "question": prev_question.get("question", ""),
-                              "stars_after": stars.get(kid, 0)}
+                    # 答错不降星、不换知识点。第一次错：同题标记提示、追问；
+                    # 连续错：讲解并安排**未见过的新题**确认（方案：答错追问/讲解
+                    # 之后安排无提示新题）。新题本身不带提示，答对按正常路径升星。
+                    if int(prev_question.get("wrong_count", 0)) >= 1:
+                        title_w = title_of.get(kid, "刚才视频的内容")
+                        text, fresh = _tutoring_pick_question(title_w, seen)
+                        updates["tutoring_question"] = {
+                            "kp_id": kid, "question": text,
+                            "asked_at": state.get("now"), "hint_given": False,
+                            "was_fresh": fresh, "wrong_count": 0,
+                        }
+                        seen.append(text)
+                        updates["tutoring_asked"] = list(seen)
+                        wrong_replaced = True
+                        judged = {"kp_id": kid, "verdict": "wrong", "hint_given": True,
+                                  "question": prev_question.get("question", ""),
+                                  "stars_after": stars.get(kid, 0)}
+                    else:
+                        carried = dict(prev_question)
+                        carried["hint_given"] = True
+                        carried["wrong_count"] = 1
+                        updates["tutoring_question"] = carried
+                        judged = {"kp_id": kid, "verdict": "wrong", "hint_given": True,
+                                  "question": prev_question.get("question", ""),
+                                  "stars_after": stars.get(kid, 0)}
                 # unclear：不判、不记事件、不动状态
             updates["tutoring_last_judgement"] = judged
 
@@ -1871,17 +1927,22 @@ def teach(state: ClassroomState) -> dict:
                 order_now[-1] if order_now else "")
             title = title_of.get(active, "刚才视频的内容")
 
-            def _ask_diagnostic() -> None:
+            def _ask_question() -> None:
+                text, fresh = _tutoring_pick_question(title, seen)
                 updates["tutoring_question"] = {
                     "kp_id": active,
-                    "question": _tutoring_diagnostic_question(title),
+                    "question": text,
                     "asked_at": state.get("now"),
                     "hint_given": False,
+                    "was_fresh": fresh,
+                    "wrong_count": 0,
                 }
+                seen.append(text)
+                updates["tutoring_asked"] = list(seen)
 
             if judged and judged["verdict"] == "correct":
                 if in_range:
-                    _ask_diagnostic()
+                    _ask_question()
                     body = (
                         "答得漂亮——记你一星。我们接着看"
                         f"「{title}」：{updates['tutoring_question']['question']}"
@@ -1892,10 +1953,17 @@ def teach(state: ClassroomState) -> dict:
                         "没有的话说一声，我们就可以收尾。"
                     )
             elif judged and judged["verdict"] == "wrong":
-                body = (
-                    "嗯，这个说法有问题，先别急着往下。我们退一步想："
-                    f"「{title}」最关键的一点是什么？用自己的话再试一次。"
-                )
+                if wrong_replaced:
+                    new_q = updates.get("tutoring_question") or {}
+                    body = (
+                        "我们先把这道放下，我把关键点给你捋一捋（听老师讲解）。"
+                        f"换一道新题确认一下：{new_q.get('question', '')}"
+                    )
+                else:
+                    body = (
+                        "嗯，这个说法有问题，先别急着往下。我们退一步想："
+                        f"「{title}」最关键的一点是什么？用自己的话再试一次。"
+                    )
             elif kind == "answer" and prev_question:
                 body = (
                     "我没能确定你的意思，再说详细一点——"
@@ -1904,7 +1972,7 @@ def teach(state: ClassroomState) -> dict:
             elif kind == "answer" or confirms:
                 pending = prev_question
                 if not pending:
-                    _ask_diagnostic()
+                    _ask_question()
                     q_text = updates["tutoring_question"]["question"]
                 else:
                     q_text = pending.get("question", "")
@@ -2642,6 +2710,7 @@ def initial_state(session_id: str, student_id: str = "student-001",
         "tutoring_cursor": 0,
         "tutoring_question": None,
         "tutoring_last_judgement": None,
+        "tutoring_asked": [],
         "reply_text": "",
         "speech_kind": "none",
         "advance_reason": None,

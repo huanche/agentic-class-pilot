@@ -628,6 +628,71 @@ class TutoringEvidenceMasteryTest(unittest.TestCase):
         self.assertEqual(agent.tutoring_default_minutes(), rubric_default)
 
 
+    def test_double_wrong_moves_to_fresh_question_same_kp(self) -> None:
+        """答错先追问（同题标记提示）；再错则讲解并换**未见新题**（同知识点）。"""
+        self._reset_session()
+        self._enter_tutoring()
+        self._send("那我准备好了")
+        q1 = self._state()["tutoring"]["question"]["text"]
+        kp1 = self._kp_id(1)
+
+        self._answer_judged("wrong")   # 第一次错：追问，同题
+        q_after1 = self._state()["tutoring"]["question"]
+        self.assertEqual(q_after1["text"], q1)
+        self.assertTrue(q_after1["hint_given"])
+
+        self._answer_judged("wrong")   # 第二次错：换新题
+        q2 = self._state()["tutoring"]["question"]
+        self.assertEqual(q2["kp_no"], 1)
+        self.assertNotEqual(q2["text"], q1)
+        self.assertFalse(q2["hint_given"])
+        self.assertTrue(q2["was_fresh"])
+        self.assertEqual(self._state()["stars"].get(kp1, 0), 0)
+
+    def test_llm_generation_receives_seen_list(self) -> None:
+        """接模型时出新题走生成链路：已见题干喂进 prompt 让它避开。"""
+        self._reset_session()
+        self._enter_tutoring()
+        self._send("那我准备好了")
+        q1 = self._state()["tutoring"]["question"]["text"]
+
+        captured: dict = {}
+
+        def fake_chat(system: str, user: str):
+            if "判定" in system:
+                return json.dumps({"verdict": "wrong"}, ensure_ascii=False)
+            captured["user"] = user
+            return "LLM 新题：请举例说明调度决策的三个输入。"
+
+        with mock.patch.object(agent, "llm_available", return_value=True), \
+                mock.patch.object(agent, "llm_chat", side_effect=fake_chat):
+            self._send("第一次：我随便说说")   # 判错 → 追问（不生成）
+            self._send("第二次：还是不会")     # 再错 → 生成新题
+
+        q2 = self._state()["tutoring"]["question"]
+        self.assertIn("LLM 新题", q2["text"])
+        self.assertTrue(q2["was_fresh"])
+        self.assertIn(q1, captured.get("user", ""))   # 已见题喂给了生成 prompt
+
+    def test_exhausted_pool_reuses_without_freshness(self) -> None:
+        """确定性题池耗尽后复用旧题：was_fresh=False，升星封顶 4。"""
+        self._reset_session()
+        self._enter_tutoring()
+        self._send("那我准备好了")
+        kp1 = self._kp_id(1)
+        s = server.SESSIONS[self.sid]["state"]
+        # 把整 个题池都标记为已见
+        s["tutoring_asked"] = [
+            v for v in agent._tutoring_question_pool("调度是什么")
+        ]
+        s["tutoring_question"] = None
+        s["tutoring_cursor"] = 0
+
+        self._send("再考我一个")
+        q = self._state()["tutoring"]["question"]
+        self.assertFalse(q["was_fresh"])
+
+
 class SelfRatingPersistenceTest(unittest.TestCase):
     """工单 03 缝 B：自评与系统星级分开存储、互不冲掉（demo 路径）。"""
 
