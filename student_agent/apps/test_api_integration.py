@@ -11,10 +11,17 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from fastapi.testclient import TestClient
+# 测试隔离：必须在 import server/agent 之前显式占位（agent 的 _load_dotenv
+# 只跳过「已设置」的变量）。开发机上存在 student_agent/.env.local（真模型
+# 配置）时，不占位会把真 key 灌进来——测试开始真调模型，又慢又不确定。
+os.environ.setdefault("AGENT_LLM_API_KEY", "")
+os.environ.setdefault("AGENT_LLM_BASE_URL", "")
+os.environ.setdefault("AGENT_LLM_MODEL", "")
 
-from apps import server
-import agent
+from fastapi.testclient import TestClient  # noqa: E402
+
+from apps import server  # noqa: E402
+import agent  # noqa: E402
 
 
 class StudentApiIntegrationTest(unittest.TestCase):
