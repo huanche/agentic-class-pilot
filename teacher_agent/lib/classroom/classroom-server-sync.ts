@@ -5,6 +5,8 @@ export interface ClassroomServerSnapshot {
   scenes: Scene[];
 }
 
+export class ClassroomSnapshotConflictError extends Error {}
+
 export function canSyncClassroomSnapshot(
   classroomId: string,
   snapshot: { stage: Stage | null; scenes: Scene[]; generationComplete: boolean },
@@ -26,6 +28,7 @@ export function createClassroomSnapshotSyncQueue(
   let pending: ClassroomServerSnapshot | null = null;
   let writing = false;
   let disposed = false;
+  let conflicted = false;
   let timer: ReturnType<typeof setTimeout> | null = null;
 
   const schedule = (delay: number) => {
@@ -45,6 +48,14 @@ export function createClassroomSnapshotSyncQueue(
     try {
       await send(snapshot);
     } catch (error) {
+      if (error instanceof ClassroomSnapshotConflictError) {
+        // A different owner is generating, or this tab predates the completed
+        // server document. Retrying any queued snapshot could erase its pages.
+        conflicted = true;
+        pending = null;
+        onError(error);
+        return;
+      }
       onError(error);
       // Never replace a newer snapshot with the failed older one.
       pending ??= snapshot;
@@ -57,9 +68,12 @@ export function createClassroomSnapshotSyncQueue(
 
   return {
     enqueue(snapshot: ClassroomServerSnapshot) {
-      if (disposed) return;
+      if (disposed || conflicted) return;
       pending = snapshot;
       schedule(delayMs);
+    },
+    resumeAfterReload() {
+      conflicted = false;
     },
     dispose() {
       disposed = true;
@@ -84,5 +98,7 @@ export async function syncClassroomSnapshot(
   const result = (await response.json().catch(() => undefined)) as
     | { error?: string; message?: string }
     | undefined;
-  throw new Error(result?.error || result?.message || `Classroom sync failed (${response.status})`);
+  const message = result?.error || result?.message || `Classroom sync failed (${response.status})`;
+  if (response.status === 409) throw new ClassroomSnapshotConflictError(message);
+  throw new Error(message);
 }

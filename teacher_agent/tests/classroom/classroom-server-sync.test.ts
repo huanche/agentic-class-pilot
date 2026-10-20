@@ -3,6 +3,7 @@ import {
   canSyncClassroomSnapshot,
   createClassroomSnapshotSyncQueue,
   syncClassroomSnapshot,
+  ClassroomSnapshotConflictError,
 } from '@/lib/classroom/classroom-server-sync';
 import type { Scene, Stage } from '@/lib/types/stage';
 
@@ -92,6 +93,49 @@ describe('classroom server sync', () => {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ stage, scenes }),
     });
+  });
+
+  it('drops every queued stale snapshot on conflict instead of retrying it', async () => {
+    vi.useFakeTimers();
+    try {
+      let reject!: (error: Error) => void;
+      const send = vi.fn(
+        () =>
+          new Promise<void>((_resolve, fail) => {
+            reject = fail;
+          }),
+      );
+      const onConflict = vi.fn();
+      const queue = createClassroomSnapshotSyncQueue(send, onConflict, 10);
+      queue.enqueue({ stage, scenes });
+      await vi.advanceTimersByTimeAsync(10);
+      queue.enqueue({ stage, scenes: [...scenes, { ...scenes[0], id: 'new' }] });
+      reject(new ClassroomSnapshotConflictError('outdated'));
+      await vi.advanceTimersByTimeAsync(5000);
+      queue.enqueue({ stage, scenes });
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(send).toHaveBeenCalledTimes(1);
+      expect(onConflict).toHaveBeenCalledOnce();
+      queue.resumeAfterReload();
+      send.mockResolvedValueOnce(undefined);
+      queue.enqueue({ stage, scenes });
+      await vi.advanceTimersByTimeAsync(10);
+      expect(send).toHaveBeenCalledTimes(2);
+      queue.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('classifies a 409 response as a reload conflict', async () => {
+    const fetcher = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 409,
+      json: async () => ({ error: '服务器课件已更新' }),
+    });
+    await expect(
+      syncClassroomSnapshot({ stage, scenes }, fetcher as typeof fetch),
+    ).rejects.toBeInstanceOf(ClassroomSnapshotConflictError);
   });
 
   it('surfaces a server error', async () => {

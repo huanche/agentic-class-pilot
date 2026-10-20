@@ -35,6 +35,7 @@ import Link from 'next/link';
 import {
   canSyncClassroomSnapshot,
   createClassroomSnapshotSyncQueue,
+  ClassroomSnapshotConflictError,
 } from '@/lib/classroom/classroom-server-sync';
 
 const log = createLogger('Classroom');
@@ -235,15 +236,27 @@ export default function ClassroomDetailPage() {
   }, [error, loading, pendingServerJobId, loadClassroom]);
 
   useEffect(() => {
-    const queue = createClassroomSnapshotSyncQueue(undefined, (syncError) =>
-      log.error('[Classroom] Failed to sync classroom; retrying:', syncError),
-    );
+    let cancelled = false;
+    const queue = createClassroomSnapshotSyncQueue(undefined, (syncError) => {
+      if (syncError instanceof ClassroomSnapshotConflictError) {
+        stop();
+        setGenerationFailure(null);
+        setLoading(true);
+        generationStartedRef.current = false;
+        void loadClassroom(() => !cancelled, true).then(() => {
+          if (!cancelled) queue.resumeAfterReload();
+        });
+        return;
+      }
+      log.error('[Classroom] Failed to sync classroom; retrying:', syncError);
+    });
     snapshotSyncRef.current = queue;
     return () => {
+      cancelled = true;
       queue.dispose();
       snapshotSyncRef.current = null;
     };
-  }, [classroomId]);
+  }, [classroomId, loadClassroom, stop]);
 
   // Course-space generation enters after the first scene. Save each new scene
   // to the server as it arrives, as well as subsequent teacher edits; the

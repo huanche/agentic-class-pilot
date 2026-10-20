@@ -56,7 +56,18 @@ export function hasPendingClassroomGeneration({
 function mergeServerGeneration(existing: AppDocument, payload: ClassroomPayload) {
   const outline = existing.outline as AppDocumentOutline | undefined;
   const stage = existing.stage as Stage;
-  if (!hasPendingClassroomGeneration({ stage, scenes: existing.scenes, ...outline }))
+  const remotePlan = payload.stage.generationPlan;
+  // The preview tab can cache a stage before its server job is accepted.
+  // Adopt that job even when an old local completion flag says otherwise.
+  const adoptServerJob = Boolean(
+    remotePlan?.serverJobId &&
+    (stage.generationPlan?.serverJobId !== remotePlan.serverJobId ||
+      !stage.generationPlan?.complete),
+  );
+  if (
+    !adoptServerJob &&
+    !hasPendingClassroomGeneration({ stage, scenes: existing.scenes, ...outline })
+  )
     return { document: existing, serverSnapshot: false };
   const remoteById = new Map(payload.scenes.map((scene) => [scene.id, scene]));
   const remoteByOrder = new Map(payload.scenes.map((scene) => [scene.order, scene]));
@@ -85,8 +96,11 @@ function mergeServerGeneration(existing: AppDocument, payload: ClassroomPayload)
       changed = true;
     }
   }
-  const remotePlan = payload.stage.generationPlan;
-  const outlines = outline?.outlines.length ? outline.outlines : remotePlan?.outlines;
+  const outlines = remotePlan?.serverJobId
+    ? remotePlan.outlines
+    : outline?.outlines.length
+      ? outline.outlines
+      : remotePlan?.outlines;
   const complete = Boolean(remotePlan?.complete && outlines?.every((o) => orders.has(o.order)));
   const generationPlan = outlines?.length
     ? { ...stage.generationPlan, ...remotePlan, version: 1 as const, outlines, complete }

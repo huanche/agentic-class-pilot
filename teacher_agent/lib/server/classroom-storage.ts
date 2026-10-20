@@ -206,28 +206,74 @@ export async function persistClassroom(
     scenes: Scene[];
   },
   baseUrl: string,
+  options: { source?: 'browser' } = {},
 ): Promise<PersistedClassroomData & { url: string }> {
-  // Re-attach serving URLs a browser round-trip dropped: converted client
-  // documents carry pool-local ast_* ids with no URL, and persisting those
-  // verbatim would strand the narration on the editing browser. See
-  // attachNarrationServingUrls.
-  const scenes = await attachNarrationServingUrls(data.scenes, data.id, baseUrl);
-  const classroomData: PersistedClassroomData = {
-    id: data.id,
-    stage: data.stage,
-    scenes,
-    createdAt: new Date().toISOString(),
-  };
+  return withClassroomWriteLock(data.id, async () => {
+    if (options.source === 'browser' && !isCourseDatabaseConfigured()) {
+      const current = await readClassroom(data.id);
+      const plan = current?.stage.generationPlan;
+      if (
+        plan?.serverJobId &&
+        (plan.serverJobId !== data.stage.generationPlan?.serverJobId ||
+          !plan.complete ||
+          !data.stage.generationPlan?.complete)
+      )
+        throw new ClassroomSnapshotConflictError();
+    }
+    // Re-attach serving URLs a browser round-trip dropped: converted client
+    // documents carry pool-local ast_* ids with no URL, and persisting those
+    // verbatim would strand the narration on the editing browser. See
+    // attachNarrationServingUrls.
+    const scenes = await attachNarrationServingUrls(data.scenes, data.id, baseUrl);
+    const classroomData: PersistedClassroomData = {
+      id: data.id,
+      stage: data.stage,
+      scenes,
+      createdAt: new Date().toISOString(),
+    };
 
-  if (!isCourseDatabaseConfigured()) {
-    const filePath = resolveClassroomFilePath(data.id);
-    await ensureClassroomsDir();
-    await writeJsonFileAtomic(filePath, classroomData);
+    if (!isCourseDatabaseConfigured()) {
+      const filePath = resolveClassroomFilePath(data.id);
+      await ensureClassroomsDir();
+      await writeJsonFileAtomic(filePath, classroomData);
+    }
+    const written = await upsertClassroomDatabaseRecord(classroomData, {
+      browserSnapshot: options.source === 'browser',
+    });
+    if (isCourseDatabaseConfigured() && written?.rowCount === 0)
+      throw new ClassroomSnapshotConflictError();
+
+    return {
+      ...classroomData,
+      url: `${baseUrl}/classroom/${data.id}`,
+    };
+  });
+}
+
+export class ClassroomSnapshotConflictError extends Error {
+  constructor() {
+    super('服务器课件已更新，请重新加载后继续编辑');
+    this.name = 'ClassroomSnapshotConflictError';
   }
-  await upsertClassroomDatabaseRecord(classroomData);
+}
 
-  return {
-    ...classroomData,
-    url: `${baseUrl}/classroom/${data.id}`,
-  };
+const writeLocksKey = Symbol.for('mentra.classroom.write-locks');
+const writeRoot = globalThis as typeof globalThis & {
+  [writeLocksKey]?: Map<string, Promise<void>>;
+};
+const classroomWriteLocks = (writeRoot[writeLocksKey] ??= new Map());
+async function withClassroomWriteLock<T>(id: string, write: () => Promise<T>): Promise<T> {
+  const previous = classroomWriteLocks.get(id) ?? Promise.resolve();
+  let release!: () => void;
+  const current = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  classroomWriteLocks.set(id, current);
+  await previous;
+  try {
+    return await write();
+  } finally {
+    release();
+    if (classroomWriteLocks.get(id) === current) classroomWriteLocks.delete(id);
+  }
 }
