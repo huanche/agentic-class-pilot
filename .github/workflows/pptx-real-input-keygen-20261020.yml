@@ -1,0 +1,39 @@
+name: pptx-real-input-keygen-20261020
+on:
+  push:
+    branches: [codex/backup-generation-controls-20261020]
+    paths: [.github/workflows/pptx-real-input-keygen-20261020.yml]
+permissions:
+  contents: read
+concurrency:
+  group: teacher-deploy
+  cancel-in-progress: false
+jobs:
+  operate:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 8
+    steps:
+      - name: Diagnose or repair the PPTX asset route
+        env:
+          SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+        run: |
+          set -euo pipefail
+          key="$RUNNER_TEMP/pptx-route-key"
+          printf '%s\n' "$SERVER_SSH_KEY" > "$key"
+          chmod 600 "$key"
+          trap 'rm -f "$key"' EXIT
+          ssh -i "$key" -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=20 -o ServerAliveCountMax=3 "ubuntu@$SERVER_HOST" "bash -s -- '$GITHUB_RUN_ID'" <<'REMOTE'
+          set -euo pipefail
+          umask 077
+          secure=/opt/agentic-class-pilot/.runtime/secure/pptx-ocr-20261020
+          mkdir -p "$secure"
+          chmod 700 "$secure"
+          if [ ! -s "$secure/transport.pem" ]; then
+            openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out "$secure/transport.pem" 2>/dev/null
+          fi
+          chmod 600 "$secure/transport.pem"
+          printf 'VERIFY_OCR_PUBLIC_KEY '
+          openssl pkey -in "$secure/transport.pem" -pubout -outform DER 2>/dev/null | base64 -w0
+          printf '\n'
+          REMOTE
