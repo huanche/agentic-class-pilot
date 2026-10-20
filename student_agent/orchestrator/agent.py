@@ -507,6 +507,7 @@ class ClassroomState(TypedDict):
     tutoring_planned_minutes: int           # 当前计划时长（分钟）：学生报的时长，或进辅导时的默认值
     tutoring_planned_end_at: str | None     # 计划结束时间戳：学生报时长那一刻起算；未报时从进辅导起按默认时长起算
     tutoring_cursor: int                    # 复习游标：tutoring_order 里当前推进到第几个（判对 +1）
+    tutoring_active_kp: str | None          # 正在讲的知识点（显式记录；高亮/载荷以它为准，不从顺序+游标推导）
     tutoring_question: dict | None          # 当前检测题 {kp_id, question, asked_at, hint_given, was_fresh, wrong_count}
     tutoring_last_judgement: dict | None    # 本轮作答判定（会话层据此落学习事件；无判定为 None）
     tutoring_asked: list[str]               # 已见题干清单（出题去重：新题必须避开）
@@ -1525,10 +1526,18 @@ def tutoring_public(state: ClassroomState, now_iso: str | None = None,
                  - datetime.fromisoformat(now_iso)).total_seconds()
         remaining = max(0, round(delta * float(time_scale or 1.0)))
     question = state.get("tutoring_question")
-    cursor = state.get("tutoring_cursor", 0)
+    # 高亮以显式记录的「正在讲的知识点」为准；旧会话（升级前持久化的
+    # state 没有这个键）回退用 挂起题的知识点，再退到顺序+游标推导。
+    active = state.get("tutoring_active_kp")
+    if not active and question:
+        active = question.get("kp_id")
     current_no = None
-    if 0 <= cursor < len(order) and order[cursor] in no_of:
-        current_no = no_of[order[cursor]]
+    if active and active in no_of:
+        current_no = no_of[active]
+    elif active is None:
+        cursor = state.get("tutoring_cursor", 0)
+        if 0 <= cursor < len(order) and order[cursor] in no_of:
+            current_no = no_of[order[cursor]]
     return {
         "knowledge_points": [
             {"no": i, "kp_id": kid, "title": title}
@@ -1944,6 +1953,7 @@ def teach(state: ClassroomState) -> dict:
             order = _parse_tutoring_order(msg, catalog)
             if order:
                 updates["tutoring_order"] = order
+                updates["tutoring_active_kp"] = order[0]
             active_order = order or state.get("tutoring_order") or []
             active = active_order[0] if active_order else (catalog[0][0] if catalog else "")
             title = title_of.get(active, "刚才视频的内容")
@@ -2072,6 +2082,7 @@ def teach(state: ClassroomState) -> dict:
                             "asked_at": state.get("now"), "hint_given": False,
                             "was_fresh": fresh, "wrong_count": 0,
                         }
+                        updates["tutoring_active_kp"] = kid
                         seen.append(text)
                         updates["tutoring_asked"] = list(seen)
                         wrong_replaced = True
@@ -2138,6 +2149,7 @@ def teach(state: ClassroomState) -> dict:
                         if ids:
                             order = ids + [k for k, _t in catalog if k not in ids]
                             updates["tutoring_order"] = order
+                            updates["tutoring_active_kp"] = order[0]
                             head = "再".join(f"「{title_of.get(k, k)}」" for k in order[:2])
                             confirms.append(f"好，就按你说的顺序：先{head}（其余按课件顺序）。")
                             kind = "kp_select"
@@ -2162,6 +2174,7 @@ def teach(state: ClassroomState) -> dict:
                     "was_fresh": fresh,
                     "wrong_count": 0,
                 }
+                updates["tutoring_active_kp"] = active
                 seen.append(text)
                 updates["tutoring_asked"] = list(seen)
 
@@ -2173,6 +2186,7 @@ def teach(state: ClassroomState) -> dict:
                         f"「{title}」：{updates['tutoring_question']['question']}"
                     )
                 else:
+                    updates["tutoring_active_kp"] = None
                     body = (
                         "这节课的知识点都过完了！还有想再问的吗？"
                         "没有的话说一声，我们就可以收尾。"
@@ -2208,6 +2222,7 @@ def teach(state: ClassroomState) -> dict:
                         "asked_at": state.get("now"), "hint_given": False,
                         "was_fresh": next_fresh, "wrong_count": 0,
                     }
+                    updates["tutoring_active_kp"] = next_kid
                     seen.append(next_q)
                     updates["tutoring_asked"] = list(seen)
                     body = (
@@ -2216,6 +2231,7 @@ def teach(state: ClassroomState) -> dict:
                     )
                 else:
                     updates["tutoring_question"] = None
+                    updates["tutoring_active_kp"] = None
                     body = (
                         "这节课的知识点都过完了！还有想再问的吗？"
                         "没有的话说一声，我们就可以收尾。"
@@ -2698,6 +2714,8 @@ def advance_stage(state: ClassroomState) -> dict:
         out["tutoring_planned_minutes"] = default_min
         out["tutoring_planned_end_at"] = _iso_plus_minutes(
             now, default_min, float(state.get("time_scale") or 1.0))
+        # 刚进辅导还没开始讲任何知识点：显式置空（高亮不亮）
+        out["tutoring_active_kp"] = None
     # 进入提问阶段：当场把第一问挂起来并说出口。不然前端拿到 current_question=None，
     # 老师按节奏切幕后学生干等一轮心跳（默认 10 秒）才听到题目。
     if nxt in ("recap_discussion", "deep_inquiry"):
@@ -3000,6 +3018,7 @@ def initial_state(session_id: str, student_id: str = "student-001",
         "tutoring_planned_minutes": 0,
         "tutoring_planned_end_at": None,
         "tutoring_cursor": 0,
+        "tutoring_active_kp": None,
         "tutoring_question": None,
         "tutoring_last_judgement": None,
         "tutoring_asked": [],

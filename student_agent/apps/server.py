@@ -1560,6 +1560,9 @@ def resume_tutoring(sid: str) -> dict:
         # 结束确认标记是回合级的一次性状态，恢复时不许残留（否则一开口就下课）
         st["tutoring_end_confirm_pending"] = False
         st["tutoring_end_confirmed"] = False
+        # 旧会话的 state 没有 active 键：用挂起题回填（高亮依据）
+        if not st.get("tutoring_active_kp") and st.get("tutoring_question"):
+            st["tutoring_active_kp"] = st["tutoring_question"].get("kp_id")
         st["stage_started_at"] = _now()
         s["state"] = st
         _persist(sid, st)

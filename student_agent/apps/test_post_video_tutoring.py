@@ -818,6 +818,22 @@ class TutoringEvidenceMasteryTest(unittest.TestCase):
         self.assertEqual(self._state()["tutoring"]["self_ratings"], {})
 
 
+    def test_current_no_follows_explicit_active_state_not_cursor(self) -> None:
+        """current_no 以显式记录的「正在讲的知识点」为准，不从顺序+游标推导：
+        即使游标被多跳弄乱（如一次跳两个），高亮也不漂移。"""
+        self._reset_session()
+        self._enter_tutoring()
+        self._send("准备好了")            # 正在讲 1 号
+        self.assertEqual(self._state()["tutoring"]["current_no"], 1)
+
+        # 模拟一次跳两个导致的游标错位（真实触发可能是未来的多跳意图）
+        s = server.SESSIONS[self.sid]
+        s["state"]["tutoring_cursor"] = 3
+
+        # 高亮依据仍是正在讲的知识点（挂起的题在 1 号上）
+        self.assertEqual(self._state()["tutoring"]["current_no"], 1)
+
+
 class TutoringEndFeedbackTest(unittest.TestCase):
     """工单 05（明确结束与反馈）的缝 A 回归：结束触发、幂等、最新版读取。"""
 
