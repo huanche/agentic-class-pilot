@@ -1,0 +1,75 @@
+name: pptx-real-input-apply-20261020
+on:
+  push:
+    branches: [codex/backup-generation-controls-20261020]
+    paths: [.github/workflows/pptx-real-input-apply-20261020.yml]
+permissions:
+  contents: read
+concurrency:
+  group: teacher-deploy
+  cancel-in-progress: false
+jobs:
+  operate:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 8
+    steps:
+      - name: Diagnose or repair the PPTX asset route
+        env:
+          SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+        run: |
+          set -euo pipefail
+          key="$RUNNER_TEMP/pptx-route-key"
+          printf '%s\n' "$SERVER_SSH_KEY" > "$key"
+          chmod 600 "$key"
+          trap 'rm -f "$key"' EXIT
+          ssh -i "$key" -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=20 -o ServerAliveCountMax=3 "ubuntu@$SERVER_HOST" "bash -s -- '$GITHUB_RUN_ID'" <<'REMOTE'
+          set -euo pipefail
+          expected=64d56bc631185f5c210a3ba4c4c9d1670093c3bb
+          repo=/opt/agentic-class-pilot
+          backup="$repo/.runtime/backups/pptx-image-ocr-20261020-39373226607"
+          test -s "$backup/BACKUP_COMPLETE"
+          (cd "$backup" && sha256sum -c SHA256SUMS >/dev/null)
+          image="$(docker inspect agentic-teacher-prod --format '{{.Config.Image}}')"
+          test "$image" = "zmzm1443/agentic-teacher:main-${expected:0:7}"
+          echo "VERIFY_IMAGE $image"
+          test -z "$(git -C "$repo" status --porcelain --untracked-files=no)"
+          git -C "$repo" fetch origin
+          git -C "$repo" merge --ff-only "$expected"
+          test "$(git -C "$repo" rev-parse HEAD)" = "$expected"
+          echo "VERIFY_SOURCE $expected"
+          for endpoint in http://127.0.0.1:3200/api/health https://agenticclasspilot.com/teacher/api/health https://agenticclasspilot.com/health http://127.0.0.1:13305/health; do
+            code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 "$endpoint")"
+            echo "VERIFY_HEALTH $endpoint $code"
+            test "$code" = 200
+          done
+          docker image inspect "$(cat "$backup/previous-teacher-image.txt")" >/dev/null
+          echo "VERIFY_ROLLBACK $(cat "$backup/previous-teacher-image.txt")"
+          echo "VERIFY_BACKUP $backup"
+          docker exec -i agentic-teacher-prod node - <<'JS'
+          (async()=>{
+            const {Pool}=require('pg');
+            const schema=process.env.COURSE_DATABASE_SCHEMA;
+            if(schema&&!/^[a-z_][a-z0-9_]*$/.test(schema))throw new Error('Invalid schema');
+            const pool=new Pool({connectionString:process.env.COURSE_DATABASE_URL||process.env.DATABASE_URL,...(schema?{options:'-c search_path='+schema}:{})});
+            try {
+              const {rows}=await pool.query("SELECT f.material_id,f.course_id,c.teacher_id,f.sha256 FROM mentra_course_material_files f JOIN mentra_courses c ON c.id=f.course_id WHERE f.material_id=$1",['pANLuIGXGNyHUQ']);
+              if(rows.length!==1)throw new Error('Original material missing');
+              const source=rows[0];
+              if(source.sha256!=='d51be286948c97c3bc021f522070e8936b79e916bf35a490c4f26008ce5e153e')throw new Error('Original source fingerprint differs');
+              if(!process.env.PLATFORM_SERVICE_KEY)throw new Error('Existing internal service credential unavailable');
+              const headers={'x-platform-service-key':process.env.PLATFORM_SERVICE_KEY,'x-platform-subject':source.teacher_id};
+              const endpoint=page=>`http://127.0.0.1:3000/api/course-space/${source.course_id}/materials/${source.material_id}/ocr/${page}`;
+              const started=Date.now();let cursor=1;const completed=[];
+              const worker=async()=>{while(cursor<=77){const page=cursor++;const response=await fetch(endpoint(page),{method:'POST',headers,signal:AbortSignal.timeout(90000)});const data=await response.json();if(!response.ok||!data.success||!data.result?.content?.trim())throw new Error(`OCR page ${page} status ${response.status} ${data.errorCode||''}`);completed.push({page,characters:data.result.content.length});if(completed.length%10===0)console.log('VERIFY_OCR_PROGRESS '+completed.length+'/77');}};
+              await Promise.all(Array.from({length:3},worker));
+              const repeat=await fetch(endpoint(1),{method:'POST',headers,signal:AbortSignal.timeout(20000)});
+              if(!repeat.ok)throw new Error('Cached OCR failed');
+              const preview=await fetch(endpoint(5),{headers,signal:AbortSignal.timeout(20000)});
+              if(!preview.ok||preview.headers.get('content-type')!=='image/jpeg')throw new Error('Source preview failed');
+              console.log('VERIFY_OCR_COMPLETE '+JSON.stringify({sourceFile:'CH2 确知信号与随机信号分析.pptx',pages:completed.length,characters:completed.reduce((sum,item)=>sum+item.characters,0),seconds:Math.round((Date.now()-started)/1000),cacheVerified:true,previewVerified:true}));
+            } finally {await pool.end();}
+          })().catch(error=>{console.error('VERIFY_OCR_ERROR '+error.message);process.exitCode=1});
+          JS
+          echo 'VERIFY_OK image-only PPT OCR deployed and original 77-page material verified'
+          REMOTE
