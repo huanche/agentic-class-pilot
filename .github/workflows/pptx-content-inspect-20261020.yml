@@ -1,0 +1,94 @@
+name: pptx-content-inspect-20261020
+on:
+  push:
+    branches: [codex/backup-generation-controls-20261020]
+    paths: [.github/workflows/pptx-content-inspect-20261020.yml]
+permissions:
+  contents: read
+concurrency:
+  group: teacher-deploy
+  cancel-in-progress: false
+jobs:
+  operate:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 8
+    steps:
+      - name: Diagnose or repair the PPTX asset route
+        env:
+          SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+        run: |
+          set -euo pipefail
+          key="$RUNNER_TEMP/pptx-route-key"
+          printf '%s\n' "$SERVER_SSH_KEY" > "$key"
+          chmod 600 "$key"
+          trap 'rm -f "$key"' EXIT
+          ssh -i "$key" -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=20 -o ServerAliveCountMax=3 "ubuntu@$SERVER_HOST" "bash -s -- '$GITHUB_RUN_ID'" <<'REMOTE'
+          set -euo pipefail
+          umask 077
+          run_id="${1:?run id required}"
+          [[ "$run_id" =~ ^[0-9]+$ ]]
+          repo=/opt/agentic-class-pilot
+          backup="$repo/.runtime/backups/pptx-content-20261020-$run_id"
+          teacher=agentic-teacher-prod
+          test ! -e "$backup"
+          docker inspect "$teacher" >/dev/null
+          mapfile -t postgres < <(docker ps --format '{{.Names}} {{.Image}}' | awk '$2 ~ /(^|\/)postgres(:|@)/ {print $1}')
+          [[ ${#postgres[@]} = 1 ]] || { echo 'BACKUP_ERROR: expected one PostgreSQL container'; exit 1; }
+          pg="${postgres[0]}"
+          echo "BACKUP_PREFLIGHT teacher=$teacher postgres=$pg"
+          docker ps --format 'service={{.Names}} image={{.Image}} status={{.Status}}'
+          df -h "$repo"
+          if [ -f /tmp/server-wait-teacher-idle.sh ]; then bash /tmp/server-wait-teacher-idle.sh; else echo 'BACKUP_ERROR: generation drain script missing'; exit 1; fi
+          mkdir -p "$backup"
+          chmod 700 "$backup"
+          previous="$(docker inspect "$teacher" --format '{{.Config.Image}}')"
+          image_id="$(docker inspect "$teacher" --format '{{.Image}}')"
+          printf '%s\n' "$previous" > "$backup/previous-teacher-image.txt"
+          printf '%s\n' "$image_id" > "$backup/previous-teacher-image-id.txt"
+          docker tag "$image_id" "zmzm1443/agentic-teacher:backup-pptx-content-20261020-$run_id"
+          git -C "$repo" rev-parse HEAD > "$backup/server-source-head.txt"
+          git -C "$repo" diff --binary > "$backup/server-working-tree.patch"
+          git -C "$repo" bundle create "$backup/server-source.bundle" HEAD
+          git -C "$repo" bundle verify "$backup/server-source.bundle" >/dev/null
+          for config in /home/ubuntu/teacher-prod.env "$repo/platform/.env" "$repo/teacher_agent/server-providers.yml"; do
+            test -s "$config"
+          done
+          mkdir "$backup/config"
+          cp /home/ubuntu/teacher-prod.env "$backup/config/teacher-prod.env"
+          cp "$repo/platform/.env" "$backup/config/platform.env"
+          docker cp "$teacher:/app/server-providers.yml" "$backup/config/server-providers.yml"
+          chmod 600 "$backup"/config/*
+          docker inspect "$teacher" --format '{{json .Mounts}}' > "$backup/teacher-mounts.json"
+          docker inspect "$teacher" --format '{{json .HostConfig}}' > "$backup/teacher-host-config.json"
+          mapfile -t databases < <(docker exec "$pg" sh -ceu 'export PGPASSWORD="${POSTGRES_PASSWORD:-}"; exec psql -U "${POSTGRES_USER:-postgres}" -d postgres -Atc "SELECT datname FROM pg_database WHERE NOT datistemplate ORDER BY datname"')
+          [[ ${#databases[@]} -gt 0 ]]
+          estimate="$(docker exec -u 0 "$teacher" du -sk /app/data | awk '{print $1}')"
+          database_kb="$(docker exec "$pg" sh -ceu 'export PGPASSWORD="${POSTGRES_PASSWORD:-}"; exec psql -U "${POSTGRES_USER:-postgres}" -d postgres -Atc "SELECT (sum(pg_database_size(datname))/1024)::bigint FROM pg_database WHERE NOT datistemplate"')"
+          available="$(df -Pk "$backup" | awk 'NR==2 {print $4}')"
+          [[ "$estimate" =~ ^[0-9]+$ && "$database_kb" =~ ^[0-9]+$ && "$available" =~ ^[0-9]+$ ]]
+          (( available > estimate + database_kb + 1048576 )) || { echo 'BACKUP_ERROR: insufficient space; running service unchanged'; exit 1; }
+          docker exec "$pg" sh -ceu 'export PGPASSWORD="${POSTGRES_PASSWORD:-}"; exec pg_dumpall -U "${POSTGRES_USER:-postgres}" --globals-only' | gzip -1 > "$backup/database-globals.sql.gz"
+          for db in "${databases[@]}"; do
+            [[ "$db" =~ ^[A-Za-z0-9_-]+$ ]]
+            docker exec "$pg" sh -ceu 'export PGPASSWORD="${POSTGRES_PASSWORD:-}"; exec pg_dump -U "${POSTGRES_USER:-postgres}" -d "$1" -Fc' sh "$db" > "$backup/database-$db.dump"
+            test -s "$backup/database-$db.dump"
+            docker exec -i "$pg" pg_restore --list < "$backup/database-$db.dump" >/dev/null
+          done
+          docker cp "$teacher:/app/data/." - | gzip -1 > "$backup/teacher-data.tar.gz"
+          tar -tzf "$backup/teacher-data.tar.gz" >/dev/null
+          if [ -d "$repo/student_agent/runtime" ]; then tar -C "$repo/student_agent" -czf "$backup/student-runtime.tar.gz" runtime; fi
+          mapfile -t minio < <(docker ps --format '{{.Names}} {{.Image}}' | awk '$2 ~ /minio/ {print $1}')
+          for service in "${minio[@]}"; do
+            docker cp "$service:/data/." - | gzip -1 > "$backup/object-storage-$service.tar.gz"
+            tar -tzf "$backup/object-storage-$service.tar.gz" >/dev/null
+          done
+          gzip -t "$backup/database-globals.sql.gz"
+          (cd "$backup" && find . -type f ! -name SHA256SUMS ! -name BACKUP_COMPLETE -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS && sha256sum -c SHA256SUMS >/dev/null)
+          printf 'Backup verified at %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$backup/BACKUP_COMPLETE"
+          echo "BACKUP_OK path=$backup previousImage=$previous databases=${#databases[@]}"
+          du -sh "$backup"
+          curl -fsS --max-time 10 http://127.0.0.1:3200/api/health
+          echo
+          
+          REMOTE
