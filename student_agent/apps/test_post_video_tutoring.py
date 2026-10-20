@@ -169,31 +169,27 @@ class TutoringFlowTest(unittest.TestCase):
 
     # ── 骨架出结构、LLM 只润色 ────────────────────────────
 
-    def test_opening_structure_comes_from_skeleton_llm_only_polishes(self) -> None:
-        """接上模型时：编号列表等结构由骨架决定后交给模型润色；
-        模型收到完整结构，返回什么学生就看什么（不叠加工）。"""
+    def test_opening_is_skeleton_only_even_with_model(self) -> None:
+        """开场骨架即全文：即使接了模型也**不调用**——「视频完→辅导」的
+        切换不能被模型延迟拖慢（实测润色要 20–35 秒）。模型从学生
+        第一条消息开始参与。"""
         self._begin_demo_lesson()
 
-        captured: dict = {}
+        calls: list = []
 
         def fake_chat(system: str, user: str):
-            captured["system"] = system
-            captured["user"] = user
-            return "同学你好，视频看完啦！咱们把这节课的知识点过一遍：1. 调度是什么 ……"
+            calls.append(system)
+            return "润色结果"
 
         with mock.patch.object(agent, "llm_available", return_value=True), \
                 mock.patch.object(agent, "llm_chat", side_effect=fake_chat):
             done = self.client.post(f"/api/session/{self.sid}/media/done", json={})
 
         self.assertEqual(done.json()["phase"], "tutoring")
-        self.assertTrue(captured, "模型可用时开场应走润色链路")
-        # 模型拿到的是骨架算好的完整结构（编号 + 标题），不是让它自己编知识点
-        self.assertIn("1. 调度是什么", captured["user"])
-        self.assertIn("6. 时间片轮转与多级反馈队列", captured["user"])
-        self.assertIn("顺序", captured["user"])
-        # 润色结果原样到达学生，不与骨架文案拼接
-        self.assertEqual(done.json()["reply_text"],
-                         "同学你好，视频看完啦！咱们把这节课的知识点过一遍：1. 调度是什么 ……")
+        self.assertEqual(calls, [], "切换轮不得调用模型")
+        reply = done.json()["reply_text"]
+        self.assertIn("1. 调度是什么", reply)
+        self.assertIn("顺序", reply)
 
 
 class PlatformPlanTutoringTest(unittest.TestCase):
@@ -965,6 +961,37 @@ class TutoringResumeTest(unittest.TestCase):
         self.assertEqual(sid1, sid2, "同一身份+课时必须落回同一会话")
         self.addCleanup(server._path(sid1).unlink, missing_ok=True)
         self.addCleanup(server.SESSIONS.pop, sid1, None)
+
+
+    def test_order_by_knowledge_point_name(self) -> None:
+        """用知识点名字说顺序（「先讲 X 再复习 Y」）也要被遵守。"""
+        self._enter_tutoring()
+
+        answer = self._send("先讲时间片轮转与多级反馈队列，再复习调度是什么")
+
+        tutoring = self._state()["tutoring"]
+        self.assertEqual(tutoring["order"][0], 6)
+        self.assertEqual(tutoring["order"][1], 1)
+        # 回复确认从学生点名的知识点开始
+        self.assertIn("时间片轮转", answer.json()["reply_text"])
+
+    def test_order_accepts_di_prefix_and_bare_number(self) -> None:
+        """「先复习第 2 个」这类写法也要认。"""
+        self._enter_tutoring()
+
+        self._send("先复习第 2 个")
+
+        self.assertEqual(self._state()["tutoring"]["order"][0], 2)
+
+    def test_question_mentioning_title_does_not_reorder(self) -> None:
+        """提问里带知识点名字不是在定顺序：不得改 order。"""
+        self._enter_tutoring()
+        self._send("那我准备好了")
+        before = self._state()["tutoring"]["order"]
+
+        self._send("三级调度是什么意思？")
+
+        self.assertEqual(self._state()["tutoring"]["order"], before)
 
 
 class SelfRatingPersistenceTest(unittest.TestCase):

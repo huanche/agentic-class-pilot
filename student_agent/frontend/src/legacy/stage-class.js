@@ -104,6 +104,13 @@ export function createStage(ctx) {
     scrollToEnd(chatLog);
   }
 
+  /* 视频播完后这条操作行就失去意义——它不是对话历史，是入口动作：
+     清掉，别让它留在辅导的聊天记录里还像能再点一次。 */
+  function removeIntroAction() {
+    var rows = chatLog.querySelectorAll(".chat-action");
+    for (var i = 0; i < rows.length; i++) rows[i].remove();
+  }
+
   /* 开课是会话控制事件；学生发言才进入统一 AI 消息接口。 */
   function startLesson() {
     if (busy) return;
@@ -186,19 +193,16 @@ export function createStage(ctx) {
   function notifyVideoEnd(how, sceneId, eventId) {
     if (replayMode || videoEndNotified) return;
     videoEndNotified = true;
+    removeIntroAction();
 
-    /* ⚠️ 这一轮服务端要**现场让模型生成老师的下一句话**，实测 20–35 秒
-       （平台态更慢：每轮要带上 1 万多字的已发布课程上下文）。
-       视频播完后没有可点的按钮了，这里靠状态文字告诉学生在等什么；
-       幂等守卫会挡掉重复通知。
-
-       播完之后要去「课后辅导」时，这段等待就是辅导的过渡态——
-       文案告诉学生接下来是围绕自己的复习对话，而不是"等老师准备"。 */
+    /* 去辅导的路径：开场白是确定性骨架、服务端不进模型，切换是即时的，
+       文案只做一瞬的过渡说明。开关关（旧编排）时这一轮仍要现场生成
+       复述首问（实测 20–35 秒），保留等待提示。幂等守卫挡重复通知。 */
     var toTutoring = ctx.getNextStage && ctx.getNextStage() === "tutoring";
     if (toTutoring) {
       setPlayerStatus(how === "ended"
-        ? "视频已播完，正在进入课后辅导…（AI 老师正在为你准备开场，约需 20–30 秒）"
-        : "正在进入课后辅导…（AI 老师正在为你准备开场，约需 20–30 秒）");
+        ? "视频已播完，正在进入课后辅导…"
+        : "正在进入课后辅导…");
     } else {
       setPlayerStatus(how === "ended"
         ? "视频已播完，正在请老师准备下一环节…（约需 20–30 秒）"
@@ -355,6 +359,9 @@ export function createStage(ctx) {
         var phase = ctx.getPhase();
         if (!phase || phase === "guided_learning" || phase === "intro") {
           ctx.setStatus(introDone ? "引导学习" : "课程介绍");
+        } else {
+          /* 阶段已越过讲解（辅导/下课）：清掉可能残留的「播放视频」操作行 */
+          removeIntroAction();
         }
       } else if (stage === "video") {
         showPane("video");

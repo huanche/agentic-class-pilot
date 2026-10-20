@@ -1225,24 +1225,52 @@ def _lesson_kp_catalog(state: ClassroomState) -> list[tuple[str, str]]:
     return [(kid, kp_title(kid, lesson_id)) for kid in dict.fromkeys(ids)]
 
 
-def _parse_tutoring_order(msg: str, catalog: list[tuple[str, str]]) -> list[str] | None:
-    """「先 2 再 1」式复习顺序：按开场给的固定编号点名，映射回 kp_id。
+_CN_NUM = {"一": 1, "二": 2, "三": 3, "四": 4, "五": 5,
+           "六": 6, "七": 7, "八": 8, "九": 9, "十": 10}
 
-    只认目录范围内的编号；未提到的知识点按目录顺序补在后。
-    没点名任何编号 → None（学生没有表达顺序意愿）。
+
+def _cn_num(token: str) -> int:
+    return int(token) if token.isdigit() else _CN_NUM.get(token, 0)
+
+
+def _parse_tutoring_order(msg: str, catalog: list[tuple[str, str]]) -> list[str] | None:
+    """学生指定的复习顺序：按开场固定编号**或知识点名字**点名。
+
+    认的写法：「先 2 再 1」「先复习第 2 个」「先讲时间片轮转再复习调度」。
+    名字点名要求消息里有「先/顺序」这类排序词——只在提问里出现知识点
+    名字（「三级调度是什么意思？」）不算定顺序。
+    没点名 → None；未提到的知识点按目录顺序补在后。
     """
-    first = re.search(r"先\s*(?:复习\s*|从\s*|看\s*)?([0-9]+)", msg)
-    if not first:
-        return None
-    picked = [int(first.group(1))]
-    for m in re.finditer(r"再\s*(?:复习\s*|从\s*|看\s*)?([0-9]+)", msg[first.end():]):
-        picked.append(int(m.group(1)))
-    deduped = list(dict.fromkeys(no for no in picked if 1 <= no <= len(catalog)))
-    if not deduped:
-        return None
-    ids = [catalog[no - 1][0] for no in deduped]
-    rest = [kid for kid, _title in catalog if kid not in ids]
-    return ids + rest
+    n = len(catalog)
+    first = re.search(
+        r"先\s*(?:复习\s*|从\s*|看\s*|讲\s*|学\s*)?(?:第\s*)?([0-9]+|[一二三四五六七八九十])",
+        msg)
+    picked: list[int] = []
+    if first:
+        picked = [_cn_num(first.group(1))]
+        for m in re.finditer(
+                r"(?:再|然后|接着)\s*(?:复习\s*|从\s*|看\s*|讲\s*|学\s*)?(?:第\s*)?"
+                r"([0-9]+|[一二三四五六七八九十])",
+                msg[first.end():]):
+            picked.append(_cn_num(m.group(1)))
+    deduped = list(dict.fromkeys(no for no in picked if 1 <= no <= n))
+    if deduped:
+        ids = [catalog[no - 1][0] for no in deduped]
+        rest = [kid for kid, _title in catalog if kid not in ids]
+        return ids + rest
+
+    if re.search(r"先|顺序", msg):
+        positions = []
+        for kid, title in catalog:
+            idx = msg.find(title) if title else -1
+            if idx >= 0:
+                positions.append((idx, kid))
+        positions.sort()
+        if positions:
+            ids = [kid for _idx, kid in positions]
+            rest = [kid for kid, _title in catalog if kid not in ids]
+            return ids + rest
+    return None
 
 
 # 七分类的骨架层信号：结束 / 追问 / 求助（自评、选点、改时间由各自解析器识别）。
@@ -1544,24 +1572,13 @@ def _tutoring_opening_skeleton(state: ClassroomState) -> str:
 
 
 def tutoring_opening(state: ClassroomState) -> tuple[str, bool]:
-    """课后辅导的开场消息。结构与内容由确定性骨架定死，LLM 只做润色。
+    """课后辅导的开场消息：骨架即全文，**不进模型**。
 
-    与 stage_opening 的 NO_LLM_NOTICE 降级不同：编号列表本身就是确定性内容，
-    模型不在时把骨架原样说给学生（而不是一句"没接入模型"）——
-    开场是辅导阶段的硬性交付，不能因为模型缺席就空窗。
+    开场是「视频完→辅导」切换轮的一部分，编号列表与征询项全是确定性
+    交付；原先让模型润色会把切换拖慢 20–35 秒（平台态每轮还带一万多字
+    课程上下文）。模型从学生第一条消息开始参与。编号列表照旧原文交付。
     """
-    plain = _tutoring_opening_skeleton(state)
-    if not llm_available():
-        return plain, False
-    polished = llm_chat(
-        "你是课堂里的 AI 辅导老师。讲解视频刚播完，现在要开始一对一的课后辅导，"
-        "请把给出的开场信息润色成自然、亲切的口语。"
-        "必须逐条保留全部知识点编号与标题原文，不得增删知识点、不得改动编号；"
-        "征询的意愿项（复习顺序、没听懂的编号、自评星级、复习时长）一个都不能丢，"
-        "且都要保持「可以不说」的口吻。不要用 Markdown，不要提系统内部情况。",
-        f"开场信息：\n{plain}\n\n直接输出你要对学生说的话：",
-    )
-    return (polished.strip(), True) if polished else (plain, False)
+    return _tutoring_opening_skeleton(state), False
 
 
 def stage_opening(state: ClassroomState, next_phase: str) -> tuple[str, bool]:
@@ -2074,6 +2091,9 @@ def teach(state: ClassroomState) -> dict:
                 "课后辅导阶段，学生发了消息。先按已确认的安排回应，再回应这句本身。\n"
                 f"本节课知识点（固定编号，不得增删、不得改号）：{listing}\n"
                 f"已确认的复习顺序（从先到后）：{order_text}\n"
+                + (f"本轮教学只围绕知识点「{title}」（学生指定顺序中的当前项）；"
+                   "除非学生主动问到别的知识点，不要引入其他知识点的内容。\n"
+                   if in_range else "")
                 + (f"学生本轮更新了复习时长：{duration} 分钟，从这条消息时刻起算。\n"
                    if duration else "")
                 + ("时间预算已到点：先温和地问他还想继续哪里，不催促结束。\n"

@@ -56,12 +56,14 @@ try {
       window.notifications = 0;
       window.playerContexts.length = 0;
     }, nextStage);
-    // 首次要先「开始上课」才会挂出「开始播放教学视频」按钮；introDone 之后
-    // 该按钮常驻，第二个场景直接点它重开一次视频（startVideo 会换新播放器）
+    // 首次要先「开始上课」才会挂出「开始播放教学视频」按钮。视频播完后该
+    // 操作行会被清掉（新契约：播完不再常驻），第二个场景先 reset 课堂模块
+    // 恢复 introDone，再走一遍开课挂按钮
     const hasIntro = await page.evaluate(
       () => document.querySelectorAll('#chat-log .chat-action button').length > 0);
     if (!hasIntro) {
       await page.evaluate(() => {
+        if (window.stage && window.stage.reset) window.stage.reset();
         // markup 里 btn-start 初始 disabled（真实流程由 openLessonRoute 解锁），
         // 组件测试里直接解锁后点击
         const btn = document.getElementById('btn-start');
