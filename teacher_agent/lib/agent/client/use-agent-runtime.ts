@@ -25,7 +25,8 @@ import type { AgentEvent } from '@earendil-works/pi-agent-core';
 import { flushStageSave, useStageStore } from '@/lib/store/stage';
 import { useCanvasStore } from '@/lib/store/canvas';
 import { getCurrentModelConfig } from '@/lib/utils/model-config';
-import type { SceneContextMap } from '@/app/api/agent/edit/route';
+import type { SceneContextMap } from '@/lib/server/agent-edit';
+import { agentEditEndpoint, agentEditError } from './agent-edit-request';
 import { mergeAssistantParts, type PiPart } from './merge-assistant-parts';
 import { resolveSceneOutline } from './resolve-scene-outline';
 import { planRegenerateApply, type RegenerateDetails } from './apply-regenerate';
@@ -562,7 +563,7 @@ export function useAgentRuntime(opts: UseAgentRuntimeOptions) {
         // a server-side provider, so the agent would 500 when no server key is
         // configured even though generation works with the user's own config.
         const cfg = getCurrentModelConfig();
-        const res = await fetch('/api/agent/edit', {
+        const res = await fetch(agentEditEndpoint(stage?.id), {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -590,7 +591,7 @@ export function useAgentRuntime(opts: UseAgentRuntimeOptions) {
           }),
           signal: abort.signal,
         });
-        if (!res.ok || !res.body) throw new Error(`agent request failed: ${res.status}`);
+        if (!res.ok || !res.body) throw new Error(await agentEditError(res));
 
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
