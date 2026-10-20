@@ -40,12 +40,31 @@ def user_for_cookie(db: Session, token: str | None) -> User:
     return user
 
 
+_LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
+
+
+def _loopback_equivalent(origin: str, frontend: str) -> bool:
+    """本机开发：localhost / 127.0.0.1 / [::1] 视为同一来源（协议与端口须一致）。
+
+    地址栏用 127.0.0.1 而配置是 localhost（或反之）是最常见的本地 403 坑；
+    生产环境的正式域名不会落进回环集合，行为不变。"""
+    try:
+        o, f = urlsplit(origin), urlsplit(frontend)
+    except ValueError:
+        return False
+    if o.scheme != f.scheme or o.port != f.port:
+        return False
+    return (o.hostname or "").lower() in _LOOPBACK_HOSTS and \
+        (f.hostname or "").lower() in _LOOPBACK_HOSTS
+
+
 def check_origin(request: Request) -> None:
     if request.method in {"GET", "HEAD", "OPTIONS"}:
         return
     origin = request.headers.get("origin")
     # Cookie-authenticated writes originate from the single public frontend.
-    if origin != settings.FRONTEND_HOST:
+    if origin != settings.FRONTEND_HOST and \
+            not _loopback_equivalent(origin or "", settings.FRONTEND_HOST):
         raise HTTPException(403, "请求来源不被允许")
 
 
