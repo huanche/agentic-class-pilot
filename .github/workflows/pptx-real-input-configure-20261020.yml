@@ -1,0 +1,60 @@
+name: pptx-real-input-configure-20261020
+on:
+  push:
+    branches: [codex/backup-generation-controls-20261020]
+    paths: [.github/workflows/pptx-real-input-configure-20261020.yml]
+permissions:
+  contents: read
+concurrency:
+  group: teacher-deploy
+  cancel-in-progress: false
+jobs:
+  operate:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 8
+    steps:
+      - name: Diagnose or repair the PPTX asset route
+        env:
+          SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+        run: |
+          set -euo pipefail
+          key="$RUNNER_TEMP/pptx-route-key"
+          printf '%s\n' "$SERVER_SSH_KEY" > "$key"
+          chmod 600 "$key"
+          trap 'rm -f "$key"' EXIT
+          ssh -i "$key" -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=20 -o ServerAliveCountMax=3 "ubuntu@$SERVER_HOST" "bash -s -- '$GITHUB_RUN_ID'" <<'REMOTE'
+          set -euo pipefail
+          umask 077
+          run_id="${1:?run id required}"
+          [[ "$run_id" =~ ^[0-9]+$ ]]
+          repo=/opt/agentic-class-pilot
+          secure="$repo/.runtime/secure/pptx-ocr-20261020"
+          backup="$repo/.runtime/backups/pptx-ocr-config-20261020-$run_id"
+          test "$(docker inspect agentic-teacher-prod --format '{{.Config.Image}}')" = 'zmzm1443/agentic-teacher:main-64d56bc'
+          test -s "$secure/transport.pem"
+          mkdir -p "$backup"
+          chmod 700 "$backup"
+          cp -p /home/ubuntu/teacher-prod.env "$backup/teacher-prod.env"
+          chmod 600 "$backup/teacher-prod.env"
+          node - "$secure/transport.pem" <<'JS'
+          const fs=require('node:fs');
+          const {execFileSync}=require('node:child_process');
+          const {randomUUID}=require('node:crypto');
+          const encrypted=Buffer.from('TbnQOyTBIOR4mHB75q2aaeiWNQ/4634T4NPYrdeALsmwGXcvAs72T6svRCAbBUG1a6gIVYatrSSSvBFXXO/TkFDVVD3TDh6TmvPSWUfRzzRBL/TyAbTvsJuEAHg3gEFDcacI0wK8vv81kqrw/XVDzpSXTYHSH8m8IwdFh7LzlalBfqMKzk5lPxGRDddk7/extvQC64LGuBDfdqbXDlmu8EwAeyOQxPsYiJLqUwxd7sBSg6Qm8u3xYdKqtEzNUayBVDxaWikVU5vNslzV+bNiwTth3iOMkVJSXypPpn8SJpKK4iH7gWuf9nN7VqakT8e5h/xYB7OI+0PwRjiLtix1o4b+IVPUg33pGH/Eucnnh+DjGYcwv6uQsC7Bc1oGmZ0aTbMOduR0c1ChXqqDcRx9/hj6Sc0C7AKxcnfmim4KV0vuX3S/2GDzM9zl5ckTQ2tmt4itVePGtZd8GduwhMhCWJs+oejD6MyQn5nUjPXejZUUYTX4TarEjtel2IGqw0XM','base64');
+          const apiKey=execFileSync('openssl',['pkeyutl','-decrypt','-inkey',process.argv[2],'-pkeyopt','rsa_padding_mode:oaep','-pkeyopt','rsa_oaep_md:sha256'],{input:encrypted}).toString();
+          if(!/^[A-Za-z0-9_.-]{16,256}$/.test(apiKey))throw new Error('Invalid decrypted OCR credential');
+          const file='/home/ubuntu/teacher-prod.env';
+          const text=fs.readFileSync(file,'utf8').replace(/^PPTX_OCR_API_KEY=.*(?:\r?\n|$)/gm,'').trimEnd();
+          const temporary=file+'.pptx-ocr-'+randomUUID();
+          fs.writeFileSync(temporary,text+'\nPPTX_OCR_API_KEY='+apiKey+'\n',{mode:0o600});
+          fs.renameSync(temporary,file);
+          console.log('VERIFY_OCR_CONFIG credentialInstalled=true plaintextLogged=false');
+          JS
+          bash /tmp/server-wait-teacher-idle.sh
+          bash /tmp/server-deploy-teacher.sh zmzm1443/agentic-teacher main-64d56bc
+          rm -f -- "$secure/transport.pem"
+          echo "VERIFY_OCR_CONFIG_BACKUP $backup"
+          echo 'VERIFY_OCR_CONFIG_READY dedicated OCR credential loaded, temporary transport key removed'
+          
+          REMOTE
