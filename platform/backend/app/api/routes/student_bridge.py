@@ -11,6 +11,7 @@ Two surfaces:
 import hashlib
 import hmac
 import json
+import re
 import secrets
 import base64
 import time
@@ -139,7 +140,7 @@ def _classroom_outlines(session: SessionDep, classroom_id: str | None) -> list[d
 
     生成管线把大纲存在课堂的 stage.generationPlan.outlines 里；这里**只读**
     教师库把它转交给学生端——不改教师端任何东西。没有大纲（直接上传的
-    课堂 / 未走生成管线）返回空，走工件级条目的旧路。
+    课堂 / 未走生成管线）返回空，走知识图谱/工件级条目的旧路。
     """
     if not classroom_id:
         return []
@@ -148,6 +149,64 @@ def _classroom_outlines(session: SessionDep, classroom_id: str | None) -> list[d
              "FROM teacher.mentra_classrooms WHERE id=:id"),
         {"id": classroom_id}).first()
     return _normalize_classroom_outlines(row[0] if row else None)
+
+
+# 图谱抽取自 PPT 时会把封面/参考页也标成 knowledge-point，这些不是知识点
+_GRAPH_TITLE_BLACKLIST = ("课程简介", "教材与参考书", "参考文献", "致谢", "课程大纲")
+
+
+def _normalize_graph_points(rows: list) -> list[dict]:
+    """图谱 knowledge-point 节点 → 学生端 rubric 条目（纯函数，供单测）。
+
+    标题做最小清洗：去 Markdown 强调符、去中文间空格（PPT 封面常见
+    「课   程   简   介」式排版）、压缩空白、去重；黑名单页直接跳过。
+    """
+    seen: set[str] = set()
+    points: list[dict] = []
+    for node_id, title, description in rows:
+        clean = re.sub(r"[*`#_]+", "", str(title or ""))
+        clean = re.sub(r"(?<=[一-鿿])[ \t　]+(?=[一-鿿])", "", clean)
+        clean = re.sub(r"\s+", " ", clean).strip()
+        if not clean or clean in seen:
+            continue
+        if any(word in clean for word in _GRAPH_TITLE_BLACKLIST):
+            continue
+        seen.add(clean)
+        desc = re.sub(r"\s+", " ", str(description or "")).strip()
+        points.append({
+            "id": str(node_id),
+            "title": clean,
+            "expectedConcepts": [desc[:120]] if desc else [],
+        })
+    return points
+
+
+def _published_knowledge_rubric(session: SessionDep, course_id: uuid.UUID) -> dict | None:
+    """教师端知识图谱（已发布版本）→ 学生端评分量规。
+
+    图谱的 knowledge-point 是教师认可的真知识点（章节/概念）。老课堂没有
+    生成管线的场景大纲时，学生端 otherwise 只能拿到工件名（「讲稿与配音」
+    之类）当知识点——真机暴露过。这里只读教师库，把图谱节点按 rubric 结构
+    下发；学生端 evaluation.from_platform_context 优先读 rubric。
+    没有已发布图谱 → None（维持 outlines / entries 原行为）。
+    """
+    version_row = session.execute(text(
+        "SELECT g.version FROM teacher.mentra_course_graph_versions g "
+        "JOIN teacher_course_link l ON l.external_course_id = g.course_id "
+        "WHERE l.course_id = :id AND g.status = 'published' "
+        "ORDER BY g.version DESC LIMIT 1"), {"id": course_id}).first()
+    if not version_row:
+        return None
+    rows = session.execute(text(
+        "SELECT n.id, n.title, n.description "
+        "FROM teacher.mentra_course_graph_nodes n "
+        "JOIN teacher_course_link l ON l.external_course_id = n.course_id "
+        "WHERE l.course_id = :id AND n.graph_version = :v "
+        "AND n.node_type = 'knowledge-point' "
+        "ORDER BY n.created_at"),
+        {"id": course_id, "v": version_row[0]}).all()
+    points = _normalize_graph_points(rows)
+    return {"knowledgePoints": points} if points else None
 
 
 class StudentAuthorization(BaseModel):
@@ -426,6 +485,11 @@ def student_learning_context(body: LearningContextRequest, session: SessionDep,
             "summary": package_payload.get("summary") or "",
             "entries": package_payload.get("entries") or [],
         }
+        # 教师端知识图谱的真知识点：以 rubric 结构化下发，学生端评估契约
+        # 优先读 rubric —— 老课堂（无场景大纲）也能拿到真知识点而非工件名
+        graph_rubric = _published_knowledge_rubric(session, course_id)
+        if graph_rubric:
+            knowledge_package["rubric"] = graph_rubric
         # 课件生成时的场景大纲（含知识点）优先于工件级条目：场景 = 一个
         # 知识点；keyPoints 以 rubric 结构化下发，学生端的评估契约优先读
         # rubric（见学生端 evaluation.from_platform_context）。

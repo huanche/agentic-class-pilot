@@ -95,3 +95,22 @@ def test_normalize_classroom_outlines_picks_and_orders() -> None:
     assert out[2]["keyPoints"] == ["高级调度作业入内存"]           # 空白要点被清掉
     assert _normalize_classroom_outlines(None) == []
     assert _normalize_classroom_outlines("nope") == []
+
+
+def test_normalize_graph_points_cleans_and_filters() -> None:
+    """图谱知识点 → rubric 转交（纯函数）：去强调符/中文间空格、去重、黑名单。"""
+    from app.api.routes.student_bridge import _normalize_graph_points
+
+    rows = [
+        ("n1", "**第2章  交换技术基础**", "交换技术的基础概念"),
+        ("n2", "第2章 交换技术基础", "重复节点（清洗后同题）"),      # 去重
+        ("n3", "**课   程   简   介**", "封面页，不是知识点"),        # 黑名单 + 中文间空格
+        ("n4", "  第11章　光交换技术  ", None),                     # 全角空格+首尾空白
+        ("n5", "**", None),                                        # 清洗后为空 → 丢弃
+    ]
+    out = _normalize_graph_points(rows)
+    assert [item["title"] for item in out] == ["第2章交换技术基础", "第11章光交换技术"]
+    assert out[0]["id"] == "n1"
+    assert out[0]["expectedConcepts"] == ["交换技术的基础概念"]
+    assert out[1]["expectedConcepts"] == []
+    assert _normalize_graph_points([]) == []
