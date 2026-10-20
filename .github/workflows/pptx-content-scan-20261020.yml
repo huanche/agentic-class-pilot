@@ -1,0 +1,48 @@
+name: pptx-content-scan-20261020
+on:
+  push:
+    branches: [codex/backup-generation-controls-20261020]
+    paths: [.github/workflows/pptx-content-scan-20261020.yml]
+permissions:
+  contents: read
+concurrency:
+  group: pptx-text-readonly-scan
+  cancel-in-progress: false
+jobs:
+  operate:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 8
+    steps:
+      - name: Diagnose or repair the PPTX asset route
+        env:
+          SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+        run: |
+          set -euo pipefail
+          key="$RUNNER_TEMP/pptx-route-key"
+          printf '%s\n' "$SERVER_SSH_KEY" > "$key"
+          chmod 600 "$key"
+          trap 'rm -f "$key"' EXIT
+          ssh -i "$key" -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=20 -o ServerAliveCountMax=3 "ubuntu@$SERVER_HOST" "bash -s -- '$GITHUB_RUN_ID'" <<'REMOTE'
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile
+          from xml.etree import ElementTree as ET
+          import json,re
+          root=Path('/home/ubuntu/teacher-agent-data')
+          files=sorted(root.rglob('source.pptx'),key=lambda p:p.stat().st_mtime,reverse=True)[:2]
+          for path in files:
+              with ZipFile(path) as archive:
+                  slides=sorted((n for n in archive.namelist() if re.fullmatch(r'ppt/slides/slide\d+\.xml',n)),key=lambda n:int(re.search(r'slide(\d+)',n).group(1)))
+                  counts=[]
+                  shape_counts=[]
+                  for slide in slides:
+                      xml=ET.fromstring(archive.read(slide))
+                      ns={'a':'http://schemas.openxmlformats.org/drawingml/2006/main','p':'http://schemas.openxmlformats.org/presentationml/2006/main'}
+                      counts.append(sum(1 for t in xml.findall('.//a:t',ns) if t.text and t.text.strip()))
+                      shape_counts.append(sum(1 for shape in xml.findall('.//p:sp',ns) if any(t.text and t.text.strip() for t in shape.findall('.//a:t',ns)) and not any(sp.get('txBox')=='1' for sp in shape.findall('.//p:cNvSpPr',ns))))
+                  print('VERIFY_PPTX_SCAN '+json.dumps({'materialId':path.parent.name,'pages':len(slides),'pagesWithEditableText':sum(c>0 for c in counts),'textRuns':sum(counts),'textShapesWithoutTextBoxFlag':sum(shape_counts)}))
+          if not files: print('VERIFY_PPTX_SCAN no local source PPTX files; material files may use object storage')
+          PY
+          REMOTE
