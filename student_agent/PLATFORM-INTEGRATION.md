@@ -8,10 +8,10 @@
 | 文件 | 职责 |
 |---|---|
 | `apps/integration/`（10 个模块） | 平台适配层：`launch_context`（令牌 HMAC 校验）、`course_adapter`（已发布内容→课程计划）、`platform_client`（回调平台取学习上下文）、`persistence`（学情写 student schema）、`prompt_context`（已发布内容→有界提示词/题目/提示）、`models`/`config`/`evaluation`/`player_bridge` |
-| ~~`apps/platform_adapter.py`~~ | **已废弃（死代码）**：全仓零 import，功能由 `apps/integration/launch_context.py` 取代。保留仅为历史参考，新代码不要引用 |
+| ~~`apps/platform_adapter.py`~~ | **已删除**：重复的令牌校验实现，无调用方；现行逻辑位于 `apps/integration/launch_context.py` |
 | `scripts/dev-8000-platform.ps1` | 平台启动学生端的入口（`platform/scripts/start-local.ps1` 直接调用；**丢失会让平台启动脚本 fail-fast 抛错**） |
 | `scripts/verify_student_entry.py` | 可信入口验收脚本（发布链路搭建 + 8 项检查），用平台 venv python 运行 |
-| `frontend/src/platform/playerAdapter.js` | 播放器 iframe 适配器：嵌入教师端 `/teacher/classroom-player/{id}`（Caddy 剥前缀），监听 SCENE_COMPLETED / PLAYBACK_ENDED postMessage（校验 origin+classroomId，按 eventId 幂等），映射到学生 Agent 的 media_done。教师端需配置 `NEXT_PUBLIC_SAAS_HOST_ORIGIN`（事件目标）与 `ALLOWED_FRAME_ANCESTORS`（CSP 嵌入许可），均为构建期内联 |
+| `frontend/src/platform/playerAdapter.js` | **已删除的旧适配器**。现行播放器桥接位于 `frontend/src/integration/platform-player-adapter.js`，由学生端入口注册 |
 
 ## 业务文件挂钩
 

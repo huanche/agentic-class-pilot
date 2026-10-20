@@ -169,14 +169,14 @@ def _published_lessons(raw_lessons: Any, context: CourseLearningContext) -> List
 def load_plan_for_session(state) -> Optional[dict]:
     """Convert the session's learning context into a lesson-plan dict.
 
-    Returns None when the session carries no learning context (demo mode:
-    the orchestrator then loads its local lesson-plan.json).
+    Returns None when the session carries no platform learning context; the
+    orchestrator treats that as a failed platform launch and refuses to start.
 
     The generated plan reuses the orchestrator's plan schema so the state
     machine (stages, segments, advance policy) keeps working unchanged.
     """
     context = state.get("learning_context") if isinstance(state, dict) else None
-    if not context:  # None or empty dict (demo mode)
+    if not context:
         return None
     if isinstance(context, dict):
         context = CourseLearningContext(**context)

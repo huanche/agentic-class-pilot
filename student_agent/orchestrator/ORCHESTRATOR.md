@@ -1,5 +1,7 @@
 # 编排器结构规范（LangGraph 版）
 
+> **历史规范说明**：本文件部分章节仍记录本地 `rules/`、`lesson-data/` 和阶段模板的旧设计；这些目录中的规则文件已从当前平台模式移除。当前运行行为以 `agent.py`、`apps/integration/course_adapter.py`、`apps/integration/prompt_context.py` 为准。逐文件核查见 `../../my_docs/student_agent-rules逐文件核查.md`。
+
 本文件定义**主动引导智能体的编排器**：一个由 `host_phase` 驱动、按老师配置的课程计划自动推进的课堂状态机。
 
 > 本文件是**结构与调度约定的权威说明**。内容空壳（复述问题、评判标准、提示词）位于 `stages/` 目录，此处只规定**它们何时被读取、被谁读取、读取后写回哪里**。
@@ -204,7 +206,7 @@ def tick(state: ClassroomState) -> dict:
 ```
 
 > **可回放性**：时间全部来自 `now` 输入，喂一串时间戳就能重放整节课，切幕逻辑因此可单测。
-> 可运行的参考实现 + 回归测试见 `orchestrator/clock_reference.py`。
+> 当前实现见 `orchestrator/agent.py` 的 `tick()`；设计说明见 [`HOW-IT-WORKS.md`](HOW-IT-WORKS.md)。
 
 ---
 
@@ -334,7 +336,7 @@ load_plan ──► tick ──► load_context ──► classify_turn
 
 ## 10. 节点职责总表
 
-> 本仓库**不含 n8n，也不含前端**。以下 11 个节点在 `orchestrator/agent.py` 中**已实现并可运行**，`graph_skeleton.py` 是去掉血肉的骨架版，两者的对照见 `MIGRATION.md`。
+> 当前节点实现在 `orchestrator/agent.py` 中。早期骨架示例已移除；状态图运行过程见 [`HOW-IT-WORKS.md`](HOW-IT-WORKS.md)。
 
 | 节点 | 必须实现 | 说明 | 实现位置 |
 | --- | --- | --- | --- |

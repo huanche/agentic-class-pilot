@@ -1,5 +1,7 @@
 # 主动引导智能体
 
+> **当前运行模式提示**：学生端仅从平台已发布课堂获取课程内容与评价上下文。下文部分目录树和本地课时配置步骤属于历史设计，`rules/` 与 `lesson-data/` 已删除；现行编排逻辑以 `orchestrator/agent.py` 和 `apps/integration/` 为准。逐文件核查见 `../my_docs/student_agent-rules逐文件核查.md`。
+
 一个由**课程计划驱动、AI 自动推进**的课堂智能体。
 
 > 本仓库是 `HELLO-APL/Dify-Classroom-Interactive-Agent` 的重构版。
@@ -72,9 +74,7 @@
     ├── agent.py                 #   ★ 真实 LangGraph 实现（11 节点，可直接跑）
     ├── run_demo.py              #   ★ 模拟一节课并打印编排过程
     ├── demo-run.md              #     上面这个脚本的一次真实运行实录
-    ├── graph_skeleton.py        #     骨架版（只看 LangGraph 怎么写，不跑）
     ├── HOW-IT-WORKS.md          #     自然语言讲运作过程
-    ├── clock_reference.py       #     真实时钟与切幕判定的参考实现 + 回归测试
     └── MIGRATION.md             #     从旧仓库迁移的映射与变更记录
 ```
 
@@ -259,7 +259,7 @@ lesson_elapsed_minutes = now - lesson_started_at    # 本课已花分钟
 ```
 
 > 时间戳由会话层注入而非编排器自己取，是为了让切幕逻辑**可单测、可回放**。
-> 参考实现与 11 条回归测试见 `orchestrator/clock_reference.py`。
+> 现行计时与切幕逻辑见 `orchestrator/agent.py` 的 `tick()` 和 `judge_advance()`。
 
 ### 2. 填课程内容
 
