@@ -1,0 +1,28 @@
+name: edit-fetch-scan-20261020
+on:
+  push:
+    branches: [codex/backup-generation-controls-20261020]
+    paths: [.github/workflows/edit-fetch-scan-20261020.yml]
+permissions:
+  contents: read
+concurrency:
+  group: edit-fetch-readonly-scan
+  cancel-in-progress: false
+jobs:
+  operate:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 8
+    steps:
+      - name: Diagnose or repair the PPTX asset route
+        env:
+          SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+        run: |
+          set -euo pipefail
+          key="$RUNNER_TEMP/pptx-route-key"
+          printf '%s\n' "$SERVER_SSH_KEY" > "$key"
+          chmod 600 "$key"
+          trap 'rm -f "$key"' EXIT
+          ssh -i "$key" -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=20 -o ServerAliveCountMax=3 "ubuntu@$SERVER_HOST" "bash -s -- '$GITHUB_RUN_ID'" <<'REMOTE'
+          printf '%s' 'H4sIAAAAAAACCpVVbW/bNhD+7l/BCUEkLZZsd1ixOVUD1VPemsSF5bboDM8gpLPMWSJVkkqi2frvO8p2EgzZgH2RxOO9PHzu4UmBJh5UgpSshCVleQeSlSDWl2hydf5tcXUbXkTkyElFsgZJGFclJJrQDLhmiaeBJiuQXilFSjxvKWRBNbE3G38k+JJl/lWBrk1ju1bn/6XY14+n4TQiQhQfWZ5DGmDmWFMN/nh8uzM1DZGgNJVamd3J7nskKq5xq11AGurnyPhgQlidpQQgXnEAl4tMIQjFeAJk0O8XuNBICvml3++/DvnN++MB2ZJMQkm8iNi34dWIhMZz2/oTSJkmupJ8v5YVJ4ZoSLfn7YtoQZagk9W2fR42VQIcgm00Gt/dTaI4mm41yIJxPEO6xeNvRaWJWJICCiFrGzG0SD1O3vZxoTCxwaN6au3NQu936v3V935dePOT3kxCShPMM+9lGIiRsoJXOXj7TMGbJwogrbwlAsm9DME80NobHGgoa70S/CfiJcRmRSmkJqpW3T+V4B1sLckZB5SAMfpKp4wPO1i8xieBwHj5uaCpcoyfe0qqAPwMtGNJ+F5hZ63upnF3lkoyq2tZLkayJbFaYJ7h2jL5K4LFrB4tWa/d6T3vDEkpGccMe4ldoMK+ht+sFqSfVkWpnM16uCu8domBvTaRjqUVlszhHnJ8FyrDJwpMV8YMUgqJ77SSVDPBLbfpAleVhAVVCWPBOc0VuN0KEcNjAqUmzheaVxCZwO60LndfLuKjStmHdsAjJMRjr4uPixTlS969s69ju+NQVfPEcYP3mw5JBFeabD4JkTeBoY9JcOwys93Tw6bCRAUNMFMCSvnA7/3R+PMkjha/hdPwQ4gf8egyug0xgi2dnfvx8Q+9P2YopsV8tpfU/Mejnq+xPXsX19UrKR4IhwfSnsmxr/g9zVm6L/kCQ4n4AuNogDobNHKcDshfrLFL2fC/wH2e3Gy3Lx1e7nR939/jOduI0qRUQxt1qYDKZLUoqV4F9snOoxmirhqDCsWI5O3BJTl2QuL0CRz6QNkOrY9KlLVjx9FNNJpis2ojWXI+Gd/iXeRa0sVTnCJfL6NJRFgaHA3s7szO2cefYf19oC7suev6yJKa9edn/j7L6b60yAEvQuYcxuDoJozjCV76RXwZfsJbfXIdj+/wBhmO2LJ2NiwdPlU981naLVEw6qWtnSfqzM+BZ3rVVYCF0tgYX/OaDeZtGnTS8Kg/1Njf4T+K/ltYG8O1uy/VuIbYpp0Yeb15wSTw1HGbTuM6rp9QnH0OoHYPBMBOOoc/wSi8W0STyXiCpwe/wJ7jCd3Tp/4/Mpz6KQQD08fruPM3AyErMtoGAAA=' | base64 -d | gzip -d | bash -s -- "$1"
+          REMOTE
