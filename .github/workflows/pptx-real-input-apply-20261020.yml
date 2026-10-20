@@ -43,7 +43,9 @@ jobs:
             echo "VERIFY_HEALTH $endpoint $code"
             test "$code" = 200
           done
-          docker image inspect "$(cat "$backup/previous-teacher-image.txt")" >/dev/null
+          if ! docker image inspect "$(cat "$backup/previous-teacher-image.txt")" >/dev/null 2>&1; then
+            docker tag "$(cat "$backup/previous-teacher-image-id.txt")" "$(cat "$backup/previous-teacher-image.txt")"
+          fi
           echo "VERIFY_ROLLBACK $(cat "$backup/previous-teacher-image.txt")"
           echo "VERIFY_BACKUP $backup"
           docker exec -i agentic-teacher-prod node - <<'JS'
