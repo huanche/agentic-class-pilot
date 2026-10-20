@@ -104,6 +104,52 @@ def _published_classroom(session: SessionDep, course_id: uuid.UUID) -> str | Non
     return row[0] if row else None
 
 
+def _normalize_classroom_outlines(outlines: object) -> list[dict]:
+    """课堂大纲原始 JSON → 干净的 {order,id,title,description,keyPoints} 列表。
+
+    纯函数（无 DB），供 _classroom_outlines 的查询结果整形与单测共用。
+    """
+    if not isinstance(outlines, list):
+        return []
+    picked: list[dict] = []
+    for item in outlines:
+        if not isinstance(item, dict):
+            continue
+        title = str(item.get("title") or "").strip()
+        if not title:
+            continue
+        try:
+            order = int(item.get("order") or 0)
+        except (TypeError, ValueError):
+            order = 0
+        picked.append({
+            "order": order,
+            "id": str(item.get("id") or title),
+            "title": title,
+            "description": str(item.get("description") or ""),
+            "keyPoints": [str(k).strip() for k in (item.get("keyPoints") or [])
+                          if str(k).strip()],
+        })
+    picked.sort(key=lambda outline: outline["order"])
+    return picked
+
+
+def _classroom_outlines(session: SessionDep, classroom_id: str | None) -> list[dict]:
+    """课件生成时同步产出的场景大纲（每个场景带 keyPoints 知识点）。
+
+    生成管线把大纲存在课堂的 stage.generationPlan.outlines 里；这里**只读**
+    教师库把它转交给学生端——不改教师端任何东西。没有大纲（直接上传的
+    课堂 / 未走生成管线）返回空，走工件级条目的旧路。
+    """
+    if not classroom_id:
+        return []
+    row = session.execute(
+        text("SELECT payload->'stage'->'generationPlan'->'outlines' "
+             "FROM teacher.mentra_classrooms WHERE id=:id"),
+        {"id": classroom_id}).first()
+    return _normalize_classroom_outlines(row[0] if row else None)
+
+
 class StudentAuthorization(BaseModel):
     cookie: str | None = None
     launch_token: str | None = None
@@ -375,17 +421,38 @@ def student_learning_context(body: LearningContextRequest, session: SessionDep,
 
         lessons = _published_lessons(session, course_id, user_id)
         classroom_id = lessons[0]["classroom"]["id"] if lessons else None
+        knowledge_package = {
+            "title": package_payload.get("title") or course[0],
+            "summary": package_payload.get("summary") or "",
+            "entries": package_payload.get("entries") or [],
+        }
+        # 课件生成时的场景大纲（含知识点）优先于工件级条目：场景 = 一个
+        # 知识点；keyPoints 以 rubric 结构化下发，学生端的评估契约优先读
+        # rubric（见学生端 evaluation.from_platform_context）。
+        outlines = _classroom_outlines(session, classroom_id)
+        if outlines:
+            knowledge_package["entries"] = [
+                {"id": outline["id"], "title": outline["title"],
+                 "content": (outline["description"]
+                             + ("\n要点：" + "；".join(outline["keyPoints"])
+                                if outline["keyPoints"] else "")).strip(),
+                 "citations": []}
+                for outline in outlines
+            ]
+            knowledge_package["rubric"] = {
+                "knowledgePoints": [
+                    {"id": outline["id"], "title": outline["title"],
+                     "expectedConcepts": outline["keyPoints"]}
+                    for outline in outlines
+                ],
+            }
         context = {
             "schemaVersion": SCHEMA_VERSION,
             "userId": str(user_id),
             "courseId": str(course_id),
             "courseTitle": course[0],
             "publication": {"id": package_payload.get("id"), "version": int(package_payload.get("version") or 1)},
-            "knowledgePackage": {
-                "title": package_payload.get("title") or course[0],
-                "summary": package_payload.get("summary") or "",
-                "entries": package_payload.get("entries") or [],
-            },
+            "knowledgePackage": knowledge_package,
             "classroom": _classroom_view(session, classroom_id) if classroom_id else None,
             "lessons": lessons,
             "grounding": _grounding_context(session, course_id),

@@ -73,3 +73,25 @@ def test_authorize_rejects_launch_token_without_enrollment(client: TestClient) -
                            json={"launch_token": token})
     # valid signature, but the enrollment re-check finds no matching row -> denied
     assert response.status_code == 403
+
+
+def test_normalize_classroom_outlines_picks_and_orders() -> None:
+    """学生桥的大纲转交（纯函数）：取有效场景、按 order 排序、清洗净化。"""
+    from app.api.routes.student_bridge import _normalize_classroom_outlines
+
+    raw = [
+        {"id": "b", "order": 2, "title": "三级调度", "description": "对象与时机",
+         "keyPoints": ["高级调度作业入内存", " "]},
+        "not-a-dict",
+        {"id": "a", "order": 1, "title": "调度概念", "keyPoints": None},
+        {"id": "c", "title": "  ", "keyPoints": ["x"]},          # 空标题 → 丢弃
+        {"id": "d", "order": "bad", "title": "时间片轮转"},      # 非法 order → 0
+    ]
+    out = _normalize_classroom_outlines(raw)
+    assert [item["id"] for item in out] == ["d", "a", "b"]        # 非法 order=0 排最前
+    assert out[0]["order"] == 0
+    assert out[1]["title"] == "调度概念"
+    assert out[1]["keyPoints"] == []
+    assert out[2]["keyPoints"] == ["高级调度作业入内存"]           # 空白要点被清掉
+    assert _normalize_classroom_outlines(None) == []
+    assert _normalize_classroom_outlines("nope") == []
