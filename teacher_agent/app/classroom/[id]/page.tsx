@@ -4,7 +4,11 @@ import { Stage } from '@/components/stage';
 import { ThemeProvider } from '@/lib/hooks/use-theme';
 import { useStageStore } from '@/lib/store';
 import { useSettingsStore } from '@/lib/store/settings';
-import { claimStageSceneLoadToken, isCurrentStageSceneLoadToken } from '@/lib/store/stage';
+import {
+  claimStageSceneLoadToken,
+  flushStageSave,
+  isCurrentStageSceneLoadToken,
+} from '@/lib/store/stage';
 import { loadImageMapping } from '@/lib/utils/image-storage';
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useParams, usePathname, useSearchParams } from 'next/navigation';
@@ -26,6 +30,7 @@ import {
 import { isIncompleteEnhancedScene } from '@/lib/learning-skills/enhanced-courseware-quality';
 import { teacherReturnUrl } from '@/lib/course-space/navigation';
 import { resolveClassroomGenerationModelPolicy } from '@/lib/course-space/generation-model-policy';
+import { watchBackgroundClassroomGeneration } from '@/lib/classroom/watch-background-generation';
 import Link from 'next/link';
 import {
   canSyncClassroomSnapshot,
@@ -81,24 +86,37 @@ export default function ClassroomDetailPage() {
   });
 
   const loadClassroom = useCallback(
-    async (isEffectCurrent: () => boolean = () => true) => {
+    async (isEffectCurrent: () => boolean = () => true, refreshServer = false) => {
+      if (refreshServer) await flushStageSave();
+      if (!isEffectCurrent()) return;
       const loadToken = claimStageSceneLoadToken();
       const isCurrent = () => isEffectCurrent() && isCurrentStageSceneLoadToken(loadToken);
 
       await runClassroomLoad({
         classroomId,
         preferServerClassroom,
-        shouldRefreshFromServer: () => hasPendingClassroomGeneration(useStageStore.getState()),
+        shouldRefreshFromServer: () =>
+          refreshServer || hasPendingClassroomGeneration(useStageStore.getState()),
         loadToken,
         isCurrent,
-        loadFromStorage,
+        // A progress refresh must not briefly re-apply an old zero-page cache:
+        // that could be echoed back to the server as a teacher edit.
+        loadFromStorage: refreshServer ? async () => {} : loadFromStorage,
         getCurrentStage: () => useStageStore.getState().stage,
         fetchClassroom: async (id, shouldConvert, replaceExisting) => {
+          const { stage: stageBeforeRead, scenes: scenesBeforeRead } = useStageStore.getState();
           const classroom = await (playerOnlyEmbed
             ? fetchClassroomForPlayer(id)
             : defaultClassroomLoadDeps.fetchClassroom(id, shouldConvert, {}, replaceExisting));
           if (classroom && !playerOnlyEmbed) {
             const current = useStageStore.getState();
+            // Keep edits made while the server read/conversion was in flight.
+            // The next serial refresh flushes them before reading again.
+            if (
+              refreshServer &&
+              (current.stage !== stageBeforeRead || current.scenes !== scenesBeforeRead)
+            )
+              return null;
             const versions = (scenes: typeof current.scenes) =>
               JSON.stringify(
                 scenes.map((scene) => [
@@ -120,16 +138,24 @@ export default function ClassroomDetailPage() {
           }
           return classroom;
         },
-        applyFallbackScenes: (args) =>
-          defaultClassroomLoadDeps.applyFallbackScenes({
+        applyFallbackScenes: (args) => {
+          const { stage: stageBeforeHydration, scenes: scenesBeforeHydration } =
+            useStageStore.getState();
+          return defaultClassroomLoadDeps.applyFallbackScenes({
             ...args,
-            isCurrent,
+            isCurrent: () =>
+              isCurrent() &&
+              (!refreshServer ||
+                (useStageStore.getState().stage === stageBeforeHydration &&
+                  useStageStore.getState().scenes === scenesBeforeHydration)),
             applyStageAndScenes: (stage, scenes, options) =>
               applyClassroomStageAndScenes(stage, scenes, {
                 ...options,
                 persist: !playerOnlyEmbed,
+                preserveMode: refreshServer,
               }),
-          }),
+          });
+        },
         loadRestoredMediaTasks: defaultClassroomLoadDeps.loadRestoredMediaTasks,
         applyRestoredMediaTasks: defaultClassroomLoadDeps.applyRestoredMediaTasks,
         discardRestoredMediaTasks: defaultClassroomLoadDeps.discardRestoredMediaTasks,
@@ -177,6 +203,36 @@ export default function ClassroomDetailPage() {
       stop();
     };
   }, [classroomId, loadClassroom, stop]);
+
+  const pendingServerJobId =
+    embeddedCourseWorkspace &&
+    syncStage?.id === classroomId &&
+    hasPendingClassroomGeneration({
+      stage: syncStage,
+      scenes: syncScenes,
+      outlines: syncOutlines,
+      generationComplete,
+    })
+      ? syncStage.generationPlan?.serverJobId
+      : undefined;
+  useEffect(() => {
+    if (loading || error || !pendingServerJobId) return;
+    return watchBackgroundClassroomGeneration({
+      readStatus: async () => {
+        const response = await fetch(
+          `/api/course-space/jobs/${encodeURIComponent(pendingServerJobId)}`,
+          { cache: 'no-store' },
+        );
+        if (!response.ok) return undefined;
+        const data = await response.json();
+        return data.job?.status;
+      },
+      refresh: async (isCurrent) => {
+        await loadClassroom(isCurrent, true);
+        return !hasPendingClassroomGeneration(useStageStore.getState());
+      },
+    });
+  }, [error, loading, pendingServerJobId, loadClassroom]);
 
   useEffect(() => {
     const queue = createClassroomSnapshotSyncQueue(undefined, (syncError) =>

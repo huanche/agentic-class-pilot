@@ -163,6 +163,16 @@ beforeEach(() => {
 });
 
 describe('runClassroomLoad', () => {
+  it('keeps the current teacher edit mode and selected page on a background refresh', () => {
+    const stage = makeStage('preview-refresh');
+    const first = makeScene('first', stage.id);
+    const second = makeScene('second', stage.id);
+    useStageStore.setState({ stage, scenes: [first], currentSceneId: first.id, mode: 'edit' });
+    applyClassroomStageAndScenes(stage, [first, second], { persist: false, preserveMode: true });
+    expect(useStageStore.getState().mode).toBe('edit');
+    expect(useStageStore.getState().currentSceneId).toBe(first.id);
+    expect(useStageStore.getState().scenes).toHaveLength(2);
+  });
   it('checks the server again when a browser has an incomplete cached classroom', async () => {
     const { deps, setStage } = makeDeps();
     const stage = makeStage('stage-a');
