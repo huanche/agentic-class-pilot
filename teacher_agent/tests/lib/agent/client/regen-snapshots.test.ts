@@ -110,4 +110,29 @@ describe('regen-snapshots store', () => {
     useRegenSnapshots.getState().clearAll();
     expect(useRegenSnapshots.getState().snapshots).toEqual({});
   });
+
+  it('undo and redo keep measured duration paired with the corresponding narration', () => {
+    const apply = vi.fn();
+    const timing = { plannedDurationSec: 60, measuredDurationSec: 44, measurementKey: 'old' };
+    const regeneratedTiming = { ...timing, measuredDurationSec: 55, measurementKey: 'new' };
+    useRegenSnapshots.getState().setSnapshot('call-1', {
+      ...SNAP,
+      timing,
+      redo: { ...SNAP.redo, timing: regeneratedTiming },
+    });
+    useRegenSnapshots.getState().restore('call-1', apply);
+    expect(apply.mock.calls[0][1]).toMatchObject({ timing, actions: SNAP.actions });
+    useRegenSnapshots.getState().restore('call-1', apply);
+    expect(apply.mock.calls[1][1]).toMatchObject({
+      timing: regeneratedTiming,
+      actions: SNAP.redo.actions,
+    });
+  });
+
+  it('undo clears the new measurement if the original page had no timing', () => {
+    const apply = vi.fn();
+    useRegenSnapshots.getState().setSnapshot('call-1', { ...SNAP, timing: undefined });
+    useRegenSnapshots.getState().restore('call-1', apply);
+    expect(apply.mock.calls[0][1]).toHaveProperty('timing', undefined);
+  });
 });

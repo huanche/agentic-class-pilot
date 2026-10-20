@@ -26,6 +26,7 @@ import { CourseProgressSummary } from '@/components/course-space/course-progress
 import type { CourseStatusTarget } from '@/lib/course-space/course-progress';
 import { reconcileCoursewareTaskSnapshot } from '@/lib/course-space/courseware-task-progress';
 import { CourseCenter } from '@/components/course-space/course-center';
+import { WorkspaceSettingsButton } from '@/components/course-space/workspace-settings';
 import type { Slide } from '@openmaic/dsl';
 import type * as MaicImport from '@openmaic/importer';
 import type { PptContentDraft } from '@/lib/types/generation';
@@ -659,6 +660,7 @@ function CourseWorkspace({ workspaceCourseId }: { workspaceCourseId: string }) {
           <h1 className="text-lg font-semibold">教师课程工作区</h1>
         </div>
         <div className="flex items-center gap-3">
+          <WorkspaceSettingsButton />
           <div className="rounded-full border bg-white/70 px-3 py-1.5 text-xs text-muted-foreground">
             默认教师
           </div>

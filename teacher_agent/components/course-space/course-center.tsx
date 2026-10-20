@@ -6,6 +6,7 @@ import { ArrowLeft, FolderPlus, Layers3, Plus, Trash2, Upload } from 'lucide-rea
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ApiCourseSpaceRepository, DEFAULT_TEACHER_ID, type CourseSpace } from '@/lib/course-space';
+import { WorkspaceSettingsButton } from './workspace-settings';
 import { platformHomeUrl } from '@/lib/integration/platform-links';
 import {
   isGenerationTaskActive,
@@ -95,8 +96,11 @@ export function CourseCenter() {
             <p className="text-xs text-muted-foreground">管理完整课程体系与教师智能体工作区</p>
           </div>
         </div>
-        <div className="rounded-full border bg-white px-4 py-2 text-xs text-muted-foreground">
-          默认教师 · {courses.length} 门课程
+        <div className="flex items-center gap-3">
+          <WorkspaceSettingsButton />
+          <div className="rounded-full border bg-white px-4 py-2 text-xs text-muted-foreground">
+            默认教师 · {courses.length} 门课程
+          </div>
         </div>
       </header>
       <section className="mx-auto max-w-[1440px] px-7 py-8">
