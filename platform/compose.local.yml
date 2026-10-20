@@ -45,8 +45,9 @@ services:
     image: caddy:2.10-alpine
     command: caddy run --config /etc/caddy/Caddyfile --adapter caddyfile --watch
     environment:
-      # Caddyfile.local 的站点地址变量；缺失时站点块会被误解析为全局配置
-      APP_DOMAIN: localhost:80
+      # Caddyfile.local 的站点地址变量；缺失时站点块会被误解析为全局配置。
+      # ":80" 绑定容器全部网卡（只绑 localhost 会与宿主机的端口映射不通）
+      APP_DOMAIN: :80
     ports:
       - "80:80"
       - "443:443"
