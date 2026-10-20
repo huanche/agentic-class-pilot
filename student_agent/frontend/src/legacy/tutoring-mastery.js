@@ -28,6 +28,7 @@ export function renderTutoringMastery(el, tutoring) {
   var ratings = tutoring.self_ratings || {};
   var stars = tutoring.stars || {};
   var rubric = tutoring.rubric || {};
+  var currentNo = tutoring.current_no;
   var rubricText = Object.keys(rubric).sort().map(function (k) {
     return k + "★ " + escapeHtml(rubric[k]);
   }).join("\n");
@@ -35,7 +36,12 @@ export function renderTutoringMastery(el, tutoring) {
     var kp = byNo[no];
     var rating = ratings[no];
     var star = stars[no];
-    return '<li class="tm-item' + (index === 0 ? " tm-current" : "") + '">'
+    /* 高亮 = 正在讲的知识点（后端按复习顺序+游标下发 current_no）；
+       旧载荷没有 current_no 时退回第一项 */
+    var isCurrent = (typeof currentNo === "number")
+      ? no === currentNo
+      : index === 0;
+    return '<li class="tm-item' + (isCurrent ? " tm-current" : "") + '">'
       + '<span class="tm-no">' + no + '</span>'
       + '<span class="tm-title">' + escapeHtml(kp.title) + '</span>'
       + (typeof star === "number" && star > 0

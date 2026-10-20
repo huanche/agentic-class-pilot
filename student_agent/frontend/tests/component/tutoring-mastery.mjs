@@ -44,6 +44,7 @@ try {
         {no: 3, kp_id: 'kp3', title: '<script>alert(1)</script>'},
       ],
       order: [2, 1, 3],
+      current_no: 1,
       self_ratings: {2: 2},
       stars: {2: 1},
       rubric: {
@@ -69,6 +70,10 @@ try {
   assert.ok(result.html.includes('自评 2★'), `自评要展示：${result.html}`);
   assert.ok(result.html.includes('系统 1★'), `答对后的系统星级要展示：${result.html}`);
   assert.ok(result.html.includes('tm-current'), `当前复习项要高亮：${result.html}`);
+  assert.ok(result.html.includes('tm-current"><span class="tm-no">1<'),
+    `高亮应落在 current_no=1（正在讲的知识点），不是顺序第一项：${result.html}`);
+  assert.ok(!result.html.includes('tm-current"><span class="tm-no">2<'),
+    `顺序第一项（2）不应高亮：${result.html}`);
   assert.ok(result.html.includes('&lt;script&gt;') && !result.html.includes('<script>alert'),
     `标题必须 HTML 转义：${result.html}`);
 

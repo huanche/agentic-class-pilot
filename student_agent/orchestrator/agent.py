@@ -1525,12 +1525,17 @@ def tutoring_public(state: ClassroomState, now_iso: str | None = None,
                  - datetime.fromisoformat(now_iso)).total_seconds()
         remaining = max(0, round(delta * float(time_scale or 1.0)))
     question = state.get("tutoring_question")
+    cursor = state.get("tutoring_cursor", 0)
+    current_no = None
+    if 0 <= cursor < len(order) and order[cursor] in no_of:
+        current_no = no_of[order[cursor]]
     return {
         "knowledge_points": [
             {"no": i, "kp_id": kid, "title": title}
             for i, (kid, title) in enumerate(catalog, 1)
         ],
         "order": [no_of[kid] for kid in order if kid in no_of],
+        "current_no": current_no,
         "self_ratings": {
             str(no_of[kid]): stars
             for kid, stars in (state.get("tutoring_self_ratings") or {}).items()

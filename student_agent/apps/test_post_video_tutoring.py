@@ -725,6 +725,8 @@ class TutoringEvidenceMasteryTest(unittest.TestCase):
         self.assertEqual(question["kp_no"], 2, "应跳到第二个知识点")
         self.assertIn("三级调度", answer.json()["reply_text"])
         self.assertFalse(question["hint_given"])
+        # 掌握条高亮跟随：当前讲到哪个知识点（工单后补：current_no）
+        self.assertEqual(self._state()["tutoring"]["current_no"], 2)
 
         # 一直跳到最后一个之后再跳 → 收尾提示，不再出题
         for _ in range(5):
