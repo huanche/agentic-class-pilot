@@ -834,6 +834,25 @@ class TutoringEvidenceMasteryTest(unittest.TestCase):
         self.assertEqual(self._state()["tutoring"]["current_no"], 1)
 
 
+    def test_mastery_bar_shows_tutoring_evidence_only(self) -> None:
+        """课堂「讲过即记 1 星（已接触）」不进辅导掌握条：
+        条上的系统星只来自辅导里的作答证据（真机暴露的困惑来源）。"""
+        self._reset_session()
+        self._enter_tutoring()
+        kp1 = self._kp_id(1)
+
+        # 模拟课堂阶段 judge_mastery 的「讲过即记 1 星」
+        server.SESSIONS[self.sid]["state"]["kp_stars"] = {kp1: 1}
+
+        # 掌握条不应显示这颗课堂基线星
+        self.assertEqual(self._state()["tutoring"]["stars"], {})
+
+        # 辅导里答对 → 条上出现辅导证据星（1），与课堂基线互不干扰
+        self._send("准备好了")
+        self._answer_judged("correct", "调度就是决定谁先用处理机")
+        self.assertEqual(self._state()["tutoring"]["stars"], {"1": 1})
+
+
 class TutoringEndFeedbackTest(unittest.TestCase):
     """工单 05（明确结束与反馈）的缝 A 回归：结束触发、幂等、最新版读取。"""
 
@@ -1115,6 +1134,41 @@ class TutoringResumeTest(unittest.TestCase):
         self._send("三级调度是什么意思？")
 
         self.assertEqual(self._state()["tutoring"]["order"], before)
+
+
+    def test_next_request_after_all_done_prompts_ending(self) -> None:
+        """全部过完后说「进入下一个知识点」：不得再对最后一个知识点出新题，
+        要告知过完并引导明确结束；说结束才下课。"""
+        self._enter_tutoring()
+        self._send("那我准备好了")
+        s = server.SESSIONS[self.sid]["state"]
+        s["tutoring_cursor"] = 6            # 六个知识点全部过完（游标越界）
+        s["tutoring_question"] = None
+
+        answer = self._send("进入下一个知识点")
+
+        reply = answer.json()["reply_text"]
+        self.assertIn("过完", reply)
+        self.assertNotIn("小检测", reply)   # 不得再出题
+        state = self._state()
+        self.assertIsNone(state["tutoring"]["question"])
+        self.assertEqual(state["phase"], "tutoring")   # 不自动下课
+
+        end = self._send("今天就到这")
+        self.assertEqual(end.json()["phase"], "ending")
+
+    def test_next_request_midway_skips_to_following_kp(self) -> None:
+        """中途说「下一个知识点」：跳过当前知识点（不判答不升星），下一题落在下一个。"""
+        self._enter_tutoring()
+        self._send("那我准备好了")
+        self.assertEqual(self._state()["tutoring"]["question"]["kp_no"], 1)
+
+        answer = self._send("下一个知识点")
+
+        self.assertEqual(answer.status_code, 200)
+        question = self._state()["tutoring"]["question"]
+        self.assertEqual(question["kp_no"], 2)
+        self.assertEqual(self._state()["stars"].get(self._kp_id(1), 0), 0)
 
 
 class SelfRatingPersistenceTest(unittest.TestCase):

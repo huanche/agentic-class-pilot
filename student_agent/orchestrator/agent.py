@@ -508,6 +508,7 @@ class ClassroomState(TypedDict):
     tutoring_planned_end_at: str | None     # 计划结束时间戳：学生报时长那一刻起算；未报时从进辅导起按默认时长起算
     tutoring_cursor: int                    # 复习游标：tutoring_order 里当前推进到第几个（判对 +1）
     tutoring_active_kp: str | None          # 正在讲的知识点（显式记录；高亮/载荷以它为准，不从顺序+游标推导）
+    tutoring_stars: dict[str, int]          # 辅导作答证据星（掌握条/辅导反馈用；课堂「已接触」基线不混入）
     tutoring_question: dict | None          # 当前检测题 {kp_id, question, asked_at, hint_given, was_fresh, wrong_count}
     tutoring_last_judgement: dict | None    # 本轮作答判定（会话层据此落学习事件；无判定为 None）
     tutoring_asked: list[str]               # 已见题干清单（出题去重：新题必须避开）
@@ -1552,7 +1553,7 @@ def tutoring_public(state: ClassroomState, now_iso: str | None = None,
         },
         "stars": {
             str(no_of[kid]): int(v)
-            for kid, v in (state.get("kp_stars") or {}).items()
+            for kid, v in (state.get("tutoring_stars") or {}).items()
             if kid in no_of
         },
         "question": ({
@@ -1580,7 +1581,9 @@ def tutoring_feedback_payload(state: ClassroomState,
     """
     catalog = _lesson_kp_catalog(state)
     no_of = {kid: i for i, (kid, _t) in enumerate(catalog, 1)}
-    stars = state.get("kp_stars") or {}
+    # 反馈里的系统星 = 辅导作答证据星（课堂「已接触」基线不混入，
+    # 那是学情导出的口径，不是辅导反馈的）
+    stars = state.get("tutoring_stars") or {}
     ratings = state.get("tutoring_self_ratings") or {}
     evidence_by_kp: dict[str, list[str]] = {}
     for item in state.get("mastery_updates") or []:
@@ -2051,6 +2054,10 @@ def teach(state: ClassroomState) -> dict:
                         cap = 5
                     stars[kid] = max(current, min(cap, current + 1))
                     updates["kp_stars"] = stars
+                    # 辅导证据星独立累积，同受量规上限约束（掌握条/反馈只认作答挣来的星）
+                    t_stars = dict(state.get("tutoring_stars") or {})
+                    t_stars[kid] = min(cap, int(t_stars.get(kid, 0)) + 1)
+                    updates["tutoring_stars"] = t_stars
                     updates["tutoring_question"] = None
                     updates["tutoring_cursor"] = (
                         0 if order else state.get("tutoring_cursor", 0)) + 1
@@ -3019,6 +3026,7 @@ def initial_state(session_id: str, student_id: str = "student-001",
         "tutoring_planned_end_at": None,
         "tutoring_cursor": 0,
         "tutoring_active_kp": None,
+        "tutoring_stars": {},
         "tutoring_question": None,
         "tutoring_last_judgement": None,
         "tutoring_asked": [],
