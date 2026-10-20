@@ -6,6 +6,11 @@
   handle /teacher/* {
     reverse_proxy teacher-agent:3200
   }
+
+  # The PPTX importer is loaded by the teacher from a root-level URL.
+  handle /vendor/maic-importer/* {
+    reverse_proxy teacher-agent:3200
+  }
   handle {
     reverse_proxy platform-api:8000
   }
