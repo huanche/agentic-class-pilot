@@ -20,6 +20,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Allow teachers to cancel courseware generation before server submission and during outline review, release the submission lock without reviving late progress, and reopen the existing outline through “继续确认”. Preserve existing courseware when cancelling and handle cancellation during background-job handoff.
 - Refresh embedded teacher previews as background generation saves new pages, preserving the selected page, editor mode and unsent page-feedback drafts instead of remaining on an initial empty snapshot.
 - Use only explicitly selected courseware sources, preserve the selected lesson context, and surface unreadable sources instead of silently generating with incomplete material. Retry transient file-replacement failures in local JSON storage.
 - Display remaining page content time like a video player: changing speed keeps the displayed duration stable, while 2x playback consumes two content seconds per real second. Keep silent narration timers synchronized with live speed changes as well.
