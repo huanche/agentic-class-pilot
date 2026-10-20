@@ -2,12 +2,11 @@
  * MAIC Agent — SSE transport endpoint.
  *
  * Hosts a server-side pi Agent and streams its `AgentEvent`s to the editor
- * sidebar as Server-Sent Events. The whole feature is gated behind the master
- * editor flag.
+ * sidebar as Server-Sent Events. Entry routes enforce their own capability
+ * gates: legacy Pro editing or ownership-scoped teacher page review.
  */
 import type { NextRequest } from 'next/server';
 import type { AgentEvent, AgentMessage } from '@earendil-works/pi-agent-core';
-import { isMaicEditorEnabled } from '@/lib/config/feature-flags';
 import { resolveModelFromRequest } from '@/lib/server/resolve-model';
 import type { LlmStage } from '@/lib/server/model-routes';
 import { createCallLlmStreamFn } from '@/lib/agent/runtime/stream-fn';
@@ -84,10 +83,6 @@ export async function handleAgentEdit(
   req: NextRequest,
   suppliedBody?: AgentEditBody & Record<string, unknown>,
 ) {
-  if (!isMaicEditorEnabled()) {
-    return new Response('Not found', { status: 404 });
-  }
-
   const body = suppliedBody ?? ((await req.json()) as AgentEditBody & Record<string, unknown>);
   const message = (body.message ?? '').toString().trim();
   if (!message) {

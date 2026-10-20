@@ -34,6 +34,7 @@ const request = (payload: unknown = body(), user = 'teacher-1', query = '?id=cla
 describe('classroom-scoped page editing', () => {
   beforeEach(() => {
     vi.stubEnv('PLATFORM_AUTH_ENABLED', 'true');
+    vi.stubEnv('NEXT_PUBLIC_MAIC_EDITOR_ENABLED', 'true');
     vi.resetAllMocks();
     mocks.binding.mockResolvedValue({ courseId: 'course-1' });
     mocks.course.mockResolvedValue({ teacherId: 'teacher-1' });

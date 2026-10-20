@@ -48,5 +48,7 @@ export async function POST(req: NextRequest) {
 
   // Keep the teacher's current unsaved canvas content, but restrict every tool's
   // scene context to this authorized classroom. Tools only return client patches.
+  // Teacher review is a normal workspace capability, independent of the
+  // experimental Pro editor toggle that gates the legacy /api/agent/edit route.
   return handleAgentEdit(req, body);
 }
