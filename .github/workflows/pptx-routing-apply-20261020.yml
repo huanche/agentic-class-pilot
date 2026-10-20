@@ -1,0 +1,92 @@
+name: pptx-routing-apply-20261020
+on:
+  push:
+    branches: [codex/backup-generation-controls-20261020]
+    paths: [.github/workflows/pptx-routing-apply-20261020.yml]
+permissions:
+  contents: read
+concurrency:
+  group: teacher-deploy
+  cancel-in-progress: false
+jobs:
+  operate:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 8
+    steps:
+      - name: Diagnose or repair the PPTX asset route
+        env:
+          SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+        run: |
+          set -euo pipefail
+          key="$RUNNER_TEMP/pptx-route-key"
+          printf '%s\n' "$SERVER_SSH_KEY" > "$key"
+          chmod 600 "$key"
+          trap 'rm -f "$key"' EXIT
+          ssh -i "$key" -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=20 -o ServerAliveCountMax=3 "ubuntu@$SERVER_HOST" "bash -s -- '$GITHUB_RUN_ID'" <<'REMOTE'
+          set -euo pipefail
+          run_id="${1:?run required}"
+          [[ "$run_id" =~ ^[0-9]+$ ]]
+          repo=/opt/agentic-class-pilot
+          expected=70922e13429f151800a491d084b6ef1e81f0c7a8
+          before=50533cfbea2c5e20325124d536298ead55c898dc
+          gateway=agentedu-final-gateway-1
+          backup="$repo/.runtime/backups/pptx-routing-20261020-$run_id"
+          test "$(git -C "$repo" rev-parse HEAD)" = "$expected"
+          test -z "$(git -C "$repo" status --porcelain --untracked-files=no)"
+          mkdir -p "$backup"
+          git -C "$repo" show "$before:platform/deployment/Caddyfile.local" > "$backup/Caddyfile.before"
+          docker exec "$gateway" cat /etc/caddy/Caddyfile > "$backup/Caddyfile.mounted"
+          docker exec "$gateway" wget -q -O- http://127.0.0.1:2019/config/ > "$backup/active-config.before.json"
+          test -s "$backup/active-config.before.json"
+          docker inspect agentic-teacher-prod --format '{{.Config.Image}}' > "$backup/teacher-image.txt"
+          cp "$repo/platform/deployment/Caddyfile.local" "$backup/Caddyfile.after"
+          (cd "$backup" && sha256sum Caddyfile.before Caddyfile.mounted Caddyfile.after active-config.before.json teacher-image.txt > SHA256SUMS)
+          echo "VERIFY_BACKUP $backup"
+          staged="/config/pptx-routing-$run_id.Caddyfile"
+          rollback="/config/pptx-routing-$run_id.before.json"
+          docker cp "$backup/Caddyfile.after" "$gateway:$staged"
+          docker cp "$backup/active-config.before.json" "$gateway:$rollback"
+          docker exec "$gateway" caddy validate --config "$staged" --adapter caddyfile
+          restore() {
+            docker exec "$gateway" caddy reload --config "$rollback" || true
+            echo "VERIFY_ROLLBACK restored prior gateway configuration"
+          }
+          trap restore ERR
+          # Reload from a staged copy: Git checkout can replace the host file's inode
+          # while the running container still sees the old single-file bind mount.
+          docker exec "$gateway" caddy reload --config "$staged" --adapter caddyfile
+          for endpoint in https://agenticclasspilot.com/vendor/maic-importer/index.js https://agenticclasspilot.com/teacher/vendor/maic-importer/index.js; do
+            code="$(curl -sS -I -o /dev/null -w '%{http_code}' --max-time 20 "$endpoint")"
+            echo "VERIFY_IMPORTER_HTTP $endpoint $code"
+            # Static assets retain the teacher's existing authentication boundary.
+            [[ "$code" = 200 || "$code" = 307 ]]
+          done
+          for endpoint in https://agenticclasspilot.com/health https://agenticclasspilot.com/teacher/api/health http://127.0.0.1:13305/health; do
+            code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 "$endpoint")"
+            echo "VERIFY_HEALTH $endpoint $code"
+            test "$code" = 200
+          done
+          docker exec "$gateway" wget -q -O- http://127.0.0.1:2019/config/ > "$backup/active-config.after.json"
+          python3 - "$backup/active-config.after.json" <<'PY'
+          import json,sys
+          config=json.load(open(sys.argv[1]))
+          found=[]
+          def walk(value):
+              if isinstance(value,dict):
+                  for route in value.get('routes',[]):
+                      if any('/vendor/maic-importer/*' in m.get('path',[]) for m in route.get('match',[])):
+                          found.append(route)
+                  for child in value.values(): walk(child)
+              elif isinstance(value,list):
+                  for child in value: walk(child)
+          walk(config)
+          assert found, 'Importer route missing from active runtime configuration'
+          assert 'host.docker.internal:3200' in json.dumps(found)
+          print('VERIFY_ACTIVE_ROUTE importer requests reach teacher port 3200')
+          PY
+          trap - ERR
+          printf '%s\n' "$expected" > "$backup/DEPLOY_COMPLETE"
+          echo "VERIFY_SOURCE $expected"
+          echo 'VERIFY_OK PPTX importer gateway route loaded; previous configuration retained'
+          REMOTE
