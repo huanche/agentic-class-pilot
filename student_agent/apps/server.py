@@ -237,17 +237,30 @@ def _step(sid: str, message: str = "", speaker: str = "student",
             ctx = st.get("platform") or {}
             if ctx.get("userId"):
                 from apps.integration import persistence
-                seen = s.get("_persisted_message_seq", 0)
+                # 两个标记分工：_persisted_message_count = 内存里已同步的条数；
+                # _persisted_message_seq = 库里最后写到的编号。会话被重建
+                # （同 key 重新 start）后两者不再相等——库里已有旧消息时，
+                # 新消息若从 seq 1 编起会被 (session_key, seq) 幂等键静默
+                # 吞掉，所以首sync先读库里的最大 seq 接着编。
+                last_seq = s.get("_persisted_message_seq")
+                if last_seq is None:
+                    try:
+                        last_seq = persistence.max_message_seq(sid)
+                    except Exception:
+                        last_seq = 0
                 messages = s.get("messages") or []
-                for index, msg in enumerate(messages[seen:], start=seen + 1):
+                done = s.get("_persisted_message_count", 0)
+                for msg in messages[done:]:
+                    last_seq += 1
                     persistence.upsert_message(
                         session_key=sid, user_id=ctx["userId"],
                         course_id=ctx.get("courseId", ""),
                         publication_id=ctx.get("publicationId", ""),
-                        seq=index, role=msg.get("role", "student"),
+                        seq=last_seq, role=msg.get("role", "student"),
                         phase=msg.get("phase") or st.get("host_phase"),
                         content=msg.get("text", ""))
-                s["_persisted_message_seq"] = len(messages)
+                s["_persisted_message_seq"] = last_seq
+                s["_persisted_message_count"] = len(messages)
                 updates = st.get("mastery_updates") or []
                 for item in updates:
                     persistence.upsert_mastery(

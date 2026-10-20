@@ -130,6 +130,22 @@ def upsert_message(session_key: str, user_id: str, course_id: str,
         connection.commit()
 
 
+def max_message_seq(session_key: str) -> int:
+    """某会话已落库的最大消息 seq（续写起点）。
+
+    会话被重建（同 key 重新 start）时，新消息若从 seq 1 写起会被
+    (session_key, seq) 幂等键静默吞掉——先读最大 seq 再接着编号。
+    demo 态没有跨进程查询面，返回 0。读失败由调用方兜底为 0。
+    """
+    if config.demo_mode():
+        return 0
+    with _db() as connection:
+        row = connection.execute(
+            "SELECT COALESCE(MAX(seq), 0) FROM student.student_messages "
+            "WHERE session_key = %s", (session_key,)).fetchone()
+    return int(row[0]) if row else 0
+
+
 def upsert_playback_progress(session_key: str, user_id: str, course_id: str,
                              publication_id: str, classroom_id: str,
                              scene_id: str, segment_id: str | None = None) -> None:
