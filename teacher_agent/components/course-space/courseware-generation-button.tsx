@@ -85,12 +85,21 @@ export function CoursewareGenerationButton({
   const Icon = failed ? CircleAlert : completed ? Check : active ? LoaderCircle : Sparkles;
   const detailUrl = job
     ? `/course-space/${encodeURIComponent(course.id)}/jobs/${encodeURIComponent(job.id)}`
-    : view?.task?.url;
+    : view?.task?.url ||
+      (view?.status === 'review' && view.task && !view.task.serverJobId
+        ? '/generation-preview'
+        : undefined);
   const cancel = async () => {
-    if (!job || cancelling) return;
+    if (!view || cancelling) return;
     setCancelling(true);
     setError('');
     try {
+      if (!job && view.task && !view.task.serverJobId) {
+        await useCourseGenerationTask.getState().cancelTask(view.task.id);
+        setOpen(false);
+        return;
+      }
+      if (!job) throw new Error('任务状态正在同步，请稍后重试');
       const response = await fetch(`/api/course-space/jobs/${encodeURIComponent(job.id)}`, {
         method: 'PATCH',
         headers: { 'content-type': 'application/json' },
@@ -196,7 +205,7 @@ export function CoursewareGenerationButton({
             </p>
           )}
           <div className="mt-4 flex flex-wrap gap-2">
-            {job?.backgroundGeneration && active && (
+            {active && (job?.backgroundGeneration || (view.task && !view.task.serverJobId)) && (
               <Button
                 size="sm"
                 variant="outline"
@@ -232,7 +241,9 @@ export function CoursewareGenerationButton({
             )}
             {detailUrl && (
               <Button size="sm" variant="ghost" asChild>
-                <Link href={detailUrl}>{view.status === 'review' ? '继续确认' : '任务详情'}</Link>
+                <Link href={detailUrl} onClick={() => setOpen(false)}>
+                  {view.status === 'review' ? '继续确认' : '任务详情'}
+                </Link>
               </Button>
             )}
           </div>

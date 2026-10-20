@@ -150,6 +150,12 @@ function GenerationPreviewContent() {
   const { t } = useI18n();
   const hasStartedRef = useRef(false);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const backgroundSubmissionRef = useRef<Promise<{
+    accepted: boolean;
+    job: CourseArtifactJob;
+    url: string;
+    error?: string;
+  }> | null>(null);
   const outlineReviewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const outlineReviewResolveRef = useRef<((outlines: SceneOutline[]) => void) | null>(null);
   // Sticky flag: true once the user signals review intent (either by clicking the
@@ -172,6 +178,8 @@ function GenerationPreviewContent() {
   );
   const [showAgentReveal, setShowAgentReveal] = useState(false);
   const [isConfirmingOutlines, setIsConfirmingOutlines] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelError, setCancelError] = useState('');
   const [generatedAgents, setGeneratedAgents] = useState<
     Array<{
       id: string;
@@ -205,6 +213,7 @@ function GenerationPreviewContent() {
       message: error || (waiting ? '等待教师审核，点击继续任务' : statusMessage || '正在生成课件…'),
       step: currentStepIndex + 1,
       total: getActiveSteps(session).length,
+      url: '/generation-preview',
     });
   }, [session, error, statusMessage, currentStepIndex, showAgentReveal]);
   const sceneGenerationErrorMessage = (failure: SceneGenerationFailure): string => {
@@ -232,6 +241,7 @@ function GenerationPreviewContent() {
   };
 
   const persistSession = (nextSession: GenerationSessionState) => {
+    if (taskFinishedRef.current) return;
     setSession(nextSession);
     sessionStorage.setItem('generationSession', JSON.stringify(nextSession));
   };
@@ -240,7 +250,7 @@ function GenerationPreviewContent() {
     updater: (currentSession: GenerationSessionState) => GenerationSessionState,
   ) => {
     setSession((currentSession) => {
-      if (!currentSession) return currentSession;
+      if (!currentSession || taskFinishedRef.current) return currentSession;
       const nextSession = updater(currentSession);
       sessionStorage.setItem('generationSession', JSON.stringify(nextSession));
       return nextSession;
@@ -253,6 +263,34 @@ function GenerationPreviewContent() {
       outlineReviewTimerRef.current = null;
     }
   };
+
+  useEffect(() => {
+    if (!session?.courseSpaceContext?.courseId) return;
+    const id = session.sessionId;
+    return useCourseGenerationTask.getState().registerCancelHandler(id, async () => {
+      taskFinishedRef.current = true;
+      abortControllerRef.current?.abort();
+      clearOutlineReviewTimer();
+      agentRevealResolveRef.current?.();
+      agentRevealResolveRef.current = null;
+      // A submitted POST may already have created a worker. Finish the handoff
+      // and cancel that worker before releasing the new-generation lock.
+      const submission = backgroundSubmissionRef.current;
+      if (!submission) return;
+      const result = await submission.catch(() => undefined);
+      if (result && !result.accepted) return;
+      const jobId = result?.job.id ?? `cw_${id}`;
+      const response = await fetch(`/api/course-space/jobs/${encodeURIComponent(jobId)}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'cancel' }),
+      });
+      if (!result && response.status === 404) return;
+      const data = await response.json();
+      if (!response.ok || data.success === false)
+        throw new Error(data.error || '取消服务器任务失败，请重试');
+    });
+  }, [session?.sessionId, session?.courseSpaceContext?.courseId]);
 
   const waitForOutlineReviewChoice = (
     outlines: SceneOutline[],
@@ -381,6 +419,7 @@ function GenerationPreviewContent() {
 
   // Main generation flow
   const startGeneration = async (sessionOverride?: GenerationSessionState) => {
+    if (taskFinishedRef.current) return;
     const generationSession = sessionOverride ?? session;
     if (!generationSession) return;
 
@@ -1152,6 +1191,7 @@ function GenerationPreviewContent() {
       };
       stage.videoManifest = buildVideoManifestFromOutlines(outlines);
       stage.generationModelPolicy = preferServerModel ? 'server' : 'browser';
+      signal.throwIfAborted();
       store.setStage(stage);
       store.setOutlines(outlines);
 
@@ -1203,21 +1243,26 @@ function GenerationPreviewContent() {
           if (model.baseUrl) headers['x-base-url'] = model.baseUrl;
           if (model.providerType) headers['x-provider-type'] = model.providerType;
         }
-        const response = await fetch(
-          `/api/course-space/${currentSession.courseSpaceContext.courseId}/courseware-jobs`,
-          {
+        const context = currentSession.courseSpaceContext;
+        const submission = (async () => {
+          const response = await fetch(`/api/course-space/${context.courseId}/courseware-jobs`, {
             method: 'POST',
             headers,
-            body: JSON.stringify({ input, scope: currentSession.courseSpaceContext.scope }),
-            signal,
-          },
-        );
-        const result = (await response.json()) as {
-          job: CourseArtifactJob;
-          url: string;
-          error?: string;
-        };
-        if (!response.ok) throw new Error(result.error || '提交后台任务失败');
+            body: JSON.stringify({ input, scope: context.scope }),
+            // Keep acceptance observable if cancellation races this POST.
+            signal: AbortSignal.timeout(30_000),
+          });
+          return { ...(await response.json()), accepted: response.ok } as {
+            accepted: boolean;
+            job: CourseArtifactJob;
+            url: string;
+            error?: string;
+          };
+        })();
+        backgroundSubmissionRef.current = submission;
+        const result = await submission;
+        signal.throwIfAborted();
+        if (!result.accepted) throw new Error(result.error || '提交后台任务失败');
         taskFinishedRef.current = true;
         sessionStorage.removeItem('generationSession');
         useCourseGenerationTask.getState().setTask({
@@ -1361,9 +1406,12 @@ function GenerationPreviewContent() {
           signal,
           FOREGROUND_SCENE_RETRY_OPTIONS,
           firstActionsContext,
-          (progress) => setStatusMessage(progress.calibrating
-            ? '正在校正首页讲解时长，已保留当前讲稿'
-            : `正在合成首页配音：${progress.completed}/${progress.total} 段`),
+          (progress) =>
+            setStatusMessage(
+              progress.calibrating
+                ? '正在校正首页讲解时长，已保留当前讲稿'
+                : `正在合成首页配音：${progress.completed}/${progress.total} 段`,
+            ),
         );
         if (!ttsResult.success) {
           if (ttsResult.errorCode === TTS_ACCOUNT_ERROR_CODE) throw new Error(ttsResult.error);
@@ -1458,7 +1506,7 @@ function GenerationPreviewContent() {
     } catch (err) {
       setIsOutlineStreaming(false);
       // AbortError is expected when navigating away — don't show as error
-      if (isAbortError(err)) {
+      if (taskFinishedRef.current || isAbortError(err)) {
         log.info('[GenerationPreview] Generation aborted');
         return;
       }
@@ -1496,6 +1544,22 @@ function GenerationPreviewContent() {
         ? `/teacher-workspace?workspace=${encodeURIComponent(session.courseSpaceContext.courseId)}`
         : '/',
     );
+  };
+
+  const handleCancelGeneration = async () => {
+    if (!session?.courseSpaceContext || cancelling) return;
+    setCancelling(true);
+    setCancelError('');
+    try {
+      await useCourseGenerationTask.getState().cancelTask(session.sessionId);
+      router.push(
+        `/course-space?workspace=${encodeURIComponent(session.courseSpaceContext.courseId)}`,
+      );
+    } catch (reason) {
+      setCancelError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setCancelling(false);
+    }
   };
 
   // Triggered when the user clicks the streaming outline card mid-stream.
@@ -1592,6 +1656,10 @@ function GenerationPreviewContent() {
 
   const handleBackFromOutlineReview = () => {
     if (!session?.pptContentDraft) {
+      if (session?.courseSpaceContext) {
+        void handleCancelGeneration();
+        return;
+      }
       goBackToHome();
       return;
     }
@@ -1690,14 +1758,35 @@ function GenerationPreviewContent() {
     );
   }
 
+  const cancelControl = session.courseSpaceContext && (
+    <div className="absolute top-4 right-4 z-30 text-right">
+      <Button
+        variant="outline"
+        size="sm"
+        disabled={cancelling}
+        onClick={() => void handleCancelGeneration()}
+      >
+        {cancelling ? '正在取消…' : '取消生成'}
+      </Button>
+      {cancelError && (
+        <p role="alert" className="mt-2 text-sm text-red-600">
+          {cancelError}
+        </p>
+      )}
+    </div>
+  );
+
   if (session.previewPhase === 'ppt-review' && session.pptContentDraft) {
     return (
-      <PptContentReview
-        draft={session.pptContentDraft}
-        onChange={handlePptContentChange}
-        onConfirm={handleConfirmPptContent}
-        onBack={goBackToHome}
-      />
+      <div className="relative">
+        {cancelControl}
+        <PptContentReview
+          draft={session.pptContentDraft}
+          onChange={handlePptContentChange}
+          onConfirm={handleConfirmPptContent}
+          onBack={goBackToHome}
+        />
+      </div>
     );
   }
 
@@ -1725,6 +1814,7 @@ function GenerationPreviewContent() {
 
     return (
       <div className="min-h-[100dvh] w-full bg-gradient-to-b from-slate-50 to-slate-100 dark:from-slate-950 dark:to-slate-900 flex flex-col items-center p-4 relative overflow-hidden">
+        {cancelControl}
         {durationBadge}
         <motion.div
           initial={{ opacity: 0, y: -20 }}
@@ -1781,7 +1871,13 @@ function GenerationPreviewContent() {
               onChange={handleOutlinesChange}
               onConfirm={handleConfirmOutlines}
               onBack={handleBackFromOutlineReview}
-              backLabel={session.pptContentDraft ? '返回修改提取内容' : undefined}
+              backLabel={
+                session.pptContentDraft
+                  ? '返回修改提取内容'
+                  : session.courseSpaceContext
+                    ? '取消生成'
+                    : undefined
+              }
               alwaysReview={reviewOutlineEnabled || Boolean(session.courseSpaceContext)}
               onAlwaysReviewChange={setReviewOutlineEnabled}
               isLoading={isConfirmingOutlines}
@@ -1801,6 +1897,7 @@ function GenerationPreviewContent() {
 
   return (
     <div className="min-h-[100dvh] w-full bg-gradient-to-b from-slate-50 to-slate-100 dark:from-slate-950 dark:to-slate-900 flex flex-col items-center justify-center p-4 relative overflow-hidden text-center">
+      {cancelControl}
       {durationBadge}
       {/* Background Decor */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none z-0">
