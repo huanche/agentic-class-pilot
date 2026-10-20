@@ -27,6 +27,7 @@ export default function SingleCourseJobPage() {
   const [phase, setPhase] = useState<'generation' | 'review' | 'output'>('generation');
   const [message, setMessage] = useState('');
   const [cancelling, setCancelling] = useState(false);
+  const [retrying, setRetrying] = useState(false);
   const load = useCallback(async () => {
     try {
       const jobResponse = await fetch(`/api/course-space/jobs/${jobId}`, { cache: 'no-store' });
@@ -100,6 +101,24 @@ export default function SingleCourseJobPage() {
     setMessage(action === 'approve' ? '审核通过，已生成可视化产物。' : '修改已保存。');
     if (action === 'approve') setPhase('output');
   };
+  const retry = async () => {
+    setRetrying(true);
+    try {
+      const response = await fetch(`/api/course-space/jobs/${jobId}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'retry' }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || '重试失败');
+      setJob(data.job);
+      setMessage('');
+    } catch (reason) {
+      setMessage(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setRetrying(false);
+    }
+  };
   const steps = [
     ['generation', '生成'],
     ['review', '审核'],
@@ -161,7 +180,9 @@ export default function SingleCourseJobPage() {
                     : job.status === 'cancelled'
                       ? '任务已取消'
                       : job?.status === 'failed'
-                        ? '生成已中断'
+                        ? job.backgroundGeneration?.failedPages?.length
+                          ? '部分页面待重试'
+                          : '生成已中断'
                         : job?.backgroundGeneration
                           ? '服务器正在生成完整课件'
                           : '正在生成单个教学产物'}
@@ -200,8 +221,30 @@ export default function SingleCourseJobPage() {
             {job?.error && (
               <div className="mt-5 rounded-lg bg-red-50 p-3 text-sm text-red-700">{job.error}</div>
             )}
+            {!!job?.backgroundGeneration?.failedPages?.some((page) => page.issues.length) && (
+              <details className="mt-3 text-sm text-muted-foreground">
+                <summary className="cursor-pointer">查看校验详情</summary>
+                {job.backgroundGeneration.failedPages.map((page) => (
+                  <div key={page.order} className="mt-2">
+                    <p>
+                      第 {page.order} 页：{page.title}
+                    </p>
+                    <ul className="list-inside list-disc">
+                      {page.issues.map((issue, index) => (
+                        <li key={index}>{issue}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </details>
+            )}
             {job?.backgroundGeneration && (
               <div className="mt-6 flex flex-wrap gap-3">
+                {job.status === 'failed' && (
+                  <Button disabled={retrying} onClick={() => void retry()}>
+                    {retrying ? '正在提交重试…' : '重试未完成页面'}
+                  </Button>
+                )}
                 {['queued', 'running'].includes(job.status) && (
                   <Button variant="outline" disabled={cancelling} onClick={() => void cancel()}>
                     {cancelling ? '正在取消…' : '取消未完成任务'}

@@ -63,6 +63,7 @@ import {
   createBackgroundCoursewareJob,
   runBackgroundCoursewareJob,
   cancelBackgroundCoursewareJob,
+  retryBackgroundCoursewareJob,
 } from '@/lib/server/background-courseware';
 
 function input(sessionId: string): BackgroundCoursewareInput {
@@ -133,6 +134,60 @@ afterEach(async () => {
 });
 
 describe('server-owned courseware generation', () => {
+  it('keeps generating after a page alignment failure and retries only the missing page', async () => {
+    const selected = input('alignment_retry');
+    selected.outlines.push({ ...selected.outlines[1], id: 'outline3', order: 3 });
+    vi.mocked(fetch).mockImplementation(async (url, init) => {
+      const body = JSON.parse(init!.body as string);
+      if (String(url).endsWith('scene-actions') && body.outline.order === 2)
+        return new Response(
+          JSON.stringify({
+            success: false,
+            errorCode: 'FOCUS_SPEECH_ALIGNMENT_FAILED',
+            error: '讲解与聚焦校验未通过',
+            details: 'speech 2: target does not match the example',
+          }),
+          { status: 422 },
+        );
+      return fakeGeneration(String(url), init!);
+    });
+    const job = await createBackgroundCoursewareJob(selected, context);
+    await runBackgroundCoursewareJob(job.id);
+    expect(state.snapshots.get(selected.stage.id)?.scenes).toMatchObject([
+      { order: 1 },
+      { order: 3 },
+    ]);
+    expect(state.jobs.get(job.id)).toMatchObject({
+      status: 'failed',
+      backgroundGeneration: {
+        completedPages: 2,
+        totalPages: 3,
+        failedPages: [{ order: 2, issues: ['speech 2: target does not match the example'] }],
+      },
+    });
+    expect(state.artifacts).not.toHaveBeenCalled();
+    vi.mocked(fetch)
+      .mockClear()
+      .mockImplementation((url, init) => fakeGeneration(String(url), init!));
+    await retryBackgroundCoursewareJob(job.id);
+    await runBackgroundCoursewareJob(job.id);
+    expect(fetch).toHaveBeenCalledTimes(2);
+    for (const [, init] of vi.mocked(fetch).mock.calls)
+      expect(JSON.parse(init!.body as string).outline.order).toBe(2);
+    expect(state.jobs.get(job.id)).toMatchObject({
+      status: 'review',
+      backgroundGeneration: { completedPages: 3, failedPages: [] },
+    });
+    expect(state.artifacts).toHaveBeenCalledOnce();
+  });
+
+  it('does not restart completed or cancelled jobs as a retry', async () => {
+    const job = await createBackgroundCoursewareJob(input('no_retry_cancelled'), context);
+    await cancelBackgroundCoursewareJob(job.id);
+    await expect(retryBackgroundCoursewareJob(job.id)).rejects.toThrow();
+    expect(state.jobs.get(job.id)?.status).toBe('cancelled');
+    expect(fetch).not.toHaveBeenCalled();
+  });
   it('keeps the submitted voice for every page after the browser settings change', async () => {
     const selected = input('voice_snapshot');
     selected.enableTTS = true;

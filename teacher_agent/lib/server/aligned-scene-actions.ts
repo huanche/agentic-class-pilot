@@ -68,7 +68,12 @@ export async function generateAlignedSceneActions(
     );
     previousCandidate = generated;
     issues = compiled.issues;
-    if (issues.length) continue;
+    if (issues.length) {
+      options.logger?.warn(
+        `Teaching plan rejected (attempt ${attempt + 1}/2): ${issues.join('; ')}`,
+      );
+      continue;
+    }
     const actions = (transformActions ? transformActions(compiled.actions) : compiled.actions).map(
       (action) => {
         if (action.type !== 'speech') return { ...action };

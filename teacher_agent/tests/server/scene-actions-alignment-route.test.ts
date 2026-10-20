@@ -86,6 +86,7 @@ describe('scene action API enforces semantic approval before assembly', () => {
     expect(await response.json()).toMatchObject({
       success: false,
       errorCode: 'FOCUS_SPEECH_ALIGNMENT_FAILED',
+      details: expect.stringContaining('mixed topics'),
     });
     expect(mocks.generate).not.toHaveBeenCalled();
     expect(mocks.llm).toHaveBeenCalledTimes(4);

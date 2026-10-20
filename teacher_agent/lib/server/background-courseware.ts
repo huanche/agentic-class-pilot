@@ -180,6 +180,30 @@ export async function cancelBackgroundCoursewareJob(jobId: string) {
   return job;
 }
 
+/** Only an explicit retry may restart a failed task; successful pages are checkpoints. */
+export async function retryBackgroundCoursewareJob(jobId: string) {
+  const current = await readCourseJob(jobId);
+  if (current && isActiveCourseJob(current.status)) return current;
+  await workers.get(jobId)?.promise;
+  return mutateCourseJob(jobId, async (current) => {
+    if (!current.backgroundGeneration || !['failed', 'queued', 'running'].includes(current.status))
+      throw new Error('只有未完成的失败任务可以重试');
+    if (isActiveCourseJob(current.status)) return current;
+    try {
+      await fs.access(inputFile(jobId));
+    } catch {
+      throw new Error('原生成计划已不存在，请重新创建生成任务');
+    }
+    return {
+      ...current,
+      status: 'queued',
+      error: undefined,
+      message: '等待重试未完成页面，已完成页面保留',
+      backgroundGeneration: { ...current.backgroundGeneration, phase: 'queued', failedPages: [] },
+    };
+  });
+}
+
 /** Detached from the browser request. A cancelled/read-only visit never starts a worker. */
 export function runBackgroundCoursewareJob(
   jobId: string,
@@ -203,6 +227,8 @@ async function execute(
   let releaseSlot: (() => void) | undefined;
   let stored: StoredInput | undefined;
   let scenes: Scene[] = [];
+  const failedPages: Array<{ order: number; title: string; message: string; issues: string[] }> =
+    [];
   const check = async () => {
     signal.throwIfAborted();
     const job = await readCourseJob(jobId);
@@ -244,6 +270,7 @@ async function execute(
           completedPages: scenes.length,
           totalPages: outlines.length,
           phase,
+          failedPages: [...failedPages],
         },
       });
       if (!isActiveCourseJob(job.status)) {
@@ -277,7 +304,11 @@ async function execute(
           await check();
           if (!response.ok || result.success === false) {
             const error = new Error(result.error || `生成服务返回 ${response.status}`);
-            Object.assign(error, { statusCode: response.status });
+            Object.assign(error, {
+              statusCode: response.status,
+              errorCode: typeof result.errorCode === 'string' ? result.errorCode : undefined,
+              details: typeof result.details === 'string' ? result.details : undefined,
+            });
             throw error;
           }
           return result as T;
@@ -354,74 +385,120 @@ async function execute(
     for (const outline of outlines) {
       await check();
       if (scenes.some((page) => page.order === outline.order)) continue;
-      const progress = 3 + Math.floor((scenes.length / outlines.length) * 82);
-      await report(
-        'content',
-        `第 ${scenes.length + 1}/${outlines.length} 页：生成页面内容`,
-        progress,
-      );
-      const imported = input.importedSlides?.[outline.order - 1];
-      const content =
-        input.preferImportedCanvas &&
-        imported &&
-        !input.formulaEnhancedOrders?.includes(outline.order)
-          ? { type: 'slide', canvas: imported }
-          : (
-              await request<{ content: unknown }>('/api/generate/scene-content', {
-                outline,
-                allOutlines: outlines,
-                stageId: stage.id,
-                stageInfo: { name: stage.name, description: stage.description, style: stage.style },
-                requirements: input.requirements,
-                agents: input.agents,
-                pdfImages: input.pdfImages,
-                imageMapping: input.imageMapping,
-                languageDirective: stage.languageDirective,
-              })
-            ).content;
-      await report(
-        'actions',
-        `第 ${scenes.length + 1}/${outlines.length} 页：生成讲解与聚焦`,
-        progress + 1,
-      );
-      let scene = await actions(outline, content);
-      scene.timing = {
-        plannedDurationSec: getOutlineDurationSeconds(
-          outline,
-          stage.timing?.targetDurationMinutes ?? 28,
-          outlines.length,
-        ),
-        mode:
-          scene.type === 'quiz'
-            ? 'quiz'
-            : scene.type === 'interactive'
-              ? 'interactive-demo'
-              : 'narration-fit',
-        quizSecondsPerQuestion: scene.type === 'quiz' ? QUIZ_SECONDS_PER_QUESTION : undefined,
-        autoAdvance: true,
-      };
-      await report(
-        input.enableTTS ? 'audio' : 'saving-page',
-        `第 ${scenes.length + 1}/${outlines.length} 页：${input.enableTTS ? '生成配音并核对时长' : '保存页面'}`,
-        progress + 2,
-      );
-      await audio(scene);
-      if (input.enableTTS && outline.durationBudget) {
-        scene = await calibrateNarrationDuration(scene, {
-          regenerate: (feedback, previous) => regenerate(previous, feedback),
-          dispose,
+      let candidate: Scene | undefined;
+      try {
+        const progress =
+          3 + Math.floor(((scenes.length + failedPages.length) / outlines.length) * 82);
+        await report(
+          'content',
+          `第 ${outline.order}/${outlines.length} 页：生成页面内容`,
+          progress,
+        );
+        const imported = input.importedSlides?.[outline.order - 1];
+        const content =
+          input.preferImportedCanvas &&
+          imported &&
+          !input.formulaEnhancedOrders?.includes(outline.order)
+            ? { type: 'slide', canvas: imported }
+            : (
+                await request<{ content: unknown }>('/api/generate/scene-content', {
+                  outline,
+                  allOutlines: outlines,
+                  stageId: stage.id,
+                  stageInfo: {
+                    name: stage.name,
+                    description: stage.description,
+                    style: stage.style,
+                  },
+                  requirements: input.requirements,
+                  agents: input.agents,
+                  pdfImages: input.pdfImages,
+                  imageMapping: input.imageMapping,
+                  languageDirective: stage.languageDirective,
+                })
+              ).content;
+        await report(
+          'actions',
+          `第 ${outline.order}/${outlines.length} 页：生成讲解与聚焦`,
+          progress + 1,
+        );
+        let scene = await actions(outline, content);
+        candidate = scene;
+        scene.timing = {
+          plannedDurationSec: getOutlineDurationSeconds(
+            outline,
+            stage.timing?.targetDurationMinutes ?? 28,
+            outlines.length,
+          ),
+          mode:
+            scene.type === 'quiz'
+              ? 'quiz'
+              : scene.type === 'interactive'
+                ? 'interactive-demo'
+                : 'narration-fit',
+          quizSecondsPerQuestion: scene.type === 'quiz' ? QUIZ_SECONDS_PER_QUESTION : undefined,
+          autoAdvance: true,
+        };
+        await report(
+          input.enableTTS ? 'audio' : 'saving-page',
+          `第 ${outline.order}/${outlines.length} 页：${input.enableTTS ? '生成配音并核对时长' : '保存页面'}`,
+          progress + 2,
+        );
+        await audio(scene);
+        if (input.enableTTS && outline.durationBudget) {
+          scene = await calibrateNarrationDuration(scene, {
+            regenerate: (feedback, previous) => regenerate(previous, feedback),
+            dispose,
+          });
+        }
+        await check();
+        await finalizeClassroomTtsAudio(scene, stage.id, baseUrl);
+        scenes.push(scene);
+        scenes.sort((a, b) => a.order - b.order);
+        await snapshot();
+        await report(
+          'page-complete',
+          `已完成 ${scenes.length}/${outlines.length} 页`,
+          3 + Math.floor(((scenes.length + failedPages.length) / outlines.length) * 82),
+        );
+      } catch (error) {
+        // A rejected binding is a page-level content problem. Keep the gate,
+        // retain its diagnostics, and let unrelated pages finish. Provider,
+        // quota, network and cancellation failures still stop the worker.
+        await check();
+        const failure = error as Error & { errorCode?: string; details?: string };
+        if (failure.errorCode !== 'FOCUS_SPEECH_ALIGNMENT_FAILED') throw error;
+        if (candidate) await dispose(candidate);
+        failedPages.push({
+          order: outline.order,
+          title: outline.title,
+          message: failure.message,
+          issues: failure.details?.split('\n').filter(Boolean) ?? [],
         });
+        await report(
+          'page-failed',
+          `第 ${outline.order} 页校验未通过，继续生成其他页面`,
+          3 + Math.floor(((scenes.length + failedPages.length) / outlines.length) * 82),
+        );
       }
+    }
+    if (failedPages.length) {
       await check();
-      await finalizeClassroomTtsAudio(scene, stage.id, baseUrl);
-      scenes.push(scene);
-      scenes.sort((a, b) => a.order - b.order);
-      await snapshot();
-      await report(
-        'page-complete',
-        `已完成 ${scenes.length}/${outlines.length} 页`,
-        3 + Math.floor((scenes.length / outlines.length) * 82),
-      );
+      await updateCourseJob(jobId, {
+        status: 'failed',
+        message: `${scenes.length}/${outlines.length} 页已生成，${failedPages.length} 页待重试`,
+        error: failedPages
+          .map((page) => `第 ${page.order} 页「${page.title}」：${page.message}`)
+          .join('\n'),
+        backgroundGeneration: {
+          classroomId: stage.id,
+          completedPages: scenes.length,
+          totalPages: outlines.length,
+          phase: 'page-failed',
+          failedPages,
+        },
+      });
+      return;
     }
     if (input.enableMedia && outlines.some((outline) => outline.mediaGenerations?.length)) {
       await report('media', '生成课件中的图片与视频素材', 86);
@@ -500,6 +577,7 @@ async function execute(
           completedPages: scenes.length,
           totalPages: outlines.length,
           phase: 'completed',
+          failedPages: [],
         },
       };
     });
