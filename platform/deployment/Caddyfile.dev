@@ -21,6 +21,10 @@ http://localhost:8088 {
   handle /_next/* {
     reverse_proxy host.docker.internal:3200
   }
+  # Preserve the root URL of the dynamically imported PPTX parser.
+  handle /vendor/maic-importer/* {
+    reverse_proxy host.docker.internal:3200
+  }
   handle /avatars/* {
     reverse_proxy host.docker.internal:3200
   }

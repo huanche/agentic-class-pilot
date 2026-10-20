@@ -1,4 +1,4 @@
-import type { NextRequest } from 'next/server';
+import { NextRequest } from 'next/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
@@ -25,7 +25,19 @@ vi.mock('@/lib/logger', () => ({
   }),
 }));
 
+vi.mock('@/lib/server/course-space-database', () => ({
+  readClassroomBindingFromDatabase: async () => ({ courseId: 'course-1' }),
+}));
+vi.mock('@/lib/server/course-space-storage', () => ({
+  readServerCourse: async () => ({ teacherId: 'teacher-1' }),
+}));
+vi.mock('@/lib/server/classroom-storage', () => ({
+  isValidClassroomId: () => true,
+  readClassroom: async () => ({ scenes: [{ id: 'current-scene' }] }),
+}));
+
 import { POST } from '@/app/api/agent/edit/route';
+import { POST as reviewPOST } from '@/app/api/classroom/agent-edit/route';
 
 const EDITOR_FLAG = 'NEXT_PUBLIC_MAIC_EDITOR_ENABLED';
 const ZERO_USAGE = {
@@ -98,8 +110,61 @@ describe('Editor shared Pi transport consumer', () => {
   });
 
   afterEach(() => {
+    vi.unstubAllEnvs();
     if (originalEditorFlag === undefined) delete process.env[EDITOR_FLAG];
     else process.env[EDITOR_FLAG] = originalEditorFlag;
+  });
+
+  it('supports ordinary teacher page review with the Pro editor disabled, keeping legacy editing gated', async () => {
+    process.env[EDITOR_FLAG] = 'false';
+    vi.stubEnv('PLATFORM_AUTH_ENABLED', 'true');
+    expect((await POST(makeRequest())).status).toBe(404);
+    mocks.streamLLM
+      .mockReturnValueOnce(
+        resultFrom([
+          {
+            type: 'tool-call',
+            toolCallId: 'read-review',
+            toolName: 'read_scene_content',
+            input: { sceneId: 'current-scene' },
+          },
+          finish('tool-calls'),
+        ]),
+      )
+      .mockReturnValueOnce(
+        resultFrom([{ type: 'text-delta', text: '已读取当前页面。' }, finish('stop')]),
+      );
+    const outline = {
+      id: 'current-scene',
+      title: '为什么要学C语言',
+      type: 'slide',
+      order: 2,
+      keyPoints: [],
+    };
+    const response = await reviewPOST(
+      new NextRequest('http://localhost/api/classroom/agent-edit?id=class-1', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-platform-user-id': 'teacher-1' },
+        body: JSON.stringify({
+          message: '读取当前页面',
+          scene: { id: outline.id, title: outline.title },
+          sceneContextMap: {
+            [outline.id]: {
+              stageId: 'class-1',
+              outline,
+              allOutlines: [outline],
+              content: { type: 'slide', canvas: { elements: [] } },
+            },
+          },
+        }),
+      }),
+    );
+    expect(response.status).toBe(200);
+    const events = await readSseEvents(response);
+    expect(events.find((event) => event.type === 'tool_execution_end')).toMatchObject({
+      isError: false,
+    });
+    expect(mocks.streamLLM).toHaveBeenCalledTimes(2);
   });
 
   it('uses the resolved maic-agent model and carries a strict tool failure as error-text', async () => {

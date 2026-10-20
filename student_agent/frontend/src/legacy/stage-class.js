@@ -279,7 +279,7 @@ export function createStage(ctx) {
            独立态：默认播放器用 video（/api/lesson/video 返回的单个地址）。
            两者都传，适配器各取所需。 */
         lesson: lesson,
-        /* 平台播放器适配器（src/platform/playerAdapter.js）靠 classroomId 决定
+        /* 平台播放器适配器（src/integration/platform-player-adapter.js）靠 classroomId 决定
            嵌哪间课堂；缺了它会直接显示"本课时尚未发布播放器内容"。
            独立态默认播放器不用这个字段。 */
         classroomId: lesson && lesson.classroomId,

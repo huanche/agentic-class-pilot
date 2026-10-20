@@ -297,6 +297,7 @@ export interface CourseArtifactJob {
     completedPages: number;
     totalPages: number;
     phase: string;
+    failedPages?: Array<{ order: number; title: string; message: string; issues: string[] }>;
   };
   error?: string;
   createdAt: number;

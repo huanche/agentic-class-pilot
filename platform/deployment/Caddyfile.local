@@ -21,6 +21,10 @@ agenticclasspilot.com {
   handle /_next/* {
     reverse_proxy host.docker.internal:3200
   }
+  # Preserve the root URL of the dynamically imported PPTX parser.
+  handle /vendor/maic-importer/* {
+    reverse_proxy host.docker.internal:3200
+  }
   # Public static assets of the teacher agent (agent avatars etc.).
   handle /avatars/* {
     reverse_proxy host.docker.internal:3200

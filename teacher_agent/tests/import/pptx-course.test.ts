@@ -6,6 +6,7 @@ import {
   buildImportedPptOutlines,
   cleanImportedText,
   getImportedSlideTitle,
+  getImportedSlideText,
   resolveReviewedPptDraft,
   PPT_COURSEWARE_POLICY_VERSION,
 } from '@/lib/import/pptx-course';
@@ -51,6 +52,59 @@ describe('high-fidelity PPTX course conversion', () => {
     const imported = slide('a', ['<p><strong> 无线电波传播 </strong></p>']);
     expect(cleanImportedText('<p><strong> 无线电波传播 </strong></p>')).toBe('无线电波传播');
     expect(getImportedSlideTitle(imported, 0)).toBe('无线电波传播');
+  });
+
+  it('keeps text stored inside imported shapes, including grouped shapes', () => {
+    const imported = slide('shape-text', [], '教师备注');
+    imported.elements = [
+      { id: 'title', type: 'shape', text: { content: '<p>Python 变量与类型</p>' } },
+      {
+        id: 'body',
+        type: 'shape',
+        groupId: 'diagram',
+        text: { content: '<p>变量保存数据。</p><p>age = 18</p>' },
+      },
+      { id: 'decoration', type: 'shape' },
+      { id: 'image', type: 'image', src: 'data:image/png;base64,example' },
+    ] as Slide['elements'];
+
+    const draft = buildImportedPptDraft([imported]);
+    expect(getImportedSlideText(imported)).toEqual([
+      'Python 变量与类型',
+      '变量保存数据。 age = 18',
+    ]);
+    expect(draft.slides[0]).toMatchObject({
+      title: 'Python 变量与类型',
+      content: '变量保存数据。 age = 18',
+      speakerNotes: '教师备注',
+    });
+    expect(buildImportedPptOutlines([imported])[0].description).toContain(
+      '变量保存数据。 age = 18',
+    );
+  });
+
+  it('includes table rows in the reviewed content without leaking image URLs', () => {
+    const imported = slide('table', ['常用数据类型']);
+    imported.elements.push({
+      id: 'types',
+      type: 'table',
+      data: [
+        [{ text: '类型' }, { text: '示例' }],
+        [{ text: '<p>int</p>' }, { text: '18' }],
+        [{ text: '' }, { text: '' }],
+      ],
+    } as Slide['elements'][number]);
+
+    expect(buildImportedPptDraft([imported]).slides[0]).toMatchObject({
+      title: '常用数据类型',
+      content: '类型 | 示例\nint | 18',
+    });
+  });
+
+  it('separates block paragraphs without breaking inline text runs', () => {
+    expect(cleanImportedText('<p><span>Py</span><span>thon</span></p><p>变量<br/>类型</p>')).toBe(
+      'Python 变量 类型',
+    );
   });
 
   it('routes a semantic-formula page to OpenMAIC enhancement with exact LaTeX', () => {

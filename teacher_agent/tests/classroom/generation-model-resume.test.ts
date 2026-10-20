@@ -15,6 +15,8 @@ const mocks = vi.hoisted(() => ({
   serverRead: false,
   allowSync: false,
   pending: false,
+  embedded: '',
+  flush: vi.fn(async () => {}),
   from: '',
   stage: {} as Record<string, unknown>,
   onFailure: undefined as undefined | ((outline: { title: string }, reason: string) => void),
@@ -55,7 +57,11 @@ vi.mock('next/link', () => ({
 vi.mock('next/navigation', () => ({
   useParams: () => ({ id: 'lesson' }),
   usePathname: () => '/classroom/lesson',
-  useSearchParams: () => new URLSearchParams(mocks.from ? { from: mocks.from } : {}),
+  useSearchParams: () =>
+    new URLSearchParams({
+      ...(mocks.from ? { from: mocks.from } : {}),
+      ...(mocks.embedded ? { embedded: mocks.embedded } : {}),
+    }),
 }));
 vi.mock('@/lib/hooks/use-scene-generator', () => ({
   useSceneGenerator: (options: { onSceneFailed: typeof mocks.onFailure }) => {
@@ -70,6 +76,7 @@ vi.mock('@/lib/hooks/use-scene-generator', () => ({
 vi.mock('@/lib/store/stage', () => ({
   claimStageSceneLoadToken: () => ({}),
   isCurrentStageSceneLoadToken: () => true,
+  flushStageSave: mocks.flush,
 }));
 vi.mock('@/lib/store/settings', () => ({ useSettingsStore: { getState: () => ({}) } }));
 vi.mock('@/lib/utils/image-storage', () => ({ loadImageMapping: async () => ({}) }));
@@ -105,7 +112,7 @@ vi.mock('@/lib/classroom/load-classroom', () => ({
     setLoading: (loading: boolean) => void;
     fetchClassroom: (...args: unknown[]) => Promise<unknown>;
   }) => {
-    mocks.run();
+    mocks.run(args);
     if (mocks.serverRead) {
       const result = await args.fetchClassroom('lesson');
       if (result) Object.assign(state, result);
@@ -114,6 +121,7 @@ vi.mock('@/lib/classroom/load-classroom', () => ({
   },
 }));
 import ClassroomDetailPage from '@/app/classroom/[id]/page';
+import { watchBackgroundClassroomGeneration } from '@/lib/classroom/watch-background-generation';
 
 describe('classroom generation model survives session loss', () => {
   let host: HTMLDivElement;
@@ -126,6 +134,7 @@ describe('classroom generation model survives session loss', () => {
     mocks.serverRead = false;
     mocks.allowSync = false;
     mocks.pending = false;
+    mocks.embedded = '';
     state.stage = { id: 'lesson', name: 'Python' };
     state.scenes = [{ id: 'first', stageId: 'lesson', order: 1 }];
     state.outlines = [
@@ -138,6 +147,7 @@ describe('classroom generation model survives session loss', () => {
   });
   afterEach(async () => {
     await act(async () => root.unmount());
+    vi.useRealTimers();
     host.remove();
     vi.unstubAllGlobals();
   });
@@ -176,10 +186,66 @@ describe('classroom generation model survives session loss', () => {
     await act(async () => button!.click());
     expect(mocks.run).toHaveBeenCalledTimes(2);
   });
+  it('refreshes a mounted empty teacher preview when background pages become available', async () => {
+    vi.useFakeTimers();
+    mocks.embedded = 'course-workspace';
+    mocks.pending = true;
+    state.stage = { id: 'lesson', generationPlan: { serverJobId: 'job' } };
+    state.scenes = [];
+    const fetchStatus = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ job: { status: 'running' } }),
+    }));
+    vi.stubGlobal('fetch', fetchStatus);
+    await act(async () => root.render(createElement(ClassroomDetailPage)));
+    expect(mocks.run).toHaveBeenCalledOnce();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2500);
+    });
+    expect(mocks.run).toHaveBeenCalledTimes(2);
+    expect(mocks.generate).not.toHaveBeenCalled();
+    expect(mocks.flush).toHaveBeenCalledOnce();
+    const refreshArgs = mocks.run.mock.lastCall?.[0] as {
+      shouldRefreshFromServer: () => boolean;
+      loadFromStorage: unknown;
+    };
+    expect(refreshArgs.shouldRefreshFromServer()).toBe(true);
+    expect(refreshArgs.loadFromStorage).not.toBe(mocks.load);
+  });
   it('uses the server model for a course workspace after sessionStorage was lost', async () => {
     mocks.from = '/course-space?workspace=course';
     expect((await render()).preferServerModel).toBe(true);
     expect(mocks.update).toHaveBeenCalledWith({ generationModelPolicy: 'server' });
+  });
+  it('keeps edits made while a background server read is in flight', async () => {
+    vi.useFakeTimers();
+    mocks.embedded = 'course-workspace';
+    mocks.pending = true;
+    state.stage = { id: 'lesson', generationPlan: { serverJobId: 'job' } };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ ok: true, json: async () => ({ job: { status: 'running' } }) })),
+    );
+    await act(async () => root.render(createElement(ClassroomDetailPage)));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2500);
+    });
+    const args = mocks.run.mock.lastCall?.[0] as {
+      fetchClassroom: (id: string) => Promise<unknown>;
+    };
+    let finish!: (payload: unknown) => void;
+    mocks.fetch.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const read = args.fetchClassroom('lesson');
+    const edited = { id: 'teacher-edit', stageId: 'lesson', order: 1 };
+    state.scenes = [edited];
+    finish({ stage: state.stage, scenes: [], serverSnapshot: true });
+    expect(await read).toBeNull();
+    expect(state.scenes).toEqual([edited]);
   });
   it('keeps a persisted server policy when a bare classroom URL is reopened', async () => {
     state.stage = { ...state.stage, generationModelPolicy: 'server' };
@@ -210,5 +276,71 @@ describe('classroom generation model survives session loss', () => {
       '配音服务账户欠费，已暂停生成。',
     );
     expect(host.textContent).toContain('classroom ready');
+  });
+});
+
+describe('background preview refresh lifecycle', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it('waits for a slow read to finish before scheduling another one', async () => {
+    let finish!: (done: boolean) => void;
+    const pending = new Promise<boolean>((resolve) => {
+      finish = resolve;
+    });
+    const refresh = vi.fn(async () => true).mockImplementationOnce(() => pending);
+    const dispose = watchBackgroundClassroomGeneration({
+      readStatus: async () => 'running',
+      refresh,
+    });
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(refresh).toHaveBeenCalledOnce();
+    finish(false);
+    await vi.advanceTimersByTimeAsync(2500);
+    expect(refresh).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(refresh).toHaveBeenCalledTimes(2);
+    dispose();
+  });
+
+  it.each(['failed', 'cancelled'])(
+    'reads the final partial snapshot and stops for %s',
+    async (status) => {
+      const refresh = vi.fn(async () => false);
+      const dispose = watchBackgroundClassroomGeneration({
+        readStatus: async () => status,
+        refresh,
+      });
+      await vi.advanceTimersByTimeAsync(20_000);
+      expect(refresh).toHaveBeenCalledOnce();
+      dispose();
+    },
+  );
+
+  it('discards a late response after the preview unmounts', async () => {
+    let finish!: (status: string) => void;
+    const pending = new Promise<string>((resolve) => {
+      finish = resolve;
+    });
+    const refresh = vi.fn(async () => false);
+    const dispose = watchBackgroundClassroomGeneration({ readStatus: () => pending, refresh });
+    await vi.advanceTimersByTimeAsync(2500);
+    dispose();
+    finish('running');
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it('still reads the classroom when job status temporarily cannot be read', async () => {
+    const refresh = vi.fn(async () => true);
+    const dispose = watchBackgroundClassroomGeneration({
+      readStatus: async () => {
+        throw new Error('network');
+      },
+      refresh,
+    });
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(refresh).toHaveBeenCalledOnce();
+    dispose();
   });
 });

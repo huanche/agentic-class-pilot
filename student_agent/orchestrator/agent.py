@@ -8,7 +8,7 @@ judge_mastery / judge_advance / advance_stage / write_state / format_reply
 - `now` 由会话层注入 state，图内任何节点不调 datetime.now() → 可单测、可回放。
 - 判断写进 state（target_phase），路由函数只读不判。
 - `stage_snapshots` 用 Annotated[list, operator.add] 累加，不覆盖。
-- 空壳降级：复述阶段问题取 TMISSION 检验问题 → KNOWLEDGE-BASE 检测问题；探究阶段另读 stages/deep_inquiry/questions.md。
+- 教学事实、问题与提示来自平台发布的学习上下文，不从仓库内的课程文件回退读取。
 
 LLM 接入（可选）：
     设置环境变量 AGENT_LLM_BASE_URL / AGENT_LLM_API_KEY / AGENT_LLM_MODEL
@@ -17,7 +17,7 @@ LLM 接入（可选）：
     星级评定由下课前的 LLM 依据整课对话综合判定（见 _assess_mastery_with_llm）；
     复述/探究阶段「答没答上」的推进/留守也交给 LLM 判定，不再写死关键词表。
 
-运行演示：python orchestrator/run_demo.py
+课堂通过平台入口启动，由 apps/server.py 托管会话。
 """
 
 from __future__ import annotations
@@ -85,12 +85,10 @@ EVENT_END_LESSON = "end_lesson"  # 老师按"结束本节课"，直接下课（�
 
 
 def stage_delivery(state: ClassroomState) -> str:
-    """讲解阶段（guided_learning）的授课方式，来自 lesson-plan.json：
+    """讲解阶段（guided_learning）的授课方式，来自平台发布的课堂计划：
 
-    - ``video``：**一整段视频替代讲解**。AI 全程静默不出讲解词，
-      视频播放的时间照常计入课堂时间；切幕只由「视频播完」（media_done）
-      或老师按钮驱动，**时间预算不切**——视频多长都等它放完。
-    - ``narration``（默认）：AI 逐段讲解（无视频的课用这种方式）。
+    - ``video``：视频由平台课堂播放器承载，完成事件由播放器回报。
+    - ``narration``：AI 逐段讲解。
     """
     for s in (state.get("lesson_plan") or {}).get("stages", []):
         if s.get("id") == "guided_learning":
@@ -182,166 +180,21 @@ def register_kp_titles(titles: dict[str, str] | None) -> None:
 def kp_title(kp_id: str, lesson_id: str | None = None) -> str:
     """KP 编号 → 中文标题。
 
-    上传的课时先查**它自己的**知识点（老师填的 `title`）—— 否则老师传的标题
-    全被忽略，下课总结和课后报告里会出现 "KP-901（KP-901，★）" 这种重号。
-    其余情况取自 KNOWLEDGE-BASE.md 的 `## KP-001 调度是什么`。
+    标题从平台课程上下文注册表读取。
 
     模型生成的回复要用标题，**不能把 KP-004 这类内部编号说给学生听**。
     取不到时原样返回编号（宁可说编号，也不要编标题）。
     """
-    if lesson_id and is_uploaded_lesson(lesson_id):
-        lesson = load_lesson(lesson_id)
-        for kp in (lesson[0].get("knowledge_points") or []) if lesson else []:
-            if kp.get("kp_id") == kp_id:
-                return str(kp.get("title") or kp_id)
-        return kp_id
-
     # 平台课程的知识点标题由集成层建计划时注册（course_adapter），
     # 查得到就绝不说 KP-xxx 这类内部编号。
     registered = _PLAN_KP_TITLES.get(kp_id)
     if registered:
         return registered
 
-    global _KP_TITLES
-    if _KP_TITLES is None:
-        _KP_TITLES = {}
-        text = _read("rules/KNOWLEDGE-BASE.md")
-        for m in re.finditer(r"^##\s+(KP-\d+)\s+(.+)$", text or "", re.M):
-            _KP_TITLES[m.group(1)] = m.group(2).strip()
-    return _KP_TITLES.get(kp_id, kp_id)
+    return kp_id
 
 
 MAX_DEEP_INQUIRY_ATTEMPTS = 5
-
-
-# ═══════════════════════════════════════════════════════════════
-# 复述阶段问题兜底链：
-#   runtime/TMISSION.md 检验问题 → KNOWLEDGE-BASE 检测问题
-#   （复述阶段题库 questions.md 已删，不再读阶段题库；
-#     探究阶段仍读 stages/deep_inquiry/questions.md）
-# ═══════════════════════════════════════════════════════════════
-
-def _read(path: str) -> str:
-    try:
-        return (ROOT / path).read_text(encoding="utf-8")
-    except FileNotFoundError:
-        return ""
-
-
-def _strip_code_fences(text: str) -> str:
-    return re.sub(r"```.*?```", "", text, flags=re.S)
-
-
-def _parse_stage_questions(phase: str) -> list[dict]:
-    """第 1 级：stages/<phase>/questions.md 里老师填的问题（剥掉代码块示例，现仅探究阶段用）。"""
-    text = _read(f"stages/{phase}/questions.md")
-    if not text:
-        return []
-    body = _strip_code_fences(text)
-    out: list[dict] = []
-    for block in re.split(r"^## 问题", body, flags=re.M)[1:]:
-        m_kp = re.search(r"关联[:：]\s*(KP-\d+|seg-\d+)", block)
-        m_q = re.search(r"问题[:：]\s*(.+)", block)
-        if m_kp and m_q:
-            out.append({
-                "kp_id": m_kp.group(1),
-                "question": m_q.group(1).strip(),
-                "source": "stages/questions.md",
-            })
-    return out
-
-
-def _parse_tmission_questions() -> list[dict]:
-    """第 2 级：runtime/TMISSION.md 核心难点的 检验问题。"""
-    text = _read("runtime/TMISSION.md")
-    if not text:
-        return []
-    out, cur = [], None
-    for line in text.splitlines():
-        m = re.match(r"-\s+(KP-\d+)\s", line)
-        if m:
-            cur = m.group(1)
-            continue
-        m2 = re.match(r"\s*-\s*检验问题[:：]\s*(.+)", line)
-        if m2 and cur:
-            out.append({
-                "kp_id": cur,
-                "question": m2.group(1).strip(),
-                "source": "runtime/TMISSION.md 检验问题",
-            })
-            cur = None
-    return out
-
-
-def _parse_kb_questions() -> list[dict]:
-    """第 3 级：rules/KNOWLEDGE-BASE.md 各 KP 的 检测问题。"""
-    text = _read("rules/KNOWLEDGE-BASE.md")
-    if not text:
-        return []
-    out, cur = [], None
-    for line in text.splitlines():
-        m = re.match(r"##\s+(KP-\d+)\s", line)
-        if m:
-            cur = m.group(1)
-            continue
-        m2 = re.match(r"-\s*检测问题[:：]\s*(.+)", line)
-        if m2 and cur:
-            out.append({
-                "kp_id": cur,
-                "question": m2.group(1).strip(),
-                "source": "rules/KNOWLEDGE-BASE.md 检测问题",
-            })
-    return out
-
-
-def _lesson_question_bank(phase: str, lesson_id: str | None) -> list[dict]:
-    """上传课时的题库：复述用「检测问题」，探究用四个探究字段。
-
-    只在课时是 store 版（lesson-data/lessons/*.json）时产出。
-    """
-    if not lesson_id or not is_uploaded_lesson(lesson_id):
-        return []
-    lesson = load_lesson(lesson_id)
-    if not lesson:
-        return []
-    points = [
-        kp for kp in (lesson[0].get("knowledge_points") or []) if kp.get("kp_id")
-    ]
-    out: list[dict] = []
-    if phase == "recap_discussion":
-        for kp in points:
-            question = str(kp.get("检测问题") or "").strip()
-            if question:
-                out.append({
-                    "kp_id": kp["kp_id"],
-                    "question": question,
-                    "source": "课时定义 · 检测问题",
-                })
-    elif phase == "deep_inquiry":
-        for kp in points:
-            for field, lead in (
-                ("为什么这样设计", "为什么"),
-                ("如何实现", "如何"),
-                ("解决什么实际问题", "用在哪"),
-            ):
-                value = str(kp.get(field) or "").strip()
-                if value:
-                    out.append({
-                        "kp_id": kp["kp_id"],
-                        "question": f"（{lead}）{value}",
-                        "source": "课时定义 · 探究字段",
-                    })
-        if not out:
-            # 探究字段没填 → 只对本课知识点用通用兜底，不外借别的课的题目
-            out = [{
-                "kp_id": kp["kp_id"],
-                "question": (
-                    f"这个知识点（{kp.get('title') or kp['kp_id']}）能解决什么实际问题？"
-                    "结合一个具体场景，说说为什么需要它、它是怎么起作用的。"
-                ),
-                "source": "课时定义 · 探究字段为空的降级",
-            } for kp in points]
-    return out
 
 
 def build_question_queue(
@@ -350,74 +203,14 @@ def build_question_queue(
     lesson_id: str | None = None,
     plan: dict | None = None,
 ) -> list[dict]:
-    """按兜底链为复述/探究阶段组装问题队列。
+    """根据平台发布课程内容为复述/探究阶段组装问题队列。
 
-    平台链路优先：会话带 learning_context（plan 的 source 为
-    platform-published）时，题目由已发布知识点包提供（prompt_context）。
-    非平台计划时该分支返回空，自然落到下面的本地兜底链。
+    题目由已发布知识点包提供（prompt_context）。
 
-    上传的课时只走**课时自己的**知识点，**不**回落到
-    runtime/TMISSION.md 与 rules/KNOWLEDGE-BASE.md —— 那两处写的是旧课时
-    的内容，让上传的课去问别的课的题目就完全跑偏了。
-    注意：即便上传的课时没配知识点（题库为空）也不能往下落，
-    否则"没填"就等于"改问旧课时的题"。
+    没有平台计划或知识点时返回空队列，不使用仓库内的旧课程题库兜底。
     """
     from apps.integration import prompt_context
-
-    if prompt_context.is_platform_plan(plan or {}):
-        return prompt_context.question_queue(phase, plan, unresolved, generate=llm_chat)
-
-    if lesson_id and is_uploaded_lesson(lesson_id):
-        return _lesson_question_bank(phase, lesson_id)
-
-    if phase == "recap_discussion":
-        # 复述阶段不再读阶段题库（questions.md 已删），
-        # 问题直接取 TMISSION 检验问题 → KNOWLEDGE-BASE 检测问题。
-        q = _parse_tmission_questions()
-        if q:
-            return q
-        return _parse_kb_questions()
-
-    if phase == "deep_inquiry":
-        q = _parse_stage_questions("deep_inquiry")
-        if q:
-            return q
-        # 探究字段（为什么/如何/用在哪）为空 → 降级为通用探究问题。
-        # 未关闭的难点优先问，其余按已获星级排序。
-        text = _read("rules/KNOWLEDGE-BASE.md")
-        filled = re.search(r"为什么这样设计[:：]\s*\S", text or "")
-        if filled:
-            out = []
-            for m in re.finditer(
-                r"##\s+(KP-\d+)[^\n]*\n((?:-[^\n]*\n)+)", text
-            ):
-                kp, body = m.group(1), m.group(2)
-                for field, lead in (
-                    ("为什么这样设计", "为什么"),
-                    ("如何实现", "如何"),
-                    ("解决什么实际问题", "用在哪"),
-                ):
-                    fm = re.search(rf"-\s*{field}[:：]\s*(\S.*)", body)
-                    if fm:
-                        out.append({
-                            "kp_id": kp,
-                            "question": fm.group(1).strip(),
-                            "source": "rules/KNOWLEDGE-BASE.md 探究字段",
-                        })
-            if out:
-                return out
-        # 全空 → 规范第 8 节兜底："这个知识点能解决什么实际问题"
-        kps = list(dict.fromkeys(unresolved))
-        return [{
-            "kp_id": kp,
-            "question": (
-                f"这个知识点（{kp_title(kp, lesson_id)}）能解决什么实际问题？"
-                "结合一个具体场景，说说为什么需要它、它是怎么起作用的。"
-            ),
-            "source": "内置默认探究问题（探究字段为空的降级）",
-        } for kp in kps[:4]]
-
-    return []
+    return prompt_context.question_queue(phase, plan or {}, unresolved, generate=llm_chat)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -530,225 +323,23 @@ class ClassroomState(TypedDict):
 # 节点实现
 # ═══════════════════════════════════════════════════════════════
 
-# ═══════════════════════════════════════════════════════════════
-# 课时库：老师上传的课时定义 + 旧版单课时文件
-#
-# 两个来源，一套解析：
-#   · 新式 —— lesson-data/lessons/<lesson_id>.json，一份文件装下元数据、
-#     stages、segments、知识点，由 POST /api/teacher/lesson 写入；
-#   · 旧式 —— lesson-data/lesson-plan.json + lesson-data/segments/*.json，
-#     只有一节课，刻意保持原样不动。
-# ═══════════════════════════════════════════════════════════════
-
-LESSONS_DIR = ROOT / "lesson-data" / "lessons"
-LEGACY_PLAN_PATH = ROOT / "lesson-data" / "lesson-plan.json"
-SEGMENTS_DIR = ROOT / "lesson-data" / "segments"
-LESSON_DATA_DIR = ROOT / "lesson-data"
-
-# lesson_id 会被拼进文件名，必须白名单。只放行字母数字和 . _ -，
-# 且首字符是字母数字 —— 拦住 ../、绝对路径、盘符，以及 Windows 保留名
-# （CON/NUL/COM1 等不以字母数字开头也过不了这个正则）。
-_LESSON_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}\Z")
-
-# Windows 保留设备名。它们能通过上面的正则（CON、NUL.json 都是"合法"字符），
-# 但不能作文件名 —— 带扩展名也不行，`NUL.json` 一样会被当成设备。
-_WINDOWS_RESERVED = frozenset(
-    {"CON", "PRN", "AUX", "NUL"}
-    | {f"COM{i}" for i in range(1, 10)}
-    | {f"LPT{i}" for i in range(1, 10)}
-)
-
-
-def safe_lesson_id(lesson_id: str) -> str:
-    """校验 lesson_id 能安全用作文件名，非法则抛 ValueError。"""
-    if not _LESSON_ID_RE.match(lesson_id or ""):
-        raise ValueError(
-            f"非法 lesson_id：{lesson_id!r}（只允许字母数字与 . _ -，"
-            "以字母数字开头，最长 64 字符）"
-        )
-    if lesson_id.split(".", 1)[0].upper() in _WINDOWS_RESERVED:
-        raise ValueError(f"非法 lesson_id：{lesson_id!r}（Windows 保留设备名，不能用作文件名）")
-    return lesson_id
-
-
-def _read_json(path: Path) -> dict | None:
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return None
-
-
-def _legacy_plan() -> dict | None:
-    return _read_json(LEGACY_PLAN_PATH)
-
-
-def _scan_lesson_plan_path(lesson_id: str) -> Path | None:
-    """扫 lesson-data/<course>/<lesson>/lesson-plan.json（ingest 产出），找 lesson_id 命中那份。"""
-    for path in sorted(LESSON_DATA_DIR.glob("*/*/lesson-plan.json")):
-        if (_read_json(path) or {}).get("lesson_id") == lesson_id:
-            return path
-    return None
-
-
-def is_uploaded_lesson(lesson_id: str) -> bool:
-    """是否老师上传的新式课时（区别于旧版单课时文件）。"""
-    try:
-        safe_lesson_id(lesson_id)
-    except ValueError:
-        return False
-    return (LESSONS_DIR / f"{lesson_id}.json").is_file()
-
-
-def list_lesson_ids() -> list[str]:
-    """全部可用课时 id：老师上传的 + ingest 产出的 lesson-plan + 旧版那一节。"""
-    ids: list[str] = []
-    if (legacy := _legacy_plan()) and legacy.get("lesson_id"):
-        ids.append(legacy["lesson_id"])
-    if LESSONS_DIR.is_dir():
-        for path in sorted(LESSONS_DIR.glob("*.json")):
-            if path.stem not in ids:
-                ids.append(path.stem)
-    if LESSON_DATA_DIR.is_dir():
-        for path in sorted(LESSON_DATA_DIR.glob("*/*/lesson-plan.json")):
-            doc = _read_json(path) or {}
-            if doc.get("lesson_id") and doc["lesson_id"] not in ids:
-                ids.append(doc["lesson_id"])
-    return ids
-
-
-def load_lesson(lesson_id: str) -> tuple[dict, list[dict]] | None:
-    """→ (plan, segments)；找不到或格式非法返回 None。
-
-    `plan["segments"]` 在两种来源下都保持「元素至少含 id / minutes」的形状 ——
-    编排器只按这两个字段遍历，新式课时的完整段落对象正好也满足。
-    完整段落对象单独作为第二个返回值给出。
-    """
-    if not lesson_id:
-        return None
-    try:
-        safe_lesson_id(lesson_id)
-    except ValueError:
-        return None
-
-    if is_uploaded_lesson(lesson_id):
-        doc = _read_json(LESSONS_DIR / f"{lesson_id}.json")
-        if not doc:
-            return None
-        return doc, list(doc.get("segments") or [])
-
-    # ingest 产出的 per-课时 lesson-plan（lesson-data/<course>/<lesson>/lesson-plan.json）
-    if (scanned_path := _scan_lesson_plan_path(lesson_id)) and (
-        scanned := _read_json(scanned_path)
-    ):
-        return scanned, list(scanned.get("segments") or [])
-
-    # 旧版：只认 lesson-plan.json 自己声明的那个 lesson_id
-    plan = _legacy_plan()
-    if not plan or plan.get("lesson_id") != lesson_id:
-        return None
-    segments: list[dict] = []
-    for item in plan.get("segments") or []:
-        seg_id = item.get("id")
-        detail = _read_json(SEGMENTS_DIR / f"{seg_id}.json") or {}
-        detail.setdefault("segment_id", seg_id)
-        detail.setdefault("id", seg_id)
-        detail.setdefault("minutes", item.get("minutes"))
-        segments.append(detail)
-    return plan, segments
-
-
-def save_lesson(doc: dict) -> str:
-    """原子落盘一份课时定义，返回相对路径。
-
-    先写 `.tmp` 再 `os.replace` —— 校验过 `_lesson_plan` 会抛 503 读端，
-    不能让它们读到写了一半的 JSON。写路径集中在这里，读端一律走
-    `load_lesson`，这样 LESSONS_DIR 只有一个引用点（测试也好打桩）。
-    """
-    lesson_id = safe_lesson_id(str(doc.get("lesson_id") or ""))
-    LESSONS_DIR.mkdir(parents=True, exist_ok=True)
-    path = LESSONS_DIR / f"{lesson_id}.json"
-    tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(json.dumps(doc, ensure_ascii=False, indent=2), encoding="utf-8")
-    os.replace(tmp, path)
-    return f"lesson-data/lessons/{lesson_id}.json"
-
-
-def lesson_source_label(lesson_id: str) -> str:
-    """给接口返回用：这节课的定义存在哪。"""
-    if is_uploaded_lesson(lesson_id):
-        return f"lesson-data/lessons/{lesson_id}.json"
-    if (path := _scan_lesson_plan_path(lesson_id)):
-        return str(path.relative_to(ROOT)).replace("\\", "/")
-    if (plan := _legacy_plan()) and plan.get("lesson_id") == lesson_id:
-        return "lesson-data/lesson-plan.json（旧版单课时）"
-    return "未找到"
-
-
-_KP_EXTRA_FIELDS = (
-    "定义", "检测问题", "掌握表现",
-    "为什么这样设计", "如何实现", "解决什么实际问题", "关联学科",
-)
-
-
-def format_knowledge_point(kp: dict) -> str:
-    """把一个知识点渲染成进提示词的文本块（字段序与 KNOWLEDGE-BASE.md 一致）。"""
-    head = f"{kp.get('kp_id', '')} {kp.get('title', '')}".strip() or "知识点"
-    lines = [f"## {head}"]
-    for field in _KP_EXTRA_FIELDS:
-        value = str(kp.get(field) or "").strip()
-        if value:
-            lines.append(f"- {field}: {value}")
-    return "\n".join(lines)
-
-
-def lesson_knowledge_block(lesson_id: str) -> str:
-    """本课知识点区块；没有（旧版课时）则返回空串。
-
-    先做 `is_uploaded_lesson` 短路，别直接 load_lesson —— 这个函数
-    **每轮都要调**，旧式课时走 load_lesson 会把整份 plan 加六个段落文件
-    全读一遍，只为了返回空串。
-    """
-    if not lesson_id or not is_uploaded_lesson(lesson_id):
-        return ""
-    lesson = load_lesson(lesson_id)
-    if not lesson:
-        return ""
-    points = lesson[0].get("knowledge_points") or []
-    if not points:
-        return ""
-    return "\n\n".join(format_knowledge_point(kp) for kp in points)
-
-
 def load_plan(state: ClassroomState) -> dict:
     """载入并校验课程计划（规范第 9 节校验清单）。仅首轮生效，之后幂等。
 
-    会话携带 learning_context（平台正式链路）时，课程计划由 course_adapter
-    从已发布知识包/课堂动态生成；否则读本地课时（lesson-data/... 或老师上传的课时）。
+    课程计划由 course_adapter 从平台已发布知识包/课堂动态生成；缺少平台上下文时拒绝开课。
     """
     if state.get("host_phase") != "uninitialized":
         return {}
 
-    from apps.integration import course_adapter as _course_adapter
-
-    plan = _course_adapter.load_plan_for_session(state)
+    from apps.integration import course_adapter
+    plan = course_adapter.load_plan_for_session(state)
     if plan is None:
-        lesson_id = state.get("lesson_id") or ""
-        lesson = load_lesson(lesson_id)
-        if lesson is None:
-            # student_status 必须一起置 ended —— 会话层靠 host_phase=="ending" 且
-            # student_status=="ended" 才把 lesson_status 落成 ended；少了它，这一节
-            # 会卡在 running，心跳线程永远在跑。
-            return {
-                "host_phase": "ending",
-                "student_status": "ended",
-                "reply_text": "开课失败：这门课的课时没有加载成功，请返回重新选择，或联系老师检查课程发布状态。",
-                "advance_reason": "课时不存在",
-            }
-        plan, _segments = lesson
-        problems = validate_plan(plan, uploaded=is_uploaded_lesson(lesson_id))
-    else:
-        # 平台发布的计划：段落/阶段来自已发布内容，不校验本地文件是否存在
-        problems = validate_plan(plan)
+        return {
+            "host_phase": "ending", "student_status": "ended",
+            "reply_text": "开课失败：未取得平台发布的课程内容，请从课程平台重新进入。",
+            "advance_reason": "平台课程上下文缺失",
+        }
+    problems = validate_plan(plan)
 
     # 启动校验（任一失败 → 拒绝开课）
     if problems:
@@ -777,14 +368,12 @@ def load_plan(state: ClassroomState) -> dict:
     try:
         ctx = state.get("platform") or {}
         if ctx.get("userId"):
-            from apps.integration import config as _cfg
             from apps.integration import persistence as _persist
-            if not _cfg.demo_mode():
-                kp_stars = _persist.read_mastery(
-                    user_id=str(ctx["userId"]),
-                    course_id=ctx.get("courseId") or "",
-                    publication_id=ctx.get("publicationId") or "",
-                )
+            kp_stars = _persist.read_mastery(
+                user_id=str(ctx["userId"]),
+                course_id=ctx.get("courseId") or "",
+                publication_id=ctx.get("publicationId") or "",
+            )
     except Exception:
         kp_stars = {}
 
@@ -812,7 +401,7 @@ def load_plan(state: ClassroomState) -> dict:
     }
 
 
-def validate_plan(plan: dict, *, uploaded: bool = False) -> list[str]:
+def validate_plan(plan: dict) -> list[str]:
     from apps.integration import prompt_context
 
     problems: list[str] = []
@@ -833,11 +422,6 @@ def validate_plan(plan: dict, *, uploaded: bool = False) -> list[str]:
             )
         if s.get("advance_when") not in ("either", "evidence", "budget"):
             problems.append(f"阶段 {stage_id} 的 advance_when 非法")
-        if stage_id in ("recap_discussion", "deep_inquiry", "class_discussion"):
-            # 平台发布的计划不依赖仓库内 stages/ 内容 —— 阶段提示词与题库
-            # 由已发布内容提供（见 prompt_context）。只有本地课时才必须落盘。
-            if not prompt_context.is_platform_plan(plan) and not (ROOT / "stages" / stage_id).is_dir():
-                problems.append(f"启用阶段 {stage_id} 缺 stages/ 目录")
     # advance_policy 的四个键在开课时被 load_plan 直接下标取用，
     # 少一个就是开课 KeyError —— 所以校验必须把它拦在写盘之前。
     policy = plan.get("advance_policy")
@@ -849,7 +433,7 @@ def validate_plan(plan: dict, *, uploaded: bool = False) -> list[str]:
             if key not in policy:
                 problems.append(f"advance_policy 缺 {key}")
     segments = plan.get("segments", [])
-    if uploaded:
+    if prompt_context.is_platform_plan(plan):
         # 上传的课时把段落内联在同一个文件里，所以不查磁盘上的段落文件。
         if not segments:
             problems.append("segments 不能为空")
@@ -864,7 +448,7 @@ def validate_plan(plan: dict, *, uploaded: bool = False) -> list[str]:
                 seen_seg.add(seg_id)
         declared: set[str] = set()
         for kp in plan.get("knowledge_points") or []:
-            kp_id = kp.get("kp_id")
+            kp_id = kp.get("id") or kp.get("kp_id")
             if not kp_id:
                 problems.append("有知识点缺 kp_id")
             elif kp_id in declared:
@@ -877,15 +461,7 @@ def validate_plan(plan: dict, *, uploaded: bool = False) -> list[str]:
                 if declared and kp_id not in declared:
                     problems.append(f"段落 {seg.get('id')} 引用了未声明的知识点 {kp_id}")
     else:
-        platform_plan = prompt_context.is_platform_plan(plan)
-        for seg in segments:
-            seg_id = seg.get("id")
-            if not seg_id:
-                problems.append("有段落缺 id")
-            # 平台发布的计划把段落内联在 plan 里（与上传课时同理），
-            # 本地 lesson-data/segments/ 下没有对应文件 —— 不能因此拒绝开课。
-            elif not platform_plan and not (SEGMENTS_DIR / f"{seg_id}.json").is_file():
-                problems.append(f"缺段落文件 {seg_id}.json")
+        problems.append("课程计划必须来自平台发布内容")
     return problems
 
 
@@ -917,53 +493,24 @@ def tick(state: ClassroomState) -> dict:
     }
 
 
-def _current_segment_text(state: ClassroomState) -> str:
-    """当前段落的原文。旧式课时散在 lesson-data/segments/，新式内联在课时文件里。"""
-    seg_id = state.get("active_segment_id")
-    if not seg_id:
-        return ""
-    lesson_id = state.get("lesson_id") or ""
-    if not is_uploaded_lesson(lesson_id):
-        return _read(f"lesson-data/segments/{seg_id}.json")
-    lesson = load_lesson(lesson_id)
-    for seg in (lesson[1] if lesson else []):
-        if seg.get("id") == seg_id or seg.get("segment_id") == seg_id:
-            return json.dumps(seg, ensure_ascii=False, indent=2)
-    return ""
-
-
 def load_context(state: ClassroomState) -> dict:
-    """分层装配上下文（规范第 4 节）。空壳阶段注入占位提示，不报错；
-    进入复述/探究阶段时按兜底链组装问题队列。"""
+    """装配平台已发布内容与当前阶段状态；复述/探究问题由平台内容生成。"""
     phase = state.get("host_phase")
     parts: list[str] = []
 
     from apps.integration import prompt_context
 
-    # 知识层。平台链路优先：会话带已发布内容时，事实来源是那份内容本身
-    # （tutor_context 只含已发布事实，且不外泄），不再叠加本地规则文件。
+    # 知识层只读取平台已发布内容，不叠加仓库内的旧课程规则文件。
     platform_context = prompt_context.tutor_context(state)
-    if platform_context:
-        parts.append("[已发布课程上下文]\n" + platform_context)
-    else:
-        # 规则层：KNOWLEDGE-BASE.md 是**旧课时**的知识点目录。上传的课时有自己的
-        # [本课知识点]，再塞一份别的课的知识点进上下文只会互相干扰（这个仓库有过
-        # 模型在讲解课上编出无关概念的记录，见下面 anchor 那段注释）。
-        if not is_uploaded_lesson(state.get("lesson_id") or ""):
-            parts.append("[知识库]\n" + _read("rules/KNOWLEDGE-BASE.md"))
-        # 课时层：老师经 POST /api/teacher/lesson 传入的知识点。
-        # 每轮从磁盘读而不是塞进 session state —— session state 会被
-        # `s["state"] = st` 整体替换，挂在外面的字段容易丢；而且 load_context
-        # 本来每轮就 _read 一遍，行为一致。旧式课时没有这段，返回空串。
-        if kp_block := lesson_knowledge_block(state.get("lesson_id") or ""):
-            parts.append("[本课知识点]\n" + kp_block)
+    if not platform_context:
+        raise ValueError("缺少平台已发布课程上下文")
+    parts.append("[已发布课程上下文]\n" + platform_context)
     # 计划层（仅当前阶段配置）
     plan = state.get("lesson_plan") or {}
     for s in plan.get("stages", []):
         if s["id"] == phase:
             parts.append(f"[阶段计划] {s}")
-    # 课堂层：当前 segment + 绑定的 KP 全文。
-    # 平台计划优先取 plan 里的段落（已发布内容），本地课时才回落到磁盘段落文件。
+    # 课堂层：从平台计划取当前段落及绑定的知识点。
     if state.get("active_segment_id"):
         platform_segment = prompt_context.segment_by_id(
             plan, state["active_segment_id"]
@@ -972,23 +519,7 @@ def load_context(state: ClassroomState) -> dict:
             parts.append(
                 "[当前段落]\n" + json.dumps(platform_segment, ensure_ascii=False)
             )
-        else:
-            seg_text = _current_segment_text(state)
-            if seg_text:
-                parts.append("[当前段落]\n" + seg_text)
-    # 阶段层（只有复述/探究/讨论三幕有；空壳 → 占位提示）
-    # 复述阶段只读 prompt.md（questions.md / rubric.md 已删）；
-    # 探究 / 讨论阶段仍读 questions.md + prompt.md + rubric.md。
-    # 平台链路下这三阶段的内容由已发布内容提供，不读仓库内阶段文件。
-    if phase in ("recap_discussion", "deep_inquiry", "class_discussion") and not platform_context:
-        stage_files = (
-            ("prompt.md",)
-            if phase == "recap_discussion"
-            else ("questions.md", "prompt.md", "rubric.md")
-        )
-        for f in stage_files:
-            text = _read(f"stages/{phase}/{f}")
-            parts.append(f"[{f}]\n" + (text.strip() or "[本阶段内容未配置]"))
+    # 阶段提示由已发布内容提供，不读仓库内的阶段模板文件。
     # 档案层
     parts.append("[掌握档案]\n" + json.dumps(state.get("kp_stars", {}), ensure_ascii=False))
 
@@ -1008,12 +539,7 @@ def load_context(state: ClassroomState) -> dict:
     elif phase == "guided_learning" and not state.get("unresolved"):
         # 讲解阶段的"未关闭目标" = 全部段落涉及的 KP（讲过 ≠ 关闭）
         kps: list[str] = []
-        if prompt_context.is_platform_plan(plan):
-            # 平台计划的段落在 plan 里，没有本地段落文件可读
-            segments = plan.get("segments", [])
-        else:
-            lesson = load_lesson(state.get("lesson_id") or "")
-            segments = lesson[1] if lesson else []
+        segments = plan.get("segments", [])
         for seg in segments:
             kps.extend(seg.get("knowledge_point_ids", []))
         updates["unresolved"] = list(dict.fromkeys(kps))
@@ -1058,24 +584,12 @@ def _segments(plan: dict) -> list[dict]:
 
 
 def _segment_detail(plan: dict, seg_id: str | None) -> dict | None:
-    """按 id 取段落详情。平台计划的段落内联在 plan 里，
-    旧式课时散在 lesson-data/segments/，新式内联在课时文件里。"""
+    """按 id 从平台发布计划中取段落详情。"""
     if not seg_id:
         return None
     from apps.integration import prompt_context
 
-    # 平台计划：段落是已发布内容的一部分，不在本地任何文件里
-    platform_segment = prompt_context.segment_by_id(plan, seg_id)
-    if platform_segment:
-        return platform_segment
-    lesson_id = plan.get("lesson_id") or ""
-    if not is_uploaded_lesson(lesson_id):
-        return _read_json(SEGMENTS_DIR / f"{seg_id}.json")
-    lesson = load_lesson(lesson_id)
-    for seg in (lesson[1] if lesson else []):
-        if seg.get("id") == seg_id or seg.get("segment_id") == seg_id:
-            return seg
-    return None
+    return prompt_context.segment_by_id(plan, seg_id)
 
 
 def _segment_at(plan: dict, cursor: int) -> dict | None:
@@ -1204,9 +718,8 @@ def llm_polish(state: ClassroomState, directive: str) -> str | None:
 def _lesson_kp_catalog(state: ClassroomState) -> list[tuple[str, str]]:
     """本节课的知识点目录（保序去重）：[(kp_id, 标题), …]。
 
-    顺序 = 课时声明的知识点在前，段落里出现的知识点按段落顺序补在后。
-    平台计划的知识点内联在 plan 里；上传/旧式课时从课时文件读段落；
-    标题统一走 kp_title（上传课时 > 平台注册表 > KNOWLEDGE-BASE.md）。
+    平台化后知识点只来自平台下发的教学计划（声明在前、段落补充在后）；
+    标题统一走 kp_title（平台注册表 > KNOWLEDGE-BASE.md）。
     """
     plan = state.get("lesson_plan") or {}
     ids: list[str] = []
@@ -1214,13 +727,7 @@ def _lesson_kp_catalog(state: ClassroomState) -> list[tuple[str, str]]:
         kid = str(kp.get("kp_id") or kp.get("id") or "").strip()
         if kid:
             ids.append(kid)
-    from apps.integration import prompt_context
-    if prompt_context.is_platform_plan(plan):
-        segments = plan.get("segments", [])
-    else:
-        lesson = load_lesson(state.get("lesson_id") or "")
-        segments = lesson[1] if lesson else []
-    for seg in segments:
+    for seg in plan.get("segments") or []:
         for kid in seg.get("knowledge_point_ids") or []:
             kid = str(kid).strip()
             if kid:
@@ -2778,11 +2285,7 @@ def _assess_mastery_with_llm(state: ClassroomState) -> tuple[dict[str, int], lis
         if kid:
             kp_ids.append(str(kid))
     from apps.integration import prompt_context
-    if prompt_context.is_platform_plan(plan):
-        segments = plan.get("segments", [])
-    else:
-        lesson = load_lesson(state.get("lesson_id") or "")
-        segments = lesson[1] if lesson else []
+    segments = plan.get("segments", [])
     for seg in segments:
         for kid in seg.get("knowledge_point_ids") or []:
             kp_ids.append(str(kid))
@@ -2980,8 +2483,7 @@ def build_graph(checkpointer=None):
 # 会话层接口：每轮注入 now + 学生消息，同一个 thread_id 续上
 # ═══════════════════════════════════════════════════════════════
 
-def initial_state(session_id: str, student_id: str = "student-001",
-                  lesson_id: str = "ch3-process-scheduling") -> dict:
+def initial_state(session_id: str, student_id: str = "", lesson_id: str = "") -> dict:
     """新会话的首轮要传完整初始 state（后续轮从 checkpoint 恢复）。"""
     return {
         "session_id": session_id,

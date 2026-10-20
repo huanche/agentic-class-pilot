@@ -23,6 +23,53 @@ import agent
 FIXTURE = Path(__file__).resolve().parent.parent / "tests" / "fixtures" \
     / "platform-learning-context-v1.json"
 
+CH3_FIXTURE = Path(__file__).resolve().parent.parent / "tests" / "fixtures" \
+    / "platform-learning-context-ch3.json"
+CH3_LESSON_ID = "lesson-ch3sched"
+
+
+def begin_platform_lesson(testcase, hint: str) -> str:
+    """平台桩开课（学生端平台化后的测试底座）。
+
+    mock launch 验签与 learning-context 拉取（ch3 夹具，6 个知识点、
+    标题与旧演示课一致），start → begin。uid 掺唯一后缀保证确定性派生的
+    会话号（plat-*）互不串台；返回真实 sid 并注册好清理。
+    """
+    import uuid as _uuid
+    from apps.integration import launch_context, persistence, platform_client
+
+    fixture = json.loads(CH3_FIXTURE.read_text(encoding="utf-8"))
+    uid = f"{fixture['userId']}-{hint}-{_uuid.uuid4().hex[:6]}"
+    payload = {"uid": uid, "cid": fixture["courseId"], "rid": None,
+               "pub": {"publicationId": fixture["publication"]["id"],
+                       "version": fixture["publication"]["version"]}}
+    with mock.patch.object(launch_context, "verify_launch_token",
+                           return_value=payload), \
+            mock.patch.object(platform_client, "fetch_learning_context",
+                              return_value=fixture), \
+            mock.patch.dict(os.environ, {
+                "PLATFORM_AUTH_URL": "http://127.0.0.1:9",
+                "STUDENT_SERVICE_KEY": "test-key",
+            }):
+        started = testcase.client.post("/api/session/start", json={
+            "launch_token": "test.token.sig", "lesson_id": CH3_LESSON_ID,
+        })
+    testcase.assertEqual(started.status_code, 200, started.text)
+    sid = started.json()["session_id"]
+
+    def _teardown() -> None:
+        session = server.SESSIONS.pop(sid, None)
+        if session:
+            session["stop"].set()
+        server._path(sid).unlink(missing_ok=True)
+        for name in ("events", "report-versions"):
+            persistence._demo_path(name, sid).unlink(missing_ok=True)
+    testcase.addCleanup(_teardown)
+
+    begun = testcase.client.post(f"/api/session/{sid}/begin")
+    testcase.assertEqual(begun.status_code, 200, begun.text)
+    return sid
+
 
 def tutoring_off():
     """全局开关关闭：回到原有编排（复述→探究→讨论）。"""
@@ -36,7 +83,7 @@ class TutoringFlowTest(unittest.TestCase):
     def setUp(self) -> None:
         # 自带确定性环境：不依赖调用方把 AGENT_LLM_API_KEY 清空，
         # 开场骨架的断言才能稳定。
-        patcher = mock.patch.dict(os.environ, {"AGENT_LLM_API_KEY": ""})
+        patcher = mock.patch.dict(os.environ, {"AGENT_LLM_API_KEY": "", "STUDENT_DEMO_MODE": "true"})
         patcher.start()
         self.addCleanup(patcher.stop)
         self.client = TestClient(server.app)
@@ -51,16 +98,8 @@ class TutoringFlowTest(unittest.TestCase):
         server._path(self.sid).unlink(missing_ok=True)
 
     def _begin_demo_lesson(self) -> None:
-        """开一节内置演示课（ch3 处理机调度，video 模式）并按起课铃。"""
-        lesson_id = self.client.get(
-            "/api/student/courses").json()["courses"][0]["lessons"][0]["lessonId"]
-        started = self.client.post("/api/session/start", json={
-            "session_id": self.sid, "lesson_id": lesson_id,
-            "student_id": self.student_id,
-        })
-        self.assertEqual(started.status_code, 200, started.text)
-        begun = self.client.post(f"/api/session/{self.sid}/begin")
-        self.assertEqual(begun.status_code, 200, begun.text)
+        """平台桩开课（ch3 夹具：6 个知识点，标题同旧演示课）。"""
+        self.sid = begin_platform_lesson(self, type(self).__name__)
 
     # ── 开关开启（默认）：视频完 → 辅导 ────────────────────
 
@@ -164,8 +203,9 @@ class TutoringFlowTest(unittest.TestCase):
             state = self.client.get(f"/api/session/{self.sid}/state").json()
 
         self.assertEqual(done.json()["phase"], "recap_discussion")
+        # 平台计划（ch3 夹具）的旧编排是 复述→探究：开关关掉回到它
         self.assertIn("deep_inquiry", state["remaining_stages"])
-        self.assertIn("class_discussion", state["remaining_stages"])
+        self.assertNotIn("tutoring", state["remaining_stages"])
 
     # ── 骨架出结构、LLM 只润色 ────────────────────────────
 
@@ -201,7 +241,7 @@ class PlatformPlanTutoringTest(unittest.TestCase):
     """
 
     def test_platform_plan_redirects_to_tutoring(self) -> None:
-        patcher = mock.patch.dict(os.environ, {"AGENT_LLM_API_KEY": ""})
+        patcher = mock.patch.dict(os.environ, {"AGENT_LLM_API_KEY": "", "STUDENT_DEMO_MODE": "true"})
         patcher.start()
         self.addCleanup(patcher.stop)
 
@@ -236,7 +276,7 @@ class TutoringIntentTimeTest(unittest.TestCase):
     student_id = "test-tutoring-intent-student"
 
     def setUp(self) -> None:
-        patcher = mock.patch.dict(os.environ, {"AGENT_LLM_API_KEY": ""})
+        patcher = mock.patch.dict(os.environ, {"AGENT_LLM_API_KEY": "", "STUDENT_DEMO_MODE": "true"})
         patcher.start()
         self.addCleanup(patcher.stop)
         self.client = TestClient(server.app)
@@ -251,15 +291,7 @@ class TutoringIntentTimeTest(unittest.TestCase):
         server._path(self.sid).unlink(missing_ok=True)
 
     def _begin_demo_lesson(self) -> None:
-        lesson_id = self.client.get(
-            "/api/student/courses").json()["courses"][0]["lessons"][0]["lessonId"]
-        started = self.client.post("/api/session/start", json={
-            "session_id": self.sid, "lesson_id": lesson_id,
-            "student_id": self.student_id,
-        })
-        self.assertEqual(started.status_code, 200, started.text)
-        begun = self.client.post(f"/api/session/{self.sid}/begin")
-        self.assertEqual(begun.status_code, 200, begun.text)
+        self.sid = begin_platform_lesson(self, type(self).__name__)
 
     def _enter_tutoring(self) -> None:
         self._begin_demo_lesson()
@@ -437,7 +469,7 @@ class TutoringEvidenceMasteryTest(unittest.TestCase):
     student_id = "test-tutoring-mastery-student"
 
     def setUp(self) -> None:
-        patcher = mock.patch.dict(os.environ, {"AGENT_LLM_API_KEY": ""})
+        patcher = mock.patch.dict(os.environ, {"AGENT_LLM_API_KEY": "", "STUDENT_DEMO_MODE": "true"})
         patcher.start()
         self.addCleanup(patcher.stop)
         self.client = TestClient(server.app)
@@ -452,15 +484,7 @@ class TutoringEvidenceMasteryTest(unittest.TestCase):
         server._path(self.sid).unlink(missing_ok=True)
 
     def _begin_demo_lesson(self) -> None:
-        lesson_id = self.client.get(
-            "/api/student/courses").json()["courses"][0]["lessons"][0]["lessonId"]
-        started = self.client.post("/api/session/start", json={
-            "session_id": self.sid, "lesson_id": lesson_id,
-            "student_id": self.student_id,
-        })
-        self.assertEqual(started.status_code, 200, started.text)
-        begun = self.client.post(f"/api/session/{self.sid}/begin")
-        self.assertEqual(begun.status_code, 200, begun.text)
+        self.sid = begin_platform_lesson(self, type(self).__name__)
 
     def _enter_tutoring(self) -> None:
         self._begin_demo_lesson()
@@ -881,15 +905,7 @@ class TutoringEndFeedbackTest(unittest.TestCase):
         server._path(self.sid).unlink(missing_ok=True)
 
     def _begin_demo_lesson(self) -> None:
-        lesson_id = self.client.get(
-            "/api/student/courses").json()["courses"][0]["lessons"][0]["lessonId"]
-        started = self.client.post("/api/session/start", json={
-            "session_id": self.sid, "lesson_id": lesson_id,
-            "student_id": self.student_id,
-        })
-        self.assertEqual(started.status_code, 200, started.text)
-        begun = self.client.post(f"/api/session/{self.sid}/begin")
-        self.assertEqual(begun.status_code, 200, begun.text)
+        self.sid = begin_platform_lesson(self, type(self).__name__)
 
     def _enter_tutoring(self) -> None:
         self._begin_demo_lesson()
@@ -967,15 +983,7 @@ class TutoringResumeTest(unittest.TestCase):
         server._path(self.sid).unlink(missing_ok=True)
 
     def _begin_demo_lesson(self) -> None:
-        lesson_id = self.client.get(
-            "/api/student/courses").json()["courses"][0]["lessons"][0]["lessonId"]
-        started = self.client.post("/api/session/start", json={
-            "session_id": self.sid, "lesson_id": lesson_id,
-            "student_id": self.student_id,
-        })
-        self.assertEqual(started.status_code, 200, started.text)
-        begun = self.client.post(f"/api/session/{self.sid}/begin")
-        self.assertEqual(begun.status_code, 200, begun.text)
+        self.sid = begin_platform_lesson(self, type(self).__name__)
 
     def _enter_tutoring(self) -> None:
         self._begin_demo_lesson()
@@ -1098,7 +1106,11 @@ class TutoringResumeTest(unittest.TestCase):
         with mock.patch.object(launch_context, "verify_launch_token",
                                return_value=payload), \
                 mock.patch.object(platform_client, "fetch_learning_context",
-                                  return_value=fixture):
+                                  return_value=fixture), \
+                mock.patch.dict(os.environ, {
+                    "PLATFORM_AUTH_URL": "http://127.0.0.1:9",
+                    "STUDENT_SERVICE_KEY": "test-key",
+                }):
             first = fake_start(lesson_id=lesson_id)
             sid1 = first.json()["session_id"]
             server.SESSIONS.pop(sid1, None)   # 换设备：无内存、无 localStorage

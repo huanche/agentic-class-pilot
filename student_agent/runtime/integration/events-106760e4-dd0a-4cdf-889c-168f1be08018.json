@@ -1,0 +1,83 @@
+[
+ {
+  "user_id": "e2e-012060584534",
+  "course_id": "ch3-sched-course-e2e",
+  "publication_id": "ch3sched",
+  "classroom_id": null,
+  "event_type": "session_started",
+  "event_id": "session_started-1792501206531",
+  "payload": {},
+  "recorded_at": 1792501206531
+ },
+ {
+  "user_id": "e2e-012060584534",
+  "course_id": "ch3-sched-course-e2e",
+  "publication_id": "ch3sched",
+  "classroom_id": null,
+  "event_type": "lesson_began",
+  "event_id": "lesson_began-1792501206634",
+  "payload": {},
+  "recorded_at": 1792501206634
+ },
+ {
+  "user_id": "e2e-012060584534",
+  "course_id": "ch3-sched-course-e2e",
+  "publication_id": "ch3sched",
+  "classroom_id": null,
+  "event_type": "media_done",
+  "event_id": "media_done-__complete__",
+  "payload": {
+   "sceneId": "__complete__",
+   "segmentId": null
+  },
+  "recorded_at": 1792501207619
+ },
+ {
+  "user_id": "e2e-012060584534",
+  "course_id": "ch3-sched-course-e2e",
+  "publication_id": "ch3sched",
+  "classroom_id": null,
+  "event_type": "lesson_ended",
+  "event_id": "lesson_ended-1792501209043",
+  "payload": {},
+  "recorded_at": 1792501209043
+ },
+ {
+  "user_id": "e2e-012060584534",
+  "course_id": "ch3-sched-course-e2e",
+  "publication_id": "ch3sched",
+  "classroom_id": null,
+  "event_type": "student_message",
+  "event_id": "student_message-1792501209073",
+  "payload": {
+   "phase": "ending"
+  },
+  "recorded_at": 1792501209073
+ },
+ {
+  "user_id": "e2e-012060584534",
+  "course_id": "ch3-sched-course-e2e",
+  "publication_id": "ch3sched",
+  "classroom_id": null,
+  "event_type": "tutoring_feedback",
+  "event_id": "tutoring_feedback-1792501209075",
+  "payload": {
+   "version": 1,
+   "trigger": "今天就到这",
+   "actual_minutes": 0
+  },
+  "recorded_at": 1792501209075
+ },
+ {
+  "user_id": "e2e-012060584534",
+  "course_id": "ch3-sched-course-e2e",
+  "publication_id": "ch3sched",
+  "classroom_id": null,
+  "event_type": "student_message",
+  "event_id": "student_message-1792501209355",
+  "payload": {
+   "phase": "tutoring"
+  },
+  "recorded_at": 1792501209355
+ }
+]

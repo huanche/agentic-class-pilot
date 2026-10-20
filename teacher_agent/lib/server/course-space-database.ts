@@ -374,7 +374,7 @@ export async function upsertCourseArtifactDatabaseRecord(artifact: CourseArtifac
 
 export async function upsertClassroomDatabaseRecord(
   classroom: PersistedClassroomData,
-  links: { courseId?: string; artifactId?: string } = {},
+  links: { courseId?: string; artifactId?: string; browserSnapshot?: boolean } = {},
 ) {
   const createdAt = Date.parse(classroom.createdAt) || Date.now();
   return withDatabase(async (client) => client.query(
@@ -384,9 +384,14 @@ export async function upsertClassroomDatabaseRecord(
      ON CONFLICT (id) DO UPDATE SET
        course_id=COALESCE(EXCLUDED.course_id,mentra_classrooms.course_id),
        artifact_id=COALESCE(EXCLUDED.artifact_id,mentra_classrooms.artifact_id),
-       stage=EXCLUDED.stage,scenes=EXCLUDED.scenes,payload=EXCLUDED.payload,updated_at=EXCLUDED.updated_at`,
+       stage=EXCLUDED.stage,scenes=EXCLUDED.scenes,payload=EXCLUDED.payload,updated_at=EXCLUDED.updated_at
+     WHERE NOT $9::boolean
+       OR COALESCE(mentra_classrooms.stage #>> '{generationPlan,serverJobId}', '') = ''
+       OR (mentra_classrooms.stage #>> '{generationPlan,serverJobId}' = EXCLUDED.stage #>> '{generationPlan,serverJobId}'
+         AND mentra_classrooms.stage #>> '{generationPlan,complete}' = 'true'
+         AND EXCLUDED.stage #>> '{generationPlan,complete}' = 'true')`,
     [classroom.id, links.courseId ?? null, links.artifactId ?? null,
-      JSON.stringify(classroom.stage), JSON.stringify(classroom.scenes), JSON.stringify(classroom), createdAt, Date.now()],
+      JSON.stringify(classroom.stage), JSON.stringify(classroom.scenes), JSON.stringify(classroom), createdAt, Date.now(), links.browserSnapshot === true],
   ));
 }
 

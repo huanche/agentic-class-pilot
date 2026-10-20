@@ -23,15 +23,27 @@ export default defineConfig({
     launchOptions,
     trace: "retain-on-failure"
   },
-  webServer: {
-    command: "python ../apps/start.py --no-browser --port 8877",
-    url: "http://127.0.0.1:8877/api/student/courses",
-    reuseExistingServer: false,
-    timeout: 30_000,
-    env: {
-      ...process.env,
-      AGENT_TICK_SECONDS: "3600",
-      AGENT_LLM_API_KEY: ""
-    }
-  }
+  webServer: [
+    {
+      // 平台桩：替平台响应学生端的 learning-context / learning-progress
+      command: "node tests/e2e/platform-stub.mjs",
+      url: "http://127.0.0.1:8878/healthz",
+      reuseExistingServer: false,
+      timeout: 15_000,
+    },
+    {
+      command: "python ../apps/start.py --no-browser --port 8877",
+      url: "http://127.0.0.1:8877/app",
+      reuseExistingServer: false,
+      timeout: 30_000,
+      env: {
+        ...process.env,
+        AGENT_TICK_SECONDS: "3600",
+        AGENT_LLM_API_KEY: "",
+        STUDENT_DEMO_MODE: "true",
+        PLATFORM_AUTH_URL: "http://127.0.0.1:8878/api/v1",
+        STUDENT_SERVICE_KEY: "e2e-stub-key",
+      },
+    },
+  ],
 });

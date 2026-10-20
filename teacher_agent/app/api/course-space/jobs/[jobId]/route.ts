@@ -1,4 +1,4 @@
-import { type NextRequest } from 'next/server';
+import { after, type NextRequest } from 'next/server';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import {
   isStaleActiveJob,
@@ -40,8 +40,19 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ jobId
   const { jobId } = await context.params;
   const job = await readCourseJob(jobId);
   if (!job) return apiError('INVALID_REQUEST', 404, '生成任务不存在');
-  if (!canReadJob(req, job.teacherId)) return apiError('INVALID_REQUEST', 403, '无权取消此任务');
+  if (!canReadJob(req, job.teacherId)) return apiError('INVALID_REQUEST', 403, '无权操作此任务');
   const body = await req.json();
+  if (body.action === 'retry' && job.backgroundGeneration) {
+    const { retryBackgroundCoursewareJob, runBackgroundCoursewareJob } =
+      await import('@/lib/server/background-courseware');
+    try {
+      const resumed = await retryBackgroundCoursewareJob(jobId);
+      after(() => runBackgroundCoursewareJob(jobId));
+      return apiSuccess({ job: resumed, done: false });
+    } catch (error) {
+      return apiError('INVALID_REQUEST', 400, error instanceof Error ? error.message : '重试失败');
+    }
+  }
   if (body.action !== 'cancel' || !job.backgroundGeneration)
     return apiError('INVALID_REQUEST', 400, '此任务不支持该操作');
   const { cancelBackgroundCoursewareJob } = await import('@/lib/server/background-courseware');

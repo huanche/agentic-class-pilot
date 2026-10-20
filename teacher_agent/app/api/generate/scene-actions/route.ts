@@ -210,6 +210,7 @@ export async function POST(req: NextRequest) {
       durationFeedback,
     );
     const actions = await generateSceneActions(actionOutline, generationContent, aiCall, {
+      logger: log,
       ctx,
       agents,
       userProfile,
@@ -253,7 +254,8 @@ export async function POST(req: NextRequest) {
     return apiSuccess({ scene, previousSpeeches: outputPreviousSpeeches });
   } catch (error) {
     if (error instanceof FocusSpeechAlignmentError) {
-      return apiError('FOCUS_SPEECH_ALIGNMENT_FAILED', 422, error.message);
+      log.warn(`Focus/speech validation rejected page "${outlineTitle}":`, error.issues);
+      return apiError('FOCUS_SPEECH_ALIGNMENT_FAILED', 422, error.message, error.issues.join('\n'));
     }
     log.error(
       `Scene actions generation failed [scene="${outlineTitle ?? 'unknown'}", model=${resolvedModelString ?? 'unknown'}]:`,

@@ -1,0 +1,452 @@
+[
+ {
+  "user_id": "u-cross-device",
+  "course_id": "8215ad2e-6d1f-411e-9290-eb288cfdbde0",
+  "publication_id": "pub-1",
+  "classroom_id": "sandplay-e2e-v1",
+  "event_type": "session_started",
+  "event_id": "session_started-1792436951238",
+  "payload": {},
+  "recorded_at": 1792436951238
+ },
+ {
+  "user_id": "u-cross-device",
+  "course_id": "8215ad2e-6d1f-411e-9290-eb288cfdbde0",
+  "publication_id": "pub-1",
+  "classroom_id": "sandplay-e2e-v1",
+  "event_type": "session_started",
+  "event_id": "session_started-1792436959778",
+  "payload": {},
+  "recorded_at": 1792436959778
+ },
+ {
+  "user_id": "u-cross-device",
+  "course_id": "8215ad2e-6d1f-411e-9290-eb288cfdbde0",
+  "publication_id": "pub-1",
+  "classroom_id": "sandplay-e2e-v1",
+  "event_type": "session_started",
+  "event_id": "session_started-1792436968568",
+  "payload": {},
+  "recorded_at": 1792436968568
+ },
+ {
+  "user_id": "u-cross-device",
+  "course_id": "8215ad2e-6d1f-411e-9290-eb288cfdbde0",
+  "publication_id": "pub-1",
+  "classroom_id": "sandplay-e2e-v1",
+  "event_type": "session_started",
+  "event_id": "session_started-1792436977068",
+  "payload": {},
+  "recorded_at": 1792436977068
+ },
+ {
+  "user_id": "u-cross-device",
+  "course_id": "8215ad2e-6d1f-411e-9290-eb288cfdbde0",
+  "publication_id": "pub-1",
+  "classroom_id": "sandplay-e2e-v1",
+  "event_type": "session_started",
+  "event_id": "session_started-1792436990748",
+  "payload": {},
+  "recorded_at": 1792436990748
+ },
+ {
+  "user_id": "u-cross-device",
+  "course_id": "8215ad2e-6d1f-411e-9290-eb288cfdbde0",
+  "publication_id": "pub-1",
+  "classroom_id": "sandplay-e2e-v1",
+  "event_type": "session_started",
+  "event_id": "session_started-1792437012360",
+  "payload": {},
+  "recorded_at": 1792437012360
+ },
+ {
+  "user_id": "u-cross-device",
+  "course_id": "8215ad2e-6d1f-411e-9290-eb288cfdbde0",
+  "publication_id": "pub-1",
+  "classroom_id": "sandplay-e2e-v1",
+  "event_type": "session_started",
+  "event_id": "session_started-1792437012385",
+  "payload": {},
+  "recorded_at": 1792437012385
+ },
+ {
+  "user_id": "u-cross-device",
+  "course_id": "8215ad2e-6d1f-411e-9290-eb288cfdbde0",
+  "publication_id": "pub-1",
+  "classroom_id": "sandplay-e2e-v1",
+  "event_type": "session_started",
+  "event_id": "session_started-1792438012283",
+  "payload": {},
+  "recorded_at": 1792438012283
+ },
+ {
+  "user_id": "u-cross-device",
+  "course_id": "8215ad2e-6d1f-411e-9290-eb288cfdbde0",
+  "publication_id": "pub-1",
+  "classroom_id": "sandplay-e2e-v1",
+  "event_type": "session_started",
+  "event_id": "session_started-1792438012349",
+  "payload": {},
+  "recorded_at": 1792438012349
+ },
+ {
+  "user_id": "u-cross-device",
+  "course_id": "8215ad2e-6d1f-411e-9290-eb288cfdbde0",
+  "publication_id": "pub-1",
+  "classroom_id": "sandplay-e2e-v1",
+  "event_type": "session_started",
+  "event_id": "session_started-1792438120150",
+  "payload": {},
+  "recorded_at": 1792438120150
+ },
+ {
+  "user_id": "u-cross-device",
+  "course_id": "8215ad2e-6d1f-411e-9290-eb288cfdbde0",
+  "publication_id": "pub-1",
+  "classroom_id": "sandplay-e2e-v1",
+  "event_type": "session_started",
+  "event_id": "session_started-1792438120162",
+  "payload": {},
+  "recorded_at": 1792438120162
+ },
+ {
+  "user_id": "u-cross-device",
+  "course_id": "8215ad2e-6d1f-411e-9290-eb288cfdbde0",
+  "publication_id": "pub-1",
+  "classroom_id": "sandplay-e2e-v1",
+  "event_type": "session_started",
+  "event_id": "session_started-1792471449255",
+  "payload": {},
+  "recorded_at": 1792471449255
+ },
+ {
+  "user_id": "u-cross-device",
+  "course_id": "8215ad2e-6d1f-411e-9290-eb288cfdbde0",
+  "publication_id": "pub-1",
+  "classroom_id": "sandplay-e2e-v1",
+  "event_type": "session_started",
+  "event_id": "session_started-1792471449297",
+  "payload": {},
+  "recorded_at": 1792471449297
+ },
+ {
+  "user_id": "u-cross-device",
+  "course_id": "8215ad2e-6d1f-411e-9290-eb288cfdbde0",
+  "publication_id": "pub-1",
+  "classroom_id": "sandplay-e2e-v1",
+  "event_type": "session_started",
+  "event_id": "session_started-1792472302065",
+  "payload": {},
+  "recorded_at": 1792472302065
+ },
+ {
+  "user_id": "u-cross-device",
+  "course_id": "8215ad2e-6d1f-411e-9290-eb288cfdbde0",
+  "publication_id": "pub-1",
+  "classroom_id": "sandplay-e2e-v1",
+  "event_type": "session_started",
+  "event_id": "session_started-1792472302107",
+  "payload": {},
+  "recorded_at": 1792472302107
+ },
+ {
+  "user_id": "u-cross-device",
+  "course_id": "8215ad2e-6d1f-411e-9290-eb288cfdbde0",
+  "publication_id": "pub-1",
+  "classroom_id": "sandplay-e2e-v1",
+  "event_type": "session_started",
+  "event_id": "session_started-1792472975144",
+  "payload": {},
+  "recorded_at": 1792472975144
+ },
+ {
+  "user_id": "u-cross-device",
+  "course_id": "8215ad2e-6d1f-411e-9290-eb288cfdbde0",
+  "publication_id": "pub-1",
+  "classroom_id": "sandplay-e2e-v1",
+  "event_type": "session_started",
+  "event_id": "session_started-1792472975181",
+  "payload": {},
+  "recorded_at": 1792472975181
+ },
+ {
+  "user_id": "u-cross-device",
+  "course_id": "8215ad2e-6d1f-411e-9290-eb288cfdbde0",
+  "publication_id": "pub-1",
+  "classroom_id": "sandplay-e2e-v1",
+  "event_type": "session_started",
+  "event_id": "session_started-1792473462306",
+  "payload": {},
+  "recorded_at": 1792473462306
+ },
+ {
+  "user_id": "u-cross-device",
+  "course_id": "8215ad2e-6d1f-411e-9290-eb288cfdbde0",
+  "publication_id": "pub-1",
+  "classroom_id": "sandplay-e2e-v1",
+  "event_type": "session_started",
+  "event_id": "session_started-1792473462322",
+  "payload": {},
+  "recorded_at": 1792473462322
+ },
+ {
+  "user_id": "u-cross-device",
+  "course_id": "8215ad2e-6d1f-411e-9290-eb288cfdbde0",
+  "publication_id": "pub-1",
+  "classroom_id": "sandplay-e2e-v1",
+  "event_type": "session_started",
+  "event_id": "session_started-1792473669733",
+  "payload": {},
+  "recorded_at": 1792473669733
+ },
+ {
+  "user_id": "u-cross-device",
+  "course_id": "8215ad2e-6d1f-411e-9290-eb288cfdbde0",
+  "publication_id": "pub-1",
+  "classroom_id": "sandplay-e2e-v1",
+  "event_type": "session_started",
+  "event_id": "session_started-1792473669741",
+  "payload": {},
+  "recorded_at": 1792473669741
+ },
+ {
+  "user_id": "u-cross-device",
+  "course_id": "8215ad2e-6d1f-411e-9290-eb288cfdbde0",
+  "publication_id": "pub-1",
+  "classroom_id": "sandplay-e2e-v1",
+  "event_type": "session_started",
+  "event_id": "session_started-1792473932700",
+  "payload": {},
+  "recorded_at": 1792473932700
+ },
+ {
+  "user_id": "u-cross-device",
+  "course_id": "8215ad2e-6d1f-411e-9290-eb288cfdbde0",
+  "publication_id": "pub-1",
+  "classroom_id": "sandplay-e2e-v1",
+  "event_type": "session_started",
+  "event_id": "session_started-1792473932741",
+  "payload": {},
+  "recorded_at": 1792473932741
+ },
+ {
+  "user_id": "u-cross-device",
+  "course_id": "8215ad2e-6d1f-411e-9290-eb288cfdbde0",
+  "publication_id": "pub-1",
+  "classroom_id": "sandplay-e2e-v1",
+  "event_type": "session_started",
+  "event_id": "session_started-1792474022820",
+  "payload": {},
+  "recorded_at": 1792474022820
+ },
+ {
+  "user_id": "u-cross-device",
+  "course_id": "8215ad2e-6d1f-411e-9290-eb288cfdbde0",
+  "publication_id": "pub-1",
+  "classroom_id": "sandplay-e2e-v1",
+  "event_type": "session_started",
+  "event_id": "session_started-1792474022900",
+  "payload": {},
+  "recorded_at": 1792474022900
+ },
+ {
+  "user_id": "u-cross-device",
+  "course_id": "8215ad2e-6d1f-411e-9290-eb288cfdbde0",
+  "publication_id": "pub-1",
+  "classroom_id": "sandplay-e2e-v1",
+  "event_type": "session_started",
+  "event_id": "session_started-1792475942149",
+  "payload": {},
+  "recorded_at": 1792475942149
+ },
+ {
+  "user_id": "u-cross-device",
+  "course_id": "8215ad2e-6d1f-411e-9290-eb288cfdbde0",
+  "publication_id": "pub-1",
+  "classroom_id": "sandplay-e2e-v1",
+  "event_type": "session_started",
+  "event_id": "session_started-1792475942294",
+  "payload": {},
+  "recorded_at": 1792475942294
+ },
+ {
+  "user_id": "u-cross-device",
+  "course_id": "8215ad2e-6d1f-411e-9290-eb288cfdbde0",
+  "publication_id": "pub-1",
+  "classroom_id": "sandplay-e2e-v1",
+  "event_type": "session_started",
+  "event_id": "session_started-1792476012990",
+  "payload": {},
+  "recorded_at": 1792476012990
+ },
+ {
+  "user_id": "u-cross-device",
+  "course_id": "8215ad2e-6d1f-411e-9290-eb288cfdbde0",
+  "publication_id": "pub-1",
+  "classroom_id": "sandplay-e2e-v1",
+  "event_type": "session_started",
+  "event_id": "session_started-1792476013025",
+  "payload": {},
+  "recorded_at": 1792476013025
+ },
+ {
+  "user_id": "u-cross-device",
+  "course_id": "8215ad2e-6d1f-411e-9290-eb288cfdbde0",
+  "publication_id": "pub-1",
+  "classroom_id": "sandplay-e2e-v1",
+  "event_type": "session_started",
+  "event_id": "session_started-1792482395446",
+  "payload": {},
+  "recorded_at": 1792482395446
+ },
+ {
+  "user_id": "u-cross-device",
+  "course_id": "8215ad2e-6d1f-411e-9290-eb288cfdbde0",
+  "publication_id": "pub-1",
+  "classroom_id": "sandplay-e2e-v1",
+  "event_type": "session_started",
+  "event_id": "session_started-1792482395491",
+  "payload": {},
+  "recorded_at": 1792482395491
+ },
+ {
+  "user_id": "u-cross-device",
+  "course_id": "8215ad2e-6d1f-411e-9290-eb288cfdbde0",
+  "publication_id": "pub-1",
+  "classroom_id": "sandplay-e2e-v1",
+  "event_type": "session_started",
+  "event_id": "session_started-1792482414218",
+  "payload": {},
+  "recorded_at": 1792482414218
+ },
+ {
+  "user_id": "u-cross-device",
+  "course_id": "8215ad2e-6d1f-411e-9290-eb288cfdbde0",
+  "publication_id": "pub-1",
+  "classroom_id": "sandplay-e2e-v1",
+  "event_type": "session_started",
+  "event_id": "session_started-1792482414238",
+  "payload": {},
+  "recorded_at": 1792482414238
+ },
+ {
+  "user_id": "u-cross-device",
+  "course_id": "8215ad2e-6d1f-411e-9290-eb288cfdbde0",
+  "publication_id": "pub-1",
+  "classroom_id": "sandplay-e2e-v1",
+  "event_type": "session_started",
+  "event_id": "session_started-1792482535199",
+  "payload": {},
+  "recorded_at": 1792482535199
+ },
+ {
+  "user_id": "u-cross-device",
+  "course_id": "8215ad2e-6d1f-411e-9290-eb288cfdbde0",
+  "publication_id": "pub-1",
+  "classroom_id": "sandplay-e2e-v1",
+  "event_type": "session_started",
+  "event_id": "session_started-1792482535235",
+  "payload": {},
+  "recorded_at": 1792482535235
+ },
+ {
+  "user_id": "u-cross-device",
+  "course_id": "8215ad2e-6d1f-411e-9290-eb288cfdbde0",
+  "publication_id": "pub-1",
+  "classroom_id": "sandplay-e2e-v1",
+  "event_type": "session_started",
+  "event_id": "session_started-1792483577419",
+  "payload": {},
+  "recorded_at": 1792483577419
+ },
+ {
+  "user_id": "u-cross-device",
+  "course_id": "8215ad2e-6d1f-411e-9290-eb288cfdbde0",
+  "publication_id": "pub-1",
+  "classroom_id": "sandplay-e2e-v1",
+  "event_type": "session_started",
+  "event_id": "session_started-1792483577459",
+  "payload": {},
+  "recorded_at": 1792483577459
+ },
+ {
+  "user_id": "u-cross-device",
+  "course_id": "8215ad2e-6d1f-411e-9290-eb288cfdbde0",
+  "publication_id": "pub-1",
+  "classroom_id": "sandplay-e2e-v1",
+  "event_type": "session_started",
+  "event_id": "session_started-1792484323404",
+  "payload": {},
+  "recorded_at": 1792484323404
+ },
+ {
+  "user_id": "u-cross-device",
+  "course_id": "8215ad2e-6d1f-411e-9290-eb288cfdbde0",
+  "publication_id": "pub-1",
+  "classroom_id": "sandplay-e2e-v1",
+  "event_type": "session_started",
+  "event_id": "session_started-1792484323443",
+  "payload": {},
+  "recorded_at": 1792484323443
+ },
+ {
+  "user_id": "u-cross-device",
+  "course_id": "8215ad2e-6d1f-411e-9290-eb288cfdbde0",
+  "publication_id": "pub-1",
+  "classroom_id": "sandplay-e2e-v1",
+  "event_type": "session_started",
+  "event_id": "session_started-1792484889048",
+  "payload": {},
+  "recorded_at": 1792484889048
+ },
+ {
+  "user_id": "u-cross-device",
+  "course_id": "8215ad2e-6d1f-411e-9290-eb288cfdbde0",
+  "publication_id": "pub-1",
+  "classroom_id": "sandplay-e2e-v1",
+  "event_type": "session_started",
+  "event_id": "session_started-1792484889127",
+  "payload": {},
+  "recorded_at": 1792484889127
+ },
+ {
+  "user_id": "u-cross-device",
+  "course_id": "8215ad2e-6d1f-411e-9290-eb288cfdbde0",
+  "publication_id": "pub-1",
+  "classroom_id": "sandplay-e2e-v1",
+  "event_type": "session_started",
+  "event_id": "session_started-1792485012369",
+  "payload": {},
+  "recorded_at": 1792485012369
+ },
+ {
+  "user_id": "u-cross-device",
+  "course_id": "8215ad2e-6d1f-411e-9290-eb288cfdbde0",
+  "publication_id": "pub-1",
+  "classroom_id": "sandplay-e2e-v1",
+  "event_type": "session_started",
+  "event_id": "session_started-1792485012396",
+  "payload": {},
+  "recorded_at": 1792485012396
+ },
+ {
+  "user_id": "u-cross-device",
+  "course_id": "8215ad2e-6d1f-411e-9290-eb288cfdbde0",
+  "publication_id": "pub-1",
+  "classroom_id": "sandplay-e2e-v1",
+  "event_type": "session_started",
+  "event_id": "session_started-1792485470330",
+  "payload": {},
+  "recorded_at": 1792485470330
+ },
+ {
+  "user_id": "u-cross-device",
+  "course_id": "8215ad2e-6d1f-411e-9290-eb288cfdbde0",
+  "publication_id": "pub-1",
+  "classroom_id": "sandplay-e2e-v1",
+  "event_type": "session_started",
+  "event_id": "session_started-1792485470366",
+  "payload": {},
+  "recorded_at": 1792485470366
+ }
+]

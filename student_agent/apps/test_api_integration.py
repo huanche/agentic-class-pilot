@@ -24,6 +24,17 @@ from apps import server  # noqa: E402
 import agent  # noqa: E402
 
 
+def setUpModule() -> None:
+    """独立态本地课堂流程已删除（938daaa 学生端平台化），本文件的
+    HTTP 级回归所依赖的端点（/api/student/*、课时上传等）不复存在，
+    在队友的 main 上即为全红。显式跳过并留债：待按平台桩底座
+    （见 apps/test_post_video_tutoring.begin_platform_lesson）重写，
+    或确认无保留价值后整文件删除。辅导与平台链路的现行回归在
+    apps/test_post_video_tutoring.py（48 用例）。"""
+    raise unittest.SkipTest(
+        "独立态本地课堂流程已删除（学生端平台化）；待平台桩重写或删除本文件")
+
+
 class StudentApiIntegrationTest(unittest.TestCase):
     sid = "test-student-api-integration"
 

@@ -1,38 +1,54 @@
 'use client';
 
 import { useState } from 'react';
-import { Check, Eye, FileText } from 'lucide-react';
+import { Check, Eye, FileText, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import type { PptContentDraft } from '@/lib/types/generation';
+import { needsPptImageOcr, pptOcrEndpoint, revisePptContent } from '@/lib/import/ppt-content-ocr';
+import { usePptContentOcr, type PptOcrSource } from './use-ppt-content-ocr';
 
 interface PptContentReviewProps {
   draft: PptContentDraft;
   onChange: (draft: PptContentDraft) => void;
   onConfirm: () => void;
   onBack: () => void;
+  source?: PptOcrSource;
 }
 
-export function PptContentReview({ draft, onChange, onConfirm, onBack }: PptContentReviewProps) {
+export function PptContentReview({
+  draft,
+  onChange,
+  onConfirm,
+  onBack,
+  source,
+}: PptContentReviewProps) {
+  const ocr = usePptContentOcr(draft, onChange, source);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const selected = draft.slides[selectedIndex];
   const includedCount = draft.slides.filter((slide) => slide.include).length;
+  const pendingCount = draft.slides.filter(
+    (slide) => slide.include && needsPptImageOcr(slide),
+  ).length;
+  const imageCount = draft.slides.filter(
+    (slide) => slide.include && (slide.imageOcr === 'complete' || needsPptImageOcr(slide)),
+  ).length;
 
   const updateSelected = (updates: Partial<NonNullable<typeof selected>>) => {
     if (!selected) return;
     const slides = draft.slides.map((slide, index) =>
       index === selectedIndex ? { ...slide, ...updates } : slide,
     );
-    onChange({ ...draft, slides, revision: draft.revision + 1, updatedAt: Date.now() });
+    ocr.update(revisePptContent(draft, slides));
   };
 
   const toggleIncluded = (index: number, include: boolean) => {
     const slides = draft.slides.map((slide, itemIndex) =>
       itemIndex === index ? { ...slide, include } : slide,
     );
-    onChange({ ...draft, slides, revision: draft.revision + 1, updatedAt: Date.now() });
+    ocr.update(revisePptContent(draft, slides));
   };
 
   return (
@@ -41,7 +57,8 @@ export function PptContentReview({ draft, onChange, onConfirm, onBack }: PptCont
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <div className="mb-2 flex items-center gap-2 text-xs font-medium uppercase tracking-[0.2em] text-blue-500">
-              <Eye className="size-4" />PPT 内容审核
+              <Eye className="size-4" />
+              PPT 内容审核
             </div>
             <h1 className="text-2xl font-bold tracking-tight">先确认 AI 识别到的内容</h1>
             <p className="mt-2 text-sm text-muted-foreground">
@@ -52,6 +69,50 @@ export function PptContentReview({ draft, onChange, onConfirm, onBack }: PptCont
             保留 {includedCount} / {draft.slides.length} 页
           </div>
         </div>
+
+        {imageCount > 0 && (
+          <div
+            className="space-y-2 rounded-xl border bg-white p-4 text-sm dark:bg-slate-900"
+            role="status"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <span className="flex items-center gap-2">
+                {ocr.running && <Loader2 className="size-4 animate-spin" />}
+                {pendingCount
+                  ? `图片文字识别：已完成 ${imageCount - pendingCount} / ${imageCount} 页`
+                  : `图片文字识别完成：${imageCount} 页`}
+              </span>
+              {pendingCount > 0 && source?.materialId && (
+                <div className="flex gap-2">
+                  {ocr.running || ocr.paused ? (
+                    <Button size="sm" variant="outline" onClick={ocr.togglePaused}>
+                      {ocr.paused ? '继续识别' : '暂停识别'}
+                    </Button>
+                  ) : (
+                    <Button size="sm" variant="outline" onClick={ocr.retry}>
+                      重试未完成页面
+                    </Button>
+                  )}
+                </div>
+              )}
+            </div>
+            <progress
+              className="h-2 w-full accent-blue-500"
+              value={imageCount - pendingCount}
+              max={imageCount}
+              aria-label="图片文字识别进度"
+            />
+            {pendingCount > 0 && (
+              <p className="text-muted-foreground">
+                {!source?.materialId
+                  ? '缺少原始材料，请返回课程重新选择此 PPT。'
+                  : ocr.paused
+                    ? '识别已暂停，已完成的内容会保留。'
+                    : '原文件是图片页，正在识别其中的文字和公式。你可以先核对已完成的页面。'}
+              </p>
+            )}
+          </div>
+        )}
 
         <div className="grid min-h-[560px] gap-5 lg:grid-cols-[260px_1fr]">
           <Card className="overflow-hidden p-2">
@@ -74,6 +135,11 @@ export function PptContentReview({ draft, onChange, onConfirm, onBack }: PptCont
                     <span className="truncate">
                       {index + 1}. {slide.title || '未命名页面'}
                     </span>
+                    {needsPptImageOcr(slide) && (
+                      <span className="shrink-0 text-xs text-muted-foreground">
+                        {ocr.errors[slide.id] ? '失败' : '待识别'}
+                      </span>
+                    )}
                   </button>
                   <input
                     type="checkbox"
@@ -97,26 +163,74 @@ export function PptContentReview({ draft, onChange, onConfirm, onBack }: PptCont
                 </div>
               </div>
 
+              {(selected.imageOcr === 'complete' || needsPptImageOcr(selected)) &&
+                source?.materialId && (
+                  <details className="rounded-lg border p-3 text-sm" open>
+                    <summary className="cursor-pointer font-medium">原始页面</summary>
+                    {/* The source is an authenticated local API, never an arbitrary remote URL. */}
+                    <img
+                      className="mt-3 max-h-72 w-full object-contain"
+                      src={pptOcrEndpoint(
+                        source.courseId,
+                        source.materialId,
+                        selected.originalIndex,
+                      )}
+                      alt={`原 PPT 第 ${selected.originalIndex + 1} 页`}
+                    />
+                  </details>
+                )}
+              {needsPptImageOcr(selected) && (
+                <div className="rounded-lg bg-blue-50 p-3 text-sm text-blue-900 dark:bg-blue-950 dark:text-blue-100">
+                  {ocr.errors[selected.id] ||
+                    (ocr.paused
+                      ? '此页尚未完成识别。'
+                      : '此页是图片，文字识别完成后会自动填入下方。')}
+                  {ocr.errors[selected.id] && !ocr.running && (
+                    <Button className="ml-3" size="sm" variant="outline" onClick={ocr.retry}>
+                      重试
+                    </Button>
+                  )}
+                </div>
+              )}
+
               <label className="block space-y-2 text-sm font-medium">
                 页面标题
-                <Input value={selected.title} onChange={(event) => updateSelected({ title: event.target.value })} />
+                <Input
+                  value={selected.title}
+                  onChange={(event) => updateSelected({ title: event.target.value })}
+                />
               </label>
               <label className="block space-y-2 text-sm font-medium">
                 抽取到的正文
-                <Textarea className="min-h-40" value={selected.content} onChange={(event) => updateSelected({ content: event.target.value })} />
+                <Textarea
+                  className="min-h-40"
+                  value={selected.content}
+                  onChange={(event) => updateSelected({ content: event.target.value })}
+                />
               </label>
               <label className="block space-y-2 text-sm font-medium">
                 演讲者备注
-                <Textarea className="min-h-32" value={selected.speakerNotes} onChange={(event) => updateSelected({ speakerNotes: event.target.value })} placeholder="可补充教师希望 AI 讲解的重点" />
+                <Textarea
+                  className="min-h-32"
+                  value={selected.speakerNotes}
+                  onChange={(event) => updateSelected({ speakerNotes: event.target.value })}
+                  placeholder="可补充教师希望 AI 讲解的重点"
+                />
               </label>
               <label className="block space-y-2 text-sm font-medium">
                 教师修订意见
-                <Textarea value={selected.teacherComment || ''} onChange={(event) => updateSelected({ teacherComment: event.target.value })} placeholder="例如：增加一个工程案例，避免只读文字" />
+                <Textarea
+                  value={selected.teacherComment || ''}
+                  onChange={(event) => updateSelected({ teacherComment: event.target.value })}
+                  placeholder="例如：增加一个工程案例，避免只读文字"
+                />
               </label>
 
               <div className="flex flex-wrap justify-between gap-3 border-t pt-5">
-                <Button variant="outline" onClick={onBack}>返回</Button>
-                <Button onClick={onConfirm} disabled={includedCount === 0}>
+                <Button variant="outline" onClick={onBack}>
+                  返回
+                </Button>
+                <Button onClick={onConfirm} disabled={includedCount === 0 || pendingCount > 0}>
                   <Check className="mr-2 size-4" />
                   确认内容并生成大纲
                 </Button>

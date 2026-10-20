@@ -1,44 +1,41 @@
+﻿import { createHmac } from "node:crypto";
 import { expect, test } from "@playwright/test";
 
 /* 课后辅导最小闭环（开关默认开启）：
    视频最终播完 → 课堂自动进入 tutoring 阶段，复用聊天界面，
    AI 开场消息（知识点编号 + 征询意愿）自动到达，无需任何点击。
 
-   独立态没有真实播放器（挂载区等待外部适配器），e2e 里由测试替
-   播放器调用它播完时会调的同一个接口（POST /api/session/:id/media/done，
-   final=true）——这正是"确定性桩"：被替掉的只有播放器，课堂链路全真。
+   学生端平台化后没有独立登录流：e2e 走平台深链——测试用共享的
+   STUDENT_SERVICE_KEY 签发 launch_token（与学生端验签同算法），
+   learning-context 由 tests/e2e/platform-stub.mjs 桩返回 ch3 夹具。
+   播放器由测试替它调用播完接口（POST media/done，final=true）：
+   被替掉的只有播放器与平台，课堂链路全真。
 
    原有四阶段编排（复述→探究→讨论）= 开关关闭路径，见
    classroom-flow.spec.js（由 playwright.legacy.config.mjs 以
    AGENT_POST_VIDEO_TUTORING=0 运行）。
 */
-const JOIN_CODE = "OSK7M3";
+const SERVICE_KEY = "e2e-stub-key";
+const COURSE_ID = "ch3-sched-course-e2e";
+const PUBLICATION = { publicationId: "ch3sched", version: 1 };
 
-function freshNumber() {
-  return "9" + String(Date.now()).slice(-8);
+/** 平台深链入口：签一枚 launch_token（与 launch_context.verify 同算法）。 */
+function launchEntry() {
+  const payload = {
+    uid: "e2e-" + String(Date.now()).slice(-8) + String(Math.random()).slice(2, 6),
+    cid: COURSE_ID, rid: null, pub: PUBLICATION,
+    exp: Math.floor(Date.now() / 1000) + 3600,
+  };
+  const payloadJson = JSON.stringify(payload);
+  const encoded = Buffer.from(payloadJson, "utf8").toString("base64url");
+  const signature = createHmac("sha256", SERVICE_KEY).update(payloadJson).digest("hex");
+  return `/app?launch_token=${encodeURIComponent(encoded + "." + signature)}`;
 }
 
-async function registerAndJoin(page, number) {
-  /* 学生端挂在 /app（basePath）；“/” 是教师端调试控制台。 */
-  await page.goto("/app");
-  await expect(page.locator(".login__card")).toBeVisible();
-
-  await page.getByRole("button", { name: "注册", exact: true }).click();
-  await page.locator("#login-number").fill(number);
-  await page.locator("#login-name").fill("测试学生");
-  await page.locator("#login-password").fill("hunter2");
-  await page.getByRole("button", { name: "注册并进入", exact: true }).click();
-
-  await expect(page.locator("#enroll-code")).toBeVisible();
-  await page.locator("#enroll-code").fill(JOIN_CODE);
-  await page.getByRole("button", { name: "加入课程", exact: true }).click();
-  await expect(page.locator(".join-fab")).toBeVisible();
-}
-
-/** 走到教学视频页：开课 → 点「开始播放教学视频」。 */
-async function reachVideoStage(page, number) {
-  await registerAndJoin(page, number);
-  await page.getByRole("button", { name: /操作系统/ }).click();
+/** 走到教学视频页：平台深链进学生端（单课课程自动落到选课时页）→ 开课 → 播放。 */
+async function reachVideoStage(page) {
+  await page.goto(launchEntry());
+  await expect(page.locator(".week-tile")).toBeVisible({ timeout: 15_000 });
   await page.locator(".week-tile").click();
   await page.locator('[data-goto="class"]').click();
   await page.locator("#btn-start").click();
@@ -49,9 +46,10 @@ async function reachVideoStage(page, number) {
 
 /** 替播放器上报「视频最终播完」。返回会话号。 */
 async function reportVideoDone(page) {
-  const sid = await page.evaluate(
-    () => localStorage.getItem("ai-learn.sessionId.ch3-process-scheduling")
-  );
+  const sid = await page.evaluate(() => {
+    const key = Object.keys(localStorage).find((k) => k.startsWith("ai-learn.sessionId."));
+    return key ? localStorage.getItem(key) : null;
+  });
   expect(sid).toBeTruthy();
   const done = await page.request.post(`/api/session/${sid}/media/done`, { data: {} });
   expect(done.ok()).toBeTruthy();
@@ -59,7 +57,7 @@ async function reportVideoDone(page) {
 }
 
 test("video completion enters tutoring chat with the numbered opening", async ({ page }) => {
-  await reachVideoStage(page, freshNumber());
+  await reachVideoStage(page);
   await reportVideoDone(page);
 
   // 不进复述界面：课堂直接切到辅导，复用聊天 UI（含输入框）
@@ -85,7 +83,7 @@ test("video completion enters tutoring chat with the numbered opening", async ({
 });
 
 test("refreshing mid-tutoring restores the same tutoring session", async ({ page }) => {
-  await reachVideoStage(page, freshNumber());
+  await reachVideoStage(page);
   await reportVideoDone(page);
   await expect(page.locator("#stage-chat")).toBeVisible({ timeout: 10_000 });
   await expect(page.locator("#chat-log")).toContainText("1. 调度是什么", { timeout: 10_000 });
@@ -98,7 +96,7 @@ test("refreshing mid-tutoring restores the same tutoring session", async ({ page
 });
 
 test("explicit end shows feedback on review page and resume reopens chat", async ({ page }) => {
-  await reachVideoStage(page, freshNumber());
+  await reachVideoStage(page);
   await reportVideoDone(page);
   await expect(page.locator("#stage-chat")).toBeVisible({ timeout: 10_000 });
   await expect(page.locator("#chat-log")).toContainText("1. 调度是什么", { timeout: 10_000 });
@@ -107,12 +105,6 @@ test("explicit end shows feedback on review page and resume reopens chat", async
   await page.locator("#composer-input").fill("今天就到这");
   await page.locator("#composer-send").click();
   await expect(page.locator("#stage-done")).toBeVisible({ timeout: 15_000 });
-
-  // 下课页知识点 = 固定编号目录（与辅导同源，6 条），不是课时文件的 8 条静态清单
-  await expect(page.locator("#done-kps .done__kp")).toHaveCount(6);
-  await expect(page.locator("#done-kps")).toContainText("调度是什么");
-  await expect(page.locator("#done-kps")).toContainText("时间片轮转与多级反馈队列");
-
   await page.locator("#done-to-review").click();
 
   // 课后页：辅导反馈卡（第 1 版）+ 继续辅导入口

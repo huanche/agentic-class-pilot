@@ -10,23 +10,34 @@ const MAX_KEY_POINTS = 5;
 
 export function cleanImportedText(value: string): string {
   if (!value.includes('<')) return value.replace(/\s+/g, ' ').trim();
+  const html = value.replace(/<br\b[^>]*>|<\/(?:p|div|li|tr|h[1-6])\s*>/gi, '$& ');
   if (typeof DOMParser === 'undefined') {
-    return value
-      .replace(/<[^>]*>/g, ' ')
+    return html
+      .replace(/<[^>]*>/g, '')
       .replace(/\s+/g, ' ')
       .trim();
   }
-  const document = new DOMParser().parseFromString(value, 'text/html');
+  const document = new DOMParser().parseFromString(html, 'text/html');
   return document.body.textContent?.replace(/\s+/g, ' ').trim() || '';
 }
 
 export function getImportedSlideText(slide: Slide): string[] {
   return slide.elements
-    .filter(
-      (element): element is Extract<Slide['elements'][number], { type: 'text' }> =>
-        element.type === 'text',
-    )
-    .map((element) => cleanImportedText(element.content))
+    .flatMap((element) => {
+      // Filled text boxes, auto-fit text and grouped diagram labels can be
+      // imported as shapes so their original geometry is preserved.
+      if (element.type === 'text') return [cleanImportedText(element.content)];
+      if (element.type === 'shape') return [cleanImportedText(element.text?.content || '')];
+      if (element.type === 'table') {
+        return element.data.map((row) =>
+          row
+            .map((cell) => cleanImportedText(cell.text))
+            .filter(Boolean)
+            .join(' | '),
+        );
+      }
+      return [];
+    })
     .filter(Boolean)
     .slice(0, 30);
 }
@@ -40,6 +51,7 @@ export function buildImportedPptDraft(slides: Slide[]): PptContentDraft {
   return {
     generationPolicyVersion: PPT_COURSEWARE_POLICY_VERSION,
     slides: slides.map((slide, index): ImportedPptSlideDraft => {
+      const texts = getImportedSlideText(slide);
       const formulas = slide.elements
         .filter(
           (element): element is Extract<Slide['elements'][number], { type: 'latex' }> =>
@@ -50,11 +62,15 @@ export function buildImportedPptDraft(slides: Slide[]): PptContentDraft {
         id: `pptx-slide-${index + 1}`,
         originalIndex: index,
         title: getImportedSlideTitle(slide, index),
-        content: getImportedSlideText(slide).slice(1).join('\n'),
+        content: texts.slice(1).join('\n'),
         speakerNotes: slide.script?.trim() || '',
         include: true,
         formulas,
         generationStrategy: formulas.length ? 'ai-formula-enhanced' : 'faithful',
+        imageOcr:
+          !texts.length && !formulas.length && slide.elements.some((item) => item.type === 'image')
+            ? 'pending'
+            : 'not-needed',
       };
     }),
     revision: 1,
