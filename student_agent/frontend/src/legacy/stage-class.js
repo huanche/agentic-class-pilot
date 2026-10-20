@@ -217,6 +217,34 @@ export function createStage(ctx) {
     });
   }
 
+  /* 本地测试开关（工单 07）：教师端播放器不可用时，替它把「播完了」事件
+     补上——点击走与播放器完全相同的 notifyVideoEnd 路径。生产默认关
+     （AGENT_ALLOW_VIDEO_SKIP），按钮根本不存在；回放页也不显示（回放
+     不触发辅导）。 */
+  function ensureDevSkipButton(hidden) {
+    var status = $("video-player-status");
+    var host = status && status.parentElement;
+    if (!host) return;
+    var btn = document.getElementById("btn-dev-video-skip");
+    if (!ctx.getVideoSkipAllowed || !ctx.getVideoSkipAllowed()) {
+      if (btn) btn.remove();
+      return;
+    }
+    if (!btn) {
+      btn = document.createElement("button");
+      btn.id = "btn-dev-video-skip";
+      btn.type = "button";
+      btn.className = "video-skip-dev";
+      btn.textContent = "视频打不开？点这里当作已播完（本地测试）";
+      btn.addEventListener("click", function () {
+        if (videoEndNotified || replayMode) return;
+        notifyVideoEnd("skip");
+      });
+      host.appendChild(btn);
+    }
+    btn.hidden = !!hidden;
+  }
+
   function startVideo(replay) {
     replayMode = replay === true;
     $("btn-exit-replay").hidden = !replayMode;
@@ -225,6 +253,7 @@ export function createStage(ctx) {
        applyServerTurn 才不会把「目标界面 == 当前界面」误判成不用动。 */
     ctx.showStage("video");
     ctx.setStatus(replayMode ? "课程回放" : "教学视频");
+    ensureDevSkipButton(replayMode);
 
     videoEndNotified = false;     /* 重进视频页时重置 */
 

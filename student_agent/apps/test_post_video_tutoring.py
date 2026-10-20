@@ -148,6 +148,15 @@ class TutoringFlowTest(unittest.TestCase):
 
     # ── 开关关闭：回到原有编排 ────────────────────────────
 
+    def test_video_skip_flag_default_off_env_on(self) -> None:
+        """本地测试开关（工单 07）：默认关，env 开。"""
+        self._begin_demo_lesson()
+        state = self.client.get(f"/api/session/{self.sid}/state").json()
+        self.assertFalse(state["video_skip_allowed"])
+        with mock.patch.dict(os.environ, {"AGENT_ALLOW_VIDEO_SKIP": "true"}):
+            state2 = self.client.get(f"/api/session/{self.sid}/state").json()
+        self.assertTrue(state2["video_skip_allowed"])
+
     def test_switch_off_restores_recap_orchestration(self) -> None:
         with tutoring_off():
             self._begin_demo_lesson()

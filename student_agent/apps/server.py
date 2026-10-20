@@ -1480,6 +1480,14 @@ def messages(sid: str, since: int = 0) -> dict:
     }
 
 
+def _video_skip_allowed() -> bool:
+    """本地测试开关（工单 07）：教师端播放器不可用时允许学生端替它补上
+    「视频已播完」事件。生产默认关——这不是课堂退出按钮，触发的就是
+    同一个 media/done 完成事件，只在放视频这一步、且开关开启时出现。"""
+    return os.environ.get("AGENT_ALLOW_VIDEO_SKIP", "").strip().lower() in (
+        "1", "true", "yes", "on")
+
+
 @app.get("/api/session/{sid}/state")
 def state(sid: str) -> dict:
     """当前状态。前端照 `available_actions` 渲染按钮，不用自己猜能不能按。"""
@@ -1508,6 +1516,8 @@ def state(sid: str) -> dict:
         "played_media": st.get("played_media") or [],
         "remaining_stages": st.get("remaining_stages") or [],
         "next_stage": (st.get("remaining_stages") or [None])[0],
+        # 本地测试：视频页显示「当作已播完」按钮（工单 07，生产默认关）
+        "video_skip_allowed": _video_skip_allowed(),
         # 课后辅导：固定编号目录 + 复习顺序 + 时间预算（掌握条的渲染依据）
         "tutoring": tutoring_public(st, _now(), s.get("time_scale", 1.0))
         if st.get("host_phase") == "tutoring" else None,

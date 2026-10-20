@@ -22,5 +22,8 @@ if (-not $env:STUDENT_SERVICE_KEY) { throw 'STUDENT_SERVICE_KEY is missing from 
 
 $env:PLATFORM_AUTH_URL = 'http://127.0.0.1:8080/api/v1'
 $env:STUDENT_DEMO_MODE = 'false'
+# 本地测试（工单 07）：视频页显示「当作已播完」按钮——教师端播放器不方便
+# 常开时，学生端全链路（视频完→课后辅导）依然可以完整走通。生产不设此变量。
+$env:AGENT_ALLOW_VIDEO_SKIP = 'true'
 Set-Location $agentRoot
 & .\.venv\Scripts\python.exe apps\start.py --no-browser --host 127.0.0.1 --port 8000

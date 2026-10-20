@@ -1786,3 +1786,17 @@ body::before { background: none; }
   cursor: pointer;
 }
 .tfeedback__resume:hover { background: var(--brand-soft, transparent); }
+
+/* 本地测试：视频页「当作已播完」按钮（工单 07，生产默认不渲染） */
+.video-skip-dev {
+  margin-top: 10px;
+  align-self: center;
+  border: 1px dashed var(--brand);
+  color: var(--brand);
+  background: none;
+  border-radius: 8px;
+  padding: 6px 14px;
+  font-size: 13px;
+  cursor: pointer;
+  opacity: 0.85;
+}
