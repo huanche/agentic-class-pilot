@@ -174,7 +174,7 @@ def tick(state: ClassroomState) -> dict:
 ```
 
 > **可回放性**：时间全部来自 `now` 输入，喂一串时间戳就能重放整节课，切幕逻辑因此可单测。
-> 可运行的参考实现 + 回归测试见 `orchestrator/clock_reference.py`。
+> 当前实现见 `orchestrator/agent.py` 的 `tick()`；设计说明见 `orchestrator/HOW-IT-WORKS.md`。
 
 ---
 

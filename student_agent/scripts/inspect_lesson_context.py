@@ -51,9 +51,9 @@ def main() -> int:
     print(f"  课时 id  : {lesson_id}")
     print(f"  阶段     : {state.get('host_phase')}  状态: {state.get('lesson_status')}")
     print(f"  当前段落 : {state.get('active_segment_id') or '(无)'}")
-    print(f"  计划来源 : {plan.get('source') or '(本地课时，非平台)'}")
+    print(f"  计划来源 : {plan.get('source') or '(无平台计划)'}")
     if not prompt_context.is_platform_plan(plan):
-        print("\n非平台计划：上下文来自本地 rules/ 与 lesson-data/，不走平台知识包。")
+        print("\n无平台发布计划：当前学生端无法装配课程上下文，开课会被拒绝。")
         return 0
 
     # ── 上下文总量 ──

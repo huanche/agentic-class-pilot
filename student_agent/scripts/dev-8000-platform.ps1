@@ -19,6 +19,10 @@ if (Test-Path -LiteralPath $studentEnv) {
   }
 }
 if (-not $env:STUDENT_SERVICE_KEY) { throw 'STUDENT_SERVICE_KEY is missing from platform .env' }
+if (-not $env:STUDENT_DATABASE_URL -and $env:STUDENT_DB_PASSWORD) {
+    $studentDbPassword = [uri]::EscapeDataString($env:STUDENT_DB_PASSWORD)
+    $env:STUDENT_DATABASE_URL = "postgresql://student:${studentDbPassword}@127.0.0.1:55432/education"
+}
 
 $env:PLATFORM_AUTH_URL = 'http://127.0.0.1:8080/api/v1'
 $env:STUDENT_DEMO_MODE = 'false'
