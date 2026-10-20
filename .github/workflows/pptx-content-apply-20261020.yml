@@ -1,0 +1,57 @@
+name: pptx-content-apply-20261020
+on:
+  push:
+    branches: [codex/backup-generation-controls-20261020]
+    paths: [.github/workflows/pptx-content-apply-20261020.yml]
+permissions:
+  contents: read
+concurrency:
+  group: teacher-deploy
+  cancel-in-progress: false
+jobs:
+  operate:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 8
+    steps:
+      - name: Diagnose or repair the PPTX asset route
+        env:
+          SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+        run: |
+          set -euo pipefail
+          key="$RUNNER_TEMP/pptx-route-key"
+          printf '%s\n' "$SERVER_SSH_KEY" > "$key"
+          chmod 600 "$key"
+          trap 'rm -f "$key"' EXIT
+          ssh -i "$key" -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=20 -o ServerAliveCountMax=3 "ubuntu@$SERVER_HOST" "bash -s -- '$GITHUB_RUN_ID'" <<'REMOTE'
+          set -euo pipefail
+          expected=97fc1135cf063bc2b14dfb1aef8dbe1855b70b06
+          repo=/opt/agentic-class-pilot
+          backup="$repo/.runtime/backups/pptx-content-20261020-39365837356"
+          test -s "$backup/BACKUP_COMPLETE"
+          (cd "$backup" && sha256sum -c SHA256SUMS >/dev/null)
+          image="$(docker inspect agentic-teacher-prod --format '{{.Config.Image}}')"
+          test "$image" = "zmzm1443/agentic-teacher:main-${expected:0:7}"
+          echo "VERIFY_IMAGE $image"
+          test -z "$(git -C "$repo" status --porcelain --untracked-files=no)"
+          git -C "$repo" fetch origin
+          git -C "$repo" merge --ff-only "$expected"
+          test "$(git -C "$repo" rev-parse HEAD)" = "$expected"
+          git -C "$repo" grep -q "element.type === 'shape'" "$expected" -- teacher_agent/lib/import/pptx-course.ts
+          git -C "$repo" grep -q "element.type === 'table'" "$expected" -- teacher_agent/lib/import/pptx-course.ts
+          git -C "$repo" cat-file -e "$expected:teacher_agent/tests/import/pptx-shape-text.integration.test.ts"
+          echo "VERIFY_SOURCE $expected shape and table content extraction with real PPTX regression test"
+          for endpoint in http://127.0.0.1:3200/api/health https://agenticclasspilot.com/teacher/api/health https://agenticclasspilot.com/health http://127.0.0.1:13305/health; do
+            code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 "$endpoint")"
+            echo "VERIFY_HEALTH $endpoint $code"
+            test "$code" = 200
+          done
+          code="$(curl -sS -I -o /dev/null -w '%{http_code}' --max-time 20 https://agenticclasspilot.com/vendor/maic-importer/index.js)"
+          [[ "$code" = 200 || "$code" = 307 ]]
+          echo "VERIFY_IMPORTER_ROUTE $code"
+          previous="$(cat "$backup/previous-teacher-image.txt")"
+          docker image inspect "$previous" >/dev/null
+          echo "VERIFY_ROLLBACK $previous"
+          echo "VERIFY_BACKUP $backup"
+          echo 'VERIFY_OK PPTX shape/table review extraction deployed with rollback retained'
+          REMOTE
