@@ -1,0 +1,36 @@
+name: pptx-routing-inspect-20261020
+on:
+  push:
+    branches: [codex/backup-generation-controls-20261020]
+    paths: [.github/workflows/pptx-routing-inspect-20261020.yml]
+permissions:
+  contents: read
+concurrency:
+  group: teacher-deploy
+  cancel-in-progress: false
+jobs:
+  operate:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 8
+    steps:
+      - name: Diagnose or repair the PPTX asset route
+        env:
+          SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+        run: |
+          set -euo pipefail
+          key="$RUNNER_TEMP/pptx-route-key"
+          printf '%s\n' "$SERVER_SSH_KEY" > "$key"
+          chmod 600 "$key"
+          trap 'rm -f "$key"' EXIT
+          ssh -i "$key" -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=20 -o ServerAliveCountMax=3 "ubuntu@$SERVER_HOST" "bash -s -- '$GITHUB_RUN_ID'" <<'REMOTE'
+          set -euo pipefail
+          docker inspect agentedu-final-gateway-1 --format 'VERIFY_GATEWAY image={{.Config.Image}} {{range .Mounts}}mount={{.Source}}:{{.Destination}} {{end}}'
+          docker exec agentedu-final-gateway-1 sh -c "grep -n -E 'handle|reverse_proxy|vendor|maic|^agentic|^http' /etc/caddy/Caddyfile" | sed 's/^/VERIFY_ROUTE /'
+          docker exec agentic-teacher-prod node -e "const fs=require('fs');const p='/app/public/vendor/maic-importer/index.js';console.log('VERIFY_IMPORTER '+JSON.stringify({exists:fs.existsSync(p),bytes:fs.existsSync(p)?fs.statSync(p).size:0}));"
+          for endpoint in http://127.0.0.1:3200/vendor/maic-importer/index.js https://agenticclasspilot.com/vendor/maic-importer/index.js; do
+            echo "VERIFY_ENDPOINT $endpoint"
+            curl -sS -I --max-time 20 "$endpoint" | grep -i -E '^HTTP/|^content-type:|^content-length:|^server:' | sed 's/^/VERIFY_HEADER /'
+          done
+          echo "VERIFY_SOURCE $(git -C /opt/agentic-class-pilot rev-parse HEAD)"
+          REMOTE
