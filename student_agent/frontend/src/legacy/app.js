@@ -377,6 +377,8 @@ var currentStage = "idle";
 
 /* 本地测试开关（工单 07）：随轮询刷新，视频页据此显示「当作已播完」 */
 var videoSkipAllowed = false;
+/* 固定编号知识点目录（随轮询刷新）：下课页等展示用，与辅导目录同源 */
+var knowledgeCatalog = null;
 
 var owners = {};
 var classStage = null;    /* 课堂模块实例：idle/chat/video 三个子阶段共用 */
@@ -404,6 +406,8 @@ function ctxFor() {
     getPhase: function () { return hostPhase; },
     /* 本地测试开关（工单 07）：视频页的「当作已播完」按钮是否显示 */
     getVideoSkipAllowed: function () { return videoSkipAllowed; },
+    /* 固定编号知识点目录（与辅导同源）：下课页等展示用 */
+    getKnowledgeCatalog: function () { return knowledgeCatalog; },
     /* 视频播完后的下一幕（后端 remaining_stages[0]），播放器收尾文案用它区分
        「进入课后辅导」和「等老师准备下一环节」 */
     getNextStage: function () { return nextStage; },
@@ -486,6 +490,9 @@ function applyServerTurn(res) {
   /* 本地测试开关（工单 07）：随轮询刷新，视频页据此显示「当作已播完」 */
   if (typeof res.video_skip_allowed === "boolean") {
     videoSkipAllowed = res.video_skip_allowed;
+  }
+  if (Array.isArray(res.knowledge_points) && res.knowledge_points.length) {
+    knowledgeCatalog = res.knowledge_points;
   }
 
   if (phase === hostPhase) return;      /* 没变，什么都不做 */

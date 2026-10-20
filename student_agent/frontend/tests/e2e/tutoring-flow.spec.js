@@ -107,6 +107,12 @@ test("explicit end shows feedback on review page and resume reopens chat", async
   await page.locator("#composer-input").fill("今天就到这");
   await page.locator("#composer-send").click();
   await expect(page.locator("#stage-done")).toBeVisible({ timeout: 15_000 });
+
+  // 下课页知识点 = 固定编号目录（与辅导同源，6 条），不是课时文件的 8 条静态清单
+  await expect(page.locator("#done-kps .done__kp")).toHaveCount(6);
+  await expect(page.locator("#done-kps")).toContainText("调度是什么");
+  await expect(page.locator("#done-kps")).toContainText("时间片轮转与多级反馈队列");
+
   await page.locator("#done-to-review").click();
 
   // 课后页：辅导反馈卡（第 1 版）+ 继续辅导入口

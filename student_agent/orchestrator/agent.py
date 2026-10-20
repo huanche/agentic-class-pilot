@@ -1571,6 +1571,16 @@ def tutoring_public(state: ClassroomState, now_iso: str | None = None,
     }
 
 
+def knowledge_catalog_public(state: ClassroomState) -> list[dict]:
+    """/state 的固定编号知识点目录（**任何阶段都在**）：下课页等展示用。
+
+    与辅导目录同源（lesson_plan / learning_context 的知识点清单），
+    各处展示不再读课时文件里的静态列表——那份清单和真实目录会漂移。
+    """
+    return [{"no": i, "kp_id": kid, "title": title}
+            for i, (kid, title) in enumerate(_lesson_kp_catalog(state), 1)]
+
+
 def tutoring_feedback_payload(state: ClassroomState,
                               trigger_text: str = "") -> tuple[dict, str]:
     """明确结束时生成完整反馈（确定性骨架，工单 05）。

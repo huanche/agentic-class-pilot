@@ -38,9 +38,9 @@ sys.path.insert(0, str(ROOT / "orchestrator"))
 from agent import (  # noqa: E402
     EVENT_BEGIN, EVENT_MEDIA_DONE, EVENT_NEXT_STAGE, EVENT_END_LESSON,
     STAGE_NAMES, STAR_STATUS, build_graph, initial_state, is_uploaded_lesson,
-    kp_title, lesson_source_label, list_lesson_ids, load_lesson,
-    run_turn_stateless, safe_lesson_id, save_lesson, tutoring_feedback_payload,
-    tutoring_public, validate_plan,
+    knowledge_catalog_public, kp_title, lesson_source_label, list_lesson_ids,
+    load_lesson, run_turn_stateless, safe_lesson_id, save_lesson,
+    tutoring_feedback_payload, tutoring_public, validate_plan,
 )
 from llm_override import set_llm_override  # noqa: E402
 
@@ -1531,6 +1531,8 @@ def state(sid: str) -> dict:
         "next_stage": (st.get("remaining_stages") or [None])[0],
         # 本地测试：视频页显示「当作已播完」按钮（工单 07，生产默认关）
         "video_skip_allowed": _video_skip_allowed(),
+        # 固定编号知识点目录（任何阶段都在）：下课页等展示用，与辅导同源
+        "knowledge_points": knowledge_catalog_public(st),
         # 课后辅导：固定编号目录 + 复习顺序 + 时间预算（掌握条的渲染依据）
         "tutoring": tutoring_public(st, _now(), s.get("time_scale", 1.0))
         if st.get("host_phase") == "tutoring" else None,

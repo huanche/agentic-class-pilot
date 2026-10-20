@@ -910,6 +910,12 @@ class TutoringEndFeedbackTest(unittest.TestCase):
 
         self.assertEqual(end.status_code, 200, end.text)
         self.assertEqual(end.json()["phase"], "ending")
+        # 下课页的知识点目录：与辅导同源（不是课时文件里的静态清单）
+        state = self.client.get(f"/api/session/{self.sid}/state").json()
+        self.assertEqual(len(state["knowledge_points"]), 6)
+        self.assertEqual(state["knowledge_points"][0]["title"], "调度是什么")
+        self.assertEqual(state["knowledge_points"][5]["title"],
+                         "时间片轮转与多级反馈队列")
         report = self.client.get(f"/api/session/{self.sid}/tutoring-report")
         self.assertEqual(report.status_code, 200, report.text)
         body = report.json()
