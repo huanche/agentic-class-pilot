@@ -61,7 +61,7 @@ jobs:
               const headers={'x-platform-service-key':process.env.PLATFORM_SERVICE_KEY,'x-platform-subject':source.teacher_id};
               const endpoint=page=>`http://127.0.0.1:${process.env.PORT||3200}/api/course-space/${source.course_id}/materials/${source.material_id}/ocr/${page}`;
               const started=Date.now();let cursor=1;const completed=[];
-              const worker=async()=>{while(cursor<=77){const page=cursor++;const response=await fetch(endpoint(page),{method:'POST',headers,signal:AbortSignal.timeout(90000)});const data=await response.json();if(!response.ok||!data.success||!data.result?.content?.trim())throw new Error(`OCR page ${page} status ${response.status} ${data.errorCode||''}`);completed.push({page,characters:data.result.content.length});if(completed.length%10===0)console.log('VERIFY_OCR_PROGRESS '+completed.length+'/77');}};
+              const worker=async()=>{while(cursor<=77){const page=cursor++;const response=await fetch(endpoint(page),{method:'POST',headers,signal:AbortSignal.timeout(90000)});const data=await response.json();if(!response.ok||!data.success||!data.result?.content?.trim())throw new Error(`OCR page ${page} status ${response.status} ${data.errorCode||''} ${data.error||''}`);completed.push({page,characters:data.result.content.length});if(completed.length%10===0)console.log('VERIFY_OCR_PROGRESS '+completed.length+'/77');}};
               await Promise.all(Array.from({length:3},worker));
               const repeat=await fetch(endpoint(1),{method:'POST',headers,signal:AbortSignal.timeout(20000)});
               if(!repeat.ok)throw new Error('Cached OCR failed');
@@ -72,4 +72,5 @@ jobs:
           })().catch(error=>{console.error('VERIFY_OCR_ERROR '+error.message);process.exitCode=1});
           JS
           echo 'VERIFY_OK image-only PPT OCR deployed and original 77-page material verified'
+          
           REMOTE
