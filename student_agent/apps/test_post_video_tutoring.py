@@ -304,6 +304,17 @@ class TutoringIntentTimeTest(unittest.TestCase):
         # 回复确认记下了自评
         self.assertIn("自评", answer.json()["reply_text"])
 
+    def test_self_rating_with_punctuation(self) -> None:
+        """「1，我给自己 3 分」——编号与自评之间有逗号也要解析（真机暴露的缺口）。"""
+        self._enter_tutoring()
+
+        self.client.post(
+            f"/api/session/{self.sid}/message",
+            json={"text": "1，我给自己 3 分。"},
+        )
+
+        self.assertEqual(self._state()["tutoring"]["self_ratings"], {"1": 3})
+
 
     def test_duration_sets_planned_end_at(self) -> None:
         """「想复习 15 分钟」：从这条消息时刻起算计划结束时间。"""

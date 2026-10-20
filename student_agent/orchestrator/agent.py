@@ -1402,7 +1402,7 @@ def _parse_tutoring_self_ratings(msg: str, catalog: list[tuple[str, str]],
     ratings: dict[str, int] = {}
     n = len(catalog)
     for m in re.finditer(
-            r"(?:第\s*)?([0-9]+)\s*(?:号|个)?\s*(?:我\s*)?(?:给\s*)?自己\s*"
+            r"(?:第[\s，,、]*)?([0-9]+)[\s，,、]*(?:号|个)?[\s，,、]*(?:我[\s，,、]*)?(?:给[\s，,、]*)?自己\s*"
             r"(?:评\s*|打\s*)?(?:是\s*|为\s*)?([0-9]+)\s*[分星颗]",
             msg):
         no, stars = int(m.group(1)), int(m.group(2))
