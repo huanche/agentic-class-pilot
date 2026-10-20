@@ -59,7 +59,7 @@ jobs:
               if(source.sha256!=='d51be286948c97c3bc021f522070e8936b79e916bf35a490c4f26008ce5e153e')throw new Error('Original source fingerprint differs');
               if(!process.env.PLATFORM_SERVICE_KEY)throw new Error('Existing internal service credential unavailable');
               const headers={'x-platform-service-key':process.env.PLATFORM_SERVICE_KEY,'x-platform-subject':source.teacher_id};
-              const endpoint=page=>`http://127.0.0.1:3000/api/course-space/${source.course_id}/materials/${source.material_id}/ocr/${page}`;
+              const endpoint=page=>`http://127.0.0.1:${process.env.PORT||3200}/api/course-space/${source.course_id}/materials/${source.material_id}/ocr/${page}`;
               const started=Date.now();let cursor=1;const completed=[];
               const worker=async()=>{while(cursor<=77){const page=cursor++;const response=await fetch(endpoint(page),{method:'POST',headers,signal:AbortSignal.timeout(90000)});const data=await response.json();if(!response.ok||!data.success||!data.result?.content?.trim())throw new Error(`OCR page ${page} status ${response.status} ${data.errorCode||''}`);completed.push({page,characters:data.result.content.length});if(completed.length%10===0)console.log('VERIFY_OCR_PROGRESS '+completed.length+'/77');}};
               await Promise.all(Array.from({length:3},worker));
