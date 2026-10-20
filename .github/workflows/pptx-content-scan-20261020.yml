@@ -24,25 +24,5 @@ jobs:
           chmod 600 "$key"
           trap 'rm -f "$key"' EXIT
           ssh -i "$key" -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=20 -o ServerAliveCountMax=3 "ubuntu@$SERVER_HOST" "bash -s -- '$GITHUB_RUN_ID'" <<'REMOTE'
-          set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-          from zipfile import ZipFile
-          from xml.etree import ElementTree as ET
-          import json,re
-          root=Path('/home/ubuntu/teacher-agent-data')
-          files=sorted(root.rglob('source.pptx'),key=lambda p:p.stat().st_mtime,reverse=True)[:2]
-          for path in files:
-              with ZipFile(path) as archive:
-                  slides=sorted((n for n in archive.namelist() if re.fullmatch(r'ppt/slides/slide\d+\.xml',n)),key=lambda n:int(re.search(r'slide(\d+)',n).group(1)))
-                  counts=[]
-                  shape_counts=[]
-                  for slide in slides:
-                      xml=ET.fromstring(archive.read(slide))
-                      ns={'a':'http://schemas.openxmlformats.org/drawingml/2006/main','p':'http://schemas.openxmlformats.org/presentationml/2006/main'}
-                      counts.append(sum(1 for t in xml.findall('.//a:t',ns) if t.text and t.text.strip()))
-                      shape_counts.append(sum(1 for shape in xml.findall('.//p:sp',ns) if any(t.text and t.text.strip() for t in shape.findall('.//a:t',ns)) and not any(sp.get('txBox')=='1' for sp in shape.findall('.//p:cNvSpPr',ns))))
-                  print('VERIFY_PPTX_SCAN '+json.dumps({'materialId':path.parent.name,'pages':len(slides),'pagesWithEditableText':sum(c>0 for c in counts),'textRuns':sum(counts),'textShapesWithoutTextBoxFlag':sum(shape_counts)}))
-          if not files: print('VERIFY_PPTX_SCAN no local source PPTX files; material files may use object storage')
-          PY
+          printf '%s' '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' | base64 -d | gzip -d | bash
           REMOTE
