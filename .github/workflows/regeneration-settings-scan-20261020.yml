@@ -11,7 +11,7 @@ concurrency:
 jobs:
   operate:
     runs-on: ubuntu-22.04
-    timeout-minutes: 8
+    timeout-minutes: 25
     steps:
       - name: Diagnose or repair the PPTX asset route
         env:
