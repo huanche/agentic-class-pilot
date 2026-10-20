@@ -1,0 +1,28 @@
+name: teacher-task-edit-inspect-20261020
+on:
+  push:
+    branches: [codex/backup-generation-controls-20261020]
+    paths: [.github/workflows/teacher-task-edit-inspect-20261020.yml]
+permissions:
+  contents: read
+concurrency:
+  group: teacher-deploy
+  cancel-in-progress: false
+jobs:
+  operate:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 8
+    steps:
+      - name: Diagnose or repair the PPTX asset route
+        env:
+          SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+        run: |
+          set -euo pipefail
+          key="$RUNNER_TEMP/pptx-route-key"
+          printf '%s\n' "$SERVER_SSH_KEY" > "$key"
+          chmod 600 "$key"
+          trap 'rm -f "$key"' EXIT
+          ssh -i "$key" -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=20 -o ServerAliveCountMax=3 "ubuntu@$SERVER_HOST" "bash -s -- '$GITHUB_RUN_ID'" <<'REMOTE'
+          printf '%s' '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' | base64 -d | gzip -d | bash -s -- "$1"
+          REMOTE
