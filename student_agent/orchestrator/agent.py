@@ -1276,6 +1276,7 @@ def _parse_tutoring_order(msg: str, catalog: list[tuple[str, str]]) -> list[str]
 # 七分类的骨架层信号：结束 / 追问 / 求助（自评、选点、改时间由各自解析器识别）。
 # 答题是兜底类：不是以上任何一类、又不是意愿表达的消息，交给工单 03 的判答链。
 _TUTORING_END_PAT = re.compile(r"就到这|到此为止|今天先到|先这样|下课|结束吧|复习完[了成]|收尾吧")
+_TUTORING_SKIP_PAT = re.compile(r"下一|跳过|换一[个题]|往下[一走]|继续往")
 _TUTORING_QUES_PAT = re.compile(r"[?？]|为什么|怎么|什么意思|是什么|怎么办|如何|哪.*(问题|不懂)")
 _TUTORING_HELP_PAT = re.compile(r"不懂|不会|没听懂|不明白|帮我|讲讲|讲一下|解释|教教我")
 
@@ -1920,6 +1921,7 @@ def teach(state: ClassroomState) -> dict:
 
             kind = (
                 "end" if _TUTORING_END_PAT.search(msg)
+                else "skip" if _TUTORING_SKIP_PAT.search(msg)
                 else "time_change" if duration
                 else "self_eval" if new_ratings
                 else "kp_select" if order
@@ -2057,6 +2059,32 @@ def teach(state: ClassroomState) -> dict:
                     "我没能确定你的意思，再说详细一点——"
                     f"针对「{title}」的这题：{prev_question.get('question', '')}"
                 )
+            elif kind == "skip":
+                # 推进指令（「下一阶段／下一个／跳过」）：直接跳到顺序中的
+                # 下一个知识点出新题。被跳过的题留在已见清单里，回头再问
+                # 也会换一道。这不是作答——不判答、不动星级。
+                if in_range and cursor_now + 1 < len(order_now):
+                    updates["tutoring_cursor"] = cursor_now + 1
+                    next_kid = order_now[cursor_now + 1]
+                    next_title = title_of.get(next_kid, "刚才视频的内容")
+                    next_q, next_fresh = _tutoring_pick_question(next_title, seen)
+                    updates["tutoring_question"] = {
+                        "kp_id": next_kid, "question": next_q,
+                        "asked_at": state.get("now"), "hint_given": False,
+                        "was_fresh": next_fresh, "wrong_count": 0,
+                    }
+                    seen.append(next_q)
+                    updates["tutoring_asked"] = list(seen)
+                    body = (
+                        f"好，「{title}」先放一放。我们看下一个"
+                        f"「{next_title}」：{next_q}"
+                    )
+                else:
+                    updates["tutoring_question"] = None
+                    body = (
+                        "这节课的知识点都过完了！还有想再问的吗？"
+                        "没有的话说一声，我们就可以收尾。"
+                    )
             elif kind == "answer" or confirms:
                 pending = prev_question
                 if not pending:
@@ -2100,6 +2128,8 @@ def teach(state: ClassroomState) -> dict:
                    if time_up else "")
                 + ("学生表达了结束意愿：确认后按结束流程收尾。\n"
                    if kind == "end" else "")
+                + ("学生要求跳到下一个知识点：按确认后的推进措辞说，别再回到上一个。\n"
+                   if kind == "skip" else "")
                 + ("学生提出了问题或求助：直接回答或讲解，只依据本课已发布内容。\n"
                    if kind in ("followup", "help") else "")
                 + (f"当前检测题（无模型时也要照问）：{pending_now.get('question', '')}\n"

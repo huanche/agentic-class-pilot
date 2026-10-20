@@ -711,6 +711,29 @@ class TutoringEvidenceMasteryTest(unittest.TestCase):
         self.assertFalse(q["was_fresh"])
 
 
+    def test_skip_phrase_moves_to_next_knowledge_point(self) -> None:
+        """「进入下一阶段／下一个」是推进指令：跳到顺序中的下一个知识点
+        出新题，而不是被当作当前题的作答去判答（真机暴露的坑）。"""
+        self._reset_session()
+        self._enter_tutoring()
+        self._send("准备好了")
+        self.assertEqual(self._state()["tutoring"]["question"]["kp_no"], 1)
+
+        answer = self._send("进入下一阶段")
+
+        question = self._state()["tutoring"]["question"]
+        self.assertEqual(question["kp_no"], 2, "应跳到第二个知识点")
+        self.assertIn("三级调度", answer.json()["reply_text"])
+        self.assertFalse(question["hint_given"])
+
+        # 一直跳到最后一个之后再跳 → 收尾提示，不再出题
+        for _ in range(5):
+            self._send("下一个")
+        last = self._send("下一个")
+        self.assertIn("都过完", last.json()["reply_text"])
+        self.assertIsNone(self._state()["tutoring"]["question"])
+
+
 class TutoringEndFeedbackTest(unittest.TestCase):
     """工单 05（明确结束与反馈）的缝 A 回归：结束触发、幂等、最新版读取。"""
 
