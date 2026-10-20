@@ -20,6 +20,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Refresh embedded teacher previews as background generation saves new pages, preserving the selected page, editor mode and unsent page-feedback drafts instead of remaining on an initial empty snapshot.
 - Use only explicitly selected courseware sources, preserve the selected lesson context, and surface unreadable sources instead of silently generating with incomplete material. Retry transient file-replacement failures in local JSON storage.
 - Display remaining page content time like a video player: changing speed keeps the displayed duration stable, while 2x playback consumes two content seconds per real second. Keep silent narration timers synchronized with live speed changes as well.
 - Keep interactive activities clickable in playback and fullscreen, preserve their state across fullscreen changes, and wait for manual advancement after activities.

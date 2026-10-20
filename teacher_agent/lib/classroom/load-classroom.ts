@@ -464,6 +464,8 @@ export function applyClassroomStageAndScenes(
   scenes: readonly Scene[],
   options: {
     persist?: boolean;
+    /** Progress reads keep the teacher editor mounted and its drafts intact. */
+    preserveMode?: boolean;
     chats?: ChatSession[];
     chatSnapshot?: ChatStorageSnapshot;
   } = {},
@@ -501,7 +503,7 @@ export function applyClassroomStageAndScenes(
     currentGeneratingOrder: undefined,
     generationStatus: generationComplete ? 'completed' : 'idle',
     generationEpoch: state.generationEpoch + 1,
-    mode: 'playback',
+    mode: options.preserveMode && state.stage?.id === stage.id ? state.mode : 'playback',
   }));
   if (options.persist !== false) {
     void useStageStore.getState().saveToStorage();
