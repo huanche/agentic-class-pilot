@@ -44,12 +44,17 @@ services:
   gateway:
     image: caddy:2.10-alpine
     command: caddy run --config /etc/caddy/Caddyfile --adapter caddyfile --watch
+    environment:
+      # Caddyfile.local 的站点地址变量；缺失时站点块会被误解析为全局配置
+      APP_DOMAIN: localhost:80
     ports:
       - "80:80"
       - "443:443"
       - "443:443/udp"
     volumes:
       - ./deployment/Caddyfile.local:/etc/caddy/Caddyfile:ro
+      # 路由片段由 contracts/routing.yaml 生成（单一来源），需一并挂入容器
+      - ./deployment/generated:/etc/caddy/generated:ro
       - caddy_data:/data
       - caddy_config:/config
     extra_hosts:
