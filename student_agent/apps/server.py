@@ -1557,6 +1557,9 @@ def resume_tutoring(sid: str) -> dict:
         st["student_status"] = "active"
         if st.get("lesson_status") == "ended":
             st["lesson_status"] = "running"
+        # 结束确认标记是回合级的一次性状态，恢复时不许残留（否则一开口就下课）
+        st["tutoring_end_confirm_pending"] = False
+        st["tutoring_end_confirmed"] = False
         st["stage_started_at"] = _now()
         s["state"] = st
         _persist(sid, st)

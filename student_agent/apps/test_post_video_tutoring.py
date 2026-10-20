@@ -734,6 +734,88 @@ class TutoringEvidenceMasteryTest(unittest.TestCase):
         self.assertIsNone(self._state()["tutoring"]["question"])
 
 
+    def _llm_dispatch(self, *, classify=None, judge=None, question="新题：请举例说明。"):
+        """按 system 内容分发的 llm_chat 桩：分类/判答/出题各回各的。"""
+        def fake_chat(system: str, user: str):
+            if "意图分类" in system:
+                return json.dumps(classify or {}, ensure_ascii=False)
+            if "判定" in system:
+                return json.dumps(judge or {"verdict": "unclear"}, ensure_ascii=False)
+            if "检测题" in system:
+                return question
+            return "好的。"
+        return mock.patch.object(agent, "llm_available", return_value=True), \
+            mock.patch.object(agent, "llm_chat", side_effect=fake_chat)
+
+    def test_llm_intent_covers_phrases_beyond_regex(self) -> None:
+        """正则没覆盖的说法（「这个先不看了」）由 LLM 分类兜底为 skip。"""
+        self._reset_session()
+        self._enter_tutoring()   # 开场后无挂起题
+
+        with self._llm_dispatch(classify={"intent": "skip"})[0], \
+                self._llm_dispatch(classify={"intent": "skip"})[1]:
+            self._send("这个先不看了")
+
+        self.assertEqual(self._state()["tutoring"]["question"]["kp_no"], 2)
+
+    def test_judge_not_answer_routes_to_intent(self) -> None:
+        """有挂起题时判答器一并裁定「这不是作答」+ 意图：按意图分流，不落判答事件。"""
+        self._reset_session()
+        self._enter_tutoring()
+        self._send("准备好了")
+
+        with self._llm_dispatch(judge={"verdict": "not_answer", "intent": "skip"})[0], \
+                self._llm_dispatch(judge={"verdict": "not_answer", "intent": "skip"})[1]:
+            reply = self._send("这一趴先翻篇")
+
+        self.assertEqual(self._state()["tutoring"]["question"]["kp_no"], 2)
+        self.assertEqual(self._state()["stars"], {}, "不应产生作答判定")
+
+    def test_llm_end_requires_confirmation(self) -> None:
+        """LLM 识别的结束意图 → 先确认；「是的」才真正下课并入反馈。"""
+        self._reset_session()
+        self._enter_tutoring()
+
+        with self._llm_dispatch(classify={"intent": "end"})[0], \
+                self._llm_dispatch(classify={"intent": "end"})[1]:
+            first = self._send("我不想复习了")
+
+        self.assertIn("结束", first.json()["reply_text"])
+        self.assertEqual(self._state()["phase"], "tutoring", "确认前不得下课")
+
+        confirmed = self._send("是的")   # 确认轮无需模型
+        self.assertEqual(confirmed.json()["phase"], "ending")
+        report = self.client.get(f"/api/session/{self.sid}/tutoring-report")
+        self.assertEqual(report.status_code, 200)
+
+    def test_llm_end_declined_continues(self) -> None:
+        """确认轮说「先不」→ 继续辅导，题还在。"""
+        self._reset_session()
+        self._enter_tutoring()
+        self._send("准备好了")
+
+        # 有挂起题时结束意图由判答器的 not_answer 带出（同一次调用）
+        with self._llm_dispatch(judge={"verdict": "not_answer", "intent": "end"})[0], \
+                self._llm_dispatch(judge={"verdict": "not_answer", "intent": "end"})[1]:
+            self._send("我不想复习了")
+
+        decline = self._send("先不")
+        self.assertEqual(self._state()["phase"], "tutoring")
+        self.assertEqual(self._state()["tutoring"]["question"]["kp_no"], 1)
+        self.assertIn("继续", decline.json()["reply_text"])
+
+    def test_classifier_slots_validated(self) -> None:
+        """槽位过界（知识点编号 99）→ 意图忽略，退回答题兜底。"""
+        self._reset_session()
+        self._enter_tutoring()
+
+        with self._llm_dispatch(classify={"intent": "self_eval", "kp_no": 99, "rating": 3})[0], \
+                self._llm_dispatch(classify={"intent": "self_eval", "kp_no": 99, "rating": 3})[1]:
+            self._send("第99个我掌握得可好了")
+
+        self.assertEqual(self._state()["tutoring"]["self_ratings"], {})
+
+
 class TutoringEndFeedbackTest(unittest.TestCase):
     """工单 05（明确结束与反馈）的缝 A 回归：结束触发、幂等、最新版读取。"""
 

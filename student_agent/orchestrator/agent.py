@@ -511,6 +511,8 @@ class ClassroomState(TypedDict):
     tutoring_last_judgement: dict | None    # 本轮作答判定（会话层据此落学习事件；无判定为 None）
     tutoring_asked: list[str]               # 已见题干清单（出题去重：新题必须避开）
     tutoring_stats: dict                    # 答题统计 {correct, wrong, hinted_correct}（反馈报告用）
+    tutoring_end_confirm_pending: bool      # LLM 识别到结束意图，等学生确认（防误杀）
+    tutoring_end_confirmed: bool            # 学生已确认结束（judge_advance 据此切 ending，随切幕清零）
 
     # ── 输出 ──
     reply_text: str
@@ -1279,6 +1281,9 @@ _TUTORING_END_PAT = re.compile(r"就到这|到此为止|今天先到|先这样|�
 _TUTORING_SKIP_PAT = re.compile(r"下一|跳过|换一[个题]|往下[一走]|继续往")
 _TUTORING_QUES_PAT = re.compile(r"[?？]|为什么|怎么|什么意思|是什么|怎么办|如何|哪.*(问题|不懂)")
 _TUTORING_HELP_PAT = re.compile(r"不懂|不会|没听懂|不明白|帮我|讲讲|讲一下|解释|教教我")
+# LLM 提议结束后的二次确认：肯定 → 下课（judge_advance 同回合生效），否定 → 继续
+_TUTORING_CONFIRM_PAT = re.compile(r"(?:是[的呀]?|对|嗯+|好[的呀]?|可以|行|要|确认|结束[吧了]?)[。！!，, ]*")
+_TUTORING_DECLINE_PAT = re.compile(r"不[要会想是]|先不|还没|继续|再[聊学复习一会]|等等")
 
 
 def _tutoring_question_pool(title: str) -> list[str]:
@@ -1320,34 +1325,92 @@ def _tutoring_pick_question(title: str, seen: list[str]) -> tuple[str, bool]:
     return _tutoring_question_pool(title)[0], False
 
 
-def _tutoring_judge(question: dict, answer: str) -> tuple[str, str]:
-    """判定学生作答：correct / wrong / unclear。
+def _tutoring_judge(question: dict, answer: str) -> tuple[str, str, dict]:
+    """判定学生作答：correct / wrong / unclear / not_answer。
 
-    模型可用时由模型判定（输出一行 JSON）；没有模型宁可 unclear——
-    不瞎判，星级不动。判定是唯一入口，测试在此 mock。
+    **not_answer = 这句话不是在回答检测题**（想跳过/求助/改时间/结束等），
+    此时额外返回 intent 槽位（同一行 JSON 里），由确定性处理器接管——
+    意图理解进模型，状态变更仍在代码。
+
+    返回 (verdict, note 一句话依据, extra={intent,kp_no,rating,minutes,order})。
+    没有模型宁可 unclear——不瞎判，星级不动。判定是唯一入口，测试在此 mock。
     """
     if not llm_available():
-        return "unclear", ""
+        return "unclear", "", {}
     raw = llm_chat(
         "你是课堂里的 AI 辅导老师，正在判定学生对检测题的作答。"
-        "只输出一行 JSON：{\"verdict\": \"correct|wrong|unclear\", \"note\": \"一句话依据\"}。"
-        "correct=答对了核心；wrong=答错或说反；unclear=答非所问或太简短没法判定。",
-        f"检测题：{question.get('question', '')}\n学生作答：{answer}\n"
+        "只输出一行 JSON："
+        "{\"verdict\": \"correct|wrong|unclear|not_answer\", "
+        "\"intent\": \"...\", \"note\": \"一句话依据\"}。\n"
+        "correct=答对了核心；wrong=答错或说反；unclear=在作答但太简短没法判定；\n"
+        "not_answer=根本不是在回答这道题（想跳过、想问别的、求助、改复习时长、"
+        "想结束复习等），此时 intent 从这些里选："
+        "self_eval|kp_select|followup|help|time_change|end|skip|other，"
+        "可带槽位 kp_no/rating/minutes/order（如 {\"intent\":\"self_eval\",\"kp_no\":2,\"rating\":3}）。",
+        f"检测题：{question.get('question', '')}\n学生消息：{answer}\n"
         "请给出一行 JSON 判定：",
     )
+    data = _tutoring_parse_json(raw)
+    if not data:
+        return "unclear", "", {}
+    verdict = str(data.get("verdict", "")).strip().lower()
+    if verdict not in ("correct", "wrong", "unclear", "not_answer"):
+        return "unclear", "", {}
+    extra = data if verdict == "not_answer" else {}
+    return verdict, str(data.get("note", ""))[:120], extra
+
+
+def _tutoring_parse_json(raw: str | None) -> dict | None:
+    """从模型输出里抠一行 JSON；抠不到/不是对象 → None。"""
     if not raw:
-        return "unclear", ""
+        return None
     m = re.search(r"\{.*\}", raw, re.S)
     if not m:
-        return "unclear", ""
+        return None
     try:
         data = json.loads(m.group(0))
     except ValueError:
-        return "unclear", ""
-    verdict = str(data.get("verdict", "")).strip().lower()
-    if verdict not in ("correct", "wrong", "unclear"):
-        return "unclear", ""
-    return verdict, str(data.get("note", ""))[:120]
+        return None
+    return data if isinstance(data, dict) else None
+
+
+_TUTORING_CLASSIFY_INTENTS = (
+    "self_eval", "kp_select", "answer", "followup", "help",
+    "time_change", "end", "skip", "other",
+)
+
+
+def _tutoring_classify_message(msg: str, catalog: list[tuple[str, str]],
+                               has_question: bool) -> dict | None:
+    """LLM 意图分类（兜底路径）：正则没认出的说法在这里判定。
+
+    只影响「执行哪个确定性处理器」，状态变更本身仍在代码里做；
+    槽位（kp_no/rating/minutes/order）在 teach 里过界校验。
+    无模型/解析失败 → None，退回正则时代的兜底行为。
+    """
+    if not llm_available():
+        return None
+    listing = "、".join(f"{i}.{t}" for i, (_k, t) in enumerate(catalog, 1))
+    raw = llm_chat(
+        "你是课后辅导对话的意图分类器。学生正和 AI 老师一对一复习本节课知识点，"
+        "判定他这条消息的意图，只输出一行 JSON，不要解释：\n"
+        "{\"intent\": \"self_eval|kp_select|answer|followup|help|time_change|end|skip|other\""
+        " 可带槽位：{\"intent\":\"self_eval\",\"kp_no\":2,\"rating\":3}、"
+        "{\"intent\":\"kp_select\",\"order\":[2,1]}、{\"intent\":\"time_change\",\"minutes\":10}\n"
+        "self_eval=给自己某知识点打 1-5 星；kp_select=指定复习顺序或想先复习哪个；"
+        "answer=在回答当前检测题；followup=就内容追问；help=求助/要求讲解；"
+        "time_change=调整复习时长；end=想结束本轮复习；skip=想跳过当前内容进入下一个；"
+        "other=寒暄等其它。",
+        ("当前有检测题在等他回答。\n" if has_question else "当前没有检测题。\n")
+        + f"本节课知识点（编号.标题）：{listing}\n"
+        + f"学生消息：{msg}\n请输出一行 JSON：",
+    )
+    data = _tutoring_parse_json(raw)
+    if not data:
+        return None
+    if str(data.get("intent", "")) not in _TUTORING_CLASSIFY_INTENTS:
+        return None
+    return data
 
 
 DEFAULT_TUTORING_RUBRIC = {
@@ -1632,6 +1695,7 @@ def teach(state: ClassroomState) -> dict:
     # 否则每隔几秒就重复一句"很好，我们接着往下讲"，课堂上没法听。
     tick = bool(state.get("tick_only"))
     speak = not tick
+    no_polish = False   # 安全关键文案（结束确认等）骨架直出，不让模型改写
 
     # 老师按「下一环节」：本轮 teach 不说话，由 advance_stage 的开场白接管。
     # 否则会拼出"刚抛出一个问题、下一秒又宣布换环节"的缝合怪回复。
@@ -1930,15 +1994,29 @@ def teach(state: ClassroomState) -> dict:
                 else "answer"
             )
 
+            # ── 结束确认回合（LLM 提议的结束需二次确认，防误杀）──
+            # 肯定 → 置 confirmed 交 judge_advance 同回合下课（它在 teach 之后运行）；
+            # 否定 → 清待确认标记，本轮只做安抚不再分类/判答。
+            if bool(state.get("tutoring_end_confirm_pending")) and kind != "end":
+                if _TUTORING_CONFIRM_PAT.fullmatch(msg):
+                    return {"reply_text": "", "llm_used": False,
+                            "attempts": state.get("attempts", 0),
+                            "tutoring_end_confirm_pending": False,
+                            "tutoring_end_confirmed": True}
+                if _TUTORING_DECLINE_PAT.search(msg):
+                    updates["tutoring_end_confirm_pending"] = False
+                    kind = "declined_end"
+
             # ── 检测题机制（工单 03/04）：出题 → 判答 → 升星/追问讲解 → 换新题 → 推进 ──
             prev_question = state.get("tutoring_question")
             seen = list(state.get("tutoring_asked") or [])
             judged: dict | None = None
+            judge_extra: dict = {}
             wrong_replaced = False
             stars = dict(state.get("kp_stars") or {})
             stats = dict(state.get("tutoring_stats") or {})
             if kind == "answer" and prev_question:
-                verdict, _note = _tutoring_judge(prev_question, msg)
+                verdict, _note, judge_extra = _tutoring_judge(prev_question, msg)
                 kid = prev_question.get("kp_id") or ""
                 if verdict == "correct":
                     stats["correct"] = int(stats.get("correct", 0)) + 1
@@ -2007,6 +2085,58 @@ def teach(state: ClassroomState) -> dict:
                                   "stars_after": stars.get(kid, 0)}
                 # unclear：不判、不记事件、不动状态
             updates["tutoring_last_judgement"] = judged
+
+            # ── 意图兜底（LLM）：正则没认出的说法在这里分流 ──
+            # 有挂起题时判答器在同一次调用里裁定 not_answer+intent（不加调用）；
+            # 无挂起题时独立分类一次。意图只决定执行哪个确定性处理器；
+            # 槽位过界一律忽略，退回答题兜底——LLM 永远不能发明状态。
+            llm_intent: dict | None = None
+            if kind == "answer" and judged is None:
+                if prev_question:
+                    llm_intent = judge_extra if judge_extra.get("intent") else None
+                else:
+                    llm_intent = _tutoring_classify_message(msg, catalog, False) or None
+            if llm_intent:
+                intent = str(llm_intent.get("intent", ""))
+                if intent in ("skip", "followup", "help"):
+                    kind = intent
+                elif intent == "end":
+                    kind = "end_confirm"
+                elif intent == "time_change":
+                    minutes = llm_intent.get("minutes")
+                    if isinstance(minutes, int) and 1 <= minutes <= 240:
+                        duration = minutes
+                        updates["tutoring_planned_minutes"] = duration
+                        updates["tutoring_planned_end_at"] = _iso_plus_minutes(
+                            state["now"], duration, float(state.get("time_scale") or 1.0))
+                        confirms.append(
+                            f"好，那就复习 {duration} 分钟——到点我不会赶你走，"
+                            "只会问问你还想继续哪里。")
+                        kind = "time_change"
+                elif intent == "self_eval":
+                    no, rating = llm_intent.get("kp_no"), llm_intent.get("rating")
+                    if (isinstance(no, int) and 1 <= no <= len(catalog)
+                            and isinstance(rating, int) and 1 <= rating <= 5):
+                        kid_r = catalog[no - 1][0]
+                        updates["tutoring_self_ratings"] = {
+                            **(state.get("tutoring_self_ratings") or {}), kid_r: rating}
+                        confirms.append(
+                            f"你的自评我记下了（「{title_of.get(kid_r, kid_r)}」{rating} 星）"
+                            "——它代表你的感觉，系统星级还是看你实际作答。")
+                        kind = "self_eval"
+                elif intent == "kp_select":
+                    nos = llm_intent.get("order")
+                    if isinstance(nos, list):
+                        ids = [catalog[n - 1][0] for n in nos
+                               if isinstance(n, int) and 1 <= n <= len(catalog)
+                               and catalog[n - 1][0] not in ids]
+                        if ids:
+                            order = ids + [k for k, _t in catalog if k not in ids]
+                            updates["tutoring_order"] = order
+                            head = "再".join(f"「{title_of.get(k, k)}」" for k in order[:2])
+                            confirms.append(f"好，就按你说的顺序：先{head}（其余按课件顺序）。")
+                            kind = "kp_select"
+                # answer/other/槽位校验失败：维持答题兜底
 
             # 当前聚焦的知识点（本轮指定了顺序 → 游标归零；判对 → 已推进）
             order_now = order or state.get("tutoring_order") or [k for k, _t in catalog]
@@ -2096,6 +2226,20 @@ def teach(state: ClassroomState) -> dict:
                     q_text if q_text
                     else f"我们先从「{title}」开始："
                          "你先说说对它的理解，我看看哪里需要补一补。"
+                )
+            elif kind == "declined_end":
+                no_polish = True
+                body = (
+                    "好，那我们继续。"
+                    + (f" 还是刚才这题：{prev_question.get('question', '')}"
+                       if prev_question else "")
+                )
+            elif kind == "end_confirm":
+                no_polish = True
+                updates["tutoring_end_confirm_pending"] = True
+                body = (
+                    "要结束这轮复习吗？结束后我会给你生成完整的复习反馈，"
+                    "之后随时可以回来继续。回复「结束」或「是」确认，想继续就直接说。"
                 )
             elif kind == "end":
                 # 结束的正式动作（生成反馈并入库）是工单 05 的活，这里只承接。
@@ -2198,8 +2342,8 @@ def teach(state: ClassroomState) -> dict:
         _apply_question_decision(updates, decision_turn, True)
         return updates
 
-    # ── 第二层：LLM 只负责把指令变成自然语言（可失败）──
-    if llm_available():
+    # ── 第二层：LLM 只负责把指令变成自然语言（可失败；安全关键文案除外）──
+    if llm_available() and not no_polish:
         polished = llm_polish(state, directive)
         if polished:
             updates["reply_text"] = polished.strip()
@@ -2392,6 +2536,10 @@ def judge_advance(state: ClassroomState) -> dict:
         # （「没有了」「可以了」这类短确认只在计划时间已过后算数）。外部事件
         # （下一环节/结束本节课）在上面已经判过，老师按钮仍然有效。
         msg = (state.get("student_message") or "").strip()
+        # LLM 识别并经学生确认的结束（teach 本轮已置位；judge_advance 在
+        # teach 之后运行，同回合生效），随切幕由 advance_stage 清零。
+        if state.get("tutoring_end_confirmed"):
+            return {"target_phase": "ending", "advance_reason": "学生确认结束课后辅导"}
         end_at = state.get("tutoring_planned_end_at")
         time_up = bool(end_at) and (
             datetime.fromisoformat(state["now"]) >= datetime.fromisoformat(end_at))
@@ -2532,6 +2680,9 @@ def advance_stage(state: ClassroomState) -> dict:
         "mastered": [],
         "unresolved": carried if nxt in ("deep_inquiry", "class_discussion") else [],
         "active_segment_id": None,
+        # 结束确认标记是「一次性」的：切幕即消费，避免恢复辅导后被残留标记误下课
+        "tutoring_end_confirm_pending": False,
+        "tutoring_end_confirmed": False,
         "reply_text": (reply + ("\n\n" if reply and opening else "") + opening).strip(),
         "advance_reason": state.get("advance_reason"),
         "llm_used": gen,
@@ -2848,6 +2999,8 @@ def initial_state(session_id: str, student_id: str = "student-001",
         "tutoring_last_judgement": None,
         "tutoring_asked": [],
         "tutoring_stats": {},
+        "tutoring_end_confirm_pending": False,
+        "tutoring_end_confirmed": False,
         "reply_text": "",
         "speech_kind": "none",
         "advance_reason": None,
