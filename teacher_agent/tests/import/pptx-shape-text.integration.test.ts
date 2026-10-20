@@ -5,6 +5,18 @@ import { importPptx } from '@openmaic/importer';
 import { buildImportedPptDraft } from '@/lib/import/pptx-course';
 
 describe('PPTX import to content review', () => {
+  it('sends image-only pages with empty placeholder text to OCR', () => {
+    const draft = buildImportedPptDraft([
+      {
+        id: 'image-page',
+        elements: [
+          { type: 'text', content: '<p>&nbsp;</p>' },
+          { type: 'image', src: 'data:image/jpeg;base64,test' },
+        ],
+      } as never,
+    ]);
+    expect(draft.slides[0]).toMatchObject({ title: '第 1 页', content: '', imageOcr: 'pending' });
+  });
   it('reads the original shape text without rewriting the uploaded PPTX', async () => {
     const ppt = new PptxGenJS();
     ppt.layout = 'LAYOUT_WIDE';

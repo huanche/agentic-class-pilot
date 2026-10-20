@@ -77,6 +77,7 @@ import {
   resolveReviewedPptDraft,
 } from '@/lib/import/pptx-course';
 import { PptContentReview } from '@/components/generation/ppt-content-review';
+import { needsPptImageOcr } from '@/lib/import/ppt-content-ocr';
 import { buildPptNarrationScripts } from '@/lib/import/ppt-narration';
 import type { Slide } from '@openmaic/dsl';
 import {
@@ -1686,6 +1687,7 @@ function GenerationPreviewContent() {
     if (!session?.pptContentDraft) return;
     const draft = session.pptContentDraft;
     if (draft.slides.filter((slide) => slide.include).length === 0) return;
+    if (draft.slides.some((slide) => slide.include && needsPptImageOcr(slide))) return;
     const nextSession: GenerationSessionState = {
       ...session,
       pdfText: buildImportedPptContextFromDraft(draft),
@@ -1781,6 +1783,7 @@ function GenerationPreviewContent() {
       <div className="relative">
         {cancelControl}
         <PptContentReview
+          source={session.courseSpaceContext}
           draft={session.pptContentDraft}
           onChange={handlePptContentChange}
           onConfirm={handleConfirmPptContent}

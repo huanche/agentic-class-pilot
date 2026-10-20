@@ -186,6 +186,8 @@ export interface ImportedPptSlideDraft {
   formulas?: string[];
   /** Formula pages may be redrawn by OpenMAIC while retaining page identity/order. */
   generationStrategy?: 'faithful' | 'ai-formula-enhanced';
+  /** Image-only pages require OCR before the teacher can confirm their content. */
+  imageOcr?: 'pending' | 'complete' | 'not-needed';
 }
 
 export interface PptContentDraft {

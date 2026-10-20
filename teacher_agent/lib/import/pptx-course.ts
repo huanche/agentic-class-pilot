@@ -51,6 +51,7 @@ export function buildImportedPptDraft(slides: Slide[]): PptContentDraft {
   return {
     generationPolicyVersion: PPT_COURSEWARE_POLICY_VERSION,
     slides: slides.map((slide, index): ImportedPptSlideDraft => {
+      const texts = getImportedSlideText(slide);
       const formulas = slide.elements
         .filter(
           (element): element is Extract<Slide['elements'][number], { type: 'latex' }> =>
@@ -61,11 +62,15 @@ export function buildImportedPptDraft(slides: Slide[]): PptContentDraft {
         id: `pptx-slide-${index + 1}`,
         originalIndex: index,
         title: getImportedSlideTitle(slide, index),
-        content: getImportedSlideText(slide).slice(1).join('\n'),
+        content: texts.slice(1).join('\n'),
         speakerNotes: slide.script?.trim() || '',
         include: true,
         formulas,
         generationStrategy: formulas.length ? 'ai-formula-enhanced' : 'faithful',
+        imageOcr:
+          !texts.length && !formulas.length && slide.elements.some((item) => item.type === 'image')
+            ? 'pending'
+            : 'not-needed',
       };
     }),
     revision: 1,
