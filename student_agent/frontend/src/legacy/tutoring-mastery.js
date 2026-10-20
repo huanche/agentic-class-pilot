@@ -19,6 +19,27 @@ function formatRemaining(seconds) {
   return m + ":" + (s < 10 ? "0" : "") + s;
 }
 
+/* ── 倒计时：本地每秒走秒，以服务端 remaining 为锚 ──
+   会话轮询 2 秒一次，直接重渲染会让倒计时每 2 秒跳一下。
+   渲染时把锚点（服务端剩余秒数 + 本地收到时刻）记在时钟元素上，
+   一个全局 1 秒 ticker 只改时钟文本；轮询重渲染刷新锚点（校准漂移）。 */
+var clockTimer = null;
+
+function ensureClockTicker() {
+  if (clockTimer) return;
+  clockTimer = setInterval(function () {
+    var nodes = document.querySelectorAll(".tm-clock[data-remaining]");
+    for (var i = 0; i < nodes.length; i++) {
+      var node = nodes[i];
+      var remaining = parseFloat(node.getAttribute("data-remaining"));
+      var at = parseFloat(node.getAttribute("data-at")) || 0;
+      if (!isFinite(remaining) || !at) continue;
+      var left = remaining - (Date.now() - at) / 1000;
+      node.textContent = formatRemaining(Math.max(0, Math.round(left)));
+    }
+  }, 1000);
+}
+
 export function renderTutoringMastery(el, tutoring) {
   if (!el || !tutoring) return;
   var kps = tutoring.knowledge_points || [];
@@ -55,10 +76,16 @@ export function renderTutoringMastery(el, tutoring) {
       + "</li>";
   });
   var remaining = formatRemaining(tutoring.remaining_seconds);
+  var clockAttrs = "";
+  if (typeof tutoring.remaining_seconds === "number") {
+    clockAttrs = ' data-remaining="' + tutoring.remaining_seconds
+      + '" data-at="' + Date.now() + '"';
+  }
   el.innerHTML =
-    '<div class="tm-head">复习剩余 <span class="tm-clock">'
+    '<div class="tm-head">复习剩余 <span class="tm-clock"' + clockAttrs + ">"
     + (remaining || "--:--") + "</span></div>"
     + '<ol class="tm-list">' + rows.join("") + "</ol>";
+  ensureClockTicker();
 
   /* 触屏点击切换（悬停/键盘聚焦由 CSS 处理）；重渲染只换 innerHTML，
      容器上的监听器绑一次就够。不用 hidden 属性——globals.css 把

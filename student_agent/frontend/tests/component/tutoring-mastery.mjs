@@ -63,6 +63,15 @@ try {
 
   assert.ok(result.firstChildIsBar, '掌握条应挂在聊天面板第一个子节点（聊天记录上方）');
   assert.ok(result.html.includes('14:05'), `剩余时间应渲染为 mm:ss：${result.html}`);
+  assert.ok(result.html.includes('data-remaining="845"'), `时钟要带服务端锚点：${result.html}`);
+
+  // 每秒走秒：约 1.2 秒后时钟应从 14:05 走到 14:04（不再跟轮询跳 2 秒）
+  await assert.doesNotReject(
+    () => page.waitForFunction(() => {
+      const clock = document.querySelector('.tm-clock');
+      return clock && clock.textContent === '14:04';
+    }, undefined, {timeout: 4000}),
+    '倒计时应每秒走秒');
   assert.ok(result.html.includes('>三级调度<') && result.html.includes('>调度是什么<'),
     `知识点标题要渲染：${result.html}`);
   assert.ok(result.html.indexOf('三级调度') < result.html.indexOf('调度是什么'),
