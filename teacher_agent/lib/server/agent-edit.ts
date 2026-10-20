@@ -6,7 +6,7 @@
  * gates: legacy Pro editing or ownership-scoped teacher page review.
  */
 import type { NextRequest } from 'next/server';
-import type { AgentEvent, AgentMessage } from '@earendil-works/pi-agent-core';
+import type { AgentMessage } from '@earendil-works/pi-agent-core';
 import { resolveModelFromRequest } from '@/lib/server/resolve-model';
 import type { LlmStage } from '@/lib/server/model-routes';
 import { createCallLlmStreamFn } from '@/lib/agent/runtime/stream-fn';
@@ -14,6 +14,7 @@ import { buildAgent, buildSystemPrompt } from '@/lib/agent/runtime/build-agent';
 import { buildToolset } from '@/lib/agent/tools/registry';
 import { callLLM } from '@/lib/ai/llm';
 import { createLogger } from '@/lib/logger';
+import { createAgentEditResponse } from '@/lib/server/agent-edit-stream';
 import type { SceneContext } from '@/lib/agent/tools/regenerate-scene-actions';
 
 const log = createLogger('MAIC Agent');
@@ -163,45 +164,12 @@ export async function handleAgentEdit(
   });
   log.info(`agent edit turn [model=${modelString}] scene=${body.scene?.id ?? 'none'}`);
 
-  const encoder = new TextEncoder();
-  const stream = new ReadableStream({
-    async start(controller) {
-      const send = (event: AgentEvent) => {
-        try {
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
-        } catch {
-          /* controller closed */
-        }
-      };
-      const unsubscribe = agent.subscribe((event) => {
-        send(event);
-      });
-      try {
-        await agent.prompt(message);
-        await agent.waitForIdle();
-      } catch (err) {
-        log.error(`agent run failed: ${err instanceof Error ? err.message : String(err)}`);
-      } finally {
-        unsubscribe();
-        try {
-          controller.enqueue(encoder.encode('event: close\ndata: {}\n\n'));
-        } catch {
-          /* ignore */
-        }
-        controller.close();
-      }
-    },
-    cancel() {
-      agent.abort();
-      abortController.abort();
-    },
-  });
-
-  return new Response(stream, {
-    headers: {
-      'Content-Type': 'text/event-stream; charset=utf-8',
-      'Cache-Control': 'no-cache, no-transform',
-      Connection: 'keep-alive',
-    },
+  return createAgentEditResponse({
+    agent,
+    message,
+    signal: req.signal,
+    onAbort: () => abortController.abort(),
+    onError: (error) =>
+      log.error(`agent run failed: ${error instanceof Error ? error.message : String(error)}`),
   });
 }

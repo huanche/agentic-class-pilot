@@ -57,6 +57,7 @@ import { useSceneRuntimeErrors } from '@/lib/store/scene-runtime-errors';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { editElementsApplyCorrectionKey } from './edit-elements-result';
 import { reviewSceneContext } from './review-scene-context';
+import { consumeEditStream, EDIT_CONNECTION_INTERRUPTED } from './consume-edit-stream';
 
 export interface UseAgentRuntimeOptions {
   scene?: { id: string; title: string };
@@ -590,34 +591,16 @@ export function useAgentRuntime(opts: UseAgentRuntimeOptions) {
             ...(cfg.thinkingConfig ? { thinkingConfig: cfg.thinkingConfig } : {}),
           }),
           signal: abort.signal,
+        }).catch((error) => {
+          if (abort.signal.aborted) throw error;
+          throw new Error(EDIT_CONNECTION_INTERRUPTED);
         });
         if (!res.ok || !res.body) throw new Error(await agentEditError(res));
 
-        const reader = res.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = '';
-        for (;;) {
-          const { value, done } = await reader.read();
-          if (done) break;
-          buffer += decoder.decode(value, { stream: true });
-          const chunks = buffer.split('\n\n');
-          buffer = chunks.pop() ?? '';
-          for (const chunk of chunks) {
-            const line = chunk.split('\n').find((l) => l.startsWith('data:'));
-            if (!line) continue;
-            const json = line.slice(5).trim();
-            if (!json || json === '{}') continue;
-            let event: AgentEvent;
-            try {
-              event = JSON.parse(json) as AgentEvent;
-            } catch {
-              continue;
-            }
-            // Skip late events from a superseded run (don't apply stale tool
-            // results to the stage or rewrite the new run's message).
-            if (isCurrent()) await handleEvent(event, refresh, assistantId);
-          }
-        }
+        await consumeEditStream(res, async (event) => {
+          // A stopped or superseded turn must never apply a late tool result.
+          if (isCurrent()) await handleEvent(event, refresh, assistantId);
+        });
       } catch (err) {
         // User-initiated stop — keep whatever streamed, don't surface an error.
         if (abort.signal.aborted) {
