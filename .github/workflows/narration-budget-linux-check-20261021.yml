@@ -1,0 +1,19 @@
+name: narration-budget-linux-check-20261021
+on:
+  push:
+    branches: [codex/backup-generation-controls-20261020]
+    paths: [.github/workflows/narration-budget-linux-check-20261021.yml]
+permissions:
+  contents: read
+jobs:
+  latest-deploy-policy:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: f5e7f34409fc9d653e437273c6ff496501043786
+      - name: Validate latest Linux backup and deployment rules
+        run: |
+          python3 -m unittest discover -s scripts -p test_server_backup_policy.py
+          bash -n teacher_agent/scripts/server-deploy-teacher.sh
