@@ -1662,7 +1662,7 @@ body::before { background: none; }
   .join-fab { right: 16px; bottom: 16px; }
 }
 
-/* ── 课后辅导掌握条（工单 02 外壳：剩余时间 + 编号顺序 + 自评）── */
+/* ── 课后辅导掌握条（工单 02 外壳：剩余时间 + 编号顺序 + 系统星级）── */
 .tutoring-mastery {
   display: flex;
   align-items: baseline;
@@ -1696,7 +1696,6 @@ body::before { background: none; }
   line-height: 16px;
 }
 .tm-current { color: var(--brand-strong, inherit); font-weight: 600; }
-.tm-self { font-size: 11px; opacity: 0.8; }
 
 /* 量规小图标（工单 04）：悬停显示/移开隐藏、键盘聚焦可查、触屏点击切换 */
 .tm-item { position: relative; }
@@ -1747,7 +1746,6 @@ body::before { background: none; }
 .tfeedback__no { color: var(--brand); font-weight: 600; min-width: 20px; }
 .tfeedback__name { flex: 1; }
 .tfeedback__stars { color: var(--brand-strong, inherit); font-weight: 600; }
-.tfeedback__self { font-size: 12px; opacity: 0.8; }
 .tfeedback__evidence { font-size: 12px; opacity: 0.65; }
 .tfeedback__unfinished { margin: 10px 0 0; font-size: 13px; color: var(--brand-strong, inherit); }
 .tfeedback__advice { margin: 8px 0 0; font-size: 13px; }

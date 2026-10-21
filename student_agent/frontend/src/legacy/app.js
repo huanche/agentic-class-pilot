@@ -478,7 +478,7 @@ function applyServerTurn(res) {
     return;
   }
 
-  /* 课后辅导掌握条：每次轮询都刷新——倒计时和自评的变化不会伴随阶段变化，
+  /* 课后辅导掌握条：每次轮询都刷新——倒计时和系统星级的变化不会伴随阶段变化，
      所以必须放在「阶段没变就早退」之前维护。 */
   if (res.tutoring && phase === "tutoring") {
     if (!tutoringMasteryEl) tutoringMasteryEl = mountTutoringMastery($(PANE.chat));

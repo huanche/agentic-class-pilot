@@ -45,9 +45,6 @@ export function createView(ctx) {
   /* 每次 enter 都会 +1。请求回来时对不上就丢弃 ——
      renderRoute 在 hash 变化时都会调 enter，来回切页时会有竞态。 */
   var requestSeq = 0;
-  /* 同一节课重复进入直接复用，避免闪一下载入中 */
-  var loadedLessonId = null;
-  var loadedReport = null;
 
   /* ── 四个状态互斥 ──────────────────────────────────────── */
 
@@ -107,6 +104,7 @@ export function createView(ctx) {
       row.appendChild(el("span", "report__kp-name", item.title || item.kp_id || "知识点"));
       row.appendChild(renderStars(item.stars));
       row.appendChild(el("span", "report__kp-status", statusOf(item)));
+      if (item.needs_review) row.appendChild(el("span", "report__kp-review", "需要再确认"));
 
       kpList.appendChild(row);
     });
@@ -141,7 +139,7 @@ export function createView(ctx) {
   function renderAdvice(points) {
     adviceList.replaceChildren();
     var weak = points.filter(function (item) {
-      return (Number(item.stars) || 0) <= REPORT_WEAK_STARS;
+      return (Number(item.stars) || 0) <= REPORT_WEAK_STARS || item.needs_review;
     });
 
     if (!weak.length) {
@@ -158,7 +156,7 @@ export function createView(ctx) {
       /* 先转义再解析 **粗体**，走 ui.js 的 renderInline */
       row.innerHTML = renderInline(
         "**" + (item.title || item.kp_id) + "**（" + mark + "）：" +
-        "课上未达到理解线，建议先回到对应片段重听。"
+        (item.needs_review ? "近期回答与已有记录不一致，建议再确认。" : "建议回到对应片段复习，再尝试独立解释。")
       );
       adviceList.appendChild(row);
     });
@@ -203,7 +201,7 @@ export function createView(ctx) {
     headlineMinutes.textContent = formatMinutes(report.lesson_elapsed_minutes);
     headlineKpCount.textContent = String(points.length);
     headlineStrongCount.textContent = String(points.filter(function (item) {
-      return (Number(item.stars) || 0) >= 4;
+      return (Number(item.stars) || 0) >= 4 && !item.needs_review;
     }).length);
 
     renderKnowledgePoints(points);
@@ -221,13 +219,9 @@ export function createView(ctx) {
 
     fetchLessonReport(ctx.sessionId, lessonId).then(function (report) {
       if (seq !== requestSeq) return;   /* 期间又切走了，丢弃这次结果 */
-      loadedLessonId = lessonId;
-      loadedReport = report;
       render(report);
     }).catch(function (err) {
       if (seq !== requestSeq) return;
-      loadedLessonId = null;
-      loadedReport = null;
       errorText.textContent = "学习报告加载失败：" + err.message;
       showState("error");
       ctx.toast("学习报告加载失败：" + err.message);
@@ -240,20 +234,12 @@ export function createView(ctx) {
         location.hash = ctx.getReplayHash();
       });
       $("report-retry").addEventListener("click", function () {
-        loadedLessonId = null;
-        loadedReport = null;
         load();
       });
     },
 
     enter: function () {
-      if (ctx.lessonId === loadedLessonId && loadedReport) {
-        /* 命中缓存也要把序号推一格：否则「A → B → 回 A」时，
-           B 那次还在路上的请求回来会盖掉 A 的报告 */
-        requestSeq++;
-        render(loadedReport);
-        return;
-      }
+      /* 续聊可能更新掌握记录，每次进入都刷新，防止报告和反馈卡显示不同版本。 */
       load();
     },
 

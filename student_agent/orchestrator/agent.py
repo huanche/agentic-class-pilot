@@ -14,7 +14,7 @@ LLM 接入（可选）：
     设置环境变量 AGENT_LLM_BASE_URL / AGENT_LLM_API_KEY / AGENT_LLM_MODEL
     （任意 OpenAI 兼容 /chat/completions 端点）后，teach 节点改用真实大模型。
     未配置时 teach 走规范第 8 节的确定性降级行为，整张图照样能跑完整节课。
-    星级评定由下课前的 LLM 依据整课对话综合判定（见 _assess_mastery_with_llm）；
+    星级由逐题作答表现和程序量规更新，下课不重新评分；
     复述/探究阶段「答没答上」的推进/留守也交给 LLM 判定，不再写死关键词表。
 
 课堂通过平台入口启动，由 apps/server.py 托管会话。
@@ -33,6 +33,7 @@ from pathlib import Path
 from typing import Annotated, Literal, TypedDict
 
 from langgraph.graph import END, START, StateGraph
+from apps.integration.mastery import STAR_STATUS, assessed_stars, record_assessment
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -66,7 +67,6 @@ STAGE_NAMES = {
     "class_discussion": "全班讨论阶段",
     "tutoring": "课后辅导",
 }
-STAR_STATUS = {1: "已接触", 2: "初步理解", 3: "理解中", 4: "接近掌握"}
 
 # 全局开关：视频最终播完 → 进入「课后辅导」（默认开启）。
 # 关闭时回到原有编排（复述 → 探究 → 讨论）；三个旧阶段的代码保留不删。
@@ -296,12 +296,14 @@ class ClassroomState(TypedDict):
     # ── 课后辅导（工单 02：意愿与时间预算）──
     # ⚠️ 同上：LangGraph 只保留本 TypedDict 声明过的键，新键必须在此声明。
     tutoring_order: list[str]               # 复习顺序（kp_id 列表，学生指定在前，其余按目录补齐）
-    tutoring_self_ratings: dict[str, int]   # 学生自评 1–5 星（只表达意愿，与系统星级分开存储）
     tutoring_planned_minutes: int           # 当前计划时长（分钟）：学生报的时长，或进辅导时的默认值
     tutoring_planned_end_at: str | None     # 计划结束时间戳：学生报时长那一刻起算；未报时从进辅导起按默认时长起算
     tutoring_cursor: int                    # 复习游标：tutoring_order 里当前推进到第几个（判对 +1）
     tutoring_active_kp: str | None          # 正在讲的知识点（显式记录；高亮/载荷以它为准，不从顺序+游标推导）
-    tutoring_stars: dict[str, int]          # 辅导作答证据星（掌握条/辅导反馈用；课堂「已接触」基线不混入）
+    mastery_schema: str
+    mastery_history: list[dict]             # 累积逐题评估依据，不被心跳清空
+    mastery_needs_review: list[str]         # 与已有高星记录连续矛盾，待再次确认
+    mastery_contradictions: dict[str, int]
     tutoring_question: dict | None          # 当前检测题 {kp_id, question, asked_at, hint_given, was_fresh, wrong_count}
     tutoring_last_judgement: dict | None    # 本轮作答判定（会话层据此落学习事件；无判定为 None）
     tutoring_asked: list[str]               # 已见题干清单（出题去重：新题必须避开）
@@ -784,7 +786,7 @@ def _parse_tutoring_order(msg: str, catalog: list[tuple[str, str]]) -> list[str]
     return None
 
 
-# 七分类的骨架层信号：结束 / 追问 / 求助（自评、选点、改时间由各自解析器识别）。
+# 七分类的骨架层信号：结束 / 追问 / 求助（选点、改时间由各自解析器识别）。
 # 答题是兜底类：不是以上任何一类、又不是意愿表达的消息，交给工单 03 的判答链。
 _TUTORING_END_PAT = re.compile(r"就到这|到此为止|今天先到|先这样|下课|结束吧|复习完[了成]|收尾吧")
 _TUTORING_SKIP_PAT = re.compile(r"下一|跳过|换一[个题]|往下[一走]|继续往")
@@ -820,7 +822,7 @@ def _tutoring_question_pool(title: str) -> list[str]:
 
 
 def _tutoring_generate_question(title: str, seen: list[str],
-                                expected: list[str] | None = None) -> str | None:
+                                expected: list[str] | None = None, kind: str = "basic") -> str | None:
     """模型出题：把已见题干喂进 prompt 避开；有要点时一并喂上，让题目
     锚定教师发布的「应会要点」而不是泛泛而问。失败返回 None 走题池。"""
     if not llm_available():
@@ -832,26 +834,32 @@ def _tutoring_generate_question(title: str, seen: list[str],
         "你是课堂里的 AI 辅导老师，要为学生出一个知识检测题。"
         "题目必须考查给定的知识点、适合口头作答、一句话问完。"
         "不得与已问过的题目重复或高度相似。只输出题目本身，不要编号不要解释。",
-        f"知识点：{title}{expected_block}\n已问过的题（必须避开）：\n{seen_block}\n请出下一道检测题：",
+        f"知识点：{title}{expected_block}\n题目类型：{kind}。"
+        + ("请设置课堂原例之外的新情境，要求学生应用知识并说明判断理由。"
+           if kind == "application" else "请检测学生能否解释核心概念，不要只问是非题。")
+        + f"\n已问过的题（必须避开）：\n{seen_block}\n请出下一道检测题：",
     )
     text = (raw or "").strip()
     return text or None
 
 
 def _tutoring_pick_question(title: str, seen: list[str],
-                            expected: list[str] | None = None) -> tuple[str, bool]:
+                            expected: list[str] | None = None, kind: str = "basic") -> tuple[str, bool]:
     """选题：优先模型生成（避开已见、锚定要点），失败走确定性题池轮换。
 
     返回 (题干, 是否未见)。题池耗尽后复用旧题，标记不新鲜——
-    答对也封顶 4 星（量规的 stale_question_max_stars）。
+    旧题不能单独证明新情境应用能力，最高提供 4 星证据。
     """
-    generated = _tutoring_generate_question(title, seen, expected)
+    generated = _tutoring_generate_question(title, seen, expected, kind)
     if generated and generated not in seen:
         return generated, True
-    for q in _tutoring_question_pool(title):
+    pool = ([f"请举一个课堂上没有出现过的新情境，说明如何应用「{title}」，并解释理由。",
+             f"如果「{title}」的一个关键条件发生变化，你会怎样处理？请设例并解释依据。"]
+            if kind == "application" else _tutoring_question_pool(title))
+    for q in pool:
         if q not in seen:
             return q, True
-    return _tutoring_question_pool(title)[0], False
+    return pool[0], False
 
 
 def _tutoring_judge(question: dict, answer: str,
@@ -862,7 +870,7 @@ def _tutoring_judge(question: dict, answer: str,
     此时额外返回 intent 槽位（同一行 JSON 里），由确定性处理器接管——
     意图理解进模型，状态变更仍在代码。
 
-    返回 (verdict, note 一句话依据, extra={intent,kp_no,rating,minutes,order})。
+    返回 (verdict, note 一句话依据, extra={intent,minutes,order})。
     没有模型宁可 unclear——不瞎判，星级不动。判定是唯一入口，测试在此 mock。
     """
     if not llm_available():
@@ -874,12 +882,19 @@ def _tutoring_judge(question: dict, answer: str,
         "只输出一行 JSON："
         "{\"verdict\": \"correct|wrong|unclear|not_answer\", "
         "\"intent\": \"...\", \"note\": \"一句话依据\"}。\n"
+        "作答评估还必须返回 performance 与 note；不要返回星级。"
+        "performance 取 incorrect（核心概念明显错误）、partial（说对部分但缺关键点）、"
+        "understood（正确解释核心）、transfer（在本题新情境中正确应用并给出理由）。"
+        "只有新情境题且理由充分才能给 transfer，并用 reasoning 摘录学生的实际推理。"
+        "note 必须指出学生实际说对或说错的内容，不得虚构证据。"
+        "例：{\"verdict\":\"correct\",\"performance\":\"understood\",\"note\":\"解释清楚核心条件\"}。\n"
         "correct=答对了核心；wrong=答错或说反；unclear=在作答但太简短没法判定；\n"
         "not_answer=根本不是在回答这道题（想跳过、想问别的、求助、改复习时长、"
         "想结束复习等），此时 intent 从这些里选："
-        "self_eval|kp_select|followup|help|time_change|end|skip|other，"
-        "可带槽位 kp_no/rating/minutes/order（如 {\"intent\":\"self_eval\",\"kp_no\":2,\"rating\":3}）。",
-        f"检测题：{question.get('question', '')}{expected_block}\n学生消息：{answer}\n"
+        "kp_select|followup|help|time_change|end|skip|other，"
+        "可带槽位 minutes/order（如 {\"intent\":\"time_change\",\"minutes\":10}）。",
+        f"检测题：{question.get('question', '')}{expected_block}\n"
+        f"题目类型：{question.get('kind', 'basic')}；已提示：{bool(question.get('hint_given'))}。\n学生消息：{answer}\n"
         "请给出一行 JSON 判定：",
     )
     data = _tutoring_parse_json(raw)
@@ -888,7 +903,9 @@ def _tutoring_judge(question: dict, answer: str,
     verdict = str(data.get("verdict", "")).strip().lower()
     if verdict not in ("correct", "wrong", "unclear", "not_answer"):
         return "unclear", "", {}
-    extra = data if verdict == "not_answer" else {}
+    if verdict in ("correct", "wrong") and assessed_stars(question, verdict, data) is None:
+        return "unclear", "", {}
+    extra = data
     return verdict, str(data.get("note", ""))[:120], extra
 
 
@@ -907,7 +924,7 @@ def _tutoring_parse_json(raw: str | None) -> dict | None:
 
 
 _TUTORING_CLASSIFY_INTENTS = (
-    "self_eval", "kp_select", "answer", "followup", "help",
+    "kp_select", "answer", "followup", "help",
     "time_change", "end", "skip", "other",
 )
 
@@ -917,7 +934,7 @@ def _tutoring_classify_message(msg: str, catalog: list[tuple[str, str]],
     """LLM 意图分类（兜底路径）：正则没认出的说法在这里判定。
 
     只影响「执行哪个确定性处理器」，状态变更本身仍在代码里做；
-    槽位（kp_no/rating/minutes/order）在 teach 里过界校验。
+    槽位（minutes/order）在 teach 里过界校验。
     无模型/解析失败 → None，退回正则时代的兜底行为。
     """
     if not llm_available():
@@ -926,10 +943,10 @@ def _tutoring_classify_message(msg: str, catalog: list[tuple[str, str]],
     raw = llm_chat(
         "你是课后辅导对话的意图分类器。学生正和 AI 老师一对一复习本节课知识点，"
         "判定他这条消息的意图，只输出一行 JSON，不要解释：\n"
-        "{\"intent\": \"self_eval|kp_select|answer|followup|help|time_change|end|skip|other\""
-        " 可带槽位：{\"intent\":\"self_eval\",\"kp_no\":2,\"rating\":3}、"
-        "{\"intent\":\"kp_select\",\"order\":[2,1]}、{\"intent\":\"time_change\",\"minutes\":10}\n"
-        "self_eval=给自己某知识点打 1-5 星；kp_select=指定复习顺序或想先复习哪个；"
+        "{\"intent\": \"kp_select|answer|followup|help|time_change|end|skip|other\"}。\n"
+        "可带具体信息，例如：{\"intent\":\"kp_select\",\"order\":[2,1]}、"
+        "{\"intent\":\"time_change\",\"minutes\":10}\n"
+        "kp_select=指定复习顺序或想先复习哪个；"
         "answer=在回答当前检测题；followup=就内容追问；help=求助/要求讲解；"
         "time_change=调整复习时长；end=想结束本轮复习；skip=想跳过当前内容进入下一个；"
         "other=寒暄等其它。",
@@ -947,15 +964,7 @@ def _tutoring_classify_message(msg: str, catalog: list[tuple[str, str]],
 
 DEFAULT_TUTORING_RUBRIC = {
     "default_minutes": 15,
-    "hinted_max_stars": 3,
-    "stale_question_max_stars": 4,
-    "rubric": {
-        "1": "仅接触过概念：听过讲解，但说不出内容",
-        "2": "能认出但不能自己讲：见到说法能判断对错，独立解释则说不清",
-        "3": "提示下能做对：经追问或提示后能答对检测题",
-        "4": "能独立做对已见题型：无需提示能答对，但尚未经未见过的新题确认",
-        "5": "无提示独立做对未见新题：未见过、无提示、独立答对，并满足本条量规",
-    },
+    "rubric": {str(k): v for k, v in STAR_STATUS.items()},
 }
 
 _TUTORING_RUBRIC_CACHE: dict | None = None
@@ -970,7 +979,7 @@ def _tutoring_rubric() -> dict:
     try:
         path = Path(__file__).resolve().parent / "rules" / "TUTORING-RUBRIC.json"
         data = json.loads(path.read_text(encoding="utf-8"))
-        for key in ("default_minutes", "hinted_max_stars", "stale_question_max_stars"):
+        for key in ("default_minutes",):
             if isinstance(data.get(key), int):
                 loaded[key] = data[key]
         if isinstance(data.get("rubric"), dict):
@@ -1016,27 +1025,6 @@ def _parse_tutoring_duration(msg: str) -> int | None:
     return minutes if 1 <= minutes <= 240 else None
 
 
-def _parse_tutoring_self_ratings(msg: str, catalog: list[tuple[str, str]],
-                                 active_kid: str | None = None) -> dict[str, int]:
-    """「2 我给自己 2 分」「第 3 个评 4 星」式自评：知识点编号 → 星级（1–5）。
-
-    不带编号的「自评 3 分」记到当前正在复习的知识点上。
-    自评只表达学生意愿，不进系统星级（kp_stars）。
-    """
-    ratings: dict[str, int] = {}
-    n = len(catalog)
-    for m in re.finditer(
-            r"(?:第[\s，,、]*)?([0-9]+)[\s，,、]*(?:号|个)?[\s，,、]*(?:我[\s，,、]*)?(?:给[\s，,、]*)?自己\s*"
-            r"(?:评\s*|打\s*)?(?:是\s*|为\s*)?([0-9]+)\s*[分星颗]",
-            msg):
-        no, stars = int(m.group(1)), int(m.group(2))
-        if 1 <= no <= n and 1 <= stars <= 5:
-            ratings[catalog[no - 1][0]] = stars
-    for m in re.finditer(r"自评\s*(?:为\s*)?([0-9]+)\s*[分星颗]", msg):
-        stars = int(m.group(1))
-        if 1 <= stars <= 5 and active_kid:
-            ratings.setdefault(active_kid, stars)
-    return ratings
 
 
 def tutoring_public(state: ClassroomState, now_iso: str | None = None,
@@ -1076,14 +1064,10 @@ def tutoring_public(state: ClassroomState, now_iso: str | None = None,
         ],
         "order": [no_of[kid] for kid in order if kid in no_of],
         "current_no": current_no,
-        "self_ratings": {
-            str(no_of[kid]): stars
-            for kid, stars in (state.get("tutoring_self_ratings") or {}).items()
-            if kid in no_of
-        },
+        "needs_review": [no_of[k] for k in (state.get("mastery_needs_review") or []) if k in no_of],
         "stars": {
             str(no_of[kid]): int(v)
-            for kid, v in (state.get("tutoring_stars") or {}).items()
+            for kid, v in (state.get("kp_stars") or {}).items()
             if kid in no_of
         },
         "question": ({
@@ -1121,19 +1105,17 @@ def tutoring_feedback_payload(state: ClassroomState,
     """
     catalog = _lesson_kp_catalog(state)
     no_of = {kid: i for i, (kid, _t) in enumerate(catalog, 1)}
-    # 反馈里的系统星 = 辅导作答证据星（课堂「已接触」基线不混入，
-    # 那是学情导出的口径，不是辅导反馈的）
-    stars = state.get("tutoring_stars") or {}
-    ratings = state.get("tutoring_self_ratings") or {}
+    # 所有页面只读取 kp_stars，不再维护第二份辅导星。
+    stars = {kid: int((state.get("kp_stars") or {}).get(kid, 0)) for kid, _ in catalog}
     evidence_by_kp: dict[str, list[str]] = {}
-    for item in state.get("mastery_updates") or []:
-        if item.get("source") == "tutoring":
+    for item in state.get("mastery_history") or []:
+        if item.get("source") == "mastery-v2":
             evidence_by_kp.setdefault(item.get("kp_id", ""), []).append(
                 item.get("evidence") or "")
     kps = [{
         "no": no_of.get(kid), "kp_id": kid, "title": title,
         "system_stars": int(stars.get(kid, 0)),
-        "self_rating": ratings.get(kid),
+        "needs_review": kid in (state.get("mastery_needs_review") or []),
         "evidence": [e for e in evidence_by_kp.get(kid, []) if e],
     } for kid, title in catalog]
     stats = dict(state.get("tutoring_stats") or {})
@@ -1145,10 +1127,11 @@ def tutoring_feedback_payload(state: ClassroomState,
                  - datetime.fromisoformat(state["now"])).total_seconds()
         remaining_minutes = max(0.0, delta / 60 * float(state.get("time_scale") or 1.0))
     actual = max(0, planned - int(round(remaining_minutes)))
-    weak = [k["title"] for k in kps if k["system_stars"] <= 2]
+    weak = [k["title"] for k in kps if k["system_stars"] <= 2 or k["needs_review"]]
     strong = sum(1 for k in kps if k["system_stars"] >= 3)
     payload = {
-        "schema": "tutoring-feedback/1",
+        "schema": "tutoring-feedback/2",
+        "mastery_schema": "knowledge-mastery/2",
         "trigger": (trigger_text or "").strip()[:60],
         "planned_minutes": planned,
         "actual_minutes": actual,
@@ -1187,7 +1170,6 @@ def _tutoring_opening_skeleton(state: ClassroomState) -> str:
         "你可以先告诉我（都可以省略，不说我就自己安排）：\n"
         "- 想按什么顺序复习，比如「先 2 再 1」；\n"
         "- 哪个编号的知识点还没听懂；\n"
-        "- 给自己的掌握情况自评几颗星（1–5 星）；\n"
         "- 打算复习多长时间，比如「复习 15 分钟」。"
     )
 
@@ -1243,7 +1225,7 @@ def teach(state: ClassroomState) -> dict:
 
     updates: dict = {"attempts": state.get("attempts", 0)}
     if msg.strip():
-        # 累积整课对话，供下课前的 LLM 掌握度评定使用（见 _assess_mastery_with_llm）
+        # 累积整课对话，供回顾与学情追溯使用，不在下课重新评星
         updates["dialogue_log"] = [{"role": "student", "text": msg}]
     plain = ""
     directive = ""
@@ -1484,7 +1466,7 @@ def teach(state: ClassroomState) -> dict:
         directive = "宣布进入全班讨论环节，请老师来主导。"
 
     elif phase == "tutoring":
-        # 工单 02：意愿解析（顺序/自评/时长）+ 七类消息分流，全在确定性骨架层；
+        # 工单 02：意愿解析（顺序/时长）+ 七类消息分流，全在确定性骨架层；
         # LLM 只润色与答疑。确认类内容是硬性交付：模型缺席时骨架原文说给学生
         # （见下方 tutoring fallback）。
         updates["current_target"] = None
@@ -1496,15 +1478,11 @@ def teach(state: ClassroomState) -> dict:
             order = _parse_tutoring_order(msg, catalog)
             if order:
                 updates["tutoring_order"] = order
+                updates["tutoring_cursor"] = 0
                 updates["tutoring_active_kp"] = order[0]
             active_order = order or state.get("tutoring_order") or []
             active = active_order[0] if active_order else (catalog[0][0] if catalog else "")
             title = title_of.get(active, "刚才视频的内容")
-            new_ratings = _parse_tutoring_self_ratings(msg, catalog, active)
-            if new_ratings:
-                updates["tutoring_self_ratings"] = {
-                    **(state.get("tutoring_self_ratings") or {}), **new_ratings,
-                }
             duration = _parse_tutoring_duration(msg)
             if duration:
                 updates["tutoring_planned_minutes"] = duration
@@ -1526,15 +1504,6 @@ def teach(state: ClassroomState) -> dict:
                 confirms.append(f"好，就按你说的顺序：先{head}（其余按课件顺序）。")
             elif order:
                 confirms.append(f"好，那就先复习「{title}」。")
-            if new_ratings:
-                rated = "、".join(
-                    f"「{title_of.get(kid, kid)}」{stars} 星"
-                    for kid, stars in new_ratings.items()
-                )
-                confirms.append(
-                    f"你的自评我记下了（{rated}）——它代表你的感觉，"
-                    "系统星级还是看你实际作答。"
-                )
             if duration:
                 confirms.append(
                     f"好，那就复习 {duration} 分钟——到点我不会赶你走，"
@@ -1545,7 +1514,6 @@ def teach(state: ClassroomState) -> dict:
                 "end" if _TUTORING_END_PAT.search(msg)
                 else "skip" if _TUTORING_SKIP_PAT.search(msg)
                 else "time_change" if duration
-                else "self_eval" if new_ratings
                 else "kp_select" if order
                 else "followup" if _TUTORING_QUES_PAT.search(msg)
                 else "help" if _TUTORING_HELP_PAT.search(msg)
@@ -1566,7 +1534,9 @@ def teach(state: ClassroomState) -> dict:
                     kind = "declined_end"
 
             # ── 检测题机制（工单 03/04）：出题 → 判答 → 升星/追问讲解 → 换新题 → 推进 ──
-            prev_question = state.get("tutoring_question")
+            prev_question = None if order else state.get("tutoring_question")
+            if order:
+                updates["tutoring_question"] = None
             seen = list(state.get("tutoring_asked") or [])
             judged: dict | None = None
             judge_extra: dict = {}
@@ -1577,45 +1547,24 @@ def teach(state: ClassroomState) -> dict:
                 kid = prev_question.get("kp_id") or ""
                 verdict, _note, judge_extra = _tutoring_judge(
                     prev_question, msg, _tutoring_expected_for(state, kid))
+                assessment_update = record_assessment(state, prev_question, verdict, judge_extra, msg)
+                updates.update(assessment_update)
+                stars = dict(updates.get("kp_stars", stars))
+                if verdict in ("correct", "wrong") and not assessment_update:
+                    verdict = "unclear"  # 无有效知识点或作答证据时不评分、不推进
                 if verdict == "correct":
                     stats["correct"] = int(stats.get("correct", 0)) + 1
                     if bool(prev_question.get("hint_given")):
                         stats["hinted_correct"] = int(stats.get("hinted_correct", 0)) + 1
                     updates["tutoring_stats"] = stats
                     hinted = bool(prev_question.get("hint_given"))
-                    current = int(stars.get(kid, 0))
-                    # 5 星门槛（量规）：有提示 ≤3；见过的题 ≤4；
-                    # 只有「未见新题 + 无提示 + 独立答对」才可能到 5。
-                    rub = _tutoring_rubric()
-                    if hinted:
-                        cap = int(rub.get("hinted_max_stars", 3))
-                    elif not prev_question.get("was_fresh", True):
-                        cap = int(rub.get("stale_question_max_stars", 4))
-                    else:
-                        cap = 5
-                    stars[kid] = max(current, min(cap, current + 1))
-                    updates["kp_stars"] = stars
-                    # 辅导证据星独立累积，同受量规上限约束（掌握条/反馈只认作答挣来的星）
-                    t_stars = dict(state.get("tutoring_stars") or {})
-                    t_stars[kid] = min(cap, int(t_stars.get(kid, 0)) + 1)
-                    updates["tutoring_stars"] = t_stars
                     updates["tutoring_question"] = None
                     updates["tutoring_cursor"] = (
                         0 if order else state.get("tutoring_cursor", 0)) + 1
-                    # 证据条目走既有 mastery_updates 通道：平台态由会话层写
-                    # student.knowledge_mastery（星级只升不降），demo 态进导出
-                    updates["mastery_updates"] = list(state.get("mastery_updates") or []) + [{
-                        "kp_id": kid,
-                        "new_stars": stars[kid],
-                        "new_status": STAR_STATUS.get(stars[kid], "未检测"),
-                        "evidence": ("辅导检测题答对（有提示）" if hinted
-                                     else "辅导检测题答对（无提示独立作答）"),
-                        "source": "tutoring",
-                    }]
                     judged = {"kp_id": kid, "verdict": "correct",
                               "hint_given": hinted,
                               "question": prev_question.get("question", ""),
-                              "stars_after": stars[kid]}
+                              "stars_after": stars.get(kid, 0)}
                 elif verdict == "wrong":
                     # 答错不降星、不换知识点。第一次错：同题标记提示、追问；
                     # 连续错：讲解并安排**未见过的新题**确认（方案：答错追问/讲解
@@ -1627,7 +1576,7 @@ def teach(state: ClassroomState) -> dict:
                         text, fresh = _tutoring_pick_question(
                             title_w, seen, _tutoring_expected_for(state, kid))
                         updates["tutoring_question"] = {
-                            "kp_id": kid, "question": text,
+                            "kp_id": kid, "question": text, "kind": "basic",
                             "asked_at": state.get("now"), "hint_given": False,
                             "was_fresh": fresh, "wrong_count": 0,
                         }
@@ -1678,17 +1627,6 @@ def teach(state: ClassroomState) -> dict:
                             f"好，那就复习 {duration} 分钟——到点我不会赶你走，"
                             "只会问问你还想继续哪里。")
                         kind = "time_change"
-                elif intent == "self_eval":
-                    no, rating = llm_intent.get("kp_no"), llm_intent.get("rating")
-                    if (isinstance(no, int) and 1 <= no <= len(catalog)
-                            and isinstance(rating, int) and 1 <= rating <= 5):
-                        kid_r = catalog[no - 1][0]
-                        updates["tutoring_self_ratings"] = {
-                            **(state.get("tutoring_self_ratings") or {}), kid_r: rating}
-                        confirms.append(
-                            f"你的自评我记下了（「{title_of.get(kid_r, kid_r)}」{rating} 星）"
-                            "——它代表你的感觉，系统星级还是看你实际作答。")
-                        kind = "self_eval"
                 elif intent == "kp_select":
                     nos = llm_intent.get("order")
                     # 注意：不能在推导式里引用正在赋值的 ids（首个元素就 NameError），
@@ -1703,6 +1641,7 @@ def teach(state: ClassroomState) -> dict:
                     if ids:
                         order = ids + [k for k, _t in catalog if k not in ids]
                         updates["tutoring_order"] = order
+                        updates["tutoring_cursor"] = 0
                         updates["tutoring_active_kp"] = order[0]
                         head = "再".join(f"「{title_of.get(k, k)}」" for k in order[:2])
                         confirms.append(f"好，就按你说的顺序：先{head}（其余按课件顺序）。")
@@ -1719,10 +1658,12 @@ def teach(state: ClassroomState) -> dict:
             title = title_of.get(active, "刚才视频的内容")
 
             def _ask_question() -> None:
+                question_kind = "application" if stars.get(active, 0) >= 4 else "basic"
                 text, fresh = _tutoring_pick_question(
-                    title, seen, _tutoring_expected_for(state, active))
+                    title, seen, _tutoring_expected_for(state, active), question_kind)
                 updates["tutoring_question"] = {
                     "kp_id": active,
+                    "kind": question_kind,
                     "question": text,
                     "asked_at": state.get("now"),
                     "hint_given": False,
@@ -1737,7 +1678,7 @@ def teach(state: ClassroomState) -> dict:
                 if in_range:
                     _ask_question()
                     body = (
-                        "答得漂亮——记你一星。我们接着看"
+                        f"这次回答已记录，「{title_of.get(judged['kp_id'], '该知识点')}」目前 {stars.get(judged['kp_id'], 0)} 星。我们接着看"
                         f"「{title}」：{updates['tutoring_question']['question']}"
                     )
                 else:
@@ -1771,9 +1712,11 @@ def teach(state: ClassroomState) -> dict:
                     updates["tutoring_cursor"] = cursor_now + 1
                     next_kid = order_now[cursor_now + 1]
                     next_title = title_of.get(next_kid, "刚才视频的内容")
-                    next_q, next_fresh = _tutoring_pick_question(next_title, seen)
+                    next_kind = "application" if stars.get(next_kid, 0) >= 4 else "basic"
+                    next_q, next_fresh = _tutoring_pick_question(
+                        next_title, seen, _tutoring_expected_for(state, next_kid), next_kind)
                     updates["tutoring_question"] = {
-                        "kp_id": next_kid, "question": next_q,
+                        "kp_id": next_kid, "question": next_q, "kind": next_kind,
                         "asked_at": state.get("now"), "hint_given": False,
                         "was_fresh": next_fresh, "wrong_count": 0,
                     }
@@ -1829,6 +1772,11 @@ def teach(state: ClassroomState) -> dict:
                     f"你提到的「{snippet}」正是复习「{title}」的好切入点："
                     "先说说你现在已经理解的部分，我从你卡住的地方讲起。"
                 )
+            if kind in ("help", "followup") and prev_question:
+                updates["tutoring_question"] = {**prev_question, "hint_given": True}
+            review_points = updates.get("mastery_needs_review", state.get("mastery_needs_review") or [])
+            if prev_question and prev_question.get("kp_id") in review_points:
+                body += " 这个知识点需要再确认，原有星级先保留，我们再换个角度核实。"
             plain = timeup_note + body
 
             pending_now = updates.get("tutoring_question", prev_question)
@@ -1855,7 +1803,7 @@ def teach(state: ClassroomState) -> dict:
                 + (f"当前检测题（无模型时也要照问）：{pending_now.get('question', '')}\n"
                    if pending_now and pending_now.get("question") else "")
                 + (f"学生刚刚答对了检测题（{'有提示' if judged['hint_given'] else '无提示'}），"
-                   "已升星并进入下一个知识点。\n"
+                   "已按实际表现记录掌握星级并进入下一个知识点，不得说答对一次加一星。\n"
                    if judged and judged["verdict"] == "correct" else "")
                 + ("学生刚刚答错了检测题，请针对他的错误具体追问或讲解。\n"
                    if judged and judged["verdict"] == "wrong" else "")
@@ -2021,13 +1969,14 @@ def _hint(kp_id: str, state: ClassroomState | None = None) -> str:
 def judge_mastery(state: ClassroomState) -> dict:
     """记录本轮的掌握证据。
 
-    - guided_learning：讲过即记 1 星（已接触）
-    - recap_discussion / deep_inquiry：不再用写死关键词判星级。星级由
-      下课前的 LLM 依据知识点与学生对话综合评定（见 _assess_mastery_with_llm）；
+    - guided_learning：观看不自动给掌握星。
+    - recap_discussion / deep_inquiry：本节点只记录对话，不在下课额外评分；
       这里只记录学生原话，供 stage_snapshots / 学情导出 / LLM 判定使用。
     - 星级只升不降。
     """
     phase = state.get("host_phase")
+    if phase == "tutoring":
+        return {}
     msg = state.get("student_message", "")
     kp_stars = dict(state.get("kp_stars") or {})
     kp_meta = dict(state.get("kp_meta") or {})
@@ -2037,31 +1986,8 @@ def judge_mastery(state: ClassroomState) -> dict:
     unresolved = list(state.get("unresolved") or [])
     now = state.get("now")
 
-    def bump(kp: str, new_stars: int, source: str, ev: str) -> None:
-        old = kp_stars.get(kp, 0)
-        if new_stars > old:
-            kp_stars[kp] = new_stars
-            updates.append({
-                "kp_id": kp, "old_stars": old, "new_stars": new_stars,
-                "old_status": STAR_STATUS.get(old, "未检测"),
-                "new_status": STAR_STATUS[new_stars],
-                "source": source, "stage": phase, "evidence": ev,
-                "occurred_at": now,
-            })
-            kp_meta[kp] = {
-                "last_source": source, "last_stage": phase,
-                "last_evidence": ev, "updated_at": now,
-            }
 
-    if phase == "guided_learning":
-        seg_id = state.get("active_segment_id")
-        if seg_id:
-            seg = _segment_detail(state.get("lesson_plan") or {}, seg_id)
-            if seg:
-                for kp in seg.get("knowledge_point_ids", []):
-                    bump(kp, 1, "dialogue", f"讲解阶段讲过（{seg.get('title', '')}）")
-
-    elif phase in ("recap_discussion", "deep_inquiry"):
+    if phase in ("recap_discussion", "deep_inquiry"):
         kp = state.get("current_target")
         if kp and msg.strip():
             # 不判星级，只留证据：学生原话 + 本轮阶段。
@@ -2192,11 +2118,10 @@ def advance_stage(state: ClassroomState) -> dict:
     if state.get("external_event") == EVENT_END_LESSON:
         rest = []   # 主动下课：跳过剩余阶段，直接进 ending
     if not rest:
-        # 总结要算上本幕（deep_inquiry）刚拍的这条快照。
-        # 下课前的掌握度评定：交给 LLM 依据整课对话综合判定（取代写死关键词），
-        # 再用评定后的星级写总结，并把更新带进 out 供会话层落盘。
-        kp_stars, mastery_updates = _assess_mastery_with_llm(state)
-        remark, gen = _ending_remark({**state, "kp_stars": kp_stars}, snapshot)
+        # 下课只解释当前唯一掌握记录，不再额外评星。
+        kp_stars = dict(state.get("kp_stars") or {})
+        mastery_updates = list(state.get("mastery_updates") or [])
+        remark, gen = _ending_remark(state, snapshot)
         out = {
             "host_phase": "ending",
             "remaining_stages": [],
@@ -2293,88 +2218,6 @@ def advance_stage(state: ClassroomState) -> dict:
     return out
 
 
-def _assess_mastery_with_llm(state: ClassroomState) -> tuple[dict[str, int], list[dict]]:
-    """下课前的掌握度评定：让 LLM 依据整课对话与知识点综合判定星级。
-
-    取代原先写死的 EVIDENCE_GROUPS 关键词匹配。返回 (新的 kp_stars, mastery_updates)。
-    - 只升不降；LLM 未接入、无对话、或调用失败时原样返回，不影响下课。
-    - 输出格式为 {kp_id: 1~4 的整数星级}，解析失败直接忽略。
-    """
-    kp_stars = dict(state.get("kp_stars") or {})
-    dialogue = state.get("dialogue_log") or []
-    if not dialogue or not llm_available():
-        return kp_stars, []
-
-    # 本课涉及的知识点：已记星级的 + 未关闭目标 + 计划/段落里声明的，去重保序。
-    # 这样视频讲解模式（不逐段 bump 1 星）里的知识点也不会漏评。
-    kp_ids = list(dict.fromkeys(
-        list(kp_stars.keys()) + list(state.get("unresolved") or [])
-    ))
-    plan = state.get("lesson_plan") or {}
-    for kp in plan.get("knowledge_points") or []:
-        kid = kp.get("id") or kp.get("kp_id")
-        if kid:
-            kp_ids.append(str(kid))
-    from apps.integration import prompt_context
-    segments = plan.get("segments", [])
-    for seg in segments:
-        for kid in seg.get("knowledge_point_ids") or []:
-            kp_ids.append(str(kid))
-    kp_ids = list(dict.fromkeys(kp_ids))
-    if not kp_ids:
-        return kp_stars, []
-
-    lesson_id = state.get("lesson_id")
-    kp_lines = "\n".join(f"- {kp}：{kp_title(kp, lesson_id)}" for kp in kp_ids)
-    dialogue_lines = "\n".join(
-        f"{'学生' if d.get('role') == 'student' else 'AI'}：{d.get('text')}"
-        for d in dialogue
-    )
-    system = (
-        "你是教学评估助手。根据学生在课堂对话中的实际表现，为每个知识点评定掌握星级。"
-        "星级含义：1=已接触、2=初步理解、3=理解中、4=接近掌握。"
-        "只依据对话中的证据评定；对话里没有体现的知识点保持原星级或评为 1 星，不要凭空拔高。"
-        "只返回 JSON 对象：键为知识点编号，值为 1~4 的整数。"
-    )
-    raw = llm_chat(
-        system,
-        f"本课知识点：\n{kp_lines}\n\n课堂对话：\n{dialogue_lines}\n\n"
-        "请为每个知识点给出星级，只输出 JSON。",
-    )
-    if not raw:
-        return kp_stars, []
-
-    # 容错：只取第一个 { 到最后一个 } 之间的 JSON，忽略前后多余文字。
-    try:
-        body = raw.strip()
-        start, end = body.find("{"), body.rfind("}")
-        if start == -1 or end <= start:
-            return kp_stars, []
-        parsed = json.loads(body[start:end + 1])
-        if not isinstance(parsed, dict):
-            return kp_stars, []
-    except (ValueError, TypeError):
-        return kp_stars, []
-
-    updates: list[dict] = []
-    now = state.get("now")
-    for kp_id in kp_ids:
-        val = parsed.get(kp_id)
-        if isinstance(val, bool) or not isinstance(val, (int, float)):
-            continue
-        new_stars = max(1, min(4, int(val)))
-        old = kp_stars.get(kp_id, 0)
-        if new_stars > old:
-            kp_stars[kp_id] = new_stars
-            updates.append({
-                "kp_id": kp_id, "old_stars": old, "new_stars": new_stars,
-                "old_status": STAR_STATUS.get(old, "未检测"),
-                "new_status": STAR_STATUS[new_stars],
-                "source": "llm-assessed", "stage": "ending",
-                "evidence": "LLM 依据课堂对话综合评定",
-                "occurred_at": now,
-            })
-    return kp_stars, updates
 
 
 def _ending_remark(state: ClassroomState, pending_snapshot: dict | None) -> tuple[str, bool]:
@@ -2385,28 +2228,42 @@ def _ending_remark(state: ClassroomState, pending_snapshot: dict | None) -> tupl
     """
     plain = _ending_summary(state, pending_snapshot=pending_snapshot)
     if not llm_available():
-        return NO_LLM_NOTICE, False
-    stars = state.get("kp_stars") or {}
+        return plain, False
+    stars = {kid: int((state.get("kp_stars") or {}).get(kid, 0))
+             for kid, _ in _lesson_kp_catalog(state)}
     detail = "、".join(
         f"{kp_title(kp, state.get('lesson_id'))} {v} 星"
         for kp, v in sorted(stars.items())
     )
     weak = [
         kp_title(kp, state.get("lesson_id"))
-        for kp, v in sorted(stars.items()) if v <= 2
+        for kp, v in sorted(stars.items()) if v <= 2 or kp in (state.get("mastery_needs_review") or [])
     ]
     polished = llm_chat(
         "你是一名课堂智能体，正在宣布下课。",
-        f"本课知识点掌握情况：{detail or '（本课没有采集到证据）'}\n"
+        f"本课已确认的知识点掌握星级（不得改分或另行评分）：{detail or '（本课没有采集到证据）'}\n"
+        + "近期实际作答依据：" + json.dumps([
+            {"knowledge_point": kp_title(e.get("kp_id", ""), state.get("lesson_id")),
+             "performance": e.get("performance"), "evidence": e.get("evidence"),
+             "hint_given": e.get("hint_given")}
+            for e in (state.get("mastery_history") or [])[-8:]
+        ], ensure_ascii=False) + "\n"
         + (f"还没掌握好的：{'、'.join(weak)}。\n" if weak else "全部达到理解线以上。\n")
         + "要求：中文口语，3-5 句。先回顾本课学了什么，再点出课后该补的地方，"
-          "最后说下节课见。不要用 Markdown、不要罗列编号。",
+          "最后说下节课见。不要用 Markdown、不要罗列编号。"
+          "你只解释已有结果，不得评星、改分或输出星级数字；星级由程序另行列出。",
     )
-    return (polished.strip(), True) if polished else (plain, False)
+    if not polished or re.search(r"[0-5零一二三四五][\s颗]*星|[★⭐]", polished):
+        return plain, False
+    fixed = "\n".join(f"{kp_title(k, state.get('lesson_id'))}：{v} 星（{STAR_STATUS[v]}）"
+                      + ("，需要再确认" if k in (state.get("mastery_needs_review") or []) else "")
+                      for k, v in stars.items())
+    return (polished.strip() + ("\n\n" + fixed if fixed else "")), True
 
 
 def _ending_summary(state: ClassroomState, pending_snapshot: dict | None = None) -> str:
-    stars = state.get("kp_stars") or {}
+    stars = {kid: int((state.get("kp_stars") or {}).get(kid, 0))
+             for kid, _ in _lesson_kp_catalog(state)}
     snaps = list(state.get("stage_snapshots") or [])
     if pending_snapshot:
         snaps = snaps + [pending_snapshot]
@@ -2419,7 +2276,8 @@ def _ending_summary(state: ClassroomState, pending_snapshot: dict | None = None)
     if stars:
         lines.append("掌握情况：")
         for kp, st in sorted(stars.items()):
-            lines.append(f"  - {kp}：{'★' * st}（{STAR_STATUS.get(st, '未检测')}）")
+            review = "，需要再确认" if kp in (state.get("mastery_needs_review") or []) else ""
+            lines.append(f"  - {kp_title(kp, state.get('lesson_id'))}：{st} 星（{STAR_STATUS.get(st, '未检测')}{review}）")
     open_kps = [k for k, st in stars.items() if st < 3]
     if open_kps:
         lines.append(f"建议课后补一补：{('、'.join(open_kps))}。")
@@ -2564,12 +2422,14 @@ def initial_state(session_id: str, student_id: str = "", lesson_id: str = "") ->
         "stage_snapshots": [],
         "dialogue_log": [],
         "tutoring_order": [],
-        "tutoring_self_ratings": {},
         "tutoring_planned_minutes": 0,
         "tutoring_planned_end_at": None,
         "tutoring_cursor": 0,
         "tutoring_active_kp": None,
-        "tutoring_stars": {},
+        "mastery_schema": "knowledge-mastery/2",
+        "mastery_history": [],
+        "mastery_needs_review": [],
+        "mastery_contradictions": {},
         "tutoring_question": None,
         "tutoring_last_judgement": None,
         "tutoring_asked": [],

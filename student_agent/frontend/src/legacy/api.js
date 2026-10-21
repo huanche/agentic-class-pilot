@@ -134,12 +134,9 @@ export function resumeTutoring(sessionId) {
   return request("POST", sessionUrl(sessionId, "/resume-tutoring"));
 }
 
-/* 0–5 星标签。口径取自后端 rules/interaction/MASTERY-STAR-RULES.md，
-   那份文件自称「唯一权威规则，任何页面不得另算一套」——
-   这里不重算星级，只是补一张标签查表：后端决定星级的 STAR_STATUS 缺少
-   0 和 5 两个键，5 星会被它报成「未检测」，所以要拿这张表兜底。 */
+/* 与后端统一掌握星级同义；只显示，不在页面重新评分。 */
 export var STAR_LABELS = {
-  0: "未检测", 1: "已接触", 2: "初步理解", 3: "理解中", 4: "接近掌握", 5: "已掌握"
+  0: "未检测", 1: "需要重新理解", 2: "理解了一部分", 3: "提示后能说清", 4: "能独立说清", 5: "能灵活应用"
 };
 export var REPORT_WEAK_STARS = 2;
 

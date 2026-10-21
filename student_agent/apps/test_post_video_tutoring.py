@@ -119,7 +119,7 @@ class TutoringFlowTest(unittest.TestCase):
         self.assertIn("2. 三级调度", reply)
         self.assertIn("6. 时间片轮转与多级反馈队列", reply)
         self.assertIn("顺序", reply)
-        self.assertIn("星", reply)
+        self.assertNotIn("自评", reply)
         self.assertIn("分钟", reply)
 
         # 会话状态查询看到的是同一个事实：辅导阶段、课还在上
@@ -324,33 +324,7 @@ class TutoringIntentTimeTest(unittest.TestCase):
         self.assertNotIn("我们先从「调度是什么」", answer.json()["reply_text"])
 
 
-    def test_self_rating_recorded_separately_from_system_stars(self) -> None:
-        """「2 我给自己 2 分」：自评按知识点记录，且与系统星级分开存储。"""
-        self._enter_tutoring()
 
-        answer = self.client.post(
-            f"/api/session/{self.sid}/message",
-            json={"text": "2 我给自己 2 分。"},
-        )
-
-        self.assertEqual(answer.status_code, 200, answer.text)
-        tutoring = self._state()["tutoring"]
-        self.assertEqual(tutoring["self_ratings"], {"2": 2})
-        # 自评只表达意愿：系统星级（stars）不因此产生任何条目
-        self.assertEqual(self._state()["stars"], {})
-        # 回复确认记下了自评
-        self.assertIn("自评", answer.json()["reply_text"])
-
-    def test_self_rating_with_punctuation(self) -> None:
-        """「1，我给自己 3 分」——编号与自评之间有逗号也要解析（真机暴露的缺口）。"""
-        self._enter_tutoring()
-
-        self.client.post(
-            f"/api/session/{self.sid}/message",
-            json={"text": "1，我给自己 3 分。"},
-        )
-
-        self.assertEqual(self._state()["tutoring"]["self_ratings"], {"1": 3})
 
 
     def test_duration_sets_planned_end_at(self) -> None:
@@ -572,7 +546,7 @@ class TutoringEvidenceMasteryTest(unittest.TestCase):
                     if kp["no"] == no)
 
     def test_diagnostic_question_asked_and_correct_answer_advances(self) -> None:
-        """进入知识点后 AI 摆出检测题；判答为对 → 星级 +1、清题、推进到
+        """进入知识点后 AI 摆出检测题；独立解释核心 → 4 星、清题、推进到
         顺序中的下一个知识点并出新题。"""
         self._enter_tutoring()
 
@@ -586,14 +560,14 @@ class TutoringEvidenceMasteryTest(unittest.TestCase):
 
         # 判答走 mock 的模型：返回 correct
         def fake_chat(system: str, user: str):
-            return '{"verdict": "correct", "note": "讲得对"}'
+            return '{"verdict": "correct", "performance": "understood", "note": "讲得对"}'
 
         with mock.patch.object(agent, "llm_available", return_value=True), \
                 mock.patch.object(agent, "llm_chat", side_effect=fake_chat):
             judged = self._send("调度就是决定谁先用处理机")
 
-        # 第一个知识点升到 1 星（无提示独立答对）
-        self.assertEqual(self._state()["stars"].get(self._kp_id(1)), 1,
+        # 第一个知识点达到 4 星（无提示解释核心）
+        self.assertEqual(self._state()["stars"].get(self._kp_id(1)), 4,
                          self._state()["stars"])
         # 清题 + 推进：新题落在顺序中的第二个知识点上
         question2 = self._state()["tutoring"]["question"]
@@ -605,7 +579,7 @@ class TutoringEvidenceMasteryTest(unittest.TestCase):
         self._send("那我准备好了")
 
         def fake_chat(system: str, user: str):
-            return '{"verdict": "wrong", "note": "说反了"}'
+            return '{"verdict": "wrong", "performance": "incorrect", "note": "说反了"}'
 
         with mock.patch.object(agent, "llm_available", return_value=True), \
                 mock.patch.object(agent, "llm_chat", side_effect=fake_chat):
@@ -613,7 +587,7 @@ class TutoringEvidenceMasteryTest(unittest.TestCase):
 
         state = self._state()
         # 答错不产生星级条目（无证据无条目），等价 0 星
-        self.assertEqual(state["stars"].get(self._kp_id(1), 0), 0)
+        self.assertEqual(state["stars"].get(self._kp_id(1), 0), 1)
         question = state["tutoring"]["question"]
         self.assertEqual(question["kp_no"], 1)
         self.assertTrue(question["hint_given"])
@@ -630,7 +604,7 @@ class TutoringEvidenceMasteryTest(unittest.TestCase):
         self.assertEqual(state["stars"].get(self._kp_id(1), 0), 0)
         question = state["tutoring"]["question"]
         self.assertEqual(question["kp_no"], 1)
-        self.assertFalse(question["hint_given"])
+        self.assertTrue(question["hint_given"])
 
 
     def test_question_and_answer_events_persisted_in_demo_mode(self) -> None:
@@ -643,7 +617,7 @@ class TutoringEvidenceMasteryTest(unittest.TestCase):
             self._send("那我准备好了")
 
             def fake_chat(system: str, user: str):
-                return '{"verdict": "correct", "note": "ok"}'
+                return '{"verdict": "correct", "performance": "understood", "note": "ok"}'
 
             with mock.patch.object(agent, "llm_available", return_value=True), \
                     mock.patch.object(agent, "llm_chat", side_effect=fake_chat):
@@ -664,12 +638,12 @@ class TutoringEvidenceMasteryTest(unittest.TestCase):
         a = next(e for e in events if e["event_type"] == "tutoring_answer")
         self.assertEqual(a["payload"]["verdict"], "correct")
         self.assertFalse(a["payload"]["hint_given"])
-        self.assertEqual(a["payload"]["stars_after"], 1)
+        self.assertEqual(a["payload"]["stars_after"], 4)
 
 
-    def _answer_judged(self, verdict: str, text: str = "我的作答") -> None:
+    def _answer_judged(self, verdict: str, text: str = "我的作答", performance: str | None = None) -> None:
         def fake_chat(system: str, user: str):
-            return json.dumps({"verdict": verdict, "note": "stub"}, ensure_ascii=False)
+            return json.dumps({"verdict": verdict, "performance": performance or ("understood" if verdict == "correct" else "incorrect"), "note": "stub", "reasoning": "学生解释了新条件下的选择依据"}, ensure_ascii=False)
 
         with mock.patch.object(agent, "llm_available", return_value=True), \
                 mock.patch.object(agent, "llm_chat", side_effect=fake_chat):
@@ -694,7 +668,8 @@ class TutoringEvidenceMasteryTest(unittest.TestCase):
         self._send("那我准备好了")
         kp1 = self._kp_id(1)
         self._seed_stars(kp1, 4)
-        self._answer_judged("correct")
+        server.SESSIONS[self.sid]["state"]["tutoring_question"]["kind"] = "application"
+        self._answer_judged("correct", performance="transfer")
         self.assertEqual(self._state()["stars"].get(kp1), 5)
 
         # ② 见过的题（was_fresh=False）→ 封顶 4
@@ -754,7 +729,7 @@ class TutoringEvidenceMasteryTest(unittest.TestCase):
         self.assertNotEqual(q2["text"], q1)
         self.assertFalse(q2["hint_given"])
         self.assertTrue(q2["was_fresh"])
-        self.assertEqual(self._state()["stars"].get(kp1, 0), 0)
+        self.assertEqual(self._state()["stars"].get(kp1, 0), 1)
 
     def test_llm_generation_receives_seen_list(self) -> None:
         """接模型时出新题走生成链路：已见题干喂进 prompt 让它避开。"""
@@ -767,7 +742,7 @@ class TutoringEvidenceMasteryTest(unittest.TestCase):
 
         def fake_chat(system: str, user: str):
             if "判定" in system:
-                return json.dumps({"verdict": "wrong"}, ensure_ascii=False)
+                return json.dumps({"verdict": "wrong", "performance": "incorrect", "note": "核心解释有误"}, ensure_ascii=False)
             captured.setdefault("users", []).append(user)
             return "LLM 新题：请举例说明调度决策的三个输入。"
 
@@ -903,11 +878,11 @@ class TutoringEvidenceMasteryTest(unittest.TestCase):
         self._reset_session()
         self._enter_tutoring()
 
-        with self._llm_dispatch(classify={"intent": "self_eval", "kp_no": 99, "rating": 3})[0], \
-                self._llm_dispatch(classify={"intent": "self_eval", "kp_no": 99, "rating": 3})[1]:
+        with self._llm_dispatch(classify={"intent": "kp_select", "order": [99]})[0], \
+                self._llm_dispatch(classify={"intent": "kp_select", "order": [99]})[1]:
             self._send("第99个我掌握得可好了")
 
-        self.assertEqual(self._state()["tutoring"]["self_ratings"], {})
+        self.assertNotIn(99, self._state()["tutoring"]["order"])
 
 
     def test_current_no_follows_explicit_active_state_not_cursor(self) -> None:
@@ -926,23 +901,23 @@ class TutoringEvidenceMasteryTest(unittest.TestCase):
         self.assertEqual(self._state()["tutoring"]["current_no"], 1)
 
 
-    def test_mastery_bar_shows_tutoring_evidence_only(self) -> None:
-        """课堂「讲过即记 1 星（已接触）」不进辅导掌握条：
-        条上的系统星只来自辅导里的作答证据（真机暴露的困惑来源）。"""
+    def test_mastery_bar_uses_shared_knowledge_score(self) -> None:
+        """掌握条与其他接口使用同一份 kp_stars：
+        读取当前掌握值，后续独立作答更新同一记录。"""
         self._reset_session()
         self._enter_tutoring()
         kp1 = self._kp_id(1)
 
-        # 模拟课堂阶段 judge_mastery 的「讲过即记 1 星」
+        # 模拟当前已有掌握记录
         server.SESSIONS[self.sid]["state"]["kp_stars"] = {kp1: 1}
 
-        # 掌握条不应显示这颗课堂基线星
-        self.assertEqual(self._state()["tutoring"]["stars"], {})
+        # 掌握条显示同一份已有记录
+        self.assertEqual(self._state()["tutoring"]["stars"], {"1": 1})
 
-        # 辅导里答对 → 条上出现辅导证据星（1），与课堂基线互不干扰
+        # 独立解释核心后，掌握条与统一记录一起更新为 4 星
         self._send("准备好了")
         self._answer_judged("correct", "调度就是决定谁先用处理机")
-        self.assertEqual(self._state()["tutoring"]["stars"], {"1": 1})
+        self.assertEqual(self._state()["tutoring"]["stars"], {"1": 4})
 
 
 class TutoringEndFeedbackTest(unittest.TestCase):
@@ -1065,10 +1040,12 @@ class TutoringResumeTest(unittest.TestCase):
     def _state(self) -> dict:
         return self.client.get(f"/api/session/{self.sid}/state").json()
 
-    def _answer_judged(self, verdict: str, text: str = "我的作答") -> None:
+    def _answer_judged(self, verdict: str, text: str = "我的作答", performance: str | None = None) -> None:
         def fake_chat(system: str, user: str):
             if "判定" in system:
-                return json.dumps({"verdict": verdict}, ensure_ascii=False)
+                return json.dumps({"verdict": verdict,
+                    "performance": performance or ("understood" if verdict == "correct" else "incorrect"),
+                    "note": "学生解释了知识点核心", "reasoning": "说明了新条件下的应用理由"}, ensure_ascii=False)
             if "出" in system:
                 return "新题：请再举一个例子说明。"
             return "好的。"
@@ -1095,7 +1072,7 @@ class TutoringResumeTest(unittest.TestCase):
         self.assertEqual(q1["kp_no"], 2)
         # 答对（无提示新题）→ 升星 + 推进到下一个知识点
         self._answer_judged("correct", "三级调度就是高中低三级各管一段")
-        self.assertEqual(self._state()["stars"].get(self._kp_id(2)), 1)
+        self.assertEqual(self._state()["stars"].get(self._kp_id(2)), 4)
         self.assertEqual(self._state()["tutoring"]["question"]["kp_no"], 1)
 
         # 明确结束 → v1
@@ -1110,12 +1087,12 @@ class TutoringResumeTest(unittest.TestCase):
         state = self._state()
         self.assertEqual(state["phase"], "tutoring")
         self.assertEqual(state["tutoring"]["question"]["kp_no"], 1)
-        self.assertEqual(state["stars"].get(self._kp_id(2)), 1)
+        self.assertEqual(state["stars"].get(self._kp_id(2)), 4)
         self.assertTrue(state["tutoring"]["remaining_seconds"] <= 900)
 
         # 续聊中新的有效作答继续升星，再次明确结束 → v2
         self._answer_judged("correct", "调度就是决定谁先用处理机")
-        self.assertEqual(self._state()["stars"].get(self._kp_id(1)), 1)
+        self.assertEqual(self._state()["stars"].get(self._kp_id(1)), 4)
         self._send("就到这吧")
         v2 = self.client.get(f"/api/session/{self.sid}/tutoring-report").json()
         self.assertEqual(v2["version"], 2)
@@ -1257,31 +1234,6 @@ class TutoringResumeTest(unittest.TestCase):
         self.assertEqual(self._state()["stars"].get(self._kp_id(1), 0), 0)
 
 
-class SelfRatingPersistenceTest(unittest.TestCase):
-    """工单 03 缝 B：自评与系统星级分开存储、互不冲掉（demo 路径）。"""
-
-    def test_demo_self_rating_persists_alongside_stars(self) -> None:
-        from apps.integration import persistence
-
-        with mock.patch.dict(os.environ, {"STUDENT_DEMO_MODE": "true"}):
-            key = "test-self-rating-session"
-            path = persistence._demo_path("mastery", f"{key}-kp-x")
-            self.addCleanup(lambda: path.unlink(missing_ok=True))
-
-            persistence.upsert_self_rating(
-                session_key=key, user_id="demo", course_id="c",
-                publication_id="p", knowledge_point_id="kp-x", self_rating=4)
-            data = json.loads(path.read_text(encoding="utf-8"))
-            self.assertEqual(data["self_rating"], 4)
-
-            # 系统星级写入（判答结果）不冲掉自评；自评写入也不冲星级
-            persistence.upsert_mastery(
-                session_key=key, user_id="demo", course_id="c",
-                publication_id="p", knowledge_point_id="kp-x",
-                stars=3, status="理解中")
-            data2 = json.loads(path.read_text(encoding="utf-8"))
-            self.assertEqual(data2["stars"], 3)
-            self.assertEqual(data2["self_rating"], 4)
 
 
 if __name__ == "__main__":

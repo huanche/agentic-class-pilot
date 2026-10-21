@@ -2,7 +2,7 @@
    课后辅导反馈卡（工单 05）
 
    渲染 GET /api/session/<sid>/tutoring-report 的最新版反馈：
-   各知识点终值星级与证据条数、自评、复习用时、答题统计、
+   各知识点终值星级与证据条数、复习用时、答题统计、
    未完成检测、后续建议。
    只渲染学生视角——教师摘要已入库，但不在学生端展示。
    ═══════════════════════════════════════════════════════════ */
@@ -34,10 +34,8 @@ export function renderTutoringReportCard(container, report) {
     row.appendChild(el("span", "tfeedback__no", (k.no || "") + "."));
     row.appendChild(el("span", "tfeedback__name", k.title || ""));
     row.appendChild(el("span", "tfeedback__stars",
-      (k.system_stars || 0) > 0 ? "系统 " + k.system_stars + "★" : "未检测"));
-    if (k.self_rating) {
-      row.appendChild(el("span", "tfeedback__self", "自评 " + k.self_rating + "★"));
-    }
+      (k.system_stars || 0) > 0 ? "掌握 " + k.system_stars + "★" : "未检测"));
+    if (k.needs_review) row.appendChild(el("span", "tfeedback__review", "需要再确认"));
     var evidence = k.evidence || [];
     row.appendChild(el("span", "tfeedback__evidence",
       evidence.length ? "依据 " + evidence.length + " 条" : ""));

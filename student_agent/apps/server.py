@@ -37,16 +37,18 @@ from agent import (  # noqa: E402
     EVENT_BEGIN, EVENT_MEDIA_DONE, EVENT_NEXT_STAGE, EVENT_END_LESSON,
     STAGE_NAMES, STAR_STATUS, build_graph, initial_state,
     knowledge_catalog_public, kp_title, run_turn_stateless,
-    tutoring_feedback_payload, tutoring_public, validate_plan,
+    tutoring_feedback_payload, tutoring_public,
 )
 from llm_override import set_llm_override  # noqa: E402
+from apps.integration.data_cleanup import without_self_assessment  # noqa: E402
+from apps.integration.mastery import normalize_mastery_state  # noqa: E402
 
 try:
-    from fastapi import FastAPI, HTTPException, Request
+    from fastapi import FastAPI, HTTPException
     from fastapi.middleware.cors import CORSMiddleware
     from fastapi.responses import FileResponse, HTMLResponse, Response
     from fastapi.staticfiles import StaticFiles
-    from pydantic import BaseModel, Field
+    from pydantic import BaseModel
 except ImportError:  # pragma: no cover
     raise SystemExit("缺依赖：pip install fastapi uvicorn")
 
@@ -112,9 +114,10 @@ def _path(sid: str) -> Path:
 
 
 def _persist(sid: str, state: dict) -> None:
+    normalize_mastery_state(state)
     SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
     _path(sid).write_text(
-        json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8"
+        json.dumps(without_self_assessment(state), ensure_ascii=False, indent=2), encoding="utf-8"
     )
 
 
@@ -124,12 +127,12 @@ def _restore(sid: str) -> dict | None:
     if not p.is_file():
         return None
     try:
-        saved = json.loads(p.read_text(encoding="utf-8"))
+        saved = without_self_assessment(json.loads(p.read_text(encoding="utf-8")))
     except json.JSONDecodeError:
         return None
     merged = initial_state(sid)
     merged.update(saved)
-    return merged
+    return normalize_mastery_state(merged)
 
 
 def _get(sid: str) -> dict:
@@ -269,19 +272,6 @@ def _step(sid: str, message: str = "", speaker: str = "student",
                         status=item.get("new_status", ""),
                         evidence=item.get("evidence"),
                         source=item.get("source"))
-                # 学生自评（工单 03）：只写自评列，与系统星级分开存储
-                ratings = st.get("tutoring_self_ratings") or {}
-                persisted_ratings = s.get("_persisted_self_ratings") or {}
-                for kid, val in ratings.items():
-                    if persisted_ratings.get(kid) == val:
-                        continue
-                    persistence.upsert_self_rating(
-                        session_key=sid, user_id=ctx["userId"],
-                        course_id=ctx.get("courseId", ""),
-                        publication_id=ctx.get("publicationId", ""),
-                        knowledge_point_id=kid, self_rating=int(val))
-                if ratings:
-                    s["_persisted_self_ratings"] = {**persisted_ratings, **ratings}
                 if st.get("lesson_status") == "ended" and not s.get("_completion_persisted"):
                     _persist_lesson_completion(sid)
                     s["_completion_persisted"] = True
@@ -882,6 +872,8 @@ def send(sid: str, body: MessageIn) -> dict:
         "status": st.get("lesson_status"),
         "current_question": st.get("current_question"),
         "stars": st.get("kp_stars") or {},
+        "mastery_schema": "knowledge-mastery/2",
+        "needs_review": st.get("mastery_needs_review") or [],
         "total": len(s["messages"]),
         "available_actions": ACTIONS[st.get("lesson_status", "running")],
     }
@@ -936,6 +928,8 @@ def state(sid: str) -> dict:
         "next_stage": (st.get("remaining_stages") or [None])[0],
         # 本地测试：视频页显示「当作已播完」按钮（工单 07，生产默认关）
         "video_skip_allowed": _video_skip_allowed(),
+        "mastery_schema": "knowledge-mastery/2",
+        "needs_review": st.get("mastery_needs_review") or [],
         # 固定编号知识点目录（任何阶段都在）：下课页等展示用，与辅导同源
         "knowledge_points": knowledge_catalog_public(st),
         # 课后辅导：固定编号目录 + 复习顺序 + 时间预算（掌握条的渲染依据）
@@ -971,9 +965,23 @@ def resume_tutoring(sid: str) -> dict:
         if not st.get("tutoring_active_kp") and st.get("tutoring_question"):
             st["tutoring_active_kp"] = st["tutoring_question"].get("kp_id")
         st["stage_started_at"] = _now()
+        s["_completion_persisted"] = False
+        if s["thread"] is None or not s["thread"].is_alive() or s["stop"].is_set():
+            s["stop"] = threading.Event()
+            s["thread"] = threading.Thread(target=_heartbeat, args=(sid, s["stop"]), daemon=True)
+            s["thread"].start()
         s["state"] = st
         _persist(sid, st)
     return {"ok": True, "phase": "tutoring", "status": st.get("lesson_status")}
+
+
+def _current_mastery_report(st: dict, report: dict) -> dict:
+    """最新反馈展示当前唯一掌握记录，续聊后不再混用旧版报告星级。"""
+    current, teacher_summary = tutoring_feedback_payload(st)
+    return {**report, "teacher_summary": teacher_summary, "payload": {**report["payload"],
+        "schema": "tutoring-feedback/2",
+        "knowledge_points": current["knowledge_points"], "advice": current["advice"],
+        "mastery_schema": "knowledge-mastery/2"}}
 
 
 @app.get("/api/session/{sid}/tutoring-report")
@@ -983,13 +991,14 @@ def tutoring_report(sid: str) -> dict:
     cached = s.get("tutoring_reports") or []
     if cached:
         last = cached[-1]
-        return {"version": last["version"], "payload": last["payload"],
-                "teacher_summary": last["teacher_summary"]}
+        return _current_mastery_report(s["state"], {
+            "version": last["version"], "payload": without_self_assessment(last["payload"]),
+            "teacher_summary": last["teacher_summary"]})
     try:
         from apps.integration import persistence
         report = persistence.read_latest_report(sid)
         if report:
-            return report
+            return _current_mastery_report(s["state"], report)
     except Exception as exc:  # 读取失败按没有处理，不拦展示
         print(f"[persistence] 辅导反馈读取失败: {exc}")
     raise HTTPException(status_code=404, detail="暂无课后辅导反馈")
@@ -1014,7 +1023,8 @@ def stop(sid: str) -> dict:
 def export(sid: str, fmt: str = "md") -> Response:
     """课后学情导出。md 给人读，json 给系统读。"""
     st = _get(sid)["state"]
-    stars = st.get("kp_stars") or {}
+    stars = {item["kp_id"]: int((st.get("kp_stars") or {}).get(item["kp_id"], 0))
+             for item in knowledge_catalog_public(st)}
     snaps = st.get("stage_snapshots") or []
     plan = st.get("lesson_plan") or {}
     student_id = st.get("student_id")
@@ -1028,7 +1038,8 @@ def export(sid: str, fmt: str = "md") -> Response:
                 "lesson_elapsed_minutes": st.get("lesson_elapsed_minutes"),
                 "knowledge_points": [
                     {"kp_id": kp, "title": kp_title(kp, lesson_id), "stars": v,
-                     "status": STAR_STATUS.get(v, "未检测")}
+                     "status": STAR_STATUS.get(v, "未检测"),
+                     "needs_review": kp in (st.get("mastery_needs_review") or [])}
                     for kp, v in sorted(stars.items())
                 ],
                 "stage_snapshots": snaps,

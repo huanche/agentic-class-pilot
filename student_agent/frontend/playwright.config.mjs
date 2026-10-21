@@ -39,7 +39,11 @@ export default defineConfig({
       env: {
         ...process.env,
         AGENT_TICK_SECONDS: "3600",
-        AGENT_LLM_API_KEY: "",
+        AGENT_LLM_API_KEY: process.env.MASTERY_E2E === "1" ? "local-test-key" : "",
+        ...(process.env.MASTERY_E2E === "1" ? {
+          AGENT_LLM_BASE_URL: "http://127.0.0.1:8878/mock-llm",
+          AGENT_LLM_MODEL: "local-test-model",
+        } : {}),
         STUDENT_DEMO_MODE: "true",
         PLATFORM_AUTH_URL: "http://127.0.0.1:8878/api/v1",
         STUDENT_SERVICE_KEY: "e2e-stub-key",

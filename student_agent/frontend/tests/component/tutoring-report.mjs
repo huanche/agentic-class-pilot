@@ -3,7 +3,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import assert from 'node:assert/strict';
 
 /* 课后辅导反馈卡（工单 05）：渲染最新版反馈的学生视角——
-   版本号、用时/答题统计、知识点系统星+自评+依据条数、
+   版本号、用时/答题统计、知识点系统星+依据条数、
    未完成检测、建议；教师摘要不出现在学生端。 */
 
 const chrome = 'C:/Program Files/Google/Chrome/Application/chrome.exe';
@@ -53,7 +53,8 @@ try {
   assert.ok(out.text.includes('第 1 版'), `版本号要展示：${out.text}`);
   assert.ok(out.text.includes('复习约 14 分钟（计划 15）'), `用时：${out.text}`);
   assert.ok(out.text.includes('出题 3 道 · 答对 2 · 答错 1'), `统计：${out.text}`);
-  assert.ok(out.text.includes('系统 2★') && out.text.includes('自评 4★'), `星级：${out.text}`);
+  assert.ok(out.text.includes('掌握 2★'), `系统星级：${out.text}`);
+  assert.ok(!out.text.includes('自评') && !out.html.includes('tfeedback__self'), `旧自评不得展示：${out.text}`);
   assert.ok(out.text.includes('依据 2 条'), `证据条数：${out.text}`);
   assert.ok(out.text.includes('未检测'), `0 星显示未检测：${out.text}`);
   assert.ok(out.text.includes('未完成检测：小检测'), `未完成检测：${out.text}`);

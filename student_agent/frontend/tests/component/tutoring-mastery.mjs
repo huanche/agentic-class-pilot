@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
    - 挂载为聊天面板第一个子节点（在聊天记录上方）；
    - 按学生指定顺序渲染知识点固定编号，当前复习项高亮；
    - 剩余时间 mm:ss 来自服务端 remaining_seconds；
-   - 自评与编号一起展示；标题做 HTML 转义。
+   - 系统星级与编号一起展示；旧自评字段不展示；标题做 HTML 转义。
    复用 tutoring-transition.mjs 的组件测试管线（真浏览器 + 模块直挂）。 */
 
 const chrome = 'C:/Program Files/Google/Chrome/Application/chrome.exe';
@@ -76,8 +76,8 @@ try {
     `知识点标题要渲染：${result.html}`);
   assert.ok(result.html.indexOf('三级调度') < result.html.indexOf('调度是什么'),
     `学生指定的顺序（先 2 再 1）应体现在渲染顺序：${result.html}`);
-  assert.ok(result.html.includes('自评 2★'), `自评要展示：${result.html}`);
-  assert.ok(result.html.includes('系统 1★'), `答对后的系统星级要展示：${result.html}`);
+  assert.ok(!result.html.includes('自评') && !result.html.includes('tm-self'), `旧自评不得展示：${result.html}`);
+  assert.ok(result.html.includes('掌握 1★'), `答对后的系统星级要展示：${result.html}`);
   assert.ok(result.html.includes('tm-current'), `当前复习项要高亮：${result.html}`);
   assert.ok(result.html.includes('tm-current"><span class="tm-no">1<'),
     `高亮应落在 current_no=1（正在讲的知识点），不是顺序第一项：${result.html}`);
@@ -134,7 +134,7 @@ try {
     '再点应收起量规');
   assert.equal(await icon.getAttribute('aria-expanded'), 'false');
 
-  console.log('Tutoring mastery bar: order, countdown, self-rating, escaping, rubric icon all rendered.');
+  console.log('辅导掌握条：顺序、倒计时、系统星级正常，旧自评不展示。');
 } finally {
   await browser.close();
 }

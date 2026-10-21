@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from . import config
+from .data_cleanup import without_self_assessment
 
 RUNTIME_DIR = Path(__file__).resolve().parents[2] / "runtime" / "integration"
 
@@ -176,7 +177,7 @@ def upsert_mastery(session_key: str, user_id: str, course_id: str,
                 data = json.loads(path.read_text(encoding="utf-8"))
             except ValueError:
                 data = {}
-        # 读-改-写：保留同文件里其他写入者留下的字段（如自评）
+        # 读-改-写：保留同文件里其他学习记录字段
         data.update({
             "session_key": session_key, "knowledge_point_id": knowledge_point_id,
             "stars": stars, "status": status, "evidence": evidence,
@@ -197,38 +198,6 @@ def upsert_mastery(session_key: str, user_id: str, course_id: str,
         connection.commit()
 
 
-def upsert_self_rating(session_key: str, user_id: str, course_id: str,
-                       publication_id: str, knowledge_point_id: str,
-                       self_rating: int) -> None:
-    """学生自评（1–5）：与系统星级分开存储，只写自评列，不动星级。
-
-    幂等：同键重复写覆盖为最新自评；demo 态与掌握度共用同一文件
-    （读-改-写，互不冲掉对方的字段）。
-    """
-    if config.demo_mode():
-        path = _demo_path("mastery", f"{session_key}-{knowledge_point_id}")
-        data = {}
-        if path.exists():
-            try:
-                data = json.loads(path.read_text(encoding="utf-8"))
-            except ValueError:
-                data = {}
-        data.update({
-            "session_key": session_key, "knowledge_point_id": knowledge_point_id,
-            "self_rating": int(self_rating),
-        })
-        path.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
-        return
-    with _db() as connection:
-        connection.execute(
-            "INSERT INTO student.knowledge_mastery "
-            "(session_key, user_id, course_id, publication_id, knowledge_point_id, stars, status, self_rating) "
-            "VALUES (%s,%s,%s,%s,%s,0,'未检测',%s) "
-            "ON CONFLICT (user_id, course_id, publication_id, knowledge_point_id) "
-            "DO UPDATE SET self_rating = EXCLUDED.self_rating, updated_at = now()",
-            (session_key, user_id, course_id, publication_id,
-             knowledge_point_id, int(self_rating)))
-        connection.commit()
 
 
 def read_mastery(user_id: str, course_id: str, publication_id: str) -> Dict[str, int]:
@@ -247,19 +216,6 @@ def read_mastery(user_id: str, course_id: str, publication_id: str) -> Dict[str,
     return {str(r[0]): int(r[1]) for r in rows}
 
 
-def read_self_ratings(user_id: str, course_id: str,
-                      publication_id: str) -> Dict[str, int]:
-    """学生自评（平台态）。demo 态没有跨会话查询面，返回空。"""
-    if config.demo_mode():
-        return {}
-    with _db() as connection:
-        rows = connection.execute(
-            "SELECT knowledge_point_id, self_rating FROM student.knowledge_mastery "
-            "WHERE user_id = %s AND course_id = %s AND publication_id = %s "
-            "AND self_rating IS NOT NULL",
-            (user_id, course_id, publication_id),
-        ).fetchall()
-    return {str(r[0]): int(r[1]) for r in rows}
 
 
 def upsert_report(session_key: str, user_id: str, course_id: str,
@@ -336,7 +292,7 @@ def read_latest_report(session_key: str,
             versions = json.loads(path.read_text(encoding="utf-8"))
         except ValueError:
             return None
-        return versions[-1] if versions else None
+        return without_self_assessment(versions[-1]) if versions else None
     with _db() as connection:
         row = connection.execute(
             "SELECT version, payload, teacher_summary, created_at "
@@ -346,6 +302,6 @@ def read_latest_report(session_key: str,
             (session_key, report_kind)).fetchone()
     if not row:
         return None
-    return {"version": int(row[0]), "payload": row[1],
+    return {"version": int(row[0]), "payload": without_self_assessment(row[1]),
             "teacher_summary": row[2],
             "created_at": row[3].isoformat() if row[3] else None}

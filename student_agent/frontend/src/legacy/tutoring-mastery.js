@@ -2,7 +2,7 @@
    课后辅导掌握条（工单 02 外壳）
 
    显示：复习剩余时间（服务端时间戳换算，刷新不清零）、
-   知识点固定编号顺序（开场给学生的那套编号）、学生自评。
+   知识点固定编号顺序（开场给学生的那套编号）、系统评定星级。
    星级区由工单 03 填充（数据到了就渲染，本模块不重算）。
    ═══════════════════════════════════════════════════════════ */
 
@@ -46,7 +46,6 @@ export function renderTutoringMastery(el, tutoring) {
   var byNo = {};
   kps.forEach(function (kp) { byNo[kp.no] = kp; });
   var order = (tutoring.order || []).filter(function (no) { return byNo[no]; });
-  var ratings = tutoring.self_ratings || {};
   var stars = tutoring.stars || {};
   var rubric = tutoring.rubric || {};
   var currentNo = tutoring.current_no;
@@ -55,7 +54,6 @@ export function renderTutoringMastery(el, tutoring) {
   }).join("\n");
   var rows = order.map(function (no, index) {
     var kp = byNo[no];
-    var rating = ratings[no];
     var star = stars[no];
     /* 高亮 = 正在讲的知识点（后端按复习顺序+游标下发 current_no）；
        旧载荷没有 current_no 时退回第一项 */
@@ -66,8 +64,8 @@ export function renderTutoringMastery(el, tutoring) {
       + '<span class="tm-no">' + no + '</span>'
       + '<span class="tm-title">' + escapeHtml(kp.title) + '</span>'
       + (typeof star === "number" && star > 0
-          ? '<span class="tm-stars">系统 ' + star + "★</span>" : "")
-      + (rating ? '<span class="tm-self">自评 ' + rating + "★</span>" : "")
+          ? '<span class="tm-stars">掌握 ' + star + "★</span>" : '<span class="tm-stars">未检测</span>')
+      + ((tutoring.needs_review || []).includes(no) ? '<span class="tm-review">需要再确认</span>' : "")
       + (rubricText
           ? '<button type="button" class="tm-rubric" aria-label="评分标准"'
             + ' aria-expanded="false" title="评分标准">ⓘ</button>'
