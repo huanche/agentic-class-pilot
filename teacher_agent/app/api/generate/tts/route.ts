@@ -32,6 +32,7 @@ import { validateUrlForSSRF } from '@/lib/server/ssrf-guard';
 import { VOXCPM_AUTO_VOICE_ID, VOXCPM_TTS_PROVIDER_ID } from '@/lib/audio/voxcpm';
 import { isSpeakableSpeechText } from '@/lib/audio/tts-utils';
 import { classifyTTSAccountError } from '@/lib/audio/tts-errors';
+import { generateCachedTts } from '@/lib/server/tts-audio-cache';
 
 const log = createLogger('TTS API');
 
@@ -134,15 +135,28 @@ export async function POST(req: NextRequest) {
     );
 
     // Generate audio
-    const { audio, format } = await generateTTS(config, text);
-
-    void recordGenerationUsage({
-      kind: 'tts',
-      unit: 'character',
-      providerId: ttsProviderId,
-      modelId: config.modelId,
-      quantity: text.length,
-    });
+    const { audio, format } = await generateCachedTts(
+      { ...config, signal: req.signal },
+      text,
+      {
+        scope:
+          req.headers.get('x-platform-user-id') ||
+          (process.env.PLATFORM_AUTH_ENABLED === 'true'
+            ? `classroom:${body.classroomId || audioId}`
+            : 'local-teacher'),
+      },
+      async (resolved, speech) => {
+        const result = await generateTTS(resolved, speech);
+        void recordGenerationUsage({
+          kind: 'tts',
+          unit: 'character',
+          providerId: resolved.providerId,
+          modelId: resolved.modelId,
+          quantity: speech.length,
+        });
+        return result;
+      },
+    );
 
     // Convert to base64
     const base64 = Buffer.from(audio).toString('base64');

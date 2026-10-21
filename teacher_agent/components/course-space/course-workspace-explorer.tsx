@@ -1780,6 +1780,7 @@ export function CourseWorkspaceExplorer({
               </div>
             ) : selectedFile?.artifact?.classroomUrl ? (
               <iframe
+                data-courseware-preview
                 title={selectedFile.title}
                 src={`${selectedFile.artifact.classroomUrl}${selectedFile.artifact.classroomUrl.includes('?') ? '&' : '?'}embedded=course-workspace`}
                 className="h-full w-full rounded-xl border bg-white shadow-sm"

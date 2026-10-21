@@ -107,22 +107,40 @@ export async function POST(req: NextRequest) {
     const hasVision = !!modelInfo?.capabilities?.vision;
 
     // AI call function (actions typically don't use vision, but kept for consistency)
+    const generationTimings: Array<{ phase: string; durationMs: number }> = [];
     const aiCall = async (
       systemPrompt: string,
       userPrompt: string,
       images?: Array<{ id: string; src: string }>,
     ): Promise<string> => {
-      if (images?.length && hasVision) {
+      const started = performance.now();
+      try {
+        if (images?.length && hasVision) {
+          const result = await callLLM(
+            {
+              model: languageModel,
+              system: systemPrompt,
+              messages: [
+                {
+                  role: 'user' as const,
+                  content: buildVisionUserContent(userPrompt, images),
+                },
+              ],
+              maxOutputTokens: modelInfo?.outputWindow,
+              maxRetries: 0,
+              abortSignal: req.signal,
+            },
+            'scene-actions',
+            undefined,
+            thinkingConfig,
+          );
+          return result.text;
+        }
         const result = await callLLM(
           {
             model: languageModel,
             system: systemPrompt,
-            messages: [
-              {
-                role: 'user' as const,
-                content: buildVisionUserContent(userPrompt, images),
-              },
-            ],
+            prompt: userPrompt,
             maxOutputTokens: modelInfo?.outputWindow,
             maxRetries: 0,
             abortSignal: req.signal,
@@ -132,21 +150,12 @@ export async function POST(req: NextRequest) {
           thinkingConfig,
         );
         return result.text;
+      } finally {
+        generationTimings.push({
+          phase: systemPrompt.includes('[FOCUS_SPEECH_REVIEW]') ? 'focus-review' : 'narration-plan',
+          durationMs: Math.round(performance.now() - started),
+        });
       }
-      const result = await callLLM(
-        {
-          model: languageModel,
-          system: systemPrompt,
-          prompt: userPrompt,
-          maxOutputTokens: modelInfo?.outputWindow,
-          maxRetries: 0,
-          abortSignal: req.signal,
-        },
-        'scene-actions',
-        undefined,
-        thinkingConfig,
-      );
-      return result.text;
     };
 
     // ── Build cross-scene context ──
@@ -251,7 +260,7 @@ export async function POST(req: NextRequest) {
       `Scene assembled successfully: "${outline.title}" — ${scene.actions?.length ?? 0} actions`,
     );
 
-    return apiSuccess({ scene, previousSpeeches: outputPreviousSpeeches });
+    return apiSuccess({ scene, previousSpeeches: outputPreviousSpeeches, generationTimings });
   } catch (error) {
     if (error instanceof FocusSpeechAlignmentError) {
       log.warn(`Focus/speech validation rejected page "${outlineTitle}":`, error.issues);

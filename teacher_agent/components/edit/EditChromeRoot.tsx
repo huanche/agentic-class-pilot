@@ -105,6 +105,7 @@ export function EditChromeRoot({
     <div className="flex items-center gap-3">
       {!pageReview && <CourseDurationSummary stage={stage} scenes={scenes} />}
       <HeaderControls
+        showSettings={!pageReview}
         mode="edit"
         canEdit={isEditable}
         onToggleEditMode={isMaicEditorEnabled() ? onToggleEditMode : undefined}

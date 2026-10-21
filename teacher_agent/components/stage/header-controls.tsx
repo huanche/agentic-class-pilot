@@ -39,6 +39,7 @@ interface HeaderControlsProps {
    * off ring weight / blur to keep the CommandBar quiet).
    */
   readonly variant?: 'default' | 'compact';
+  readonly showSettings?: boolean;
 }
 
 /**
@@ -60,6 +61,7 @@ export function HeaderControls({
   canEdit,
   onToggleEditMode,
   variant = 'default',
+  showSettings = true,
 }: HeaderControlsProps) {
   const { t } = useI18n();
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -74,6 +76,7 @@ export function HeaderControls({
   // CommandBar's right cluster).
   const scenes = useStageStore((s) => s.scenes);
   const stage = useStageStore((s) => s.stage);
+  const stageId = stage?.id;
   const generatingOutlines = useStageStore((s) => s.generatingOutlines);
   const failedOutlines = useStageStore((s) => s.failedOutlines);
   const generationStatus = useStageStore((s) => s.generationStatus);
@@ -91,15 +94,15 @@ export function HeaderControls({
   const exportRef = useRef<HTMLDivElement>(null);
 
   const refreshReleaseGate = useCallback(async () => {
-    if (!stage?.id) {
-      setReleaseGate(undefined);
-      return;
-    }
-    setReleaseGate(await evaluateCourseReleaseGate(stage.id, scenes));
-  }, [stage?.id, scenes]);
+    const gate = await (stageId
+      ? evaluateCourseReleaseGate(stageId, scenes)
+      : Promise.resolve(undefined));
+    setReleaseGate(gate);
+  }, [stageId, scenes]);
 
   useEffect(() => {
-    void refreshReleaseGate();
+    const timer = setTimeout(() => void refreshReleaseGate(), 0);
+    return () => clearTimeout(timer);
   }, [refreshReleaseGate]);
 
   const canExport =
@@ -135,23 +138,25 @@ export function HeaderControls({
   // anchors identically too.
   return (
     <div className="flex items-center gap-4">
-      <div
-        className={cn(
-          'shrink-0 flex items-center gap-1 backdrop-blur-md shadow-sm rounded-full',
-          compact
-            ? 'bg-zinc-100/70 dark:bg-zinc-800/70 border border-zinc-200/60 dark:border-zinc-700/60 px-1.5 py-1'
-            : 'bg-white/60 dark:bg-gray-800/60 border border-gray-100/50 dark:border-gray-700/50 px-2 py-1.5',
-        )}
-      >
-        {/* Settings */}
-        <button
-          onClick={() => setSettingsOpen(true)}
-          className="p-2 rounded-full text-gray-400 dark:text-gray-500 hover:bg-white dark:hover:bg-gray-700 hover:text-gray-800 dark:hover:text-gray-200 hover:shadow-sm transition-all group"
-          aria-label={t('settings.title')}
+      {showSettings && (
+        <div
+          className={cn(
+            'shrink-0 flex items-center gap-1 backdrop-blur-md shadow-sm rounded-full',
+            compact
+              ? 'bg-zinc-100/70 dark:bg-zinc-800/70 border border-zinc-200/60 dark:border-zinc-700/60 px-1.5 py-1'
+              : 'bg-white/60 dark:bg-gray-800/60 border border-gray-100/50 dark:border-gray-700/50 px-2 py-1.5',
+          )}
         >
-          <Settings className="w-4 h-4 group-hover:rotate-90 transition-transform duration-500" />
-        </button>
-      </div>
+          {/* Settings */}
+          <button
+            onClick={() => setSettingsOpen(true)}
+            className="p-2 rounded-full text-gray-400 dark:text-gray-500 hover:bg-white dark:hover:bg-gray-700 hover:text-gray-800 dark:hover:text-gray-200 hover:shadow-sm transition-all group"
+            aria-label={t('settings.title')}
+          >
+            <Settings className="w-4 h-4 group-hover:rotate-90 transition-transform duration-500" />
+          </button>
+        </div>
+      )}
 
       {/* Pro Switch — toggle property: on/off both clickable, not a
           one-way "Done" button. Disabled only when the current scene
@@ -326,7 +331,13 @@ export function HeaderControls({
         )}
       </div>
 
-      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} initialSection="general" />
+      {showSettings && (
+        <SettingsDialog
+          open={settingsOpen}
+          onOpenChange={setSettingsOpen}
+          initialSection="general"
+        />
+      )}
       {videoExportEnabled && (
         <VideoExportDialog open={videoDialogOpen} onOpenChange={setVideoDialogOpen} />
       )}

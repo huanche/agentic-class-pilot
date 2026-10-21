@@ -9,6 +9,8 @@ const state = vi.hoisted(() => ({
   snapshots: new Map<string, { stage: unknown; scenes: unknown[] }>(),
   artifacts: vi.fn(),
   audio: vi.fn(),
+  dispose: vi.fn(),
+  snapshotHook: undefined as undefined | ((snapshot: { scenes: unknown[] }) => Promise<void>),
 }));
 vi.mock('@/lib/server/course-space-storage', () => ({
   readCourseJob: async (id: string) => state.jobs.get(id) ?? null,
@@ -43,6 +45,7 @@ vi.mock('@/lib/server/classroom-storage', async () => {
     readClassroom: async (id: string) => state.snapshots.get(id) ?? null,
     persistClassroom: async (snapshot: { id: string; stage: unknown; scenes: unknown[] }) => {
       state.snapshots.set(snapshot.id, structuredClone(snapshot));
+      await state.snapshotHook?.(snapshot);
       return snapshot;
     },
   };
@@ -50,7 +53,7 @@ vi.mock('@/lib/server/classroom-storage', async () => {
 vi.mock('@/lib/server/classroom-media-generation', () => ({
   generateTTSForClassroom: state.audio,
   finalizeClassroomTtsAudio: vi.fn(),
-  removeClassroomTtsAudio: vi.fn(),
+  removeClassroomTtsAudio: state.dispose,
   generateMediaForClassroom: vi.fn(async () => ({})),
   replaceMediaPlaceholders: vi.fn(),
 }));
@@ -121,6 +124,8 @@ beforeEach(() => {
   state.snapshots.clear();
   state.artifacts.mockReset();
   state.audio.mockReset();
+  state.dispose.mockReset();
+  state.snapshotHook = undefined;
   vi.stubEnv('PLATFORM_AUTH_ENABLED', 'false');
   vi.stubGlobal('fetch', vi.fn(fakeGeneration));
 });
@@ -134,6 +139,186 @@ afterEach(async () => {
 });
 
 describe('server-owned courseware generation', () => {
+  it('retains checkpoint audio when cancellation wins immediately after the page is saved', async () => {
+    const selected = input('cancel_checkpoint');
+    selected.enableTTS = true;
+    state.audio.mockResolvedValue({ generated: 1, failed: 0, skipped: 0 });
+    vi.mocked(fetch).mockImplementation(async (url, init) => {
+      const generated = await (await fakeGeneration(String(url), init!)).json();
+      if (generated.scene)
+        generated.scene.actions = [{ id: 's', type: 'speech', text: '已完成配音' }];
+      return response(generated);
+    });
+    const job = await createBackgroundCoursewareJob(selected, context);
+    state.snapshotHook = async (snapshot) => {
+      if (snapshot.scenes.length === 1) {
+        state.snapshotHook = undefined;
+        await cancelBackgroundCoursewareJob(job.id);
+      }
+    };
+    await runBackgroundCoursewareJob(job.id);
+    expect(state.jobs.get(job.id)?.status).toBe('cancelled');
+    expect(state.snapshots.get(selected.stage.id)?.scenes).toHaveLength(1);
+    expect(state.dispose).not.toHaveBeenCalled();
+    expect(state.artifacts).not.toHaveBeenCalled();
+    expect(state.jobs.get(job.id)?.backgroundGeneration?.performance?.finishedAt).toBeTypeOf(
+      'number',
+    );
+  });
+
+  it('does not publish an incomplete silent page after an audio provider failure', async () => {
+    const selected = input('audio_failure');
+    selected.enableTTS = true;
+    state.audio.mockRejectedValue(new Error('TTS unavailable'));
+    vi.mocked(fetch).mockImplementation(async (url, init) => {
+      const generated = await (await fakeGeneration(String(url), init!)).json();
+      if (generated.scene) generated.scene.actions = [{ id: 's', type: 'speech', text: '讲解' }];
+      return response(generated);
+    });
+    const job = await createBackgroundCoursewareJob(selected, context);
+    await runBackgroundCoursewareJob(job.id);
+    expect(state.jobs.get(job.id)).toMatchObject({ status: 'failed', error: 'TTS unavailable' });
+    expect(state.snapshots.get(selected.stage.id)?.scenes).toHaveLength(0);
+    expect(state.artifacts).not.toHaveBeenCalled();
+  });
+  it('prepares the next page while the preceding audio runs, retaining narration order', async () => {
+    const selected = input('overlap');
+    selected.enableTTS = true;
+    let release!: () => void;
+    const audioBarrier = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let nextStarted!: () => void;
+    const nextReady = new Promise<void>((resolve) => {
+      nextStarted = resolve;
+    });
+    let firstAudioDone = false;
+    state.audio.mockImplementation(async (pages) => {
+      if (pages[0].order === 1) {
+        await audioBarrier;
+        firstAudioDone = true;
+      }
+      return { generated: 1, failed: 0, skipped: 0 };
+    });
+    vi.mocked(fetch).mockImplementation(async (url, init) => {
+      const body = JSON.parse(init!.body as string);
+      const generated = await (await fakeGeneration(String(url), init!)).json();
+      if (generated.scene) {
+        generated.scene.actions = [
+          {
+            id: 'speech' + body.outline.order,
+            type: 'speech',
+            text: '第' + body.outline.order + '页讲解',
+          },
+        ];
+        if (body.outline.order === 2) {
+          expect(firstAudioDone).toBe(false);
+          expect(body.previousSpeeches).toEqual(['第1页讲解']);
+          nextStarted();
+        }
+      }
+      return response(generated);
+    });
+    const job = await createBackgroundCoursewareJob(selected, context);
+    const running = runBackgroundCoursewareJob(job.id);
+    await nextReady;
+    release();
+    await running;
+    expect(state.jobs.get(job.id)).toMatchObject({
+      status: 'review',
+      backgroundGeneration: { performance: { pipeline: true, audioCache: { hits: 0 } } },
+    });
+    expect(state.snapshots.get(selected.stage.id)?.scenes).toMatchObject([
+      { order: 1 },
+      { order: 2 },
+    ]);
+    expect(state.jobs.get(job.id)?.backgroundGeneration?.performance?.firstPageReadyMs).toBeTypeOf(
+      'number',
+    );
+  });
+
+  it('re-plans speculative narration when preceding duration correction changes its words', async () => {
+    const selected = input('corrected_context');
+    selected.enableTTS = true;
+    selected.outlines = selected.outlines.map((outline) => ({
+      ...outline,
+      durationBudget: { targetSeconds: 60 },
+    }));
+    let release!: () => void;
+    const barrier = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let nextStarted!: () => void;
+    const nextReady = new Promise<void>((resolve) => {
+      nextStarted = resolve;
+    });
+    const contexts: string[][] = [];
+    state.audio.mockImplementation(async (pages) => {
+      const scene = pages[0];
+      const original = scene.order === 1 && scene.actions[0].text === '原讲解';
+      if (original) await barrier;
+      scene.timing = { ...scene.timing, measuredDurationSec: original ? 1 : 60 };
+      return { generated: 1, failed: 0, skipped: 0 };
+    });
+    vi.mocked(fetch).mockImplementation(async (url, init) => {
+      const body = JSON.parse(init!.body as string);
+      const generated = await (await fakeGeneration(String(url), init!)).json();
+      if (generated.scene) {
+        generated.scene.actions = [
+          {
+            id: 'speech' + body.outline.order,
+            type: 'speech',
+            text:
+              body.outline.order === 1
+                ? body.durationFeedback
+                  ? '校时后的讲解'
+                  : '原讲解'
+                : '下一页讲解',
+          },
+        ];
+        if (body.outline.order === 2) {
+          contexts.push(body.previousSpeeches);
+          nextStarted();
+        }
+      }
+      return response(generated);
+    });
+    const job = await createBackgroundCoursewareJob(selected, context);
+    const running = runBackgroundCoursewareJob(job.id);
+    await nextReady;
+    release();
+    await running;
+    expect(contexts).toEqual([['原讲解'], ['校时后的讲解']]);
+    expect(state.jobs.get(job.id)?.status).toBe('review');
+    expect(state.jobs.get(job.id)?.backgroundGeneration?.performance?.timings).toEqual(
+      expect.arrayContaining([expect.objectContaining({ phase: 'context-repair', pageOrder: 2 })]),
+    );
+  });
+
+  it('supports the serial rollback without changing page quality checks or audio order', async () => {
+    vi.stubEnv('COURSEWARE_PIPELINE_ENABLED', 'false');
+    const selected = input('serial');
+    selected.enableTTS = true;
+    const events: string[] = [];
+    vi.mocked(fetch).mockImplementation(async (url, init) => {
+      const body = JSON.parse(init!.body as string);
+      events.push(
+        `${String(url).endsWith('scene-content') ? 'content' : 'actions'}${body.outline.order}`,
+      );
+      const generated = await (await fakeGeneration(String(url), init!)).json();
+      if (generated.scene) generated.scene.actions = [{ id: 's', type: 'speech', text: '讲解' }];
+      return response(generated);
+    });
+    state.audio.mockImplementation(async (pages) => {
+      events.push('audio' + pages[0].order);
+      return { generated: 1, failed: 0, skipped: 0 };
+    });
+    const job = await createBackgroundCoursewareJob(selected, context);
+    await runBackgroundCoursewareJob(job.id);
+    expect(events).toEqual(['content1', 'actions1', 'audio1', 'content2', 'actions2', 'audio2']);
+    expect(state.jobs.get(job.id)?.status).toBe('review');
+  });
+
   it('keeps generating after a page alignment failure and retries only the missing page', async () => {
     const selected = input('alignment_retry');
     selected.outlines.push({ ...selected.outlines[1], id: 'outline3', order: 3 });
@@ -243,7 +428,11 @@ describe('server-owned courseware generation', () => {
     const queued = runBackgroundCoursewareJob(second.id);
     await cancelBackgroundCoursewareJob(second.id);
     await queued;
-    expect(fetch).toHaveBeenCalledOnce();
+    expect(fetch).toHaveBeenCalledTimes(2); // Only the running task's bounded lookahead.
+    for (const [, init] of vi.mocked(fetch).mock.calls)
+      expect(JSON.parse(init!.body as string).stageId).toBe(
+        first.backgroundGeneration?.classroomId,
+      );
     expect(state.jobs.get(second.id)?.status).toBe('cancelled');
     await cancelBackgroundCoursewareJob(first.id);
     await running;
@@ -308,6 +497,7 @@ describe('server-owned courseware generation', () => {
     });
     const running = runBackgroundCoursewareJob(job.id);
     await started;
+    await vi.waitFor(() => expect(state.snapshots.get('stage_cancel')?.scenes).toHaveLength(1));
     const cancelled = await cancelBackgroundCoursewareJob(job.id);
     await running;
     expect(cancelled.status).toBe('cancelled');

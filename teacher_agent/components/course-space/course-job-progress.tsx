@@ -3,6 +3,7 @@
 import { Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { CourseArtifactJob } from '@/lib/course-space';
+import { CoursewarePerformanceDetails } from './courseware-performance-details';
 import {
   COURSE_JOB_STATUS_LABELS,
   isActiveCourseJob,
@@ -113,6 +114,7 @@ export function CourseJobProgress({
           返回工作区查看
         </Button>
       </div>
+      <CoursewarePerformanceDetails value={job?.backgroundGeneration?.performance} />
     </div>
   );
 }

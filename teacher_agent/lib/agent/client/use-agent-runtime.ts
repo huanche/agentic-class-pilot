@@ -58,6 +58,8 @@ import { useI18n } from '@/lib/hooks/use-i18n';
 import { editElementsApplyCorrectionKey } from './edit-elements-result';
 import { reviewSceneContext } from './review-scene-context';
 import { consumeEditStream, EDIT_CONNECTION_INTERRUPTED } from './consume-edit-stream';
+import { prepareRegeneratedAudio } from './prepare-regenerated-audio';
+import { useSettingsStore } from '@/lib/store/settings';
 
 export interface UseAgentRuntimeOptions {
   scene?: { id: string; title: string };
@@ -468,13 +470,55 @@ export function useAgentRuntime(opts: UseAgentRuntimeOptions) {
           const scene = details.sceneId
             ? useStageStore.getState().getSceneById(details.sceneId)
             : null;
-          const { snapshot, patch } = planRegenerateApply(details, scene, e.toolName);
+          const plan = planRegenerateApply(details, scene, e.toolName);
+          const { snapshot } = plan;
+          let { patch } = plan;
+          if (scene && patch?.actions?.some((action) => action.type === 'speech') && !e.isError) {
+            const owner = abortRef.current;
+            const settings = useSettingsStore.getState();
+            toolResultsRef.current.set(e.toolCallId, {
+              result: { ...e.result, __audioPending: true },
+              isError: false,
+            });
+            refresh();
+            try {
+              const { generateTTSForScene, removeFreshTtsAllocations } =
+                await import('@/lib/hooks/use-scene-generator');
+              patch = await prepareRegeneratedAudio(scene, patch, {
+                enabled: settings.ttsEnabled,
+                providerId: settings.ttsProviderId,
+                language: useStageStore.getState().stage?.languageDirective,
+                signal: owner?.signal,
+                isCurrent: () =>
+                  abortRef.current === owner &&
+                  useStageStore.getState().getSceneById(scene.id) === scene,
+                generate: generateTTSForScene,
+                dispose: removeFreshTtsAllocations,
+              });
+              if (owner?.signal.aborted || abortRef.current !== owner) return;
+              if (useStageStore.getState().getSceneById(scene.id) !== scene)
+                throw new Error('配音期间本页发生了变化，请重新提交修改建议。');
+              toolResultsRef.current.set(e.toolCallId, { result: e.result, isError: false });
+            } catch (error) {
+              if (abortRef.current !== owner) return;
+              toolResultsRef.current.set(e.toolCallId, {
+                result: owner?.signal.aborted
+                  ? { __stopped: true }
+                  : { details: { sceneId: scene.id, content: null, actions: [] } },
+                isError: !owner?.signal.aborted,
+              });
+              throw error;
+            }
+          }
           // Capture the applied patch as the snapshot's `redo` so an undo can be
           // resumed (the Restore button toggles undo ↔ resume).
           if (snapshot)
             useRegenSnapshots
               .getState()
-              .setSnapshot(e.toolCallId, patch ? { ...snapshot, redo: patch } : snapshot);
+              .setSnapshot(
+                e.toolCallId,
+                patch ? { ...snapshot, timing: scene?.timing, redo: patch } : snapshot,
+              );
           if (patch && details.sceneId) {
             // Apply to the stage store and keep the OPEN slide edit session in
             // lockstep — else the canvas keeps rendering its stale history.present

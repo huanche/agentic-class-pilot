@@ -1,5 +1,7 @@
 'use client';
 
+import { EmbeddedSettingsSync } from '@/components/course-space/workspace-settings';
+
 import { Stage } from '@/components/stage';
 import { ThemeProvider } from '@/lib/hooks/use-theme';
 import { useStageStore } from '@/lib/store';
@@ -469,15 +471,18 @@ export default function ClassroomDetailPage() {
               </div>
             </div>
           ) : (
-            <Stage
-              onRetryOutline={async (outlineId) => {
-                setGenerationFailure(null);
-                await retrySingleOutline(outlineId);
-              }}
-              forceEditMode={embeddedCourseWorkspace}
-              videoOnly={playerOnlyEmbed}
-              hidePlaybackTiming={searchParams.get('replay') === '1'}
-            />
+            <>
+              {embeddedCourseWorkspace && <EmbeddedSettingsSync />}
+              <Stage
+                onRetryOutline={async (outlineId) => {
+                  setGenerationFailure(null);
+                  await retrySingleOutline(outlineId);
+                }}
+                forceEditMode={embeddedCourseWorkspace}
+                videoOnly={playerOnlyEmbed}
+                hidePlaybackTiming={searchParams.get('replay') === '1'}
+              />
+            </>
           )}
         </div>
       </MediaStageProvider>

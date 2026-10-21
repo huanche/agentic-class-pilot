@@ -298,6 +298,7 @@ export interface CourseArtifactJob {
     totalPages: number;
     phase: string;
     failedPages?: Array<{ order: number; title: string; message: string; issues: string[] }>;
+    performance?: import('@/lib/generation/courseware-performance').CoursewarePerformance;
   };
   error?: string;
   createdAt: number;
