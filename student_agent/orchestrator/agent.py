@@ -1705,6 +1705,8 @@ def teach(state: ClassroomState) -> dict:
                     f"针对「{title}」的这题：{prev_question.get('question', '')}"
                 )
             elif kind == "skip":
+                # 导航已在本轮执行，回复必须交付实际的新题，不能被润色成再次确认。
+                no_polish = True
                 # 推进指令（「下一阶段／下一个／跳过」）：直接跳到顺序中的
                 # 下一个知识点出新题。被跳过的题留在已见清单里，回头再问
                 # 也会换一道。这不是作答——不判答、不动星级。
