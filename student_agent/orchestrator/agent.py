@@ -834,6 +834,75 @@ def _tutoring_pick_question(title: str, seen: list[str]) -> tuple[str, bool]:
     return _tutoring_question_pool(title)[0], False
 
 
+def _tutoring_extract_intent_llm(msg: str, catalog: list[tuple[str, str]]) -> dict:
+    """模型翻译官：把学生的话翻成结构化意图（一行 JSON）。
+
+    只翻译不决策——返回的字典还要过 `_validated_tutoring_intent`
+    的骨架校验才允许写状态。模型缺席 / 输出不是 JSON → {}，
+    行为退回纯正则。
+    """
+    if not llm_available():
+        return {}
+    listing = "、".join(f"{i}.{title}" for i, (_kid, title) in enumerate(catalog, 1))
+    raw = llm_chat(
+        "你是课后辅导的意图解析器。把学生这句话里表达的复习意愿抽成一行 JSON，"
+        "只输出 JSON 本身，不要解释。可选字段："
+        "order=知识点编号数组（按学生想复习的先后排序，只列他点到的，没点到的不要编）；"
+        "self_ratings=对象（键=知识点编号，值=1 到 5 的自评星）；"
+        "duration_minutes=他想复习的分钟数（整数）。"
+        "学生没有表达的字段一律不要输出；表达含糊无法确定就输出 {}。",
+        f"知识点目录（编号.标题）：{listing}\n学生的话：{msg}\n一行 JSON：",
+    )
+    m = re.search(r"\{.*\}", raw or "", re.S)
+    if not m:
+        return {}
+    try:
+        data = json.loads(m.group(0))
+    except ValueError:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _validated_tutoring_intent(data: dict, catalog: list[tuple[str, str]]) -> dict:
+    """校验模型翻出的意图：越界或类型不对的字段直接丢弃（fail closed）。"""
+    out: dict = {}
+    if not isinstance(data, dict):
+        return out
+    total = len(catalog)
+    raw_order = data.get("order")
+    if isinstance(raw_order, list) and raw_order:
+        picked: list[int] = []
+        for item in raw_order:
+            try:
+                no = int(item)
+            except (TypeError, ValueError):
+                continue
+            if 1 <= no <= total and no not in picked:
+                picked.append(no)
+        if picked:
+            ids = [catalog[no - 1][0] for no in picked]
+            rest = [kid for kid, _title in catalog if kid not in ids]
+            out["order"] = ids + rest
+    raw_ratings = data.get("self_ratings")
+    if isinstance(raw_ratings, dict):
+        ratings: dict[str, int] = {}
+        for key, value in raw_ratings.items():
+            try:
+                no, stars = int(key), int(value)
+            except (TypeError, ValueError):
+                continue
+            if 1 <= no <= total and 1 <= stars <= 5:
+                ratings[catalog[no - 1][0]] = stars
+        if ratings:
+            out["self_ratings"] = ratings
+    raw_duration = data.get("duration_minutes")
+    if isinstance(raw_duration, (int, float)) and not isinstance(raw_duration, bool):
+        minutes = int(raw_duration)
+        if 1 <= minutes <= 240:
+            out["duration"] = minutes
+    return out
+
+
 def _tutoring_judge(question: dict, answer: str) -> tuple[str, str, dict]:
     """判定学生作答：correct / wrong / unclear / not_answer。
 
@@ -1487,6 +1556,31 @@ def teach(state: ClassroomState) -> dict:
                 updates["tutoring_planned_minutes"] = duration
                 updates["tutoring_planned_end_at"] = _iso_plus_minutes(
                     state["now"], duration, float(state.get("time_scale") or 1.0))
+
+            # ── 模型翻译官（工单 07）：正则没认出的意愿，让模型翻成结构化
+            # 意图，骨架校验通过才写状态；不合法当没说。正则认出的字段优先，
+            # 模型只补缺口；结束意愿不在此处触发（仍走正则 + 结束确认回合）。
+            if llm_available() and (not order or not new_ratings or not duration):
+                extra = _validated_tutoring_intent(
+                    _tutoring_extract_intent_llm(msg, catalog), catalog)
+                if extra.get("order") and not order:
+                    order = extra["order"]
+                    updates["tutoring_order"] = order
+                    updates["tutoring_active_kp"] = order[0]
+                if extra.get("self_ratings") and not new_ratings:
+                    new_ratings = extra["self_ratings"]
+                    updates["tutoring_self_ratings"] = {
+                        **(state.get("tutoring_self_ratings") or {}), **new_ratings,
+                    }
+                if extra.get("duration") and not duration:
+                    duration = extra["duration"]
+                    updates["tutoring_planned_minutes"] = duration
+                    updates["tutoring_planned_end_at"] = _iso_plus_minutes(
+                        state["now"], duration, float(state.get("time_scale") or 1.0))
+                # 模型补出了顺序时，当前聚焦的知识点跟着变（title 供确认文案用）
+                if extra.get("order") and order:
+                    active = order[0]
+                    title = title_of.get(active, "刚才视频的内容")
 
             # 时间预算只改教学安排：到点在回复里加一句关照，绝不关会话。
             end_at = state.get("tutoring_planned_end_at")
