@@ -1,0 +1,28 @@
+name: generation-pipeline-apply-20261021
+on:
+  push:
+    branches: [codex/backup-generation-controls-20261020]
+    paths: [.github/workflows/generation-pipeline-apply-20261021.yml]
+permissions:
+  contents: read
+concurrency:
+  group: teacher-deploy
+  cancel-in-progress: false
+jobs:
+  operate:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    steps:
+      - name: Back up or verify generation pipeline release
+        env:
+          SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+        run: |
+          set -euo pipefail
+          key="$RUNNER_TEMP/pptx-route-key"
+          printf '%s\n' "$SERVER_SSH_KEY" > "$key"
+          chmod 600 "$key"
+          trap 'rm -f "$key"' EXIT
+          ssh -i "$key" -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=20 -o ServerAliveCountMax=3 "ubuntu@$SERVER_HOST" "bash -s -- '$GITHUB_RUN_ID'" <<'REMOTE'
+          printf '%s' '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' | base64 -d | gzip -d | bash -s -- "$1"
+          REMOTE
