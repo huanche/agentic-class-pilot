@@ -65,10 +65,11 @@ class CourseAdapterTests(unittest.TestCase):
         self.assertNotIn("操作系统", json.dumps(context.evaluation.dict(), ensure_ascii=False))
 
     def test_evaluation_default_fallback_marked(self):
+        """空目录（没有知识点工件）→ 无知识点、标 source=none。"""
         payload = dict(self.payload, knowledgePackage={"title": "", "summary": "", "entries": []})
         context = self.adapter.from_platform_payload(payload)
-        self.assertTrue(context.evaluation.is_default)
-        self.assertEqual(context.evaluation.source, "default-semantic")
+        self.assertEqual(context.evaluation.source, "none")
+        self.assertEqual(context.evaluation.knowledge_points, [])
 
     def test_generated_plan_uses_frontend_phase_contract(self):
         context = self.adapter.from_platform_payload(self.payload)
@@ -93,8 +94,10 @@ class CourseAdapterTests(unittest.TestCase):
         self.assertIn(plan["title"], prompt)
         self.assertIn(plan["segments"][0]["content"], prompt)
         self.assertNotIn("操作系统", prompt)
+        # fixture 的 rubric 与场景文本没有词面重叠 → 旧复述链路拿不到题，
+        # 落「无知识点工件」兜底，这本身就是设计契约（题在辅导阶段出）。
         self.assertTrue(questions)
-        self.assertTrue(all(item["source"] == "platform-published evaluation contract"
+        self.assertTrue(all(item["source"] == "platform-published missing-content fallback"
                             for item in questions))
 
 

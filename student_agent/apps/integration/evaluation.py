@@ -47,14 +47,13 @@ def from_internal_context(context) -> EvaluationContract:
 def from_platform_context(context: Dict[str, Any]) -> EvaluationContract:
     """Build the evaluation contract from a platform learning context.
 
-    Order of preference:
-    1. explicit rubric fields on the knowledge package (if the teacher adds them);
-    2. knowledge points derived from published entries (titled concepts);
-    3. generic semantic fallback, marked as default.
+    Rubric only（2026-10-21 决策）：知识点只来自教师发布的「知识点」工件，
+    由平台桥解析成 knowledgePackage.rubric 下发。没有 rubric → 没有知识点，
+    辅导开场会明说「没有登记知识点」并按视频内容复习——绝不从工件标题、
+    材料名或课程名里发明一份目录（旧版这么干过，真机暴露过工件名当
+    知识点念给学生的问题）。
     """
     package = context.get("knowledgePackage") or {}
-    entries = package.get("entries") or []
-
     rubric = package.get("rubric") or context.get("evaluation")
     if isinstance(rubric, dict) and rubric.get("knowledgePoints"):
         points = [_point_from_rubric(item) for item in rubric["knowledgePoints"]]
@@ -66,31 +65,7 @@ def from_platform_context(context: Dict[str, Any]) -> EvaluationContract:
                 source="published-rubric",
             )
 
-    points: List[KnowledgePoint] = []
-    for entry in entries:
-        title = str(entry.get("title") or "").strip()
-        if not title:
-            continue
-        concepts = _concepts_from_content(str(entry.get("content") or ""))
-        points.append(KnowledgePoint(
-            id=str(entry.get("id") or title),
-            title=title,
-            expected_concepts=concepts,
-        ))
-    if points:
-        return EvaluationContract(
-            knowledge_points=points,
-            is_default=False,
-            source="published-entries",
-        )
-
-    return EvaluationContract(
-        knowledge_points=[KnowledgePoint(
-            id=f"{context.get('courseId', 'course')}:core",
-            title=str(context.get("courseTitle") or "本课主题"),
-        )],
-        source="default-semantic",
-    )
+    return EvaluationContract(knowledge_points=[], source="none")
 
 
 def _point_from_rubric(item: Dict[str, Any]) -> KnowledgePoint:

@@ -105,107 +105,56 @@ def _published_classroom(session: SessionDep, course_id: uuid.UUID) -> str | Non
     return row[0] if row else None
 
 
-def _normalize_classroom_outlines(outlines: object) -> list[dict]:
-    """课堂大纲原始 JSON → 干净的 {order,id,title,description,keyPoints} 列表。
+def _knowledge_points_from_markdown(content: str) -> list[dict]:
+    """知识点工件（markdown）→ rubric 条目。纯函数，供单测共用。
 
-    纯函数（无 DB），供 _classroom_outlines 的查询结果整形与单测共用。
+    教师端生成产物的结构约定：`## 大标题` = 一个知识点；其下的
+    `- 列表项` = 应会要点（学生端出题/判答的材料）。首个 ## 之前的
+    引言忽略；标题剥掉「一、二、」式中文序号（编号由学生端的固定
+    数字统一给）；同标题分节只留第一个。id 用标题哈希——教师改稿
+    重发，标题没变 id 不变，跨课次的掌握度积累不断线。
     """
-    if not isinstance(outlines, list):
-        return []
-    picked: list[dict] = []
-    for item in outlines:
-        if not isinstance(item, dict):
-            continue
-        title = str(item.get("title") or "").strip()
-        if not title:
-            continue
-        try:
-            order = int(item.get("order") or 0)
-        except (TypeError, ValueError):
-            order = 0
-        picked.append({
-            "order": order,
-            "id": str(item.get("id") or title),
-            "title": title,
-            "description": str(item.get("description") or ""),
-            "keyPoints": [str(k).strip() for k in (item.get("keyPoints") or [])
-                          if str(k).strip()],
-        })
-    picked.sort(key=lambda outline: outline["order"])
-    return picked
-
-
-def _classroom_outlines(session: SessionDep, classroom_id: str | None) -> list[dict]:
-    """课件生成时同步产出的场景大纲（每个场景带 keyPoints 知识点）。
-
-    生成管线把大纲存在课堂的 stage.generationPlan.outlines 里；这里**只读**
-    教师库把它转交给学生端——不改教师端任何东西。没有大纲（直接上传的
-    课堂 / 未走生成管线）返回空，走知识图谱/工件级条目的旧路。
-    """
-    if not classroom_id:
-        return []
-    row = session.execute(
-        text("SELECT payload->'stage'->'generationPlan'->'outlines' "
-             "FROM teacher.mentra_classrooms WHERE id=:id"),
-        {"id": classroom_id}).first()
-    return _normalize_classroom_outlines(row[0] if row else None)
-
-
-# 图谱抽取自 PPT 时会把封面/参考页也标成 knowledge-point，这些不是知识点
-_GRAPH_TITLE_BLACKLIST = ("课程简介", "教材与参考书", "参考文献", "致谢", "课程大纲")
-
-
-def _normalize_graph_points(rows: list) -> list[dict]:
-    """图谱 knowledge-point 节点 → 学生端 rubric 条目（纯函数，供单测）。
-
-    标题做最小清洗：去 Markdown 强调符、去中文间空格（PPT 封面常见
-    「课   程   简   介」式排版）、压缩空白、去重；黑名单页直接跳过。
-    """
-    seen: set[str] = set()
     points: list[dict] = []
-    for node_id, title, description in rows:
-        clean = re.sub(r"[*`#_]+", "", str(title or ""))
-        clean = re.sub(r"(?<=[一-鿿])[ \t　]+(?=[一-鿿])", "", clean)
-        clean = re.sub(r"\s+", " ", clean).strip()
-        if not clean or clean in seen:
+    seen_titles: set[str] = set()
+    for section in re.split(r"^##[ \t]+", content or "", flags=re.M)[1:]:
+        lines = section.splitlines()
+        if not lines:
             continue
-        if any(word in clean for word in _GRAPH_TITLE_BLACKLIST):
+        title = re.sub(r"^[一二三四五六七八九十百]+、[ \t]*", "", lines[0].strip()).strip()
+        if not title or title in seen_titles:
             continue
-        seen.add(clean)
-        desc = re.sub(r"\s+", " ", str(description or "")).strip()
+        seen_titles.add(title)
+        bullets = []
+        for line in lines[1:]:
+            m = re.match(r"^[-*][ \t]+(.+)$", line.strip())
+            if m and m.group(1).strip():
+                bullets.append(m.group(1).strip()[:200])
         points.append({
-            "id": str(node_id),
-            "title": clean,
-            "expectedConcepts": [desc[:120]] if desc else [],
+            "id": "kp-" + hashlib.sha1(title.encode("utf-8")).hexdigest()[:10],
+            "title": title,
+            "expectedConcepts": bullets,
         })
     return points
 
 
-def _published_knowledge_rubric(session: SessionDep, course_id: uuid.UUID) -> dict | None:
-    """教师端知识图谱（已发布版本）→ 学生端评分量规。
+def _knowledge_artifact_rubric(entries: list[dict], lesson_id: str | None) -> dict | None:
+    """已发布条目里的「知识点」工件 → rubric（学生端知识点的唯一来源）。
 
-    图谱的 knowledge-point 是教师认可的真知识点（章节/概念）。老课堂没有
-    生成管线的场景大纲时，学生端 otherwise 只能拿到工件名（「讲稿与配音」
-    之类）当知识点——真机暴露过。这里只读教师库，把图谱节点按 rubric 结构
-    下发；学生端 evaluation.from_platform_context 优先读 rubric。
-    没有已发布图谱 → None（维持 outlines / entries 原行为）。
+    优先取课时归属匹配 lesson_id 的那份；全课程只有一份时允许无归属匹配。
+    没有 knowledge-points 工件 → None：学生端开场会明说「没有登记知识点」，
+    按视频内容复习（2026-10-21 与用户对齐的决策：不做其他兜底）。
     """
-    version_row = session.execute(text(
-        "SELECT g.version FROM teacher.mentra_course_graph_versions g "
-        "JOIN teacher_course_link l ON l.external_course_id = g.course_id "
-        "WHERE l.course_id = :id AND g.status = 'published' "
-        "ORDER BY g.version DESC LIMIT 1"), {"id": course_id}).first()
-    if not version_row:
+    docs = [entry for entry in entries
+            if entry.get("resourceType") == "knowledge-points"]
+    if not docs:
         return None
-    rows = session.execute(text(
-        "SELECT n.id, n.title, n.description "
-        "FROM teacher.mentra_course_graph_nodes n "
-        "JOIN teacher_course_link l ON l.external_course_id = n.course_id "
-        "WHERE l.course_id = :id AND n.graph_version = :v "
-        "AND n.node_type = 'knowledge-point' "
-        "ORDER BY n.created_at"),
-        {"id": course_id, "v": version_row[0]}).all()
-    points = _normalize_graph_points(rows)
+    chosen = next((entry for entry in docs
+                   if (entry.get("scope") or {}).get("lessonId") == lesson_id), None)
+    if chosen is None and len(docs) == 1:
+        chosen = docs[0]
+    if chosen is None:
+        return None
+    points = _knowledge_points_from_markdown(str(chosen.get("content") or ""))
     return {"knowledgePoints": points} if points else None
 
 
@@ -324,6 +273,9 @@ def published_course_entries(session: SessionDep, course_id: uuid.UUID) -> list[
             entries.append({"id": item["id"], "title": item.get("title", ""),
                             "content": item.get("content", ""), "citations": item.get("citations", []),
                             "scope": item.get("scope"), "kind": "artifact",
+                            # resourceType 透传：学生桥据此识别「知识点」工件
+                            # （知识点的唯一来源，见 _knowledge_artifact_rubric）
+                            "resourceType": item.get("resourceType"),
                             "publicationId": item["classPublicationId"]})
     for module in course.get("modules", []):
         for lesson in module.get("lessons", []):
@@ -485,31 +437,15 @@ def student_learning_context(body: LearningContextRequest, session: SessionDep,
             "summary": package_payload.get("summary") or "",
             "entries": package_payload.get("entries") or [],
         }
-        # 教师端知识图谱的真知识点：以 rubric 结构化下发，学生端评估契约
-        # 优先读 rubric —— 老课堂（无场景大纲）也能拿到真知识点而非工件名
-        graph_rubric = _published_knowledge_rubric(session, course_id)
-        if graph_rubric:
-            knowledge_package["rubric"] = graph_rubric
-        # 课件生成时的场景大纲（含知识点）优先于工件级条目：场景 = 一个
-        # 知识点；keyPoints 以 rubric 结构化下发，学生端的评估契约优先读
-        # rubric（见学生端 evaluation.from_platform_context）。
-        outlines = _classroom_outlines(session, classroom_id)
-        if outlines:
-            knowledge_package["entries"] = [
-                {"id": outline["id"], "title": outline["title"],
-                 "content": (outline["description"]
-                             + ("\n要点：" + "；".join(outline["keyPoints"])
-                                if outline["keyPoints"] else "")).strip(),
-                 "citations": []}
-                for outline in outlines
-            ]
-            knowledge_package["rubric"] = {
-                "knowledgePoints": [
-                    {"id": outline["id"], "title": outline["title"],
-                     "expectedConcepts": outline["keyPoints"]}
-                    for outline in outlines
-                ],
-            }
+        # 知识点只来自教师发布的「知识点」工件（markdown：## 大标题=知识点，
+        # 其下列表=应会要点），以 rubric 结构化下发（学生端 evaluation 优先读
+        # rubric）。没有工件 → 不下发 rubric，学生端开场明说「没有登记知识
+        # 点」，按视频内容复习——不做场景大纲/知识图谱等其他兜底
+        # （2026-10-21 与用户对齐的决策）。锚定课时与课堂选择同源（lessons[0]）。
+        rubric = _knowledge_artifact_rubric(
+            knowledge_package["entries"], lessons[0]["id"] if lessons else None)
+        if rubric:
+            knowledge_package["rubric"] = rubric
         context = {
             "schemaVersion": SCHEMA_VERSION,
             "userId": str(user_id),

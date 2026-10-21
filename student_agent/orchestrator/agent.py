@@ -795,6 +795,21 @@ _TUTORING_CONFIRM_PAT = re.compile(r"(?:是[的呀]?|对|嗯+|好[的呀]?|可�
 _TUTORING_DECLINE_PAT = re.compile(r"不[要会想是]|先不|还没|继续|再[聊学复习一会]|等等")
 
 
+def _tutoring_expected_for(state: ClassroomState, kp_id: str | None) -> list[str]:
+    """该知识点的应会要点（教师发布的知识点工件解析而来）。
+
+    从 lesson_plan.knowledge_points 里按 id 找；找不到/没有要点 → 空列表，
+    出题和判答退化为只看标题（旧行为）。
+    """
+    if not kp_id:
+        return []
+    plan = state.get("lesson_plan") or {}
+    for kp in plan.get("knowledge_points") or []:
+        if str(kp.get("id") or kp.get("kp_id") or "") == str(kp_id):
+            return [str(c) for c in (kp.get("expected") or []) if str(c).strip()]
+    return []
+
+
 def _tutoring_question_pool(title: str) -> list[str]:
     """同知识点的确定性题池：出题去重的兜底（无模型/生成失败时轮换）。"""
     return [
@@ -804,28 +819,33 @@ def _tutoring_question_pool(title: str) -> list[str]:
     ]
 
 
-def _tutoring_generate_question(title: str, seen: list[str]) -> str | None:
-    """模型出题：把已见题干喂进 prompt 避开；失败返回 None 走题池。"""
+def _tutoring_generate_question(title: str, seen: list[str],
+                                expected: list[str] | None = None) -> str | None:
+    """模型出题：把已见题干喂进 prompt 避开；有要点时一并喂上，让题目
+    锚定教师发布的「应会要点」而不是泛泛而问。失败返回 None 走题池。"""
     if not llm_available():
         return None
     seen_block = "\n".join(f"- {s}" for s in seen) or "（还没有问过题）"
+    expected_block = ("\n这个知识点学生应当掌握的要点（出题应围绕它们）：\n"
+                      + "\n".join(f"- {e}" for e in expected)) if expected else ""
     raw = llm_chat(
         "你是课堂里的 AI 辅导老师，要为学生出一个知识检测题。"
         "题目必须考查给定的知识点、适合口头作答、一句话问完。"
         "不得与已问过的题目重复或高度相似。只输出题目本身，不要编号不要解释。",
-        f"知识点：{title}\n已问过的题（必须避开）：\n{seen_block}\n请出下一道检测题：",
+        f"知识点：{title}{expected_block}\n已问过的题（必须避开）：\n{seen_block}\n请出下一道检测题：",
     )
     text = (raw or "").strip()
     return text or None
 
 
-def _tutoring_pick_question(title: str, seen: list[str]) -> tuple[str, bool]:
-    """选题：优先模型生成（避开已见），失败走确定性题池轮换。
+def _tutoring_pick_question(title: str, seen: list[str],
+                            expected: list[str] | None = None) -> tuple[str, bool]:
+    """选题：优先模型生成（避开已见、锚定要点），失败走确定性题池轮换。
 
     返回 (题干, 是否未见)。题池耗尽后复用旧题，标记不新鲜——
     答对也封顶 4 星（量规的 stale_question_max_stars）。
     """
-    generated = _tutoring_generate_question(title, seen)
+    generated = _tutoring_generate_question(title, seen, expected)
     if generated and generated not in seen:
         return generated, True
     for q in _tutoring_question_pool(title):
@@ -834,7 +854,8 @@ def _tutoring_pick_question(title: str, seen: list[str]) -> tuple[str, bool]:
     return _tutoring_question_pool(title)[0], False
 
 
-def _tutoring_judge(question: dict, answer: str) -> tuple[str, str, dict]:
+def _tutoring_judge(question: dict, answer: str,
+                    expected: list[str] | None = None) -> tuple[str, str, dict]:
     """判定学生作答：correct / wrong / unclear / not_answer。
 
     **not_answer = 这句话不是在回答检测题**（想跳过/求助/改时间/结束等），
@@ -846,6 +867,8 @@ def _tutoring_judge(question: dict, answer: str) -> tuple[str, str, dict]:
     """
     if not llm_available():
         return "unclear", "", {}
+    expected_block = ("\n该知识点的应会要点（判对答错以它们为据）：\n"
+                      + "\n".join(f"- {e}" for e in expected)) if expected else ""
     raw = llm_chat(
         "你是课堂里的 AI 辅导老师，正在判定学生对检测题的作答。"
         "只输出一行 JSON："
@@ -856,7 +879,7 @@ def _tutoring_judge(question: dict, answer: str) -> tuple[str, str, dict]:
         "想结束复习等），此时 intent 从这些里选："
         "self_eval|kp_select|followup|help|time_change|end|skip|other，"
         "可带槽位 kp_no/rating/minutes/order（如 {\"intent\":\"self_eval\",\"kp_no\":2,\"rating\":3}）。",
-        f"检测题：{question.get('question', '')}\n学生消息：{answer}\n"
+        f"检测题：{question.get('question', '')}{expected_block}\n学生消息：{answer}\n"
         "请给出一行 JSON 判定：",
     )
     data = _tutoring_parse_json(raw)
@@ -1551,8 +1574,9 @@ def teach(state: ClassroomState) -> dict:
             stars = dict(state.get("kp_stars") or {})
             stats = dict(state.get("tutoring_stats") or {})
             if kind == "answer" and prev_question:
-                verdict, _note, judge_extra = _tutoring_judge(prev_question, msg)
                 kid = prev_question.get("kp_id") or ""
+                verdict, _note, judge_extra = _tutoring_judge(
+                    prev_question, msg, _tutoring_expected_for(state, kid))
                 if verdict == "correct":
                     stats["correct"] = int(stats.get("correct", 0)) + 1
                     if bool(prev_question.get("hint_given")):
@@ -1600,7 +1624,8 @@ def teach(state: ClassroomState) -> dict:
                         stats["wrong"] = int(stats.get("wrong", 0)) + 1
                         updates["tutoring_stats"] = stats
                         title_w = title_of.get(kid, "刚才视频的内容")
-                        text, fresh = _tutoring_pick_question(title_w, seen)
+                        text, fresh = _tutoring_pick_question(
+                            title_w, seen, _tutoring_expected_for(state, kid))
                         updates["tutoring_question"] = {
                             "kp_id": kid, "question": text,
                             "asked_at": state.get("now"), "hint_given": False,
@@ -1694,7 +1719,8 @@ def teach(state: ClassroomState) -> dict:
             title = title_of.get(active, "刚才视频的内容")
 
             def _ask_question() -> None:
-                text, fresh = _tutoring_pick_question(title, seen)
+                text, fresh = _tutoring_pick_question(
+                    title, seen, _tutoring_expected_for(state, active))
                 updates["tutoring_question"] = {
                     "kp_id": active,
                     "question": text,

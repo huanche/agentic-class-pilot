@@ -14,7 +14,12 @@ class GroundedQuestionTests(unittest.TestCase):
             "courseTitle": "现代交换原理", "publication": {"id": "p", "version": 1},
             "knowledgePackage": {"entries": [{"id": "entry-1",
                 "title": "课件生成 / 第1周｜习题与答案",
-                "content": "# 第1周《现代交换原理》分层习题与答案\n## 一、基础巩固层\n### 1. 填空题\n" + self.evidence}]},
+                "content": "# 第1周《现代交换原理》分层习题与答案\n## 一、基础巩固层\n### 1. 填空题\n" + self.evidence}],
+                # 旧复述/探究出题链路的测试需要目录非空——补一份 rubric 让
+                # evaluation 有知识点（目录来源已由知识点工件接管，这里只保链路可测）
+                "rubric": {"knowledgePoints": [{"id": "entry-1", "title": "电路交换",
+                                                "expectedConcepts": ["独占资源"]}]}
+            },
         }
         context = course_adapter.from_platform_payload(self.payload)
         self.plan = course_adapter.load_plan_for_session({"learning_context": context.model_dump()})
@@ -73,15 +78,16 @@ class GroundedQuestionTests(unittest.TestCase):
         self.assertEqual(prompt_context.lesson_sources(self.plan)[0]["id"], "entry-2")
 
     def test_orchestrator_uses_generation_and_never_local_course_fallback(self):
+        """复述/探究出题：只用平台发布内容，永不回退本地旧课程题库。"""
         from orchestrator import agent
         with patch.object(agent, "llm_chat", return_value=self.response()) as model:
             queue = agent.build_question_queue("deep_inquiry", [], plan=self.plan)
             model.assert_called_once()
             self.assertIn("AI-generated", queue[0]["source"])
-        with patch.object(agent, "_parse_kb_questions") as old_bank:
-            self.assertEqual(agent.build_question_queue("recap_discussion", [],
-                             plan={"source": "platform-published"}), [])
-            old_bank.assert_not_called()
+        # 无平台计划（无知识点目录）→ 空队列，不碰本地题库
+        # （旧符号 _parse_kb_questions 已随目录来源重构删除；空队列即「不兜底」）
+        self.assertEqual(agent.build_question_queue("recap_discussion", [],
+                         plan={"source": "platform-published"}), [])
 
 
 if __name__ == "__main__":
