@@ -48,6 +48,7 @@ import { isGeneratedMediaPlaceholder } from '@/lib/media/media-ref';
 import { VOXCPM_AUTO_VOICE_ID, VOXCPM_TTS_PROVIDER_ID } from '@/lib/audio/voxcpm';
 import { type PlatformTtsConfig } from '@/lib/server/platform-user-model-config';
 import { recordGenerationUsage } from '@/lib/server/usage-storage';
+import { generateCachedTts, type AudioCacheStatus } from './tts-audio-cache';
 
 const log = createLogger('ClassroomMedia');
 
@@ -311,6 +312,8 @@ export async function generateTTSForClassroom(
     failFast?: boolean;
     recordUsage?: boolean;
     voiceSelection?: CoursewareVoiceSelection;
+    cacheScope?: string;
+    onAudioCache?: (status: AudioCacheStatus) => void;
   },
 ): Promise<{ generated: number; failed: number; skipped: number }> {
   const audioDir = path.join(CLASSROOMS_DIR, classroomId, 'audio');
@@ -409,7 +412,7 @@ export async function generateTTSForClassroom(
       const audioId = `tts_s${sceneOrder}_${action.id}${renderId ? `_${renderId}` : ''}`;
 
       try {
-        const result = await generateTTS(
+        const result = await generateCachedTts(
           {
             providerId,
             modelId:
@@ -424,15 +427,20 @@ export async function generateTTSForClassroom(
               : undefined,
           },
           speechAction.text,
+          { scope: options?.cacheScope || classroomId, onCache: options?.onAudioCache },
+          async (config, text) => {
+            const result = await generateTTS(config, text);
+            if (options?.recordUsage)
+              void recordGenerationUsage({
+                kind: 'tts',
+                unit: 'character',
+                providerId,
+                modelId: config.modelId,
+                quantity: text.length,
+              });
+            return result;
+          },
         );
-        if (options?.recordUsage)
-          void recordGenerationUsage({
-            kind: 'tts',
-            unit: 'character',
-            providerId,
-            modelId: byokModel || DEFAULT_TTS_MODELS[providerId as keyof typeof DEFAULT_TTS_MODELS],
-            quantity: speechAction.text.length,
-          });
         options?.signal?.throwIfAborted();
 
         const outputFormat = result.format || format;
