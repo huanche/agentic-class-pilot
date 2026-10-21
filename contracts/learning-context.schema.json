@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Platform learning context v1",
+  "description": "Existing schemaVersion 1 wire format. lessons is optional for legacy consumers; an explicitly empty catalog must remain empty. Unknown additive fields are allowed.",
+  "type": "object",
+  "required": ["schemaVersion", "userId", "courseId", "publication", "knowledgePackage"],
+  "properties": {
+    "schemaVersion": {"type": "integer", "const": 1},
+    "userId": {"type": "string", "format": "uuid"},
+    "courseId": {"type": "string", "format": "uuid"},
+    "courseTitle": {"type": "string"},
+    "publication": {
+      "type": "object",
+      "required": ["id", "version"],
+      "properties": {"id": {"type": ["string", "null"]}, "version": {"type": "integer"}}
+    },
+    "knowledgePackage": {
+      "type": "object",
+      "properties": {
+        "title": {"type": "string"},
+        "summary": {"type": "string"},
+        "entries": {
+          "type": "array",
+          "items": {
+            "type": "object", "required": ["id"],
+            "properties": {"id": {"type": "string"}, "title": {"type": "string"}, "content": {"type": "string"}}
+          }
+        }
+      }
+    },
+    "classroom": {"$ref": "#/$defs/classroom"},
+    "lessons": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "title", "classroom"],
+        "properties": {
+          "id": {"type": "string"}, "title": {"type": ["string", "null"]}, "order": {"type": "integer"},
+          "week": {"type": ["integer", "null"]}, "lessonNumber": {"type": ["integer", "null"]},
+          "teachingHours": {"type": ["number", "null"]}, "classroom": {"$ref": "#/$defs/classroom"}
+        }
+      }
+    },
+    "grounding": {"type": "object"}
+  },
+  "$defs": {
+    "classroom": {
+      "type": ["object", "null"],
+      "properties": {
+        "id": {"type": "string"}, "title": {"type": "string"}, "playerUrl": {"type": "string"},
+        "playbackToken": {"type": ["string", "null"]},
+        "scenes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {"type": "string"}, "order": {"type": "integer"}, "title": {"type": "string"},
+              "actions": {"type": "array", "items": {"type": "object"}}
+            }
+          }
+        }
+      }
+    }
+  }
+}

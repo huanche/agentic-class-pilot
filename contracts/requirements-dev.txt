@@ -1,0 +1,4 @@
+# Offline contract checks only. Not an application/runtime dependency.
+PyYAML==6.0.3
+jsonschema==4.25.1
+openapi-spec-validator==0.7.2

@@ -4,7 +4,7 @@
 # 实现位置：platform/backend/app/api/routes/teacher_bridge.py、user_model_config.py
 # 调用方：teacher_agent/lib/server/platform-*.ts
 # 变更规则：只允许新增字段；修改/删除已有字段属于破坏性变更，必须评审并升版本。
-# 认证方式（三选一，按端点标注）：
+# 认证方式（按端点标注，委托身份必须同时携带服务密钥）：
 #   - 服务密钥：请求头 X-Teacher-Service-Key = 平台 .env 的 TEACHER_SERVICE_KEY
 #   - 委托身份：在服务密钥之上追加 X-Platform-Subject（被代理教师的用户 UUID）
 openapi: 3.1.0
@@ -13,12 +13,13 @@ info:
   version: 1.0.0
   description: >
     平台与教师端之间的服务接口约定。路径以 /api/v1 为前缀（经统一网关）。
-    所有端点 fail-closed：密钥缺失或不匹配返回 403；平台数据库不可用返回 503。
+    密钥缺失或不匹配返回 403；其余状态码以各端点声明为准。
 servers:
   - url: http://127.0.0.1:8080/api/v1
 paths:
   /internal/teacher/authorize:
     post:
+      operationId: authorizeTeacherRequest
       summary: 逐请求授权（教师端中间件对每个请求调用）
       description: >
         教师端每个请求都携带浏览器 Cookie 调用此端点换取授权结论。
@@ -33,11 +34,11 @@ paths:
               type: object
               required: [path, method]
               properties:
-                cookie: { type: string, nullable: true, description: 平台下发的浏览器会话 Cookie 值 }
+                cookie: { type: [string, "null"], description: 平台下发的浏览器会话 Cookie 值 }
                 path: { type: string, maxLength: 2048, description: 含查询串的原始路径 }
                 method: { type: string, maxLength: 10 }
-                origin: { type: string, nullable: true }
-                service_user_id: { type: string, nullable: true, description: 服务间委托时的教师用户 UUID }
+                origin: { type: [string, "null"] }
+                service_user_id: { type: [string, "null"], description: 服务间委托时的教师用户 UUID }
       responses:
         "200":
           description: 授权通过
@@ -57,6 +58,7 @@ paths:
         "503": { description: 平台数据库不可用 }
   /internal/teacher/courses:
     post:
+      operationId: registerTeacherCourse
       summary: 教师端建课后，向平台登记同 ID 的课程管理记录（幂等 upsert）
       security: [{ serviceKey: [] }]
       requestBody:
@@ -70,7 +72,7 @@ paths:
                 course_id: { type: string, format: uuid, description: 教师端生成的课程 UUID，平台沿用 }
                 teacher_id: { type: string, format: uuid }
                 title: { type: string, minLength: 1, maxLength: 255 }
-                description: { type: string, nullable: true, maxLength: 2000 }
+                description: { type: [string, "null"], maxLength: 2000 }
       responses:
         "200":
           description: 登记成功
@@ -84,6 +86,7 @@ paths:
         "409": { description: 课程归属冲突（教师端记录与平台不一致） }
   /internal/teacher/course-alias/{course_id}:
     get:
+      operationId: resolveTeacherCourseAlias
       summary: 平台 UUID 与教师端历史短 ID 的双向映射查询
       description: 教师端本地查不到某 UUID 课程时调用，改用历史 ID 重试读取。
       security: [{ serviceKey: [] }]
@@ -99,10 +102,11 @@ paths:
                 required: [platformCourseId, legacyCourseId]
                 properties:
                   platformCourseId: { type: string }
-                  legacyCourseId: { type: string, nullable: true }
+                  legacyCourseId: { type: [string, "null"] }
         "404": { description: 映射不存在或课程未同步到教师服务 }
   /internal/teacher/courses/{course_id}/enrollment:
     get:
+      operationId: getTeacherCourseEnrollment
       summary: 读取课程选课码（需课程已发布且调用者为课程所有教师）
       security:
         - serviceKey: []
@@ -125,6 +129,7 @@ paths:
         "404": { description: 课程不存在 }
   /internal/teacher/courses/{course_id}/members:
     get:
+      operationId: getTeacherCourseMembers
       summary: 课程花名册只读投影（选课关系归平台所有，教师端不落副本）
       security:
         - serviceKey: []
@@ -149,13 +154,14 @@ paths:
                       properties:
                         studentId: { type: string, format: uuid }
                         name: { type: string, description: 全名，缺省回退邮箱 }
-                        email: { type: string, nullable: true }
-                        enrolledAt: { type: string, nullable: true, description: ISO 8601 }
+                        email: { type: [string, "null"] }
+                        enrolledAt: { type: [string, "null"], description: ISO 8601 }
         "401": { description: 委托教师身份无效 }
         "403": { description: 非课程所有者 / 服务密钥错误 }
         "404": { description: 课程不存在 }
   /internal/user/{user_id}/model-config:
     get:
+      operationId: getUserModelConfig
       summary: 按用户取解密后的模型配置（教师端与学生端共用；BYOK）
       description: >
         教师端与学生端各自的服务密钥任一匹配即可。返回为按提供方组织的

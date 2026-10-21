@@ -1,0 +1,57 @@
+name: integration-contracts
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'contracts/**'
+      - 'scripts/check_integration_contracts.py'
+      - 'scripts/tests/test_integration_contracts.py'
+      - 'platform/backend/app/api/main.py'
+      - 'platform/backend/app/api/routes/teacher_bridge.py'
+      - 'platform/backend/app/api/routes/student_bridge.py'
+      - 'platform/backend/app/api/routes/user_model_config.py'
+      - 'platform/scripts/gen_routing.py'
+      - 'platform/deployment/**'
+      - 'student_agent/tests/fixtures/**'
+      - 'student_agent/apps/integration/launch_context.py'
+      - '.github/workflows/integration-contracts.yml'
+  push:
+    paths:
+      - 'contracts/**'
+      - 'scripts/check_integration_contracts.py'
+      - 'scripts/tests/test_integration_contracts.py'
+      - 'platform/backend/app/api/**'
+      - 'platform/scripts/gen_routing.py'
+      - 'platform/deployment/**'
+      - 'student_agent/tests/fixtures/**'
+      - 'student_agent/apps/integration/launch_context.py'
+      - '.github/workflows/integration-contracts.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: integration-contracts-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: contracts/requirements-dev.txt
+      - name: Install development-only validators
+        run: python -m pip install -r contracts/requirements-dev.txt
+      - name: Validate API declarations and learning-context compatibility
+        run: python scripts/check_integration_contracts.py
+      - name: Reject generated gateway routing drift
+        run: python platform/scripts/gen_routing.py --check
+      - name: Run isolated contract regressions (no application or database)
+        run: python -m unittest discover -s scripts/tests -p test_integration_contracts.py -v
