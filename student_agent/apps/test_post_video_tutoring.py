@@ -458,65 +458,70 @@ class TutoringIntentTimeTest(unittest.TestCase):
         self.assertTrue(answer.json()["reply_text"].strip())
 
 
-    def _send_with_intent_model(self, text: str, intent_json: str):
-        """带模型翻译官的发送：system 含「意图解析器」时返回给定 JSON，
+    def _send_with_classifier(self, text: str, intent_json: str):
+        """带意图分类器的发送：system 含「意图分类器」时返回给定 JSON，
         其余调用（润色等）收集 user 文本并回一句固定话。"""
-        captured: dict = {}
+        captured: dict = {"users": [], "classify_calls": 0}
 
         def fake_chat(system: str, user: str):
-            if "意图解析器" in system:
+            if "意图分类器" in system:
+                captured["classify_calls"] += 1
                 return intent_json
-            captured.setdefault("users", []).append(user)
+            captured["users"].append(user)
             return "好的，按你说的来。"
 
         with mock.patch.object(agent, "llm_available", return_value=True), \
                 mock.patch.object(agent, "llm_chat", side_effect=fake_chat):
             reply = self.client.post(
                 f"/api/session/{self.sid}/message", json={"text": text})
-        return reply, captured.get("users", [])
+        return reply, captured
 
     def test_llm_intent_extracts_natural_order(self) -> None:
-        """「第二个留到最后」正则不认，模型翻成 order 后顺序生效；
-        润色层的指令里必须带上已确认的顺序（模型得被告知事实）。"""
+        """「第二个留到最后」正则不认 → 兜底分类器翻出 order 后顺序生效；
+        润色指令里带上已确认的顺序。这也回归 kp_select 分支的 ids 构建。"""
         self._enter_tutoring()
 
-        _reply, users = self._send_with_intent_model(
-            "第二个留到最后看吧。", '{"order": [1, 3, 4, 5, 6, 2]}')
+        _reply, captured = self._send_with_classifier(
+            "第二个留到最后看吧。",
+            '{"intent": "kp_select", "order": [1, 3, 4, 5, 6, 2]}')
 
         tutoring = self._state()["tutoring"]
         self.assertEqual(tutoring["order"], [1, 3, 4, 5, 6, 2])
-        self.assertTrue(any("顺序" in u for u in users), users)
+        self.assertTrue(any("顺序" in u for u in captured["users"]), captured["users"])
 
     def test_llm_intent_extracts_quarter_hour(self) -> None:
-        """「给我一刻钟」→ duration_minutes 15 → 计划时长重设。"""
+        """「给我一刻钟」→ time_change 15 分钟 → 计划时长重设。"""
         self._enter_tutoring()
 
-        _reply, users = self._send_with_intent_model("给我一刻钟吧。",
-                                                     '{"duration_minutes": 15}')
+        _reply, captured = self._send_with_classifier(
+            "给我一刻钟吧。", '{"intent": "time_change", "minutes": 15}')
 
         tutoring = self._state()["tutoring"]
         self.assertEqual(tutoring["planned_minutes"], 15)
-        self.assertTrue(any("15 分钟" in u for u in users), users)
+        self.assertTrue(any("15 分钟" in u for u in captured["users"]),
+                        captured["users"])
 
     def test_llm_intent_out_of_range_discarded(self) -> None:
-        """模型翻出越界值（编号 99 / 星级 9 / 时长 9999）→ 全丢弃，状态不动。"""
+        """槽位越界（编号 99 / 时长 9999）→ 忽略，状态不动。"""
         self._enter_tutoring()
 
-        self._send_with_intent_model(
-            "随便聊聊",
-            '{"order": [99], "self_ratings": {"2": 9}, "duration_minutes": 9999}')
+        self._send_with_classifier("随便聊聊。",
+                                   '{"intent": "kp_select", "order": [99]}')
+        self._send_with_classifier("再商量下。",
+                                   '{"intent": "time_change", "minutes": 9999}')
 
         tutoring = self._state()["tutoring"]
         self.assertEqual(tutoring["order"], [1, 2, 3, 4, 5, 6])
-        self.assertEqual(tutoring["self_ratings"], {})
         self.assertEqual(tutoring["planned_minutes"], 15)
 
     def test_regex_takes_precedence_over_model(self) -> None:
-        """正则与模型冲突：「先 2 再 1」+ 模型回 [1,2] → 最终按正则的 [2,1,…]。"""
+        """正则认出的不走分类器：「先 2 再 1」时分类器零调用，顺序按正则。"""
         self._enter_tutoring()
 
-        self._send_with_intent_model("先复习 2，再 1。", '{"order": [1, 2]}')
+        _reply, captured = self._send_with_classifier(
+            "先复习 2，再 1。", '{"intent": "kp_select", "order": [1, 2]}')
 
+        self.assertEqual(captured["classify_calls"], 0)
         tutoring = self._state()["tutoring"]
         self.assertEqual(tutoring["order"], [2, 1, 3, 4, 5, 6])
 
