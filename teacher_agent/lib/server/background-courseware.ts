@@ -8,6 +8,12 @@ import type { Scene } from '@/lib/types/stage';
 import type { DurationFeedback } from '@/lib/generation/course-duration';
 import { calibrateNarrationDuration } from '@/lib/generation/course-duration';
 import {
+  createNarrationPace,
+  estimateNarrationSeconds,
+  narrationUnits,
+  type NarrationRevision,
+} from '@/lib/generation/narration-budget';
+import {
   calibrateCourseDuration,
   MAX_COURSE_DURATION_CORRECTIONS,
 } from '@/lib/generation/course-duration-calibration';
@@ -230,6 +236,9 @@ async function execute(
   let stored: StoredInput | undefined;
   let began = false;
   const pipeline = process.env.COURSEWARE_PIPELINE_ENABLED !== 'false';
+  // Opt-in while the five-page local trial is being qualified. Existing deployments stay unchanged.
+  const scriptBudget = process.env.COURSEWARE_NARRATION_BUDGET_ENABLED === 'true';
+  const narrationPace = createNarrationPace();
   const configuredPrefetch = Number(process.env.COURSEWARE_CONTENT_PREFETCH || 2);
   const prefetchWindow =
     pipeline && Number.isSafeInteger(configuredPrefetch)
@@ -362,6 +371,7 @@ async function execute(
       content: unknown,
       feedback?: DurationFeedback,
       previousSpeeches?: string[],
+      revision?: NarrationRevision,
     ) => {
       const previous = scenes
         .filter((page) => page.order < outline.order)
@@ -388,14 +398,20 @@ async function execute(
             : undefined,
         narrationScript: input.narrationScripts?.[outline.order - 1],
         durationFeedback: feedback,
+        ...(scriptBudget && input.enableTTS
+          ? {
+              narrationPace: narrationPace.estimate(),
+              narrationRevision: outline.type === 'slide' ? revision : undefined,
+            }
+          : {}),
       });
       for (const timing of result.generationTimings ?? [])
         metrics.detail(timing.phase, timing.durationMs, outline.order);
       return result.scene;
     };
-    const audio = async (scene: Scene) =>
+    const audio = async (scene: Scene, phase = 'audio') =>
       metrics.measure(
-        'audio',
+        phase,
         async () => {
           if (!input.enableTTS || !scene.actions?.some((action) => action.type === 'speech'))
             return;
@@ -411,6 +427,9 @@ async function execute(
               signal,
               cacheScope: teacherId,
               onAudioCache: (status) => metrics.cache(status),
+              onNarrationSample: scriptBudget
+                ? (sample) => narrationPace.observe(sample)
+                : undefined,
             });
           } catch (error) {
             await removeClassroomTtsAudio(scene, stage.id);
@@ -425,7 +444,18 @@ async function execute(
     const dispose = (scene: Scene) => removeClassroomTtsAudio(scene, stage.id);
     const regenerate = async (previous: Scene, feedback: DurationFeedback) => {
       const outline = outlines.find((page) => page.order === previous.order)!;
-      const candidate = await actions(outline, previous.content, feedback);
+      const candidate = await actions(
+        outline,
+        previous.content,
+        feedback,
+        undefined,
+        scriptBudget && narrationPace.estimate()
+          ? {
+              actions: previous.actions ?? [],
+              audioSeconds: narrationPace.durations(previous.actions ?? []),
+            }
+          : undefined,
+      );
       candidate.id = previous.id;
       candidate.timing = {
         ...previous.timing,
@@ -438,6 +468,54 @@ async function execute(
       } catch (error) {
         await dispose(candidate);
         throw error;
+      }
+    };
+    const prepareNarration = async (scene: Scene, outline: (typeof outlines)[number]) => {
+      if (!scriptBudget || !input.enableTTS || scene.type !== 'slide' || !outline.durationBudget)
+        return scene;
+      // Bootstrap with useful, uncut lecture paragraphs. Their exact audio is cached for reuse.
+      if (!narrationPace.estimate()) {
+        const sampleActions = (scene.actions ?? [])
+          .filter((action) => action.type === 'speech' && narrationUnits(action.text) >= 10)
+          .slice(0, 2);
+        if (sampleActions.length) {
+          const sample = { ...scene, actions: structuredClone(sampleActions), timing: undefined };
+          try {
+            await audio(sample, 'narration-probe');
+          } finally {
+            await dispose(sample);
+          }
+        }
+      }
+      const pace = narrationPace.estimate();
+      if (!pace) return scene;
+      const measured = narrationPace.durations(scene.actions ?? []);
+      const estimated = estimateNarrationSeconds(scene.actions ?? [], pace, measured);
+      const target = outline.durationBudget.targetSeconds;
+      // A proxy is only used to catch large first-draft errors. Final real-audio ±5% stays intact.
+      if (!estimated || Math.abs(estimated - target) / target <= 0.12) return scene;
+      try {
+        const candidate = await metrics.measure(
+          'script-budget',
+          () =>
+            actions(outline, scene.content, undefined, undefined, {
+              actions: scene.actions ?? [],
+              audioSeconds: measured,
+            }),
+          outline.order,
+        );
+        candidate.id = scene.id;
+        candidate.timing = {
+          ...scene.timing,
+          measuredDurationSec: undefined,
+          measurementKey: undefined,
+        };
+        return candidate;
+      } catch (error) {
+        // A rejected local text repair cannot replace an already reviewed draft.
+        if ((error as { errorCode?: string }).errorCode !== 'FOCUS_SPEECH_ALIGNMENT_FAILED')
+          throw error;
+        return scene;
       }
     };
     const missing = outlines.filter(
@@ -567,7 +645,7 @@ async function execute(
         const contextRetryAllowed =
           proposed.ok ||
           (proposed.error as { errorCode?: string })?.errorCode === 'FOCUS_SPEECH_ALIGNMENT_FAILED';
-        const scene =
+        let scene =
           contextChanged && contextRetryAllowed
             ? await metrics.measure(
                 'context-repair',
@@ -591,6 +669,8 @@ async function execute(
           quizSecondsPerQuestion: scene.type === 'quiz' ? QUIZ_SECONDS_PER_QUESTION : undefined,
           autoAdvance: true,
         };
+        scene = await prepareNarration(scene, outline);
+        candidate = scene;
         pendingPage = {
           scene,
           work: settle(finishPage(scene, outline, progress)).then((outcome) => {

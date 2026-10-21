@@ -1,6 +1,7 @@
 import type { SceneOutline, UserRequirements } from '@/lib/types/generation';
 import type { Scene } from '@/lib/types/stage';
 import { WIDGET_MS } from '@/lib/choreography/timing';
+import type { NarrationPace } from './narration-budget';
 
 export const DEFAULT_TARGET_MINUTES = 28;
 export const DURATION_TOLERANCE = 0.05;
@@ -105,6 +106,7 @@ export function planCourseDuration(outlines: SceneOutline[], minutes: number): S
 export function withNarrationDuration(
   outline: SceneOutline,
   feedback?: DurationFeedback,
+  pace?: NarrationPace,
 ): SceneOutline {
   const seconds = outline.durationBudget?.targetSeconds;
   if (!(seconds && Number.isFinite(seconds) && seconds > 0)) return outline;
@@ -122,13 +124,20 @@ export function withNarrationDuration(
       : Math.round(fallback);
   const characters = recalibrateCount(feedback?.narrationCharacters, seconds * 3.5);
   const words = recalibrateCount(feedback?.narrationWords, (seconds / 60) * 135);
+  const usablePace =
+    pace &&
+    Number.isFinite(pace.unitsPerSecond) &&
+    pace.unitsPerSecond >= 0.3 &&
+    pace.unitsPerSecond <= 30 &&
+    Number.isSafeInteger(pace.samples) &&
+    pace.samples > 0;
   const courseFeedback =
     feedback?.courseMeasuredSeconds != null
       ? `\n【整课汇总校正】整课已实测 ${feedback.courseMeasuredSeconds.toFixed(1)} 秒，目标 ${feedback.courseTargetSeconds} 秒。只调整本页的有效讲解来减少整课偏差，其他页面保留。请自行核对本轮讲稿长度并尽量落在上述参考的 ±5% 内；可增加必要的讲解片段，不受通用 5–10 / 3–8 片段建议限制。压缩时去掉重复或冗余，保留知识点、推演和结论；扩充时增加有依据的案例与步骤。不得修改播放语速、插入等待或截断句子。`
       : '';
   return {
     ...outline,
-    description: `${outline.description}\n\n【本页播放时长合同（优先于通用讲稿字数建议）】\n本页自动讲解与演示预算 ${seconds} 秒，容差 ±5%。${feedback ? '根据上一版实际配音速度，本轮' : '首轮'}可按中文约 ${characters} 字或英文约 ${words} 词组织自然口语，按实际授课语言选择；这只是估算，不能把估算当作音频实测。不要沿用固定的 140–200 字限制。内容应解释原理、提供适量例子与推演，所有例子必须以本页知识点为依据；不要重复堆砌。为 reveal 等同步动作留少量时间，聚焦和激光笔不额外占讲解时间。保留必要的 reveal 结论揭示。禁止用长时间静音、无意义等待、重复内容、极端慢速或截断语音来凑时长。${feedback ? `\n【实测校正】上一版实际自动播放 ${feedback.measuredSeconds.toFixed(1)} 秒，目标 ${feedback.targetSeconds} 秒。${feedback.narrationCharacters ? `上一版讲稿共 ${feedback.narrationCharacters} 字符；上述本轮字数已按实测比例重新计算，替代首轮固定语速估算。` : ''}请按此参考调整讲解的深度和长度：偏短时增加有依据的案例推演、步骤解释或易错辨析，偏长时精简冗余；保留核心知识点及必要动作，不要增加没有材料依据的事实，也不要用语速或等待凑时间。` : ''}${courseFeedback}`,
+    description: `${outline.description}\n\n【本页播放时长合同（优先于通用讲稿字数建议）】\n本页自动讲解与演示预算 ${seconds} 秒，容差 ±5%。${usablePace && !feedback ? `本次音色已从 ${pace.samples} 段真实配音抽样，首稿按约 ${Math.round(seconds * pace.unitsPerSecond)} 个可朗读单位组织内容（汉字及数字各 1、英文字母各 1/3、标点约 0.3）；这是讲稿预算估计，最终仍以音频实测为准。请先规划各知识点的讲解份额，核对总量，不要沿用其他音色的固定字数。` : `${feedback ? '根据上一版实际配音速度，本轮' : '首轮'}可按中文约 ${characters} 字或英文约 ${words} 词组织自然口语，按实际授课语言选择；这只是估算，不能把估算当作音频实测。`}不要沿用固定的 140–200 字限制。内容应解释原理、提供适量例子与推演，所有例子必须以本页知识点为依据；不要重复堆砌。为 reveal 等同步动作留少量时间，聚焦和激光笔不额外占讲解时间。保留必要的 reveal 结论揭示。禁止用长时间静音、无意义等待、重复内容、极端慢速或截断语音来凑时长。${feedback ? `\n【实测校正】上一版实际自动播放 ${feedback.measuredSeconds.toFixed(1)} 秒，目标 ${feedback.targetSeconds} 秒。${feedback.narrationCharacters ? `上一版讲稿共 ${feedback.narrationCharacters} 字符；上述本轮字数已按实测比例重新计算，替代首轮固定语速估算。` : ''}请按此参考调整讲解的深度和长度：偏短时增加有依据的案例推演、步骤解释或易错辨析，偏长时精简冗余；保留核心知识点及必要动作，不要增加没有材料依据的事实，也不要用语速或等待凑时间。` : ''}${courseFeedback}`,
   };
 }
 

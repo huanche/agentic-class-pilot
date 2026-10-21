@@ -3,6 +3,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import type { CourseArtifactJob } from '@/lib/course-space/types';
 import type { BackgroundCoursewareInput } from '@/lib/generation/background-courseware';
+import type { Scene } from '@/lib/types/stage';
 
 const state = vi.hoisted(() => ({
   jobs: new Map<string, CourseArtifactJob>(),
@@ -139,6 +140,94 @@ afterEach(async () => {
 });
 
 describe('server-owned courseware generation', () => {
+  it('samples useful narration, repairs text before full TTS, then measures the accepted page', async () => {
+    vi.stubEnv('COURSEWARE_NARRATION_BUDGET_ENABLED', 'true');
+    const selected = input('script_budget');
+    selected.enableTTS = true;
+    selected.outlines = [{ ...selected.outlines[0], durationBudget: { targetSeconds: 20 } }];
+    state.audio.mockImplementation(async (pages, _id, _base, _config, options) => {
+      const page = pages[0];
+      let seconds = 0;
+      for (const action of page.actions)
+        if (action.type === 'speech') {
+          const duration = action.text.length / 5;
+          seconds += duration;
+          options?.onNarrationSample?.({
+            identity: 'same-voice',
+            text: action.text,
+            seconds: duration,
+          });
+        }
+      page.timing = { ...page.timing, measuredDurationSec: seconds };
+      return { generated: 2, failed: 0, skipped: 0 };
+    });
+    vi.mocked(fetch).mockImplementation(async (url, init) => {
+      const body = JSON.parse(init!.body as string);
+      const generated = await (await fakeGeneration(String(url), init!)).json();
+      if (generated.scene)
+        generated.scene.actions = [
+          { id: 'a', type: 'speech', text: '甲'.repeat(body.narrationRevision ? 80 : 30) },
+          { id: 'b', type: 'speech', text: '乙'.repeat(20) },
+        ];
+      return response(generated);
+    });
+    const job = await createBackgroundCoursewareJob(selected, context);
+    await runBackgroundCoursewareJob(job.id);
+    expect(state.jobs.get(job.id)?.status).toBe('review');
+    const calls = vi.mocked(fetch).mock.calls.map(([, init]) => JSON.parse(init!.body as string));
+    const repair = calls.find((c) => c.narrationRevision);
+    expect(repair.narrationPace).toEqual({ unitsPerSecond: 5, samples: 2 });
+    expect(repair.narrationRevision.actions[0].text).toHaveLength(30);
+    expect(repair.durationFeedback).toBeUndefined(); // Partial sampling is not a full-page measurement.
+    expect(state.audio).toHaveBeenCalledTimes(2); // One probe, one full page; no whole-page correction.
+    const saved = state.snapshots.get(selected.stage.id)!.scenes[0] as Scene;
+    expect(saved.timing?.measuredDurationSec).toBe(20);
+    expect(saved.timing?.correctionAttempts).toBe(0);
+    const metrics = state.jobs.get(job.id)!.backgroundGeneration!.performance!;
+    expect(metrics.timings.some((t) => t.phase === 'narration-probe')).toBe(true);
+    expect(metrics.timings.some((t) => t.phase === 'script-budget')).toBe(true);
+  });
+
+  it('keeps an approved draft and its honest measured duration when local text repair is rejected', async () => {
+    vi.stubEnv('COURSEWARE_NARRATION_BUDGET_ENABLED', 'true');
+    const selected = input('script_budget_rejected');
+    selected.enableTTS = true;
+    selected.outlines = [{ ...selected.outlines[0], durationBudget: { targetSeconds: 20 } }];
+    state.audio.mockImplementation(async (pages, _id, _base, _config, options) => {
+      const page = pages[0];
+      options?.onNarrationSample?.({
+        identity: 'same-voice',
+        text: page.actions[0].text,
+        seconds: 10,
+      });
+      page.timing = { ...page.timing, measuredDurationSec: 10 };
+      return { generated: 1, failed: 0, skipped: 0 };
+    });
+    vi.mocked(fetch).mockImplementation(async (url, init) => {
+      const body = JSON.parse(init!.body as string);
+      if (body.narrationRevision)
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error: 'Rejected focus binding',
+            errorCode: 'FOCUS_SPEECH_ALIGNMENT_FAILED',
+          }),
+          { status: 422 },
+        );
+      const generated = await (await fakeGeneration(String(url), init!)).json();
+      if (generated.scene)
+        generated.scene.actions = [{ id: 'a', type: 'speech', text: '甲'.repeat(50) }];
+      return response(generated);
+    });
+    const job = await createBackgroundCoursewareJob(selected, context);
+    await runBackgroundCoursewareJob(job.id);
+    const saved = state.snapshots.get(selected.stage.id)!.scenes[0] as Scene;
+    expect(saved.actions?.[0]).toMatchObject({ text: '甲'.repeat(50) });
+    expect(saved.timing?.measuredDurationSec).toBe(10);
+    expect(saved.timing?.durationStatus).toBe('too-short');
+    expect(state.audio).toHaveBeenCalledTimes(2);
+  });
+
   it('retains checkpoint audio when cancellation wins immediately after the page is saved', async () => {
     const selected = input('cancel_checkpoint');
     selected.enableTTS = true;

@@ -4,6 +4,7 @@ import { generateSceneActions } from '@openmaic/generation';
 import {
   generateAlignedSceneActions,
   FocusSpeechAlignmentError,
+  reviseAlignedSceneNarration,
 } from '@/lib/server/aligned-scene-actions';
 import { inspectSpeechFocus, teachingInventory } from '@/lib/generation/speech-focus-contract';
 import { approveFocusReview } from '@/tests/fixtures/focus-review';
@@ -42,6 +43,111 @@ const segment = (targetId = 'literal', speech = '字符串没有结束。') => (
 });
 const plan = (...segments: unknown[]) => JSON.stringify({ segments });
 const isReview = (system: string) => system.includes('[FOCUS_SPEECH_REVIEW]');
+
+describe('local narration revision keeps the original page and full semantic gate', () => {
+  const original = [
+    { id: 'focus-a', type: 'spotlight' as const, elementId: 'literal' },
+    { id: 'speech-a', type: 'speech' as const, text: '甲'.repeat(30), audioId: 'old-a' },
+    { id: 'focus-b', type: 'spotlight' as const, elementId: 'name' },
+    { id: 'speech-b', type: 'speech' as const, text: '乙'.repeat(20), audioId: 'old-b' },
+    { id: 'transition', type: 'speech' as const, text: '丙'.repeat(10) },
+  ];
+  const timed = { ...outline, durationBudget: { targetSeconds: 22 } };
+  const pace = { unitsPerSecond: 5, samples: 2 };
+  it('edits only the selected teaching paragraph and reviews all final paragraphs', async () => {
+    const ai = vi.fn(async (system: string, user: string) =>
+      isReview(system)
+        ? approveFocusReview(user)
+        : JSON.stringify({ revisions: [{ speechId: 'speech-a', text: '丁'.repeat(80) }] }),
+    );
+    const result = await reviseAlignedSceneNarration(
+      timed,
+      content,
+      ai,
+      { actions: original, audioSeconds: { 'speech-a': 6, 'speech-b': 4, transition: 2 } },
+      pace,
+      {
+        ctx: {
+          pageIndex: 2,
+          totalPages: 3,
+          allTitles: ['A', 'B', 'C'],
+          previousSpeeches: ['上一页定稿'],
+        },
+      },
+    );
+    expect(ai).toHaveBeenCalledTimes(2);
+    const prompt = JSON.parse(ai.mock.calls[0][1]);
+    expect(prompt.editableSpeechIds).toEqual(['speech-a']);
+    expect(prompt.lengthBudget.combinedEditableUnits).toBe(80);
+    expect(prompt.courseContext.previousSpeeches).toEqual(['上一页定稿']);
+    const reviewed = JSON.parse(ai.mock.calls[1][1]).segments;
+    expect(reviewed).toHaveLength(3);
+    expect(reviewed[1].text).toBe(original[3].text);
+    expect(reviewed[2].text).toBe(original[4].text);
+    expect(result[0]).toEqual(original[0]);
+    expect(result[2]).toEqual(original[2]);
+    expect(result[3]).toMatchObject({ text: original[3].text });
+    expect(original[1]).toMatchObject({ audioId: 'old-a', text: '甲'.repeat(30) });
+  });
+  it('rejects crossing visual topics even if the text length is closer to its budget', async () => {
+    const ai = vi.fn(async (system: string, user: string) =>
+      isReview(system)
+        ? JSON.stringify({
+            segments: JSON.parse(user).segments.map((s: object) => ({
+              ...s,
+              matches: false,
+              singleTopic: false,
+              reason: '跨区域讲解',
+            })),
+          })
+        : JSON.stringify({ revisions: [{ speechId: 'speech-a', text: '丁'.repeat(80) }] }),
+    );
+    await expect(
+      reviseAlignedSceneNarration(timed, content, ai, { actions: original }, pace),
+    ).rejects.toBeInstanceOf(FocusSpeechAlignmentError);
+    expect(ai).toHaveBeenCalledTimes(4);
+  });
+  it('never reuses a measured duration after changing its text', async () => {
+    const ai = vi.fn(async (system: string, user: string) =>
+      isReview(system)
+        ? approveFocusReview(user)
+        : JSON.stringify({ revisions: [{ speechId: 'speech-a', text: '丁'.repeat(80) }] }),
+    );
+    const result = await reviseAlignedSceneNarration(
+      timed,
+      content,
+      ai,
+      { actions: original, audioSeconds: { 'speech-a': 6, 'speech-b': 4, transition: 2 } },
+      pace,
+    );
+    expect(result[1]).toMatchObject({ text: '丁'.repeat(80), audioInvalidated: true });
+    expect(result[1]).not.toHaveProperty('audioId');
+  });
+  it('checks replacement length before spending a semantic review or synthesizing audio', async () => {
+    const ai = vi.fn(async (_system: string) =>
+      JSON.stringify({ revisions: [{ speechId: 'speech-a', text: '丁'.repeat(65) }] }),
+    );
+    await expect(
+      reviseAlignedSceneNarration(timed, content, ai, { actions: original }, pace),
+    ).rejects.toBeInstanceOf(FocusSpeechAlignmentError);
+    expect(ai).toHaveBeenCalledTimes(2);
+    expect(ai.mock.calls.every(([system]) => !isReview(system))).toBe(true);
+  });
+  it('propagates provider cancellation instead of converting it into an accepted draft', async () => {
+    const abort = new DOMException('cancelled', 'AbortError');
+    await expect(
+      reviseAlignedSceneNarration(
+        timed,
+        content,
+        async () => {
+          throw abort;
+        },
+        { actions: original },
+        pace,
+      ),
+    ).rejects.toBe(abort);
+  });
+});
 describe('generation-time atomic teaching plan and semantic gate', () => {
   it('never sends a malformed slide through an unchecked legacy path', async () => {
     const ai = vi.fn();
