@@ -1,0 +1,28 @@
+name: generation-pipeline-inspect-20261021
+on:
+  push:
+    branches: [codex/backup-generation-controls-20261020]
+    paths: [.github/workflows/generation-pipeline-inspect-20261021.yml]
+permissions:
+  contents: read
+concurrency:
+  group: generation-pipeline-online-backup
+  cancel-in-progress: false
+jobs:
+  operate:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    steps:
+      - name: Back up or verify generation pipeline release
+        env:
+          SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+        run: |
+          set -euo pipefail
+          key="$RUNNER_TEMP/pptx-route-key"
+          printf '%s\n' "$SERVER_SSH_KEY" > "$key"
+          chmod 600 "$key"
+          trap 'rm -f "$key"' EXIT
+          ssh -i "$key" -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=20 -o ServerAliveCountMax=3 "ubuntu@$SERVER_HOST" "bash -s -- '$GITHUB_RUN_ID'" <<'REMOTE'
+          printf '%s' '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' | base64 -d | gzip -d | bash -s -- "$1"
+          REMOTE
