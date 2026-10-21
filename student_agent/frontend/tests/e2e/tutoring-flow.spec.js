@@ -19,7 +19,7 @@ const SERVICE_KEY = "e2e-stub-key";
 const COURSE_ID = "ch3-sched-course-e2e";
 const PUBLICATION = { publicationId: "ch3sched", version: 1 };
 
-test("掌握星级在掌握条、结束、报告、反馈和续聊后保持一致", async ({ page }) => {
+test("顶部仅展示知识点，星级在结束、报告、反馈和续聊后保持一致", async ({ page }) => {
   test.skip(process.env.MASTERY_E2E !== "1", "此用例使用本地模型桩验证评分，不调用真实模型");
   await reachVideoStage(page);
   const sid = await reportVideoDone(page);
@@ -32,7 +32,8 @@ test("掌握星级在掌握条、结束、报告、反馈和续聊后保持一�
   await send("准备好了");
   const right = await send("调度负责选择处理机使用者");
   expect(right.stars["kp-001"]).toBe(4);
-  await expect(page.locator(".tm-item").filter({hasText: "调度是什么"})).toContainText("掌握 4★");
+  await expect(page.locator(".tm-item").filter({hasText: "调度是什么"})).toBeVisible();
+  await expect(page.locator(".tm-stars, .tm-review, .tm-rubric")).toHaveCount(0);
 
   async function finishAndVerify(stars) {
     await page.locator("#composer-input").fill("今天就到这");
@@ -56,7 +57,8 @@ test("掌握星级在掌握条、结束、报告、反馈和续聊后保持一�
   expect(state.tutoring.question.text).toContain("关键条件发生变化");
   const applied = await send("条件改变时应重新选择合适的策略，因为目标和约束已经发生改变");
   expect(applied.stars["kp-001"]).toBe(5);
-  await expect(page.locator(".tm-item").filter({hasText: "调度是什么"})).toContainText("掌握 5★");
+  await expect(page.locator(".tm-item").filter({hasText: "调度是什么"})).toBeVisible();
+  await expect(page.locator(".tm-stars, .tm-review, .tm-rubric")).toHaveCount(0);
   await finishAndVerify(5);
   const metrics = await (await page.request.get("http://127.0.0.1:8878/mock-llm/metrics")).json();
   expect(metrics.endReassessments).toBe(0);

@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
    - 挂载为聊天面板第一个子节点（在聊天记录上方）；
    - 按学生指定顺序渲染知识点固定编号，当前复习项高亮；
    - 剩余时间 mm:ss 来自服务端 remaining_seconds；
-   - 系统星级与编号一起展示；旧自评字段不展示；标题做 HTML 转义。
+   - 知识点只展示编号和标题，不展示评分状态；标题做 HTML 转义。
    复用 tutoring-transition.mjs 的组件测试管线（真浏览器 + 模块直挂）。 */
 
 const chrome = 'C:/Program Files/Google/Chrome/Application/chrome.exe';
@@ -47,6 +47,7 @@ try {
       current_no: 1,
       self_ratings: {2: 2},
       stars: {2: 1},
+      needs_review: [2],
       rubric: {
         1: '仅接触过概念',
         3: '提示下能做对',
@@ -77,7 +78,8 @@ try {
   assert.ok(result.html.indexOf('三级调度') < result.html.indexOf('调度是什么'),
     `学生指定的顺序（先 2 再 1）应体现在渲染顺序：${result.html}`);
   assert.ok(!result.html.includes('自评') && !result.html.includes('tm-self'), `旧自评不得展示：${result.html}`);
-  assert.ok(result.html.includes('掌握 1★'), `答对后的系统星级要展示：${result.html}`);
+  assert.ok(!/tm-stars|tm-review|tm-rubric|未检测|需要再确认|★/.test(result.html),
+    `顶部知识点旁不得展示评分或状态：${result.html}`);
   assert.ok(result.html.includes('tm-current'), `当前复习项要高亮：${result.html}`);
   assert.ok(result.html.includes('tm-current"><span class="tm-no">1<'),
     `高亮应落在 current_no=1（正在讲的知识点），不是顺序第一项：${result.html}`);
@@ -86,55 +88,7 @@ try {
   assert.ok(result.html.includes('&lt;script&gt;') && !result.html.includes('<script>alert'),
     `标题必须 HTML 转义：${result.html}`);
 
-  /* 量规小图标：三态可查看 */
-  const icon = page.locator('.tm-rubric').first();
-  const rubricText = page.locator('.tm-rubric-text').first();
-  await assert.doesNotReject(() => icon.waitFor({state: 'attached'}), '量规图标要存在');
-  assert.equal(await icon.getAttribute('aria-label'), '评分标准');
-  assert.ok(result.html.includes('5★ 无提示独立做对未见新题'), `量规文本要渲染：${result.html}`);
-  assert.equal(await page.evaluate(
-    () => getComputedStyle(document.querySelector('.tm-rubric-text')).display),
-    'none', '默认隐藏（悬停/聚焦/点击才显示）');
-
-  // 悬停显示/移开隐藏是纯 CSS 行为；无头 Chromium 的 :hover 命中不稳定，
-  // 这里断言规则本身存在且默认隐藏（配合上面的 hidden 断言构成契约），
-  // 真实浏览器行为由规则保证。
-  const hoverRules = await page.evaluate(() => {
-    const found = [];
-    for (const sheet of document.styleSheets) {
-      try {
-        for (const rule of sheet.cssRules) {
-          if (rule.selectorText && rule.selectorText.includes('.tm-item:hover .tm-rubric-text')) {
-            found.push(rule.selectorText + '{display:' + rule.style.display + '}');
-          }
-        }
-      } catch (e) {}
-    }
-    return found;
-  });
-  assert.ok(hoverRules.some(r => r.includes('display:block')),
-    `悬停显示规则必须存在：${JSON.stringify(hoverRules)}`);
-
-  await page.focus('.tm-rubric');                     // 键盘聚焦显示
-  await assert.doesNotReject(() => rubricText.waitFor({state: 'visible'}),
-    '键盘聚焦应显示量规');
-  await page.evaluate(() => document.activeElement.blur());
-  await assert.doesNotReject(() => rubricText.waitFor({state: 'hidden'}),
-    '失焦应收起量规');
-
-  await icon.click();                                 // 触屏点击切换
-  await assert.doesNotReject(() => rubricText.waitFor({state: 'visible'}),
-    '点击应打开量规');
-  assert.equal(await icon.getAttribute('aria-expanded'), 'true');
-  await icon.click();
-  // 点击后鼠标仍悬在图标上（:hover 也会显示），移开后再断言收起——
-  // 触屏没有 hover，真实语义就是「点第二下即收起」
-  await page.mouse.move(5, 5);
-  await assert.doesNotReject(() => rubricText.waitFor({state: 'hidden'}),
-    '再点应收起量规');
-  assert.equal(await icon.getAttribute('aria-expanded'), 'false');
-
-  console.log('辅导掌握条：顺序、倒计时、系统星级正常，旧自评不展示。');
+  console.log('辅导知识点栏：顺序、高亮、倒计时正常，只展示知识点编号与名称。');
 } finally {
   await browser.close();
 }
