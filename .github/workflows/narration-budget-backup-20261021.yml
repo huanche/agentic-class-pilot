@@ -1,0 +1,28 @@
+name: narration-budget-backup-20261021
+on:
+  push:
+    branches: [codex/backup-generation-controls-20261020]
+    paths: [.github/workflows/narration-budget-backup-20261021.yml]
+permissions:
+  contents: read
+concurrency:
+  group: teacher-deploy
+  cancel-in-progress: false
+jobs:
+  backup:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    steps:
+      - name: Back up production before narration budget release
+        env:
+          SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+        run: |
+          set -euo pipefail
+          key="$RUNNER_TEMP/narration-release-key"
+          printf '%s\n' "$SERVER_SSH_KEY" > "$key"
+          chmod 600 "$key"
+          trap 'rm -f "$key"' EXIT
+          ssh -i "$key" -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=20 -o ServerAliveCountMax=3 "ubuntu@$SERVER_HOST" "bash -s -- '$GITHUB_RUN_ID'" <<'REMOTE'
+          printf '%s' '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' | base64 -d | gzip -d | bash -s -- "$1"
+          REMOTE
