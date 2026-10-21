@@ -163,7 +163,9 @@ def main():
         raise RuntimeError('Backup root must not contain symlinks')
     ROOT.mkdir(parents=True, exist_ok=True)
     with (ROOT.parent / 'backup-policy.lock').open('a') as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        # Platform/student/teacher CI jobs can arrive together; serialize them
+        # instead of rejecting a healthy deployment when retention is running.
+        fcntl.flock(lock, fcntl.LOCK_EX)
         {'plan': lambda: retain(False), 'apply': lambda: retain(True),
          'preflight': preflight, 'backup': backup}[args.mode]()
 
