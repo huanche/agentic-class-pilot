@@ -18,7 +18,8 @@ vi.mock('@/lib/server/provider-config', () => ({
 import { generateTTSForClassroom } from '@/lib/server/classroom-media-generation';
 
 beforeEach(() => {
-  mocks.tts.mockClear();
+  mocks.tts.mockReset();
+  mocks.tts.mockImplementation(async () => ({ audio: new Uint8Array(44), format: 'wav' }));
   mocks.providers.mockReset();
   mocks.providers.mockReturnValue({ 'qwen-tts': {} });
   mocks.disabled.mockReset();
@@ -37,6 +38,71 @@ function narrationScene() {
   } as unknown as Scene;
 }
 describe('server narration language', () => {
+  it('stops queued clips on failure and waits for in-flight audio before returning to cleanup', async () => {
+    let release: () => void = () => {};
+    let finished = false;
+    const inFlight = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    mocks.tts
+      .mockRejectedValueOnce(new Error('account unavailable'))
+      .mockImplementationOnce(async () => {
+        await inFlight;
+        return { audio: new Uint8Array(44), format: 'wav' };
+      });
+    const scene = narrationScene();
+    scene.actions = [1, 2, 3, 4].map((index) => ({
+      id: `f${index}`,
+      type: 'speech',
+      text: `失败测试${index}`,
+    }));
+    const work = generateTTSForClassroom([scene], 'failure-test', 'http://localhost', undefined, {
+      concurrency: 2,
+      failFast: true,
+    }).catch((error) => {
+      finished = true;
+      return error;
+    });
+    await vi.waitFor(() => expect(mocks.tts).toHaveBeenCalledTimes(2));
+    expect(finished).toBe(false);
+    release();
+    expect(await work).toMatchObject({ message: 'account unavailable' });
+    expect(mocks.tts).toHaveBeenCalledTimes(2);
+  });
+  it('synthesizes independent clips concurrently while retaining playback order', async () => {
+    const pending: Array<() => void> = [];
+    let active = 0;
+    let peak = 0;
+    mocks.tts.mockImplementation(async () => {
+      active++;
+      peak = Math.max(peak, active);
+      await new Promise<void>((resolve) => pending.push(resolve));
+      active--;
+      return { audio: new Uint8Array(44), format: 'wav' };
+    });
+    const scene = narrationScene();
+    scene.actions = [1, 2, 3, 4].map((index) => ({
+      id: `speech${index}`,
+      type: 'speech',
+      text: `测试讲稿${index}`,
+    }));
+    const work = generateTTSForClassroom([scene], 'parallel-test', 'http://localhost', undefined, {
+      concurrency: 2,
+    });
+    await vi.waitFor(() => expect(pending).toHaveLength(2));
+    pending.splice(0).forEach((resolve) => resolve());
+    await vi.waitFor(() => expect(pending).toHaveLength(2));
+    pending.splice(0).forEach((resolve) => resolve());
+    await work;
+    expect(peak).toBe(2);
+    expect(scene.actions.map((action) => action.id)).toEqual([
+      'speech1',
+      'speech2',
+      'speech3',
+      'speech4',
+    ]);
+    mocks.tts.mockImplementation(async () => ({ audio: new Uint8Array(44), format: 'wav' }));
+  });
   it('falls back to local TTS when an old per-user cloud config is force-disabled', async () => {
     mocks.providers.mockReturnValue({ 'qwen-tts': { disabled: true }, 'lemonade-tts': {} });
     mocks.disabled.mockImplementation((provider) => provider === 'qwen-tts');

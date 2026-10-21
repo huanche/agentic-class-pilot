@@ -12,11 +12,15 @@ const db = vi.hoisted(() => ({
   update: vi.fn(),
   save: vi.fn(),
   packageSave: vi.fn(),
+  job: undefined as
+    | undefined
+    | { status: string; backgroundGeneration: { completedPages: number; totalPages: number } },
   packages: [] as PublishedKnowledgePackage[],
 }));
 vi.mock('@/lib/server/course-space-storage', () => ({
   readServerCourse: async () => db.course,
   readCourseArtifact: async (id: string) => db.artifacts[id],
+  readCourseJob: async () => db.job,
   updateServerCourse: async (
     _: string,
     fn: (course: CourseSpace) => CourseSpace | Promise<CourseSpace>,
@@ -47,8 +51,17 @@ const placement = (lessonId: string, week: number) => ({
   resourceType: 'courseware' as const,
 });
 describe('explicit course publication binding', () => {
+  it('keeps an early preview private until every page has completed', async () => {
+    db.job = { status: 'running', backgroundGeneration: { completedPages: 1, totalPages: 5 } };
+    await expect(publishCourseResource('c', 'artifact', 'a1', placement('l1', 1))).rejects.toThrow(
+      '尚未完整生成',
+    );
+    expect(db.save).not.toHaveBeenCalled();
+    expect(db.packageSave).not.toHaveBeenCalled();
+  });
   beforeEach(() => {
     vi.clearAllMocks();
+    db.job = undefined;
     db.packages = [];
     db.packageSave.mockReset();
     db.course = {

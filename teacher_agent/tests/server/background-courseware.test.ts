@@ -11,6 +11,8 @@ const state = vi.hoisted(() => ({
   artifacts: vi.fn(),
   audio: vi.fn(),
   dispose: vi.fn(),
+  content: vi.fn(),
+  actions: vi.fn(),
   snapshotHook: undefined as undefined | ((snapshot: { scenes: unknown[] }) => Promise<void>),
 }));
 vi.mock('@/lib/server/course-space-storage', () => ({
@@ -62,6 +64,9 @@ vi.mock('@/lib/server/platform-user-model-config', () => ({
   fetchPlatformUserModelConfig: vi.fn(),
 }));
 vi.mock('@/lib/server/platform-auth', () => ({ internalPlatformHeaders: () => ({}) }));
+vi.mock('@/lib/server/openmaic-courseware-steps', () => ({
+  createOpenmaicCoursewareSteps: () => ({ content: state.content, actions: state.actions }),
+}));
 
 import {
   createBackgroundCoursewareJob,
@@ -126,8 +131,11 @@ beforeEach(() => {
   state.artifacts.mockReset();
   state.audio.mockReset();
   state.dispose.mockReset();
+  state.content.mockReset();
+  state.actions.mockReset();
   state.snapshotHook = undefined;
   vi.stubEnv('PLATFORM_AUTH_ENABLED', 'false');
+  vi.stubEnv('COURSEWARE_GENERATION_ENGINE', 'legacy');
   vi.stubGlobal('fetch', vi.fn(fakeGeneration));
 });
 afterEach(async () => {
@@ -140,6 +148,85 @@ afterEach(async () => {
 });
 
 describe('server-owned courseware generation', () => {
+  it.each(['missing', 'malformed', 'incomplete'])(
+    'settles a %s persisted plan as failed instead of leaving a stuck running task',
+    async (problem) => {
+      vi.stubEnv('COURSEWARE_GENERATION_ENGINE', 'openmaic');
+      const job = await createBackgroundCoursewareJob(input(`plan_${problem}`), context);
+      const plan = path.join(
+        process.cwd(),
+        '.runtime',
+        'background-task-tests',
+        `${job.id}.courseware-input.json`,
+      );
+      if (problem === 'missing') await fs.unlink(plan);
+      else await fs.writeFile(plan, problem === 'malformed' ? '{' : '{}');
+      await runBackgroundCoursewareJob(job.id);
+      expect(state.jobs.get(job.id)).toMatchObject({
+        status: 'failed',
+        message: '无法读取生成计划，请重新创建任务',
+      });
+      expect(state.jobs.get(job.id)?.error).toBeTruthy();
+      expect(fetch).not.toHaveBeenCalled();
+      expect(state.audio).not.toHaveBeenCalled();
+    },
+  );
+  it('opens the first OpenMAIC page while later pages generate and retries TTS without regenerating the models', async () => {
+    vi.stubEnv('COURSEWARE_GENERATION_ENGINE', 'openmaic');
+    const selected = input('openmaic_retry');
+    selected.enableTTS = true;
+    state.content.mockResolvedValue({ elements: [] });
+    state.actions.mockImplementation(async (outline) => ({
+      id: `s${outline.order}`,
+      stageId: selected.stage.id,
+      type: 'slide',
+      order: outline.order,
+      title: outline.title,
+      content: { type: 'slide', canvas: { elements: [] } },
+      actions: [{ id: 'speech', type: 'speech', text: '真实讲稿' }],
+    }));
+    state.audio
+      .mockResolvedValueOnce({ generated: 1, failed: 0, skipped: 0 })
+      .mockRejectedValueOnce(new Error('voice unavailable'));
+    const job = await createBackgroundCoursewareJob(selected, context);
+    await runBackgroundCoursewareJob(job.id);
+    const partial = state.jobs.get(job.id)!;
+    expect(partial.status).toBe('failed');
+    expect(partial.artifactId).toBe(`artifact_${job.id}`);
+    expect(partial.backgroundGeneration?.completedPages).toBe(1);
+    expect(partial.backgroundGeneration?.performance?.engine).toBe('openmaic');
+    expect(state.actions).toHaveBeenCalledTimes(2);
+    state.audio.mockResolvedValue({ generated: 1, failed: 0, skipped: 0 });
+    await retryBackgroundCoursewareJob(job.id);
+    await runBackgroundCoursewareJob(job.id);
+    expect(state.jobs.get(job.id)?.status).toBe('review');
+    expect(state.content).toHaveBeenCalledTimes(2);
+    expect(state.actions).toHaveBeenCalledTimes(2);
+    expect(fetch).not.toHaveBeenCalled(); // Models are called in process, not through the public HTTP routes.
+  });
+  it('keeps committed OpenMAIC narration if cancellation wins after the first snapshot', async () => {
+    vi.stubEnv('COURSEWARE_GENERATION_ENGINE', 'openmaic');
+    const selected = input('openmaic_cancel');
+    state.content.mockResolvedValue({ elements: [] });
+    state.actions.mockImplementation(async (outline) => ({
+      id: `s${outline.order}`,
+      stageId: selected.stage.id,
+      type: 'slide',
+      order: outline.order,
+      title: outline.title,
+      content: { type: 'slide', canvas: { elements: [] } },
+      actions: [],
+    }));
+    const job = await createBackgroundCoursewareJob(selected, context);
+    state.content.mockImplementation(async (outline) => {
+      if (outline.order === 2) await cancelBackgroundCoursewareJob(job.id);
+      return { elements: [] };
+    });
+    await runBackgroundCoursewareJob(job.id);
+    expect(state.jobs.get(job.id)?.status).toBe('cancelled');
+    expect(state.snapshots.get(selected.stage.id)?.scenes).toHaveLength(1);
+    expect(state.dispose).not.toHaveBeenCalled();
+  });
   it('samples useful narration, repairs text before full TTS, then measures the accepted page', async () => {
     vi.stubEnv('COURSEWARE_NARRATION_BUDGET_ENABLED', 'true');
     const selected = input('script_budget');

@@ -1,4 +1,4 @@
-import { generateAlignedSceneActions as generateSceneActions } from '@/lib/server/aligned-scene-actions';
+import { generateCoursewareSceneActions as generateSceneActions } from '@/lib/server/scene-actions-strategy';
 import { nanoid } from 'nanoid';
 import { callLLM } from '@/lib/ai/llm';
 import { createStageAPI } from '@/lib/api/stage-api';

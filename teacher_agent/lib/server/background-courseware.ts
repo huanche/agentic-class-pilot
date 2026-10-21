@@ -57,7 +57,12 @@ const submissions = (root.__coursewareSubmissions ??= new Map());
 const slots = (root.__coursewareSlots ??= { active: 0, waiting: new Set() });
 const safeId = (id: string) => /^[A-Za-z0-9_-]{1,100}$/.test(id);
 
-type StoredInput = { input: BackgroundCoursewareInput; baseUrl: string; teacherId: string };
+type StoredInput = {
+  input: BackgroundCoursewareInput;
+  baseUrl: string;
+  teacherId: string;
+  engine?: 'openmaic';
+};
 function inputFile(jobId: string) {
   if (!/^[A-Za-z0-9_-]{1,110}$/.test(jobId)) throw new Error('无效任务编号');
   return path.join(CLASSROOM_JOBS_DIR, `${jobId}.courseware-input.json`);
@@ -147,6 +152,9 @@ export async function createBackgroundCoursewareJob(
       input,
       baseUrl: context.baseUrl,
       teacherId: context.teacherId,
+      ...(process.env.COURSEWARE_GENERATION_ENGINE === 'openmaic'
+        ? { engine: 'openmaic' as const }
+        : {}),
     } satisfies StoredInput);
     return saveCourseJob({
       id: jobId,
@@ -226,6 +234,46 @@ export function runBackgroundCoursewareJob(
 }
 
 async function execute(
+  jobId: string,
+  controller: AbortController,
+  requestHeaders: Record<string, string>,
+) {
+  try {
+    const current = await readCourseJob(jobId);
+    if (!current || !isActiveCourseJob(current.status)) return;
+    const initial = JSON.parse(await fs.readFile(inputFile(jobId), 'utf8')) as StoredInput;
+    if (controller.signal.aborted) return;
+    if (!initial.input?.stage || !Array.isArray(initial.input.outlines))
+      throw new Error('生成计划不完整，请重新创建生成任务');
+    if (initial.engine === 'openmaic') {
+      const { executeOpenmaicCourseware } = await import('./openmaic-background-courseware');
+      await executeOpenmaicCourseware(jobId, initial, controller, requestHeaders, acquireSlot);
+    } else {
+      await executeLegacy(jobId, controller, requestHeaders);
+    }
+  } catch (error) {
+    // Loading/dispatch failures happen before either engine's recovery handler.
+    // Settle them here without overwriting cancellation or a completed job.
+    await mutateCourseJob(jobId, (job) =>
+      isActiveCourseJob(job.status)
+        ? {
+            ...job,
+            status: 'failed',
+            message: '无法读取生成计划，请重新创建任务',
+            error:
+              (error as NodeJS.ErrnoException)?.code === 'ENOENT'
+                ? '原生成计划已不存在，请重新创建生成任务'
+                : error instanceof Error
+                  ? error.message
+                  : String(error),
+          }
+        : job,
+    ).catch(() => undefined);
+  }
+}
+
+/** Existing queued jobs keep their original generation contract across an engine switch. */
+async function executeLegacy(
   jobId: string,
   controller: AbortController,
   requestHeaders: Record<string, string>,
