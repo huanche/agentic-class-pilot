@@ -464,7 +464,7 @@ def student_learning_context(body: LearningContextRequest, session: SessionDep,
             "summary": package_payload.get("summary") or "",
             "entries": package_payload.get("entries") or [],
         }
-        # 知识点只来自教师发布的「知识点」工件（markdown：## 大标题=知识点，
+        # 知识点只来自教师发布的「知识点」文件（markdown：末级标题=知识点，
         # 其下列表=应会要点），以 rubric 结构化下发（学生端 evaluation 优先读
         # rubric）。没有工件 → 不下发 rubric，学生端开场明说「没有登记知识
         # 点」，按视频内容复习——不做场景大纲/知识图谱等其他兜底
