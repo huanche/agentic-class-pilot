@@ -7,7 +7,9 @@ import { test } from 'node:test';
 import { createGateway, routeFor } from '../local-gateway.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
-const routes = JSON.parse(execFileSync(path.join(root, 'platform/.venv/Scripts/python.exe'),
+const python = process.env.LOCAL_TEST_PYTHON ?? path.join(root,
+  process.platform === 'win32' ? 'platform/.venv/Scripts/python.exe' : 'platform/.venv/bin/python');
+const routes = JSON.parse(execFileSync(python,
   ['-c', 'import json,yaml,sys; print(json.dumps(yaml.safe_load(open(sys.argv[1],encoding="utf-8"))["environments"]["local-extended"]["routes"]))',
     path.join(root, 'contracts/routing.yaml')], { encoding: 'utf8' }));
 

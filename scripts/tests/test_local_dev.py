@@ -26,8 +26,16 @@ def fixture_config():
 
 class LocalConfigurationTests(unittest.TestCase):
     def configure(self, config):
-        with patch.object(local, "read_env", return_value=config):
+        # A fresh worktree deliberately has no real .env; configuration tests
+        # must not depend on credentials being present on the developer machine.
+        with patch.object(local.Path, "is_file", return_value=True), patch.object(local, "read_env", return_value=config):
             return local.configuration()
+
+    def test_missing_local_env_is_reported_without_reading_credentials(self):
+        with patch.object(local.Path, "is_file", return_value=False), patch.object(local, "read_env") as reader:
+            with self.assertRaisesRegex(local.LocalError, "Missing platform/.env"):
+                local.configuration()
+            reader.assert_not_called()
 
     def test_rejects_nonlocal_database_targets(self):
         for url in ("postgresql://platform:secret@remote.example:55432/education",
