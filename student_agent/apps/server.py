@@ -843,8 +843,12 @@ def send(sid: str, body: MessageIn) -> dict:
         "at": _now(),
         "phase": s["state"].get("host_phase"),
     })
-    prev_tutoring_question = (s.get("state") or {}).get("tutoring_question")
-    prev_phase = (s.get("state") or {}).get("host_phase")
+    # 本轮跑之前拍快照：_step 结束后拿新值和这两项对比，才知道这一轮
+    # 发生了什么事件——出了新检测题（题变了）、学生明确结束（阶段从
+    # tutoring 切到 ending）。快照丢了，事件判定就没了依据。
+    state_before = s["state"]
+    prev_tutoring_question = state_before.get("tutoring_question")
+    prev_phase = state_before.get("host_phase")
     st = _step(sid, text, "student")
     _record_learning_event(sid, event_type="student_message",
                            payload={"phase": st.get("host_phase")})
