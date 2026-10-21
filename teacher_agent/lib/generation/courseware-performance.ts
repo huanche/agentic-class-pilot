@@ -9,6 +9,7 @@ export interface CoursewareTiming {
 }
 
 export interface CoursewarePerformance {
+  engine?: 'openmaic';
   version: 1;
   startedAt: number;
   elapsedMs: number;

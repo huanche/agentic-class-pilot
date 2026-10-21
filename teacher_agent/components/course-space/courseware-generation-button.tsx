@@ -215,7 +215,7 @@ export function CoursewareGenerationButton({
                 {cancelling ? '正在取消…' : '取消任务'}
               </Button>
             )}
-            {job && view.status === 'completed' && job.artifactId && (
+            {job && job.artifactId && (job.backgroundGeneration?.completedPages ?? 0) > 0 && (
               <Button
                 size="sm"
                 className="bg-[#B00055] hover:bg-[#8F0046]"
@@ -224,7 +224,7 @@ export function CoursewareGenerationButton({
                   onOpenResult(job);
                 }}
               >
-                查看课件
+                {active ? '查看已生成页面' : '查看课件'}
               </Button>
             )}
             {failed && lessonId && (

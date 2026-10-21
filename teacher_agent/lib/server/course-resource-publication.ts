@@ -3,6 +3,7 @@ import type { CoursePublicationPlacement, CourseSpace } from '@/lib/course-space
 import {
   readServerCourse,
   readCourseArtifact,
+  readCourseJob,
   saveCourseArtifact,
   updateServerCourse,
   updateCourseJobIfPresent,
@@ -81,6 +82,15 @@ export async function publishCourseResource(
     throw new Error('待发布文件不属于当前课程');
   if (artifact?.type === 'lesson-courseware' && input.resourceType !== 'courseware')
     throw new Error('课件必须以课件类型发布');
+  if (artifact?.type === 'lesson-courseware') {
+    const job = await readCourseJob(artifact.jobId);
+    if (
+      job?.backgroundGeneration &&
+      (job.backgroundGeneration.completedPages < job.backgroundGeneration.totalPages ||
+        !['review', 'approved'].includes(job.status))
+    )
+      throw new Error('课件尚未完整生成，请等待完成后发布');
+  }
   if (kind !== 'artifact' && input.resourceType === 'courseware')
     throw new Error('只有生成的互动课件可以发布为课件');
   const ensureStudentPublication = async () => {

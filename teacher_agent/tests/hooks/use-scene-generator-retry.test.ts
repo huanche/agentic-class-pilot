@@ -754,6 +754,23 @@ describe('browser scene generation retry wrappers', () => {
     expect(scene.actions?.every((action) => !('audioId' in action))).toBe(true);
   });
 
+  it('does not start duration regeneration for an OpenMAIC target-only course', async () => {
+    const { calibrateCompletedCourse } = await import('@/lib/hooks/use-scene-generator');
+    const { useStageStore } = await import('@/lib/store/stage');
+    const state = {
+      stage: { id: 'target-only', timing: { budgetVersion: 1, durationPolicy: 'target' } },
+    };
+    const spy = vi
+      .spyOn(useStageStore, 'getState')
+      .mockImplementation(() => state as unknown as ReturnType<typeof useStageStore.getState>);
+    try {
+      await expect(calibrateCompletedCourse()).resolves.toEqual({ attempts: 0, changed: 0 });
+      expect(mockFetch).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it.each([false, true])(
     'calibrates aggregate audio and protects navigation during synthesis (navigate=%s)',
     async (navigate) => {
