@@ -48,7 +48,7 @@ import { isGeneratedMediaPlaceholder } from '@/lib/media/media-ref';
 import { VOXCPM_AUTO_VOICE_ID, VOXCPM_TTS_PROVIDER_ID } from '@/lib/audio/voxcpm';
 import { type PlatformTtsConfig } from '@/lib/server/platform-user-model-config';
 import { recordGenerationUsage } from '@/lib/server/usage-storage';
-import { generateCachedTts, type AudioCacheStatus } from './tts-audio-cache';
+import { generateCachedTts, ttsAudioCacheKey, type AudioCacheStatus } from './tts-audio-cache';
 
 const log = createLogger('ClassroomMedia');
 
@@ -314,6 +314,12 @@ export async function generateTTSForClassroom(
     voiceSelection?: CoursewareVoiceSelection;
     cacheScope?: string;
     onAudioCache?: (status: AudioCacheStatus) => void;
+    onNarrationSample?: (sample: {
+      identity: string;
+      text: string;
+      seconds: number;
+      speed?: number;
+    }) => void;
   },
 ): Promise<{ generated: number; failed: number; skipped: number }> {
   const audioDir = path.join(CLASSROOMS_DIR, classroomId, 'audio');
@@ -447,6 +453,28 @@ export async function generateTTSForClassroom(
         const audio =
           outputFormat === 'wav' ? finalizeWav(Buffer.from(result.audio)) : result.audio;
         audioSeconds[action.id] = measureAudioDuration(audio, outputFormat) ?? undefined;
+        if (audioSeconds[action.id])
+          options?.onNarrationSample?.({
+            identity: ttsAudioCacheKey(
+              {
+                providerId,
+                modelId:
+                  byokModel ||
+                  DEFAULT_TTS_MODELS[providerId as keyof typeof DEFAULT_TTS_MODELS] ||
+                  '',
+                apiKey,
+                baseUrl: ttsBaseUrl,
+                voice,
+                speed: speechAction.speed,
+                providerOptions: { languageType: options?.languageDirective },
+              },
+              '__narration-pace__',
+              options.cacheScope || classroomId,
+            ),
+            text: speechAction.text,
+            seconds: audioSeconds[action.id]!,
+            speed: speechAction.speed,
+          });
         const filename = `${audioId}.${outputFormat}`;
         await fs.writeFile(path.join(audioDir, filename), audio);
 

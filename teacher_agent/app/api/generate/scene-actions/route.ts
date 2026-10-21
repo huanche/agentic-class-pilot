@@ -1,5 +1,11 @@
 import { generateAlignedSceneActions as generateSceneActions } from '@/lib/server/aligned-scene-actions';
 import { FocusSpeechAlignmentError } from '@/lib/server/aligned-scene-actions';
+import { reviseAlignedSceneNarration } from '@/lib/server/aligned-scene-actions';
+import {
+  validNarrationPace,
+  type NarrationPace,
+  type NarrationRevision,
+} from '@/lib/generation/narration-budget';
 /**
  * Scene Actions Generation API
  *
@@ -56,6 +62,8 @@ export async function POST(req: NextRequest) {
       languageDirective,
       narrationScript,
       durationFeedback,
+      narrationPace,
+      narrationRevision,
     } = body as {
       outline: SceneOutline;
       allOutlines: SceneOutline[];
@@ -73,6 +81,8 @@ export async function POST(req: NextRequest) {
       languageDirective?: string;
       narrationScript?: string;
       durationFeedback?: DurationFeedback;
+      narrationPace?: NarrationPace;
+      narrationRevision?: NarrationRevision;
     };
 
     // Validate required fields
@@ -152,7 +162,11 @@ export async function POST(req: NextRequest) {
         return result.text;
       } finally {
         generationTimings.push({
-          phase: systemPrompt.includes('[FOCUS_SPEECH_REVIEW]') ? 'focus-review' : 'narration-plan',
+          phase: systemPrompt.includes('[FOCUS_SPEECH_REVIEW]')
+            ? 'focus-review'
+            : systemPrompt.includes('[NARRATION_REVISION]')
+              ? 'narration-revision'
+              : 'narration-plan',
           durationMs: Math.round(performance.now() - started),
         });
       }
@@ -217,21 +231,35 @@ export async function POST(req: NextRequest) {
         durationBudget,
       }),
       durationFeedback,
+      narrationPace,
     );
-    const actions = await generateSceneActions(actionOutline, generationContent, aiCall, {
+    const generationOptions = {
       logger: log,
       ctx,
       agents,
       userProfile,
       languageDirective,
-      transformActions: (generated) =>
-        alignActionsToPptNarration(
-          generated,
-          narrationScript,
-          'elements' in generationContent ? generationContent.elements : [],
-          { preserveGeneratedLength: Boolean(durationBudget) },
-        ),
-    });
+    };
+    const actions =
+      narrationRevision && validNarrationPace(narrationPace)
+        ? await reviseAlignedSceneNarration(
+            actionOutline,
+            generationContent,
+            aiCall,
+            narrationRevision,
+            narrationPace,
+            generationOptions,
+          )
+        : await generateSceneActions(actionOutline, generationContent, aiCall, {
+            ...generationOptions,
+            transformActions: (generated) =>
+              alignActionsToPptNarration(
+                generated,
+                narrationScript,
+                'elements' in generationContent ? generationContent.elements : [],
+                { preserveGeneratedLength: Boolean(durationBudget) },
+              ),
+          });
 
     log.info(`Generated ${actions.length} actions for: "${outline.title}"`);
 
