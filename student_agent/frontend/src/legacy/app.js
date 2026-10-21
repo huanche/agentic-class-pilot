@@ -627,7 +627,10 @@ function openLessonRoute() {
       if (error.status !== 404) throw error;
       return startSession({ sessionId: sessionId, lessonId: requestedLessonId });
     }).then(function (state) {
-      if (!shouldRenewSession(state)) return state;
+      if (!shouldRenewSession(state)) {
+        // 重入也校验平台上下文，让旧会话遗漏的空知识点目录得到修复。
+        return startSession({ sessionId: sessionId, lessonId: requestedLessonId });
+      }
       // 换新会话之前先把旧的停掉：后端为它复活的心跳线程否则会一直跑到下课，
       // 在后台把这场"没人上的课"的学情写进这个学生的档案。
       stopSession(sessionId).catch(function () { /* 停不掉也别挡住上课 */ });

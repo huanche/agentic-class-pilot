@@ -84,12 +84,16 @@ test("video completion enters tutoring chat with the numbered opening", async ({
 
 test("refreshing mid-tutoring restores the same tutoring session", async ({ page }) => {
   await reachVideoStage(page);
-  await reportVideoDone(page);
+  const sid = await reportVideoDone(page);
   await expect(page.locator("#stage-chat")).toBeVisible({ timeout: 10_000 });
   await expect(page.locator("#chat-log")).toContainText("1. 调度是什么", { timeout: 10_000 });
 
   // F5：辅导会话原样恢复（同一会话号、同一阶段、开场消息还在）
+  const rebound = page.waitForRequest((request) => request.method() === "POST"
+    && request.url().endsWith("/api/session/start") && request.postDataJSON().session_id === sid);
   await page.reload();
+  // 旧课堂也重新绑定已校验的平台上下文，空知识点目录才能被补齐。
+  await rebound;
   await expect(page.locator("#stage-chat")).toBeVisible({ timeout: 10_000 });
   await expect(page.locator("#class-badge")).toHaveText("课后辅导");
   await expect(page.locator("#chat-log")).toContainText("1. 调度是什么", { timeout: 10_000 });
