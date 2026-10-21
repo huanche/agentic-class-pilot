@@ -789,9 +789,12 @@ def _parse_tutoring_order(msg: str, catalog: list[tuple[str, str]]) -> list[str]
 # 七分类的骨架层信号：结束 / 追问 / 求助（选点、改时间由各自解析器识别）。
 # 答题是兜底类：不是以上任何一类、又不是意愿表达的消息，交给工单 03 的判答链。
 _TUTORING_END_PAT = re.compile(r"就到这|到此为止|今天先到|先这样|下课|结束吧|复习完[了成]|收尾吧")
-_TUTORING_SKIP_PAT = re.compile(r"下一|跳过|换一[个题]|往下[一走]|继续往")
+_TUTORING_SKIP_PAT = re.compile(r"下一个|下一(?:题|阶段|环节|项)|跳过|换一[个题]|往下[一走]|继续往")
 _TUTORING_QUES_PAT = re.compile(r"[?？]|为什么|怎么|什么意思|是什么|怎么办|如何|哪.*(问题|不懂)")
-_TUTORING_HELP_PAT = re.compile(r"不懂|不会|没听懂|不明白|帮我|讲讲|讲一下|解释|教教我")
+_TUTORING_NONANSWER_PAT = re.compile(
+    r"不知道|不[太]?清楚|不懂|不[太]?会|没听懂|听不懂|不明白|想不起来|想不出来|"
+    r"答不上来|没思路|忘了|忘记了")
+_TUTORING_HELP_PAT = re.compile(_TUTORING_NONANSWER_PAT.pattern + r"|帮我|讲讲|讲一下|解释|教教我")
 # LLM 提议结束后的二次确认：肯定 → 下课（judge_advance 同回合生效），否定 → 继续
 _TUTORING_CONFIRM_PAT = re.compile(r"(?:是[的呀]?|对|嗯+|好[的呀]?|可以|行|要|确认|结束[吧了]?)[。！!，, ]*")
 _TUTORING_DECLINE_PAT = re.compile(r"不[要会想是]|先不|还没|继续|再[聊学复习一会]|等等")
@@ -1515,8 +1518,8 @@ def teach(state: ClassroomState) -> dict:
                 else "skip" if _TUTORING_SKIP_PAT.search(msg)
                 else "time_change" if duration
                 else "kp_select" if order
-                else "followup" if _TUTORING_QUES_PAT.search(msg)
                 else "help" if _TUTORING_HELP_PAT.search(msg)
+                else "followup" if _TUTORING_QUES_PAT.search(msg)
                 else "answer"
             )
 
@@ -1736,6 +1739,15 @@ def teach(state: ClassroomState) -> dict:
                         "这节课的知识点都过完了！还有想再问的吗？"
                         "没有的话说一声，我们就可以收尾。"
                     )
+            elif kind == "help" and _TUTORING_NONANSWER_PAT.search(msg):
+                # 明确答不上来不是作答，也不是放弃该知识点；先给课程依据，保留原题。
+                updates["tutoring_active_kp"] = active
+                expected = _tutoring_expected_for(state, active)
+                explanation = " ".join(expected[:3]) if expected else _hint(active, state)
+                body = (
+                    f"没关系，我们先把「{title}」讲清楚：{explanation} "
+                    "先理解这一点，不急着换知识点。"
+                )
             elif kind == "answer" or confirms:
                 pending = prev_question
                 if not pending:
@@ -1802,6 +1814,10 @@ def teach(state: ClassroomState) -> dict:
                    if kind == "skip" else "")
                 + ("学生提出了问题或求助：直接回答或讲解，只依据本课已发布内容。\n"
                    if kind in ("followup", "help") else "")
+                + ("学生表示不会或请求帮助：本轮必须先解释当前知识点，给出一个简单例子，"
+                   "然后最多问一个更小的问题。不得把不知道当作答对或跳过，不得换知识点，"
+                   "不得只重复原检测题或让学生继续猜；原题保留，已经标记提供过提示。\n"
+                   if kind == "help" and _TUTORING_NONANSWER_PAT.search(msg) else "")
                 + (f"当前检测题（无模型时也要照问）：{pending_now.get('question', '')}\n"
                    if pending_now and pending_now.get("question") else "")
                 + (f"学生刚刚答对了检测题（{'有提示' if judged['hint_given'] else '无提示'}），"

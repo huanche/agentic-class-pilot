@@ -27,6 +27,11 @@ FRONTEND_DIR="$PLATFORM/backend/app/frontend"
 HEALTH_URL=http://127.0.0.1:8080/health
 export PATH="$HOME/.local/bin:$PATH"
 
+# Installed independently so CI uploads cannot bypass the retention policy.
+BACKUP_POLICY=/usr/local/lib/agentic-class-pilot/server-backup-policy.py
+test -f "$BACKUP_POLICY" || { echo "FATAL: backup policy not installed"; exit 1; }
+sudo -n python3 "$BACKUP_POLICY" apply
+
 restart_service() { sudo -n systemctl restart "$SERVICE"; }
 
 wait_healthy() {
@@ -62,6 +67,17 @@ echo "[2/5] Syncing backend deps (uv) ..."
 ( cd "$PLATFORM" && uv sync --frozen --package app )
 
 echo "[3/5] Running alembic migrations ..."
+# Ordinary code releases do not copy the whole data directory. Back up only
+# when the database revision differs from the migration heads being deployed.
+CURRENT_REVISIONS=$(cd "$PLATFORM/backend" && ../.venv/bin/python -m alembic current | awk '{print $1}' | sort)
+TARGET_REVISIONS=$(cd "$PLATFORM/backend" && ../.venv/bin/python -m alembic heads | awk '{print $1}' | sort)
+if [ "$CURRENT_REVISIONS" != "$TARGET_REVISIONS" ]; then
+  if ! sudo -n python3 "$BACKUP_POLICY" backup; then
+    echo "FATAL: migration backup failed — code rolled back, database untouched"
+    git reset --hard "$OLD_SHA"
+    exit 1
+  fi
+fi
 ( cd "$PLATFORM/backend" && ../.venv/bin/python -m alembic upgrade head ) || {
   echo "FATAL: migration failed — code rolled back, service untouched"
   git reset --hard "$OLD_SHA"

@@ -18,6 +18,10 @@ FRONTEND="$REPO/student_agent/frontend"
 STATIC_APP="$REPO/student_agent/apps/static/app"
 HEALTH_URL=http://127.0.0.1:8000/api/session/health
 
+BACKUP_POLICY=/usr/local/lib/agentic-class-pilot/server-backup-policy.py
+test -f "$BACKUP_POLICY" || { echo "FATAL: backup policy not installed"; exit 1; }
+sudo -n python3 "$BACKUP_POLICY" apply
+
 restart_service() { sudo -n systemctl restart "$SERVICE"; }
 
 wait_healthy() {
