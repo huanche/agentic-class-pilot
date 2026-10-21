@@ -683,6 +683,10 @@ def start(body: StartIn) -> dict:
             # the same shape.
             s["state"]["learning_context"] = learning_context.model_dump()
             s["learning_context"] = learning_context.model_dump()
+            # 老版本漏转课时知识点类型，进行中的计划可能缓存了空目录。
+            # 同发布版重入只补知识点，不重开课或重置学生学情。
+            with s["lock"]:
+                course_adapter.repair_empty_knowledge_catalog(s["state"])
         _persist(sid, s["state"])
         _persist_session_record(sid)
         _record_learning_event(sid, event_type="session_started")

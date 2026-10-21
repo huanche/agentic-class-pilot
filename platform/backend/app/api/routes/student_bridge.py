@@ -108,24 +108,48 @@ def _published_classroom(session: SessionDep, course_id: uuid.UUID) -> str | Non
 def _knowledge_points_from_markdown(content: str) -> list[dict]:
     """知识点工件（markdown）→ rubric 条目。纯函数，供单测共用。
 
-    教师端生成产物的结构约定：`## 大标题` = 一个知识点；其下的
-    `- 列表项` = 应会要点（学生端出题/判答的材料）。首个 ## 之前的
-    引言忽略；标题剥掉「一、二、」式中文序号（编号由学生端的固定
-    数字统一给）；同标题分节只留第一个。id 用标题哈希——教师改稿
-    重发，标题没变 id 不变，跨课次的掌握度积累不断线。
+    二级到六级标题都可承载知识点；有子标题的周次/章节是分组，
+    只将末级标题登记为知识点，避免整周内容挤成一项。该标题自己的
+    列表是应会要点，代码围栏内的示例忽略。剥除中文及阿拉伯序号，
+    同标题只保留第一份；ID 按规范后的标题哈希，调整标题层级不改 ID。
     """
+    sections: list[dict] = []
+    stack: list[dict] = []
+    fence = ""
+    for line in (content or "").splitlines():
+        marker = re.match(r"^ {0,3}(`{3,}|~{3,})(.*)$", line)
+        if fence:
+            if marker and marker[1][0] == fence[0] and len(marker[1]) >= len(fence) and not marker[2].strip():
+                fence = ""
+            continue
+        if marker:
+            fence = marker[1]
+            continue
+        heading = re.match(r"^ {0,3}(#{1,6})[ \t]+(.+?)\s*$", line)
+        if heading:
+            level = len(heading[1])
+            while stack and stack[-1]["level"] >= level:
+                stack.pop()
+            if stack:
+                stack[-1]["has_children"] = True
+            section = {"level": level, "title": heading[2], "lines": [], "has_children": False}
+            sections.append(section)
+            stack.append(section)
+        elif stack:
+            stack[-1]["lines"].append(line)
+
     points: list[dict] = []
     seen_titles: set[str] = set()
-    for section in re.split(r"^##[ \t]+", content or "", flags=re.M)[1:]:
-        lines = section.splitlines()
-        if not lines:
+    for section in sections:
+        if section["level"] < 2 or section["has_children"]:
             continue
-        title = re.sub(r"^[一二三四五六七八九十百]+、[ \t]*", "", lines[0].strip()).strip()
+        title = re.sub(r"\s+#+\s*$", "", section["title"]).strip()
+        title = re.sub(r"^(?:[一二三四五六七八九十百]+、\s*|\d+(?:\.\d+)*[、.)．]?[ \t]+)", "", title).strip()
         if not title or title in seen_titles:
             continue
         seen_titles.add(title)
         bullets = []
-        for line in lines[1:]:
+        for line in section["lines"]:
             m = re.match(r"^[-*][ \t]+(.+)$", line.strip())
             if m and m.group(1).strip():
                 bullets.append(m.group(1).strip()[:200])
@@ -273,9 +297,9 @@ def published_course_entries(session: SessionDep, course_id: uuid.UUID) -> list[
             entries.append({"id": item["id"], "title": item.get("title", ""),
                             "content": item.get("content", ""), "citations": item.get("citations", []),
                             "scope": item.get("scope"), "kind": "artifact",
-                            # resourceType 透传：学生桥据此识别「知识点」工件
-                            # （知识点的唯一来源，见 _knowledge_artifact_rubric）
-                            "resourceType": item.get("resourceType"),
+                            # 教师确认的类型保存在发布归属中，兼容旧版顶层字段。
+                            "resourceType": (item.get("publicationPlacement") or {}).get("resourceType")
+                                            or item.get("resourceType"),
                             "publicationId": item["classPublicationId"]})
     for module in course.get("modules", []):
         for lesson in module.get("lessons", []):
@@ -283,6 +307,9 @@ def published_course_entries(session: SessionDep, course_id: uuid.UUID) -> list[
                 if visible(item):
                     entries.append({"id": item["id"], "title": item.get("title", ""),
                                     "content": item.get("content", ""), "kind": "lesson-file",
+                                    # 课时知识点是 lesson.files，不是独立工件；两条链路都需保留类型。
+                                    "resourceType": (item.get("publicationPlacement") or {}).get("resourceType")
+                                                    or item.get("type"),
                                     "scope": {"type": "lesson", "lessonId": lesson["id"]},
                                     "publicationId": item["classPublicationId"]})
     for item in course.get("materials", []):
