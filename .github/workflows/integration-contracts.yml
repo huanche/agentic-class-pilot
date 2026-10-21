@@ -7,6 +7,15 @@ on:
       - 'contracts/**'
       - 'scripts/check_integration_contracts.py'
       - 'scripts/tests/test_integration_contracts.py'
+      - 'scripts/generate_integration_clients.py'
+      - 'scripts/tests/test_generated_clients.py'
+      - 'scripts/tests/generated-clients.test.mjs'
+      - 'scripts/tests/test_client_generation.py'
+      - 'scripts/tests/test_local_dev.py'
+      - 'scripts/tests/local-gateway.test.mjs'
+      - 'scripts/local_dev.py'
+      - 'scripts/local-gateway.mjs'
+      - 'teacher_agent/app/api/**/route.ts'
       - 'platform/backend/app/api/main.py'
       - 'platform/backend/app/api/routes/teacher_bridge.py'
       - 'platform/backend/app/api/routes/student_bridge.py'
@@ -21,6 +30,15 @@ on:
       - 'contracts/**'
       - 'scripts/check_integration_contracts.py'
       - 'scripts/tests/test_integration_contracts.py'
+      - 'scripts/generate_integration_clients.py'
+      - 'scripts/tests/test_generated_clients.py'
+      - 'scripts/tests/generated-clients.test.mjs'
+      - 'scripts/tests/test_client_generation.py'
+      - 'scripts/tests/test_local_dev.py'
+      - 'scripts/tests/local-gateway.test.mjs'
+      - 'scripts/local_dev.py'
+      - 'scripts/local-gateway.mjs'
+      - 'teacher_agent/app/api/**/route.ts'
       - 'platform/backend/app/api/**'
       - 'platform/scripts/gen_routing.py'
       - 'platform/deployment/**'
@@ -54,4 +72,55 @@ jobs:
       - name: Reject generated gateway routing drift
         run: python platform/scripts/gen_routing.py --check
       - name: Run isolated contract regressions (no application or database)
-        run: python -m unittest discover -s scripts/tests -p test_integration_contracts.py -v
+        run: |
+          python -m unittest discover -s scripts/tests -p test_integration_contracts.py -v
+          python -m unittest discover -s scripts/tests -p test_client_generation.py -v
+          python -m unittest discover -s scripts/tests -p test_local_dev.py -v
+
+  generated-clients:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14.4'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: contracts/tooling/package-lock.json
+      - name: Install isolated pinned generation tools
+        run: |
+          python -m pip install uv==0.12.15 PyYAML==6.0.3
+          npm ci --ignore-scripts --prefix contracts/tooling
+      - name: Reject generated client drift
+        run: python scripts/generate_integration_clients.py --check
+      - name: Check exported teacher provider methods and success statuses
+        run: node contracts/tooling/check-teacher-provider.mjs
+      - name: Typecheck generated TypeScript and compile isolated tests
+        run: |
+          node contracts/tooling/node_modules/typescript/bin/tsc -p contracts/tooling/tsconfig.json
+          node contracts/tooling/node_modules/typescript/bin/tsc -p contracts/tooling/tsconfig.test.json
+      - name: Exercise generated TypeScript with mock fetch only
+        run: node --test scripts/tests/generated-clients.test.mjs
+      - name: Exercise gateway only against an ephemeral local test server
+        env:
+          LOCAL_TEST_PYTHON: python
+        run: node --test scripts/tests/local-gateway.test.mjs
+
+  python-client-compatibility:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      matrix:
+        python: ['3.10', '3.12']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '${{ matrix.python }}'
+      - name: Install SDK test dependencies only
+        run: python -m pip install -r contracts/tooling/requirements-client-tests.txt
+      - name: Exercise generated Python with mock transport only
+        run: python -m unittest discover -s scripts/tests -p test_generated_clients.py -v

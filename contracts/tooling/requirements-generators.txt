@@ -1,0 +1,2 @@
+# Generator process only; never install these into a running service environment.
+openapi-python-client==0.27.1

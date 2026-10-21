@@ -1,0 +1,129 @@
+openapi: 3.1.0
+info:
+  title: Teacher Service API
+  version: 1.0.0
+  description: Existing platform-to-teacher calls only. No runtime handlers are changed by this contract.
+servers:
+  - url: http://127.0.0.1:3200
+paths:
+  /api/health:
+    get:
+      operationId: getTeacherServiceHealth
+      security: []
+      responses:
+        '200':
+          description: Service response; HTTP 200 alone does not prove database readiness.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, status, version, capabilities]
+                properties:
+                  success: { type: boolean }
+                  status: { type: string }
+                  version: { type: string }
+                  capabilities: { type: object, additionalProperties: true }
+  /api/course-space:
+    post:
+      operationId: provisionTeacherCourse
+      description: Platform provisioning profile. The stable course id is required here to preserve idempotency; the general teacher UI supports additional fields.
+      security: [{ platformServiceKey: [], platformSubject: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, title]
+              properties:
+                id: { type: string }
+                title: { type: string, minLength: 1 }
+                description: { type: [string, 'null'] }
+      responses:
+        '200':
+          description: Existing course (idempotent provisioning).
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, course]
+                properties:
+                  success: { type: boolean }
+                  course:
+                    type: object
+                    required: [id]
+                    properties:
+                      id: { type: string }
+                    additionalProperties: true
+        '201':
+          description: Newly provisioned course.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, course]
+                properties:
+                  success: { type: boolean }
+                  course:
+                    type: object
+                    required: [id]
+                    properties:
+                      id: { type: string }
+                    additionalProperties: true
+        '400': { description: Invalid input }
+        '401': { description: Invalid delegated identity }
+        '403': { description: Invalid service key or ownership }
+        '409': { description: Course ownership conflict }
+        '502': { description: Platform registration unavailable }
+        '503': { description: Platform authorization or course storage unavailable }
+  /api/classes/{courseId}/students:
+    put:
+      operationId: updateTeacherStudentState
+      security: [{ platformServiceKey: [], platformSubject: [] }]
+      parameters:
+        - { name: courseId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StudentLearningState'
+      responses:
+        '200':
+          description: Upserted student state. Do not double-run real learning events for shadow comparison.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, student, studentCount]
+                properties:
+                  success: { type: boolean }
+                  student: { $ref: '#/components/schemas/StudentLearningState' }
+                  studentCount: { type: integer }
+        '400': { description: Invalid student state }
+        '401': { description: Invalid delegated identity }
+        '403': { description: Invalid service key or ownership }
+        '404': { description: Active course not found }
+        '503': { description: Platform authorization unavailable }
+components:
+  securitySchemes:
+    platformServiceKey: { type: apiKey, in: header, name: X-Platform-Service-Key }
+    platformSubject: { type: apiKey, in: header, name: X-Platform-Subject }
+  schemas:
+    StudentLearningState:
+      type: object
+      required: [studentId, name, status]
+      properties:
+        studentId: { type: string, minLength: 1 }
+        name: { type: string, minLength: 1 }
+        status: { type: string, enum: [not-started, learning, completed, needs-attention] }
+        studentNumber: { type: string }
+        className: { type: string }
+        progress: { type: number }
+        completedResourceIds: { type: array, items: { type: string } }
+        lastActiveAt: { type: number }
+        learnedLessons: { type: number }
+        totalLessons: { type: number }
+        sessionCount: { type: number }
+        endedCount: { type: number }
+        stars: { type: number }

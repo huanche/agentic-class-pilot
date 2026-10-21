@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "noEmit": false,
+    "rootDir": "../generated/typescript",
+    "outDir": "../../.runtime/generated-client-js"
+  }
+}

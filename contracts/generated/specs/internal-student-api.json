@@ -1,0 +1,514 @@
+{
+  "components": {
+    "schemas": {
+      "LearningContextV1": {
+        "description": "Existing schemaVersion 1 wire format. lessons is optional for legacy consumers; an explicitly empty catalog must remain empty. Unknown additive fields are allowed.",
+        "properties": {
+          "classroom": {
+            "$ref": "#/components/schemas/LearningContextV1Classroom"
+          },
+          "courseId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "courseTitle": {
+            "type": "string"
+          },
+          "grounding": {
+            "type": "object"
+          },
+          "knowledgePackage": {
+            "properties": {
+              "entries": {
+                "items": {
+                  "properties": {
+                    "content": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "summary": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "lessons": {
+            "items": {
+              "properties": {
+                "classroom": {
+                  "$ref": "#/components/schemas/LearningContextV1Classroom"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "lessonNumber": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "order": {
+                  "type": "integer"
+                },
+                "teachingHours": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "title": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "week": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "title",
+                "classroom"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "publication": {
+            "properties": {
+              "id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "version": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "id",
+              "version"
+            ],
+            "type": "object"
+          },
+          "schemaVersion": {
+            "enum": [
+              1
+            ],
+            "type": "integer"
+          },
+          "userId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "userId",
+          "courseId",
+          "publication",
+          "knowledgePackage"
+        ],
+        "title": "Platform learning context v1",
+        "type": "object"
+      },
+      "LearningContextV1Action": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "LearningContextV1Classroom": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "playbackToken": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "playerUrl": {
+            "type": "string"
+          },
+          "scenes": {
+            "items": {
+              "$ref": "#/components/schemas/LearningContextV1Scene"
+            },
+            "type": "array"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "type": [
+          "object",
+          "null"
+        ]
+      },
+      "LearningContextV1Scene": {
+        "properties": {
+          "actions": {
+            "items": {
+              "$ref": "#/components/schemas/LearningContextV1Action"
+            },
+            "type": "array"
+          },
+          "id": {
+            "type": "string"
+          },
+          "order": {
+            "type": "integer"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "studentServiceKey": {
+        "in": "header",
+        "name": "X-Student-Service-Key",
+        "type": "apiKey"
+      },
+      "teacherServiceKey": {
+        "in": "header",
+        "name": "X-Teacher-Service-Key",
+        "type": "apiKey"
+      }
+    }
+  },
+  "info": {
+    "description": "平台与学生端之间的服务接口约定。路径以 /api/v1 为前缀。 认证：请求头 X-Student-Service-Key = 平台 .env 的 STUDENT_SERVICE_KEY。 服务密钥错误返回 403；其余状态码以各端点声明为准。\n",
+    "title": "Internal Student API",
+    "version": "1.0.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/internal/student/authorize": {
+      "post": {
+        "operationId": "authorizeStudentRequest",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "classroom_id": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "cookie": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "course_id": {
+                    "format": "uuid",
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "launch_token": {
+                    "description": "平台签发的课堂进入凭证",
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "classroomId": {
+                      "description": "launch_token 路径返回",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "courseId": {
+                      "description": "launch_token 路径返回",
+                      "format": "uuid",
+                      "type": "string"
+                    },
+                    "publication": {
+                      "description": "launch_token 路径返回",
+                      "type": [
+                        "object",
+                        "null"
+                      ]
+                    },
+                    "source": {
+                      "enum": [
+                        "session",
+                        "launch_token"
+                      ],
+                      "type": "string"
+                    },
+                    "userId": {
+                      "format": "uuid",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "userId",
+                    "source"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "授权通过（含归一化的可信身份）"
+          },
+          "401": {
+            "description": "凭证无效/过期"
+          },
+          "403": {
+            "description": "未选课、课件未发布或服务密钥错误"
+          },
+          "503": {
+            "description": "平台数据库不可用"
+          }
+        },
+        "security": [
+          {
+            "studentServiceKey": []
+          }
+        ],
+        "summary": "学生请求授权（Cookie 或进入凭证二选一）"
+      }
+    },
+    "/internal/student/learning-context": {
+      "post": {
+        "description": "学生端启动课堂会话时调用。返回教师端已发布内容的完整投影： 知识包、课堂场景、课时结构与引用素材。客户端必须校验 schemaVersion；只加字段不改语义，破坏性变更升版本。\n",
+        "operationId": "getStudentLearningContext",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "launch_token": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "launch_token"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LearningContextV1"
+                }
+              }
+            },
+            "description": "学习上下文"
+          },
+          "401": {
+            "description": "凭证无效/过期"
+          },
+          "403": {
+            "description": "未选课或内容未发布"
+          },
+          "404": {
+            "description": "课程不存在"
+          },
+          "409": {
+            "description": "课程尚未发布学习内容"
+          },
+          "503": {
+            "description": "平台数据库不可用"
+          }
+        },
+        "security": [
+          {
+            "studentServiceKey": []
+          }
+        ],
+        "summary": "课堂学习上下文（版本化数据面，schemaVersion = 1）"
+      }
+    },
+    "/internal/student/learning-progress": {
+      "post": {
+        "description": "event 仅接受 \"started\" / \"ended\"。",
+        "operationId": "reportStudentLearningProgress",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "classroom_id": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "course_id": {
+                    "format": "uuid",
+                    "type": "string"
+                  },
+                  "event": {
+                    "enum": [
+                      "started",
+                      "ended"
+                    ],
+                    "type": "string"
+                  },
+                  "session_key": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "user_id": {
+                    "format": "uuid",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "user_id",
+                  "course_id",
+                  "event"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "progress": {
+                      "type": "object"
+                    },
+                    "pushedToTeacher": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "progress",
+                    "pushedToTeacher"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "已受理（进度计算与教师端推送为平台侧后续动作）"
+          },
+          "400": {
+            "description": "event 不是 started 或 ended"
+          },
+          "403": {
+            "description": "服务密钥错误"
+          },
+          "404": {
+            "description": "学生不存在"
+          }
+        },
+        "security": [
+          {
+            "studentServiceKey": []
+          }
+        ],
+        "summary": "课堂进度事件上报（平台据此计算真实进度并推送教师端）"
+      }
+    },
+    "/internal/user/{user_id}/model-config": {
+      "get": {
+        "description": "无记录时返回空对象；配置键由用户保存时决定。",
+        "operationId": "getUserModelConfig",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "解密后的模型配置"
+          },
+          "403": {
+            "description": "服务密钥错误"
+          }
+        },
+        "security": [
+          {
+            "studentServiceKey": []
+          },
+          {
+            "teacherServiceKey": []
+          }
+        ],
+        "summary": "读取用户解密后的模型配置（BYOK，服务端使用，禁止记录响应内容）"
+      }
+    }
+  },
+  "servers": [
+    {
+      "url": "http://127.0.0.1:8080/api/v1"
+    }
+  ]
+}

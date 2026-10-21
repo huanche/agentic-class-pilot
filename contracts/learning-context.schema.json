@@ -51,15 +51,20 @@
         "playbackToken": {"type": ["string", "null"]},
         "scenes": {
           "type": "array",
-          "items": {
-            "type": "object",
-            "properties": {
-              "id": {"type": "string"}, "order": {"type": "integer"}, "title": {"type": "string"},
-              "actions": {"type": "array", "items": {"type": "object"}}
-            }
-          }
+          "items": {"$ref": "#/$defs/scene"}
         }
       }
+    },
+    "scene": {
+      "type": "object",
+      "properties": {
+        "id": {"type": "string"}, "order": {"type": "integer"}, "title": {"type": "string"},
+        "actions": {"type": "array", "items": {"$ref": "#/$defs/action"}}
+      }
+    },
+    "action": {
+      "type": "object",
+      "additionalProperties": true
     }
   }
 }

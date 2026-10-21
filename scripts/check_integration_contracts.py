@@ -258,7 +258,7 @@ def compare_operation(route: Route, operation: dict, spec: dict, spec_path: Path
 def check(root: Path = ROOT) -> list[str]:
     routes, problems = provider_routes(root)
     covered, identifiers = set(), {}
-    for path in sorted((root / "contracts").glob("internal-*-api.yaml")):
+    for path in sorted((root / "contracts").glob("*-api.yaml")):
         spec = yaml.safe_load(path.read_text(encoding="utf-8"))
         issues = reference_problems(spec, path.parent)
         if issues:
@@ -282,6 +282,9 @@ def check(root: Path = ROOT) -> list[str]:
                     problems.append(f"operationId collision: {identifier}")
                 else:
                     identifiers[identifier] = key
+                # Teacher Next.js handlers are checked separately using TypeScript AST.
+                if path.name == "teacher-service-api.yaml":
+                    continue
                 if key not in routes:
                     problems.append(f"{path.name}: provider has no {method.upper()} {endpoint}")
                     continue

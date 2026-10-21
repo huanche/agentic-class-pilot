@@ -1,0 +1,451 @@
+{
+  "components": {
+    "schemas": {},
+    "securitySchemes": {
+      "delegatedTeacher": {
+        "in": "header",
+        "name": "X-Platform-Subject",
+        "type": "apiKey"
+      },
+      "serviceKey": {
+        "in": "header",
+        "name": "X-Teacher-Service-Key",
+        "type": "apiKey"
+      },
+      "studentServiceKey": {
+        "in": "header",
+        "name": "X-Student-Service-Key",
+        "type": "apiKey"
+      }
+    }
+  },
+  "info": {
+    "description": "平台与教师端之间的服务接口约定。路径以 /api/v1 为前缀（经统一网关）。 密钥缺失或不匹配返回 403；其余状态码以各端点声明为准。\n",
+    "title": "Internal Teacher API",
+    "version": "1.0.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/internal/teacher/authorize": {
+      "post": {
+        "description": "教师端每个请求都携带浏览器 Cookie 调用此端点换取授权结论。 学生身份仅放行\"已选课且已发布\"的播放/材料只读路径；其余为教师专属。 数据库不可用时返回 503（fail-closed）。\n",
+        "operationId": "authorizeTeacherRequest",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "cookie": {
+                    "description": "平台下发的浏览器会话 Cookie 值",
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "method": {
+                    "maxLength": 10,
+                    "type": "string"
+                  },
+                  "origin": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "path": {
+                    "description": "含查询串的原始路径",
+                    "maxLength": 2048,
+                    "type": "string"
+                  },
+                  "service_user_id": {
+                    "description": "服务间委托时的教师用户 UUID",
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "path",
+                  "method"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "isAdmin": {
+                      "type": "boolean"
+                    },
+                    "role": {
+                      "enum": [
+                        "teacher",
+                        "student",
+                        "admin"
+                      ],
+                      "type": "string"
+                    },
+                    "userId": {
+                      "format": "uuid",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "userId",
+                    "role",
+                    "isAdmin"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "授权通过"
+          },
+          "401": {
+            "description": "未登录或委托身份无效"
+          },
+          "403": {
+            "description": "无权限 / 写请求来源不在白名单 / 服务密钥错误"
+          },
+          "404": {
+            "description": "资源（课程/课堂）不存在"
+          },
+          "409": {
+            "description": "归属冲突"
+          },
+          "503": {
+            "description": "平台数据库不可用"
+          }
+        },
+        "security": [
+          {
+            "serviceKey": []
+          }
+        ],
+        "summary": "逐请求授权（教师端中间件对每个请求调用）"
+      }
+    },
+    "/internal/teacher/course-alias/{course_id}": {
+      "get": {
+        "description": "教师端本地查不到某 UUID 课程时调用，改用历史 ID 重试读取。",
+        "operationId": "resolveTeacherCourseAlias",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "course_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "legacyCourseId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "platformCourseId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "platformCourseId",
+                    "legacyCourseId"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "映射结果（legacyCourseId 可为 null 表示无需别名）"
+          },
+          "404": {
+            "description": "映射不存在或课程未同步到教师服务"
+          }
+        },
+        "security": [
+          {
+            "serviceKey": []
+          }
+        ],
+        "summary": "平台 UUID 与教师端历史短 ID 的双向映射查询"
+      }
+    },
+    "/internal/teacher/courses": {
+      "post": {
+        "operationId": "registerTeacherCourse",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "course_id": {
+                    "description": "教师端生成的课程 UUID，平台沿用",
+                    "format": "uuid",
+                    "type": "string"
+                  },
+                  "description": {
+                    "maxLength": 2000,
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "teacher_id": {
+                    "format": "uuid",
+                    "type": "string"
+                  },
+                  "title": {
+                    "maxLength": 255,
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "course_id",
+                  "teacher_id",
+                  "title"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "id": {
+                      "format": "uuid",
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "登记成功"
+          },
+          "403": {
+            "description": "服务密钥错误或教师身份无效"
+          },
+          "409": {
+            "description": "课程归属冲突（教师端记录与平台不一致）"
+          }
+        },
+        "security": [
+          {
+            "serviceKey": []
+          }
+        ],
+        "summary": "教师端建课后，向平台登记同 ID 的课程管理记录（幂等 upsert）"
+      }
+    },
+    "/internal/teacher/courses/{course_id}/enrollment": {
+      "get": {
+        "operationId": "getTeacherCourseEnrollment",
+        "parameters": [
+          {
+            "description": "平台 UUID 或教师端历史 ID",
+            "in": "path",
+            "name": "course_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "courseId": {
+                      "format": "uuid",
+                      "type": "string"
+                    },
+                    "enrollCode": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "courseId",
+                    "enrollCode"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "选课码"
+          },
+          "401": {
+            "description": "委托教师身份无效"
+          },
+          "403": {
+            "description": "非课程所有者 / 服务密钥错误"
+          },
+          "404": {
+            "description": "课程不存在"
+          }
+        },
+        "security": [
+          {
+            "delegatedTeacher": [],
+            "serviceKey": []
+          }
+        ],
+        "summary": "读取课程选课码（需课程已发布且调用者为课程所有教师）"
+      }
+    },
+    "/internal/teacher/courses/{course_id}/members": {
+      "get": {
+        "operationId": "getTeacherCourseMembers",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "course_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "courseId": {
+                      "format": "uuid",
+                      "type": "string"
+                    },
+                    "members": {
+                      "items": {
+                        "properties": {
+                          "email": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "enrolledAt": {
+                            "description": "ISO 8601",
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "name": {
+                            "description": "全名，缺省回退邮箱",
+                            "type": "string"
+                          },
+                          "studentId": {
+                            "format": "uuid",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "studentId",
+                          "name"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "courseId",
+                    "members"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "花名册"
+          },
+          "401": {
+            "description": "委托教师身份无效"
+          },
+          "403": {
+            "description": "非课程所有者 / 服务密钥错误"
+          },
+          "404": {
+            "description": "课程不存在"
+          }
+        },
+        "security": [
+          {
+            "delegatedTeacher": [],
+            "serviceKey": []
+          }
+        ],
+        "summary": "课程花名册只读投影（选课关系归平台所有，教师端不落副本）"
+      }
+    },
+    "/internal/user/{user_id}/model-config": {
+      "get": {
+        "description": "教师端与学生端各自的服务密钥任一匹配即可。返回为按提供方组织的 解密后配置对象（键由用户保存时决定），无记录时返回空对象。\n",
+        "operationId": "getUserModelConfig",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "解密后的模型配置（可为空对象）"
+          },
+          "403": {
+            "description": "服务密钥错误"
+          }
+        },
+        "security": [
+          {
+            "serviceKey": []
+          },
+          {
+            "studentServiceKey": []
+          }
+        ],
+        "summary": "按用户取解密后的模型配置（教师端与学生端共用；BYOK）"
+      }
+    }
+  },
+  "servers": [
+    {
+      "url": "http://127.0.0.1:8080/api/v1"
+    }
+  ]
+}
