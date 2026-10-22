@@ -1,0 +1,28 @@
+name: cloud-ch2-five-audit-20261022
+on:
+  push:
+    branches: [codex/backup-generation-controls-20261020]
+    paths: [.github/workflows/cloud-ch2-five-audit-20261022.yml]
+permissions:
+  contents: read
+concurrency:
+  group: teacher-deploy
+  cancel-in-progress: false
+jobs:
+  operate:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    steps:
+      - name: Run verified production release operation
+        env:
+          SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+        run: |
+          set -euo pipefail
+          key="$RUNNER_TEMP/openmaic-release-key"
+          printf '%s\n' "$SERVER_SSH_KEY" > "$key"
+          chmod 600 "$key"
+          trap 'rm -f "$key"' EXIT
+          ssh -i "$key" -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=20 -o ServerAliveCountMax=3 "ubuntu@$SERVER_HOST" "bash -s -- '$GITHUB_RUN_ID'" <<'REMOTE'
+          printf '%s' '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' | base64 -d | gzip -d | bash -s -- "$1"
+          REMOTE
