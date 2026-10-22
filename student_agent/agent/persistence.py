@@ -108,6 +108,25 @@ def restore(sid: str) -> dict | None:
     return result
 
 
+def latest_session_key(user_id: str, course_id: str, publication_id: str,
+                       publication_version: int, lesson_id: str,
+                       classroom_id: str) -> str | None:
+    """Find the most recent saved state for this student's published lesson."""
+    _bind_database()
+    with database._db() as connection:
+        row = connection.execute(
+            "SELECT e.session_key FROM student.learning_events AS e "
+            "JOIN student.student_sessions AS s ON s.session_key = e.session_key "
+            "WHERE e.user_id = %s AND e.course_id = %s AND e.publication_id = %s "
+            "AND s.publication_version = %s AND e.classroom_id = %s "
+            "AND e.event_type = 'agent_state' AND e.payload->>'lessonId' = %s "
+            "AND e.payload->>'phase' IN ('video', 'discussion', 'done') "
+            "ORDER BY e.id DESC LIMIT 1",
+            (user_id, course_id, publication_id, publication_version, classroom_id, lesson_id),
+        ).fetchone()
+    return str(row[0]) if row else None
+
+
 def classroom_scenes(classroom_id: str) -> list[dict]:
     """Reload the published player's source for sessions saved before scene grounding."""
     _bind_database()

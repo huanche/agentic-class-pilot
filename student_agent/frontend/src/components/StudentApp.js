@@ -130,8 +130,13 @@ export default function StudentApp() {
       const selectedCourse = (state.courses || []).find((item) => item.lessons.some((candidate) => candidate.id === selected.id));
       const playableLesson = selectedCourse?.lessons.find((candidate) => candidate.id === selected.id);
       if (!playableLesson?.playerUrl) throw new Error("该课时没有可播放的视频");
+      sessionId.current = state.sessionId;
+      sessionStorage.setItem("student_new_session_id", state.sessionId);
       setCourses(state.courses); setCourse(selectedCourse); setLesson(playableLesson);
       setMessages(state.messages); setPhase(state.phase);
+      setPostclassMessages(state.postclassMessages || []);
+      setPostclassStage(state.postclassStage || null);
+      setFeedback(state.feedback || null);
       setAgentStage(state.agentStage || "");
       setLearningProgress(state.learningProgress || null);
       setPreparation(state.preparation); setPreparationError(state.preparationError || "");
@@ -241,7 +246,7 @@ export default function StudentApp() {
       })}</div>
       {!course?.lessons.length && <p>本课程暂无已开放课时。</p>}
     </section>}
-    {phase === "lesson" && <section className="view"><header className="view__header"><button className="back" onClick={() => setPhase("lessons")}>← 返回课时</button><h2 className="view__title">{lesson?.title}</h2></header><div className="view__body"><div className="lesson"><p className="lesson__eyebrow">{course?.title} · 第 {lesson?.week} 周</p><h3 className="lesson__title">{lesson?.title}</h3><p className="lesson__summary">{lesson?.summary || "准备好后开始本节课。"}</p><button className="btn btn--primary" onClick={() => begin(lesson)} disabled={busy}>开始上课</button></div></div></section>}
+    {phase === "lesson" && <section className="view"><header className="view__header"><button className="back" onClick={() => setPhase("lessons")}>← 返回课时</button><h2 className="view__title">{lesson?.title}</h2></header><div className="view__body"><div className="lesson"><p className="lesson__eyebrow">{course?.title} · 第 {lesson?.week} 周</p><h3 className="lesson__title">{lesson?.title}</h3><p className="lesson__summary">{lesson?.summary || "准备好后开始本节课。"}</p><button className="btn btn--primary" onClick={() => begin(lesson)} disabled={busy}>开始或继续上课</button></div></div></section>}
     {(phase === "video" || phase === "discussion" || phase === "done" || phase === "replay" || phase === "postclass") && <section className="view classroom-view"><header className="view__header"><h2 className="view__title">{lesson?.title || "课堂"}</h2><span className="view__badge">{phase === "video" ? "教学视频" : phase === "discussion" ? STAGE_TITLES[agentStage] || "复述与讨论" : phase === "replay" ? "课后回看" : phase === "postclass" ? "课后对话" : "已结束"}</span></header><div className="classroom-layout">
       <LessonProgress phase={phase} agentStage={agentStage} progress={learningProgress} postclassStage={postclassStage} />
       <div className="view__body classroom-content">

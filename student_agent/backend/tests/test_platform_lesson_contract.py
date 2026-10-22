@@ -5,6 +5,7 @@ import pytest
 from pathlib import Path
 import sys
 import io
+from threading import Lock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from backend import main
@@ -54,6 +55,7 @@ def test_catalog_then_selected_lesson(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(main, "platform_context", fake_platform_context)
     monkeypatch.setattr(main.persistence, "save", lambda *args: None)
+    monkeypatch.setattr(main.persistence, "latest_session_key", lambda *args: None)
     started = main.start(main.StartRequest(launch_token="ticket"))
     sid = started["sessionId"]
     try:
@@ -82,3 +84,65 @@ def test_selected_lesson_must_match_catalog(monkeypatch: pytest.MonkeyPatch) -> 
         assert main.sessions[sid]["phase"] == "idle"
     finally:
         main.sessions.pop(sid, None)
+
+
+def test_new_launch_resumes_saved_discussion_for_selected_lesson(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(main, "platform_context", lambda token, lesson_id=None: _context(lesson_id))
+    monkeypatch.setattr(main.persistence, "save", lambda *args: None)
+    lookups = []
+
+    def find_saved(*args):
+        lookups.append(args)
+        return "saved-session"
+
+    monkeypatch.setattr(main.persistence, "latest_session_key", find_saved)
+    saved = {
+        "id": "saved-session",
+        "context": {"userId": "u", "courseId": "c", "publication": {"id": "p", "version": 1}},
+        "courses": main.catalog(_context("L2")),
+        "phase": "discussion", "lessonId": "L2", "classroomId": "room-2",
+        "messages": [{"role": "assistant", "phase": "recall", "text": "请继续复述电路交换。"}],
+        "dialogue": main.initial_state([{"id": "point-1", "title": "电路交换", "content": "独占链路"}]),
+        "preparation": "ready", "lock": Lock(),
+    }
+    monkeypatch.setattr(main.persistence, "restore", lambda sid: saved if sid == "saved-session" else None)
+    sid = main.start(main.StartRequest(launch_token="new-ticket"))["sessionId"]
+    try:
+        resumed = main.begin(sid, "L2", BackgroundTasks())
+        assert resumed["sessionId"] == "saved-session"
+        assert resumed["phase"] == "discussion"
+        assert resumed["messages"] == saved["messages"]
+        assert resumed["agentStage"] == "recall"
+        assert lookups == [("u", "c", "p", 1, "L2", "room-2")]
+        assert sid not in main.sessions
+    finally:
+        main.sessions.pop(sid, None)
+        main.sessions.pop("saved-session", None)
+
+
+def test_new_launch_resumes_completed_lesson_and_feedback(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(main, "platform_context", lambda token, lesson_id=None: _context(lesson_id))
+    monkeypatch.setattr(main.persistence, "save", lambda *args: None)
+    monkeypatch.setattr(main.persistence, "latest_session_key", lambda *args: "finished-session")
+    feedback = {"summary": "已经掌握电路交换"}
+    saved = {
+        "id": "finished-session",
+        "context": {"userId": "u", "courseId": "c", "publication": {"id": "p", "version": 1}},
+        "courses": main.catalog(_context("L2")), "phase": "done",
+        "lessonId": "L2", "classroomId": "room-2",
+        "messages": [{"role": "assistant", "phase": "postclass-open", "text": "继续提问吧。"}],
+        "feedback": feedback, "postclassStage": "open", "dialogue": None,
+        "lock": Lock(),
+    }
+    monkeypatch.setattr(main.persistence, "restore", lambda sid: saved if sid == "finished-session" else None)
+    sid = main.start(main.StartRequest(launch_token="new-ticket"))["sessionId"]
+    try:
+        resumed = main.begin(sid, "L2", BackgroundTasks())
+        assert resumed["sessionId"] == "finished-session"
+        assert resumed["phase"] == "done"
+        assert resumed["feedback"] == feedback
+        assert resumed["postclassStage"] == "open"
+        assert resumed["postclassMessages"] == saved["messages"]
+    finally:
+        main.sessions.pop(sid, None)
+        main.sessions.pop("finished-session", None)

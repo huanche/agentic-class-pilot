@@ -103,7 +103,7 @@ def get_session(sid: str) -> dict:
 
 def state(session: dict) -> dict:
     dialogue = normalize(session["dialogue"]) if session.get("dialogue") else None
-    return {"phase": session["phase"], "lessonId": session.get("lessonId"),
+    return {"sessionId": session["id"], "phase": session["phase"], "lessonId": session.get("lessonId"),
             "messages": list(session["messages"]), "courses": session["courses"],
             "preparation": session.get("preparation", "ready" if session.get("dialogue") else "idle"),
             "preparationError": session.get("preparationError", ""),
@@ -273,6 +273,8 @@ def begin(sid: str, lesson_id: str, background_tasks: BackgroundTasks) -> dict:
                 or str(selected_context.get("courseId")) != str(original.get("courseId"))
                 or str((selected_context.get("publication") or {}).get("id"))
                 != str((original.get("publication") or {}).get("id"))
+                or (selected_context.get("publication") or {}).get("version")
+                != (original.get("publication") or {}).get("version")
                 or str(selected_context.get("selectedLessonId")) != lesson_id
                 or len(selected_context.get("lessons") or []) != 1):
             raise HTTPException(409, "所选课时与课程不匹配，请重新进入课程")
@@ -280,6 +282,36 @@ def begin(sid: str, lesson_id: str, background_tasks: BackgroundTasks) -> dict:
         lesson = next((item for item in selected_courses[0]["lessons"] if item["id"] == lesson_id), None)
         if not lesson or not lesson.get("playerUrl"):
             raise HTTPException(409, "所选课时没有已发布的播放器")
+        try:
+            old_id = persistence.latest_session_key(
+                str(original["userId"]), str(original["courseId"]),
+                str((original.get("publication") or {})["id"]),
+                int((original.get("publication") or {})["version"]),
+                lesson_id, str(lesson["classroomId"]),
+            )
+        except Exception as error:
+            logger.exception("Failed to find previous student lesson session")
+            raise HTTPException(503, "读取上次课堂失败，请稍后重试") from error
+        if old_id:
+            resumed = get_session(old_id)
+            saved_context = resumed.get("context") or {}
+            if (str(saved_context.get("userId")) == str(original["userId"])
+                    and str(saved_context.get("courseId")) == str(original["courseId"])
+                    and str((saved_context.get("publication") or {}).get("id"))
+                    == str((original.get("publication") or {}).get("id"))
+                    and int((saved_context.get("publication") or {}).get("version") or 0)
+                    == int((original.get("publication") or {}).get("version") or 0)
+                    and resumed.get("lessonId") == lesson_id
+                    and resumed.get("classroomId") == lesson["classroomId"]
+                    and resumed.get("phase") in {"video", "discussion", "done"}):
+                with resumed["lock"]:
+                    resumed["context"] = selected_context
+                    resumed["courses"] = selected_courses
+                    schedule_preparation(resumed, background_tasks)
+                    restored_state = state(resumed)
+                with session_lock:
+                    sessions.pop(sid, None)
+                return restored_state
     with session["lock"]:
         if session["phase"] != "idle":
             if session["lessonId"] != lesson_id:
