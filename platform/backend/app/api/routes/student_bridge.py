@@ -16,6 +16,7 @@ import secrets
 import base64
 import time
 import uuid
+from html import unescape
 from urllib.parse import quote
 
 import httpx
@@ -332,13 +333,22 @@ def _classroom_view(session: SessionDep, classroom_id: str) -> dict:
         raise HTTPException(404, "课堂不存在或尚未发布")
     scenes = []
     for scene in (row[1] or []):
+        content = scene.get("content") or {}
+        canvas = (content.get("canvas") or {}) if isinstance(content, dict) else {}
+        visible_text = []
+        for element in canvas.get("elements") or []:
+            if isinstance(element, dict) and element.get("type") == "text":
+                value = unescape(re.sub(r"<[^>]*>", " ", str(element.get("content") or ""))).strip()
+                if value:
+                    visible_text.append(value)
         scenes.append({
             "id": scene.get("id"),
             "type": scene.get("type", "slide"),
             "order": int(scene.get("order") or 1),
             "title": scene.get("title", ""),
-            # speech texts only: the student agent segments need narration;
-            # canvas internals stay in the player's own data channel
+            "visibleText": visible_text,
+            # Text shown to the student and narration ground the new agent;
+            # media assets stay in the player's own data channel.
             "actions": [
                 {"id": action.get("id"), "type": action.get("type", "speech"),
                  "text": action.get("text")}

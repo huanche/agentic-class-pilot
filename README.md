@@ -30,7 +30,7 @@ agentic class pilot/
 | `http://localhost:8088` | 统一访问入口，日常使用此地址 |
 | `http://127.0.0.1:8080` | 平台后端及平台前端 |
 | `http://127.0.0.1:3200` | 教师 Agent 内部开发地址 |
-| `http://127.0.0.1:8000` | 学生 Agent 内部开发地址 |
+| `http://127.0.0.1:8001` | 学生 Agent 本机开发地址（服务器沿用 8000） |
 | `http://127.0.0.1:59001` | MinIO 管理界面 |
 | `http://127.0.0.1:58025` | Mailpit 本地邮件界面 |
 
@@ -71,10 +71,11 @@ Copy-Item ".env.example" ".env.local" -ErrorAction SilentlyContinue
 ### 3. 安装学生 Agent 依赖
 
 ```powershell
-Set-Location "..\student_agent"
-python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-Copy-Item ".env.local.example" ".env.local" -ErrorAction SilentlyContinue
+Set-Location "..\student_agent\frontend"
+npm ci
+npm run build
+Set-Location "..\backend"
+..\..\platform\.venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
 如需启用学生 Agent 的大模型对话，在 `student_agent/.env.local` 中配置 `AGENT_LLM_BASE_URL`、`AGENT_LLM_API_KEY` 和 `AGENT_LLM_MODEL`。
@@ -86,7 +87,7 @@ Copy-Item ".env.local.example" ".env.local" -ErrorAction SilentlyContinue
 进入平台目录并运行统一启动脚本：
 
 ```powershell
-Set-Location "..\platform"
+Set-Location "..\..\platform"
 powershell -ExecutionPolicy Bypass -File ".\scripts\start-local.ps1"
 ```
 
@@ -102,7 +103,7 @@ http://localhost:8088
 2. 执行平台数据库迁移。
 3. 启动平台后端（8080）。
 4. 启动教师 Agent（3200）。
-5. 启动学生 Agent（8000）。
+5. 启动学生 Agent（本机 8001）。
 
 可使用以下命令检查服务：
 
@@ -134,7 +135,7 @@ pnpm install --frozen-lockfile
 ### 端口已被占用
 
 ```powershell
-Get-NetTCPConnection -State Listen -LocalPort 8088,8080,3200,8000
+Get-NetTCPConnection -State Listen -LocalPort 8088,8080,3200,8001
 ```
 
 不要重复启动同一个服务。确认已有服务来自本项目后，可直接继续使用。

@@ -10,6 +10,26 @@ from app.core.config import settings
 BRIDGE_KEY = "student-bridge-test-key"
 
 
+def test_classroom_view_includes_visible_slide_text() -> None:
+    from app.api.routes.student_bridge import _classroom_view
+
+    class Result:
+        def first(self):
+            return ({"name": "课堂"}, [{"id": "scene-1", "order": 1,
+                    "content": {"canvas": {"elements": [
+                        {"type": "text", "content": "<p>电路交换 &amp; 分组交换</p>"},
+                        {"type": "image", "content": "ignore"},
+                    ]}}, "actions": [{"type": "speech", "text": "讲解"}]}])
+
+    class Session:
+        def execute(self, *_args, **_kwargs):
+            return Result()
+
+    classroom = _classroom_view(Session(), "room-1")
+    assert classroom["scenes"][0]["visibleText"] == ["电路交换 & 分组交换"]
+    assert classroom["scenes"][0]["actions"][0]["text"] == "讲解"
+
+
 @pytest.fixture(autouse=True)
 def bridge_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "STUDENT_SERVICE_KEY", BRIDGE_KEY)

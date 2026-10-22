@@ -3,8 +3,8 @@ name: student-deploy
 # Student-agent deployment: PRs to main that touch student_agent/** get a
 # build-only check (npm ci + static export) so breakage surfaces before merge.
 # Pushes to main additionally SSH to the production server and run the
-# server-side deploy script: ff-only pull -> rebuild frontend -> swap static
-# bundle -> restart agentic-student, with health check + automatic rollback
+# server-side deploy script: ff-only pull -> install new backend dependencies ->
+# install the CI-built frontend -> restart agentic-student, with health check and rollback
 # (see student_agent/scripts/server-deploy-student.sh).
 #
 # Reuses the teacher-deploy secrets:
@@ -18,8 +18,7 @@ name: student-deploy
 # student_agent/** triggered nothing — the served static bundle silently went
 # stale (2026-10-10 "fullscreen button missing" incident: code was on main
 # for a day while production kept serving the previous build). This workflow
-# closes that gap; the build-fingerprint guard (write-build-fingerprint.mjs)
-# remains the runtime tripwire.
+# closes that gap for the new FastAPI + LangGraph student service.
 
 on:
   push:
@@ -50,11 +49,29 @@ jobs:
           cache: npm
           cache-dependency-path: student_agent/frontend/package-lock.json
 
-      - name: Build frontend (static export + fingerprint)
+      - name: Build frontend (static export)
         working-directory: student_agent/frontend
         run: |
           npm ci
           npm run build
+
+      - name: Package frontend bundle
+        run: tar czf student-frontend-bundle.tgz -C student_agent/frontend/out .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: student-frontend-bundle
+          path: student-frontend-bundle.tgz
+          retention-days: 1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Test student backend and lesson contract
+        run: |
+          python -m pip install -r student_agent/backend/requirements.txt pytest
+          python -m pytest -q student_agent/tests
 
   deploy:
     # PR builds stop after the build check; only main pushes / manual runs deploy.
@@ -63,6 +80,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: student-frontend-bundle
 
       - name: Deploy to production server
         env:
@@ -80,7 +101,11 @@ jobs:
             "ubuntu@$SERVER_HOST:/tmp/server-deploy-student.sh"
           $SSH "sed -i 's/\r$//' /tmp/server-deploy-student.sh"
 
-          $SSH "bash /tmp/server-deploy-student.sh '$GITHUB_SHA'"
+          scp -i /tmp/deploy_key -o StrictHostKeyChecking=accept-new \
+            student-frontend-bundle.tgz \
+            "ubuntu@$SERVER_HOST:/tmp/student-frontend-bundle.tgz"
+
+          $SSH "bash /tmp/server-deploy-student.sh '$GITHUB_SHA' /tmp/student-frontend-bundle.tgz"
 
       # Informational only — the authoritative gate is the server-side health
       # check + rollback in server-deploy-student.sh.

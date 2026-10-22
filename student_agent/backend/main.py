@@ -1,0 +1,440 @@
+"""Student classroom API with lesson-scoped LangGraph discussion."""
+from __future__ import annotations
+
+import json
+import logging
+import os
+import secrets
+import urllib.error
+import urllib.request
+from pathlib import Path
+from threading import Lock
+
+from fastapi import BackgroundTasks, FastAPI, HTTPException
+from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field
+
+from agent.context import classroom_materials, lesson_points
+from agent.graph import dialogue_graph, initial_state, opening
+from agent.knowledge import CURRICULUM_VERSION, learning_points
+from agent.progression import normalize, progress
+from agent.feedback import lesson_feedback
+from agent.postclass import pending_points, postclass_graph, postclass_stage
+from agent import persistence
+
+ROOT = Path(__file__).resolve().parent.parent
+OUT = ROOT / "frontend" / "out"
+app = FastAPI(title="Student Agent")
+logger = logging.getLogger(__name__)
+sessions: dict[str, dict] = {}
+session_lock = Lock()
+preparing: set[str] = set()
+
+
+class StartRequest(BaseModel):
+    launch_token: str = ""
+
+
+class MessageRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=2000)
+
+
+def platform_context(token: str, lesson_id: str | None = None) -> dict:
+    base = os.environ.get("PLATFORM_AUTH_URL", "").rstrip("/")
+    key = os.environ.get("STUDENT_SERVICE_KEY", "")
+    if not base or not key:
+        raise HTTPException(503, "请配置 PLATFORM_AUTH_URL 和 STUDENT_SERVICE_KEY")
+    # The teacher service shares PLATFORM_AUTH_URL but treats it as the host
+    # base; the local student launcher may already include /api/v1.
+    if not base.endswith("/api/v1"):
+        base += "/api/v1"
+    request = urllib.request.Request(
+        base + "/internal/student/learning-context",
+        data=json.dumps({"launch_token": token, "lesson_id": lesson_id}).encode(),
+        headers={"Content-Type": "application/json", "X-Student-Service-Key": key},
+        method="POST",
+    )
+    try:
+        with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(request, timeout=20) as response:
+            return json.load(response)
+    except urllib.error.HTTPError as error:
+        raise HTTPException(error.code, "平台课堂读取失败或启动令牌已过期") from error
+    except (urllib.error.URLError, TimeoutError) as error:
+        raise HTTPException(503, "平台服务暂不可用") from error
+
+
+def catalog(context: dict) -> list[dict]:
+    course_id = str(context.get("courseId") or "course")
+    published = context.get("lessonCatalog") or context.get("lessons") or []
+    selected = {str(item.get("id")): item for item in context.get("lessons") or []}
+    lessons = []
+    for index, item in enumerate(published, 1):
+        details = selected.get(str(item.get("id")), item)
+        classroom = details.get("classroom") or {}
+        classroom_title = str(classroom.get("title") or "").strip()
+        lesson_title = str(item.get("title") or f"第 {index} 课").strip()
+        lessons.append({
+            "id": str(item.get("id") or index), "title": lesson_title,
+            "week": item.get("week") or index, "lessonNumber": item.get("lessonNumber") or 1,
+            "summary": str(details.get("summary") or (classroom_title if classroom_title != lesson_title else "")),
+            "teachingHours": item.get("teachingHours"), "publishedAt": details.get("publishedAt"),
+            "playerUrl": classroom.get("playerUrl"), "classroomId": classroom.get("id"),
+            "segmentCount": item.get("segmentCount") or len(classroom.get("scenes") or []),
+        })
+    return [{"id": course_id, "title": context.get("courseTitle") or "我的课程", "lessons": lessons}]
+
+
+def get_session(sid: str) -> dict:
+    with session_lock:
+        session = sessions.get(sid)
+    if session is None:
+        try:
+            session = persistence.restore(sid)
+        except Exception as error:
+            raise HTTPException(503, f"恢复课堂失败：{error}") from error
+        if session:
+            with session_lock:
+                session = sessions.setdefault(sid, session)
+        else:
+            raise HTTPException(404, "会话不存在，请重新进入课堂")
+    return session
+
+
+def state(session: dict) -> dict:
+    dialogue = normalize(session["dialogue"]) if session.get("dialogue") else None
+    return {"phase": session["phase"], "lessonId": session.get("lessonId"),
+            "messages": list(session["messages"]), "courses": session["courses"],
+            "preparation": session.get("preparation", "ready" if session.get("dialogue") else "idle"),
+            "preparationError": session.get("preparationError", ""),
+            "feedback": session.get("feedback"),
+            "agentStage": (dialogue or {}).get("stage"),
+            "learningProgress": progress(dialogue) if dialogue else None,
+            "postclassStage": session.get("postclassStage"),
+            "postclassMessages": [item for item in session["messages"]
+                                  if str(item.get("phase") or "").startswith("postclass-")]}
+
+
+def commit(session: dict, changed: dict) -> None:
+    old_count = len(session["messages"])
+    draft = {key: value for key, value in session.items() if key != "lock"}
+    draft.update(changed)
+    try:
+        persistence.save(draft, old_count)
+    except Exception as error:
+        raise HTTPException(503, "保存学习记录失败，请稍后重试") from error
+    session.update(changed)
+
+
+def prepared_dialogue(materials: list[dict]) -> dict:
+    try:
+        points = learning_points(materials)
+    except Exception as error:
+        raise HTTPException(503, "课堂知识点整理失败，请稍后重试") from error
+    if not points:
+        raise HTTPException(409, "当前视频没有可供复述的实质知识点，请教师检查视频内容")
+    return dict(initial_state(points), curriculum_version=CURRICULUM_VERSION)
+
+
+def current_materials(session: dict) -> list[dict]:
+    context = session.get("context") or {}
+    lesson_id = session.get("lessonId")
+    if context.get("lessons"):
+        return lesson_points(context, lesson_id)
+    if not session.get("classroomId"):
+        return session.get("preparationMaterials") or []  # Local demo only.
+    return classroom_materials(persistence.classroom_scenes(session["classroomId"]))
+
+
+def prepare_in_background(session: dict) -> None:
+    try:
+        # The model must never hold the session lock while a video is playing.
+        materials = current_materials(session)
+        dialogue = prepared_dialogue(materials)
+        with session["lock"]:
+            commit(session, {"dialogue": dialogue, "preparation": "ready",
+                             "preparationMaterials": materials,
+                             "preparationError": ""})
+    except Exception as error:
+        message = error.detail if isinstance(error, HTTPException) else "课堂资料准备失败，请重试"
+        with session["lock"]:
+            changed = {"preparation": "error", "preparationError": str(message)}
+            try:
+                commit(session, changed)
+            except HTTPException:
+                session.update(changed)
+    finally:
+        with session_lock:
+            preparing.discard(session["id"])
+
+
+def schedule_preparation(session: dict, tasks: BackgroundTasks) -> None:
+    if session.get("preparation") != "pending":
+        return
+    with session_lock:
+        if session["id"] in preparing:
+            return
+        preparing.add(session["id"])
+    tasks.add_task(prepare_in_background, session)
+
+
+def upgrade_curriculum(session: dict) -> None:
+    """Rebuild old saved sessions from the exact classroom shown by the player."""
+    previous = session.get("dialogue") or {}
+    if previous.get("curriculum_version") == CURRICULUM_VERSION:
+        return
+    materials = current_materials(session)
+    dialogue = prepared_dialogue(materials)
+    messages = list(session["messages"])
+    if session["phase"] == "discussion":
+        messages.append({"role": "assistant", "phase": "recall",
+                         "text": "我已重新整理本课的学习内容，接下来以这份清单为准。\n\n"
+                                 + opening(dialogue["points"])})
+    commit(session, {"dialogue": dialogue, "preparationMaterials": materials,
+                     "messages": messages})
+
+
+@app.post("/api/session/start")
+def start(body: StartRequest) -> dict:
+    if body.launch_token:
+        context = platform_context(body.launch_token)
+        courses = catalog(context)
+    else:
+        context = None
+        demo = os.environ.get("STUDENT_NEW_DEMO_PLAYER_URL", "")
+        if not demo:
+            raise HTTPException(400, "请从课程平台进入课堂")
+        courses = [{"id": "demo", "title": "演示课程", "lessons": [{
+            "id": "demo-lesson", "title": "演示课时", "week": 1, "lessonNumber": 1,
+            "summary": "本地流程预览", "playerUrl": demo, "segmentCount": 1}]}]
+    sid = secrets.token_urlsafe(24)
+    with session_lock:
+        sessions[sid] = {"id": sid, "context": context, "courses": courses,
+                         "launchToken": body.launch_token if context else None,
+                         "phase": "idle", "lessonId": None, "messages": [],
+                         "dialogue": None, "lock": Lock()}
+    return {"sessionId": sid, "courses": courses}
+
+
+@app.get("/api/session/health")
+def health() -> dict:
+    if not (os.environ.get("PLATFORM_AUTH_URL") and os.environ.get("STUDENT_SERVICE_KEY")):
+        raise HTTPException(503, "平台连接尚未配置")
+    if not (os.environ.get("STUDENT_AGENT_API_KEY") or os.environ.get("LLM_API_KEY")):
+        raise HTTPException(503, "课堂导师模型尚未配置")
+    if not (os.environ.get("STUDENT_DATABASE_URL") or os.environ.get("DATABASE_URL")):
+        raise HTTPException(503, "学习数据库尚未配置")
+    return {"ok": True}
+
+
+@app.get("/api/session/platform-entry")
+def platform_entry() -> dict:
+    return {
+        "platformUrl": os.environ.get("FRONTEND_HOST", "http://localhost:8088").rstrip("/"),
+        "demoEnabled": bool(os.environ.get("STUDENT_NEW_DEMO_PLAYER_URL")),
+    }
+
+
+@app.get("/demo-player")
+def demo_player():
+    if not os.environ.get("STUDENT_NEW_DEMO_PLAYER_URL"):
+        raise HTTPException(404)
+    return HTMLResponse("""<!doctype html><html lang='zh-CN'><meta charset='utf-8'>
+<body style='margin:0;display:grid;place-items:center;height:100vh;background:#18243b;color:white;font:20px sans-serif'>
+<button style='padding:16px 24px;font:inherit' onclick="parent.postMessage({type:'PLAYBACK_ENDED'},location.origin)">模拟视频播放完成</button>
+</body></html>""")
+
+
+@app.get("/api/session/{sid}")
+def read(sid: str, background_tasks: BackgroundTasks) -> dict:
+    session = get_session(sid)
+    with session["lock"]:
+        schedule_preparation(session, background_tasks)
+        return state(session)
+
+
+@app.post("/api/session/{sid}/begin/{lesson_id}")
+def begin(sid: str, lesson_id: str, background_tasks: BackgroundTasks) -> dict:
+    session = get_session(sid)
+    lesson = next((lesson for course in session["courses"] for lesson in course["lessons"]
+                   if lesson["id"] == lesson_id), None)
+    if not lesson:
+        raise HTTPException(404, "未找到该课时")
+    selected_context = None
+    selected_courses = None
+    if session.get("context") and session["phase"] == "idle":
+        token = session.get("launchToken")
+        if not token:
+            raise HTTPException(409, "启动令牌已失效，请从平台重新进入课程")
+        selected_context = platform_context(token, lesson_id)
+        original = session["context"]
+        if (str(selected_context.get("userId")) != str(original.get("userId"))
+                or str(selected_context.get("courseId")) != str(original.get("courseId"))
+                or str((selected_context.get("publication") or {}).get("id"))
+                != str((original.get("publication") or {}).get("id"))
+                or str(selected_context.get("selectedLessonId")) != lesson_id
+                or len(selected_context.get("lessons") or []) != 1):
+            raise HTTPException(409, "所选课时与课程不匹配，请重新进入课程")
+        selected_courses = catalog(selected_context)
+        lesson = next((item for item in selected_courses[0]["lessons"] if item["id"] == lesson_id), None)
+        if not lesson or not lesson.get("playerUrl"):
+            raise HTTPException(409, "所选课时没有已发布的播放器")
+    with session["lock"]:
+        if session["phase"] != "idle":
+            if session["lessonId"] != lesson_id:
+                raise HTTPException(409, "请结束当前课时后再开始其他课时")
+            schedule_preparation(session, background_tasks)
+            return state(session)
+        context = selected_context or session["context"]
+        materials = lesson_points(context, lesson_id) if context else [
+            {"id": "demo", "title": lesson["title"], "content": lesson.get("summary") or lesson["title"],
+             "source": "demo"}]
+        commit(session, {"context": context, "courses": selected_courses or session["courses"],
+                         "lessonId": lesson_id, "classroomId": lesson.get("classroomId"),
+                         "phase": "video", "dialogue": None,
+                         "preparation": "pending", "preparationError": "",
+                         "preparationMaterials": materials})
+        schedule_preparation(session, background_tasks)
+    return state(session)
+
+
+@app.post("/api/session/{sid}/prepare")
+def retry_preparation(sid: str, background_tasks: BackgroundTasks) -> dict:
+    session = get_session(sid)
+    with session["lock"]:
+        if session["phase"] != "video":
+            raise HTTPException(409, "当前不在视频阶段")
+        if session.get("preparation") == "error":
+            commit(session, {"preparation": "pending", "preparationError": ""})
+        schedule_preparation(session, background_tasks)
+        return state(session)
+
+
+@app.post("/api/session/{sid}/discussion")
+def discussion(sid: str, background_tasks: BackgroundTasks) -> dict:
+    session = get_session(sid)
+    with session["lock"]:
+        if session["phase"] == "video":
+            if session.get("preparation") == "pending":
+                schedule_preparation(session, background_tasks)
+                return state(session)
+            if session.get("preparation") == "error":
+                raise HTTPException(409, session["preparationError"])
+            upgrade_curriculum(session)
+            first = {"role": "assistant", "text": opening(session["dialogue"]["points"]),
+                     "phase": "recall"}
+            commit(session, {"phase": "discussion", "messages": session["messages"] + [first]})
+        elif session["phase"] != "discussion":
+            raise HTTPException(409, "请先开始上课")
+        else:
+            upgrade_curriculum(session)
+    return state(session)
+
+
+@app.post("/api/session/{sid}/message")
+def message(sid: str, body: MessageRequest) -> dict:
+    session = get_session(sid)
+    with session["lock"]:
+        if session["phase"] != "discussion":
+            raise HTTPException(409, "当前不在复述与讨论阶段")
+        upgrade_curriculum(session)
+        normalized = normalize(session["dialogue"])
+        if normalized["stage"] == "wrapup":
+            raise HTTPException(409, "课堂对话已完成，请结束本课并查看反馈；结束后可继续课后对话")
+        student = {"role": "student", "text": body.text.strip(),
+                   "phase": normalized["stage"]}
+        dialogue = normalized
+        dialogue["student_text"] = student["text"]
+        dialogue["messages"] = session["messages"] + [student]
+        try:
+            dialogue = dialogue_graph.invoke(dialogue)
+        except Exception as error:
+            logger.exception("课堂导师对话失败：session=%s", sid)
+            raise HTTPException(503, "课堂导师暂不可用，请稍后重试") from error
+        assistant = {"role": "assistant", "text": dialogue["reply"],
+                     "phase": dialogue["stage"]}
+        commit(session, {"dialogue": dialogue,
+                         "messages": session["messages"] + [student, assistant]})
+    return state(session)
+
+
+@app.post("/api/session/{sid}/end")
+def end(sid: str) -> dict:
+    session = get_session(sid)
+    with session["lock"]:
+        if session["phase"] == "done" and session.get("feedback"):
+            return state(session)
+        if session["phase"] not in {"discussion", "done"}:
+            raise HTTPException(409, "请先进入复述与讨论")
+        feedback = lesson_feedback(session)
+        commit(session, {"phase": "done", "feedback": feedback})
+    return state(session)
+
+
+@app.get("/api/session/{sid}/feedback")
+def feedback(sid: str) -> dict:
+    session = get_session(sid)
+    if not session.get("feedback"):
+        raise HTTPException(409, "本次课堂反馈尚未生成，请先结束本节课")
+    return session["feedback"]
+
+
+@app.post("/api/session/{sid}/postclass/start")
+def start_postclass(sid: str) -> dict:
+    session = get_session(sid)
+    with session["lock"]:
+        if session["phase"] != "done" or not session.get("dialogue"):
+            raise HTTPException(409, "请先结束本节课")
+        if not session.get("postclassStage"):
+            stage = postclass_stage(normalize(session["dialogue"])["points"])
+            if stage == "remediation":
+                focus = pending_points(session["dialogue"]["points"])[0]
+                opening_text = f"我们先补完课堂上还没掌握的知识点。从「{focus['title']}」开始：你现在能用自己的话说说它吗？不记得可以直接问我。"
+            else:
+                opening_text = "课堂知识点已经完成了。现在可以自由向我提问其他问题。"
+            first = {"role": "assistant", "text": opening_text, "phase": "postclass-" + stage}
+            commit(session, {"postclassStage": stage, "classroomFeedback": session["feedback"],
+                             "messages": session["messages"] + [first]})
+    return state(session)
+
+
+@app.post("/api/session/{sid}/postclass/message")
+def postclass_message(sid: str, body: MessageRequest) -> dict:
+    session = get_session(sid)
+    with session["lock"]:
+        stage = session.get("postclassStage")
+        if session["phase"] != "done" or stage not in {"remediation", "open"}:
+            raise HTTPException(409, "请先进入课后对话")
+        student = {"role": "student", "text": body.text.strip(), "phase": "postclass-" + stage}
+        history = [item for item in session["messages"]
+                   if str(item.get("phase") or "").startswith("postclass-")]
+        try:
+            result = postclass_graph.invoke({
+                "points": normalize(session["dialogue"])["points"],
+                "messages": history + [student], "student_text": student["text"],
+                "stage": stage, "assessment": {}, "transition": "continue", "reply": "",
+            })
+        except Exception as error:
+            logger.exception("课后导师对话失败：session=%s", sid)
+            raise HTTPException(503, "课后导师暂不可用，请稍后重试") from error
+        assistant = {"role": "assistant", "text": result["reply"],
+                     "phase": "postclass-" + result["stage"]}
+        dialogue = dict(session["dialogue"], points=result["points"])
+        messages = session["messages"] + [student, assistant]
+        draft = dict(session, dialogue=dialogue, messages=messages,
+                     postclassStage=result["stage"])
+        updated_feedback = lesson_feedback(draft)
+        commit(session, {"dialogue": dialogue, "messages": messages,
+                         "postclassStage": result["stage"], "feedback": updated_feedback})
+    return state(session)
+
+
+if OUT.is_dir():
+    app.mount("/app", StaticFiles(directory=OUT, html=True), name="student-frontend")
+
+
+@app.get("/")
+def index():
+    if not OUT.is_dir():
+        raise HTTPException(503, "请先构建前端：npm run build")
+    return FileResponse(OUT / "index.html")

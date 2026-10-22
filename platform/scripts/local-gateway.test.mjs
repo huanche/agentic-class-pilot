@@ -18,7 +18,7 @@ test('PPTX routing preserves ownership of the other services', () => {
     assert.deepEqual(target(path), {port: 8080, path});
   }
   for (const path of ['/app/course', '/api/session/current']) {
-    assert.deepEqual(target(path), {port: 8000, path});
+    assert.deepEqual(target(path), {port: 8001, path});
   }
   assert.deepEqual(target('/teacher/vendor/maic-importer/index.js'), {
     port: 3200, path: '/vendor/maic-importer/index.js',
