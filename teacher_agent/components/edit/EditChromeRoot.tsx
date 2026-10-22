@@ -20,6 +20,7 @@ interface EditChromeRootProps {
   readonly isEditable: boolean;
   readonly onToggleEditMode?: () => void;
   readonly hideAgentPanel?: boolean;
+  readonly pageReview?: boolean;
 }
 
 /**
@@ -43,7 +44,13 @@ interface EditChromeRootProps {
  * `scene` is required (non-null). The parent gates mounting on
  * `mode === 'edit' && currentScene` to satisfy this contract.
  */
-export function EditChromeRoot({ scene, isEditable, onToggleEditMode, hideAgentPanel = false }: EditChromeRootProps) {
+export function EditChromeRoot({
+  scene,
+  isEditable,
+  onToggleEditMode,
+  hideAgentPanel = false,
+  pageReview = false,
+}: EditChromeRootProps) {
   const stage = useStageStore((state) => state.stage);
   const scenes = useStageStore((state) => state.scenes);
   // Mark the body while edit mode is mounted, so the editor-scoped CSS
@@ -81,7 +88,9 @@ export function EditChromeRoot({ scene, isEditable, onToggleEditMode, hideAgentP
   // The AI edit panel is decoupled from the canvas surface: it renders wherever
   // the agent has an edit capability — slides (regenerate) AND interactive scenes
   // (edit_interactive_html), even though the interactive canvas itself stays view-only.
-  const agentEnabled = authoringEnabled || scene.type === 'interactive';
+  const agentEnabled = pageReview
+    ? scene.type === 'slide' || scene.type === 'interactive'
+    : authoringEnabled || scene.type === 'interactive';
 
   // Keep the runtime owned by Pro mode chrome, not by the scene-capability gated
   // panel. Unsupported scene switches can hide/disable the composer without
@@ -89,16 +98,18 @@ export function EditChromeRoot({ scene, isEditable, onToggleEditMode, hideAgentP
   const agentRuntime = useAgentRuntime({
     scene: agentEnabled ? { id: scene.id, title: scene.title } : undefined,
     isSendDisabled: !agentEnabled,
+    currentSceneOnly: pageReview,
   });
 
   const headerControls = (
     <div className="flex items-center gap-3">
-    <CourseDurationSummary stage={stage} scenes={scenes} />
-    <HeaderControls
-      mode="edit"
-      canEdit={isEditable}
-      onToggleEditMode={isMaicEditorEnabled() ? onToggleEditMode : undefined}
-    />
+      {!pageReview && <CourseDurationSummary stage={stage} scenes={scenes} />}
+      <HeaderControls
+        showSettings={!pageReview}
+        mode="edit"
+        canEdit={isEditable}
+        onToggleEditMode={isMaicEditorEnabled() ? onToggleEditMode : undefined}
+      />
     </div>
   );
 
@@ -106,22 +117,25 @@ export function EditChromeRoot({ scene, isEditable, onToggleEditMode, hideAgentP
     <EditShell
       scene={scene}
       leftRail={<SlideNavRail />}
-      rightRail={hideAgentPanel ? undefined : (
-        <RightRailTabs
-          scene={{ id: scene.id, title: scene.title, type: scene.type }}
-          runtime={agentRuntime.runtime}
-          clearThread={agentRuntime.clearThread}
-          hasMessages={agentRuntime.hasMessages}
-          canSend={agentEnabled}
-          agentEnabled={agentEnabled}
-          isRunning={agentRuntime.isRunning}
-          sessions={agentRuntime.sessions}
-          activeSessionId={agentRuntime.activeSessionId}
-          switchSession={agentRuntime.switchSession}
-          deleteSessionAndRefresh={agentRuntime.deleteSessionAndRefresh}
-          refreshSessions={agentRuntime.refreshSessions}
-        />
-      )}
+      rightRail={
+        hideAgentPanel ? undefined : (
+          <RightRailTabs
+            pageReview={pageReview}
+            scene={{ id: scene.id, title: scene.title, type: scene.type }}
+            runtime={agentRuntime.runtime}
+            clearThread={agentRuntime.clearThread}
+            hasMessages={agentRuntime.hasMessages}
+            canSend={agentEnabled}
+            agentEnabled={agentEnabled}
+            isRunning={agentRuntime.isRunning}
+            sessions={agentRuntime.sessions}
+            activeSessionId={agentRuntime.activeSessionId}
+            switchSession={agentRuntime.switchSession}
+            deleteSessionAndRefresh={agentRuntime.deleteSessionAndRefresh}
+            refreshSessions={agentRuntime.refreshSessions}
+          />
+        )
+      }
       bottomRail={timelineEnabled ? <ActionsBar sceneId={scene.id} /> : undefined}
       commandTrailing={headerControls}
     />

@@ -56,7 +56,12 @@ export interface GenerationSessionState {
   courseSpaceContext?: {
     courseId: string;
     materialId?: string;
-    scope: { type: 'course' } | { type: 'module'; moduleId: string } | { type: 'lesson'; lessonId: string };
+    /** Materials explicitly selected for this generation, in teacher-selected order. */
+    materialIds?: string[];
+    scope:
+      | { type: 'course' }
+      | { type: 'module'; moduleId: string }
+      | { type: 'lesson'; lessonId: string };
   };
 }
 

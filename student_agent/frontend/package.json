@@ -7,7 +7,7 @@
     "build": "next build && node scripts/write-build-fingerprint.mjs",
     "start": "next start",
     "lint": "eslint .",
-    "test:e2e": "npm run build && playwright test"
+    "test:e2e": "npm run build && playwright test && playwright test -c playwright.legacy.config.mjs"
   },
   "dependencies": {
     "next": "latest",

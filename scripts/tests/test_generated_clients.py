@@ -76,6 +76,9 @@ class GeneratedPythonTests(unittest.TestCase):
             payload['future'] = {'enabled': True}
             model = PlatformLearningContextV1.from_dict(payload)
             self.assertEqual(model.lessons, lessons)
+            point = model.knowledge_package.rubric.knowledge_points[0]
+            self.assertEqual(point.title, '心理沙盘游戏初识')
+            self.assertEqual(point.expected_concepts, ['认识心理沙盘游戏的组成', '了解其作用', '体验准备'])
             encoded = model.to_dict()
             self.assertEqual(encoded, payload)
 

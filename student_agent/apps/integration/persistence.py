@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from . import config
+from .data_cleanup import without_self_assessment
 
 RUNTIME_DIR = Path(__file__).resolve().parents[2] / "runtime" / "integration"
 
@@ -130,6 +131,22 @@ def upsert_message(session_key: str, user_id: str, course_id: str,
         connection.commit()
 
 
+def max_message_seq(session_key: str) -> int:
+    """某会话已落库的最大消息 seq（续写起点）。
+
+    会话被重建（同 key 重新 start）时，新消息若从 seq 1 写起会被
+    (session_key, seq) 幂等键静默吞掉——先读最大 seq 再接着编号。
+    demo 态没有跨进程查询面，返回 0。读失败由调用方兜底为 0。
+    """
+    if config.demo_mode():
+        return 0
+    with _db() as connection:
+        row = connection.execute(
+            "SELECT COALESCE(MAX(seq), 0) FROM student.student_messages "
+            "WHERE session_key = %s", (session_key,)).fetchone()
+    return int(row[0]) if row else 0
+
+
 def upsert_playback_progress(session_key: str, user_id: str, course_id: str,
                              publication_id: str, classroom_id: str,
                              scene_id: str, segment_id: str | None = None) -> None:
@@ -154,10 +171,18 @@ def upsert_mastery(session_key: str, user_id: str, course_id: str,
     """掌握度：按 (user, course, publication, kp) 唯一，星级只升不降。"""
     if config.demo_mode():
         path = _demo_path("mastery", f"{session_key}-{knowledge_point_id}")
-        path.write_text(json.dumps({
+        data = {}
+        if path.exists():
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+            except ValueError:
+                data = {}
+        # 读-改-写：保留同文件里其他学习记录字段
+        data.update({
             "session_key": session_key, "knowledge_point_id": knowledge_point_id,
             "stars": stars, "status": status, "evidence": evidence,
-        }, ensure_ascii=False, indent=1), encoding="utf-8")
+        })
+        path.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
         return
     with _db() as connection:
         connection.execute(
@@ -171,6 +196,8 @@ def upsert_mastery(session_key: str, user_id: str, course_id: str,
             (session_key, user_id, course_id, publication_id,
              knowledge_point_id, stars, status, evidence, source))
         connection.commit()
+
+
 
 
 def read_mastery(user_id: str, course_id: str, publication_id: str) -> Dict[str, int]:
@@ -189,9 +216,12 @@ def read_mastery(user_id: str, course_id: str, publication_id: str) -> Dict[str,
     return {str(r[0]): int(r[1]) for r in rows}
 
 
+
+
 def upsert_report(session_key: str, user_id: str, course_id: str,
-                  publication_id: str, payload: dict) -> None:
-    """课后报告：session_key 主键，重复下课覆盖为最新。"""
+                  publication_id: str, payload: dict,
+                  report_kind: str = "lesson") -> None:
+    """课后报告（课时维度，kind=lesson）：重复下课覆盖为该 kind 的最新版。"""
     if config.demo_mode():
         path = _demo_path("report", session_key)
         path.write_text(json.dumps(payload, ensure_ascii=False, indent=1), encoding="utf-8")
@@ -199,9 +229,79 @@ def upsert_report(session_key: str, user_id: str, course_id: str,
     with _db() as connection:
         connection.execute(
             "INSERT INTO student.after_class_reports "
-            "(session_key, user_id, course_id, publication_id, payload) "
-            "VALUES (%s,%s,%s,%s,%s) "
-            "ON CONFLICT (session_key) DO UPDATE SET payload = EXCLUDED.payload, created_at = now()",
+            "(session_key, user_id, course_id, publication_id, payload, report_kind, version) "
+            "VALUES (%s,%s,%s,%s,%s,%s,1) "
+            "ON CONFLICT (session_key, report_kind, version) DO UPDATE SET "
+            "payload = EXCLUDED.payload, created_at = now()",
             (session_key, user_id, course_id, publication_id,
-             json.dumps(payload, ensure_ascii=False)))
+             json.dumps(payload, ensure_ascii=False), report_kind))
         connection.commit()
+
+
+def append_report_version(session_key: str, user_id: str, course_id: str,
+                          publication_id: str, payload: dict,
+                          teacher_summary: str | None = None,
+                          report_kind: str = "tutoring") -> int:
+    """追加一版报告（辅导反馈）：每次明确结束一版，只增不改。
+
+    返回新版本号。demo 态写 runtime JSON 列表文件；生产态
+    (session_key, report_kind, version) 主键天然防重放。
+    """
+    created = int(time.time() * 1000)
+    if config.demo_mode():
+        path = _demo_path("report-versions", session_key)
+        versions = []
+        if path.exists():
+            try:
+                versions = json.loads(path.read_text(encoding="utf-8"))
+            except ValueError:
+                versions = []
+        version = len(versions) + 1
+        versions.append({"version": version, "payload": payload,
+                         "teacher_summary": teacher_summary,
+                         "created_at": created})
+        path.write_text(json.dumps(versions, ensure_ascii=False, indent=1),
+                        encoding="utf-8")
+        return version
+    with _db() as connection:
+        row = connection.execute(
+            "SELECT COALESCE(MAX(version), 0) FROM student.after_class_reports "
+            "WHERE session_key = %s AND report_kind = %s",
+            (session_key, report_kind)).fetchone()
+        version = int(row[0]) + 1 if row else 1
+        connection.execute(
+            "INSERT INTO student.after_class_reports "
+            "(session_key, user_id, course_id, publication_id, payload, "
+            " report_kind, version, teacher_summary) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
+            (session_key, user_id, course_id, publication_id,
+             json.dumps(payload, ensure_ascii=False), report_kind,
+             version, teacher_summary))
+        connection.commit()
+    return version
+
+
+def read_latest_report(session_key: str,
+                       report_kind: str = "tutoring") -> Optional[Dict[str, Any]]:
+    """某类报告的最新一版（无则 None）。"""
+    if config.demo_mode():
+        path = _demo_path("report-versions", session_key)
+        if not path.exists():
+            return None
+        try:
+            versions = json.loads(path.read_text(encoding="utf-8"))
+        except ValueError:
+            return None
+        return without_self_assessment(versions[-1]) if versions else None
+    with _db() as connection:
+        row = connection.execute(
+            "SELECT version, payload, teacher_summary, created_at "
+            "FROM student.after_class_reports "
+            "WHERE session_key = %s AND report_kind = %s "
+            "ORDER BY version DESC LIMIT 1",
+            (session_key, report_kind)).fetchone()
+    if not row:
+        return None
+    return {"version": int(row[0]), "payload": without_self_assessment(row[1]),
+            "teacher_summary": row[2],
+            "created_at": row[3].isoformat() if row[3] else None}

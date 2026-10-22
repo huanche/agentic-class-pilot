@@ -6,6 +6,7 @@ import {
   isValidClassroomId,
   persistClassroom,
   readClassroom,
+  ClassroomSnapshotConflictError,
 } from '@/lib/server/classroom-storage';
 import { createLogger } from '@/lib/logger';
 
@@ -34,10 +35,14 @@ export async function POST(request: NextRequest) {
     }
     const baseUrl = buildRequestOrigin(request);
 
-    const persisted = await persistClassroom({ id, stage: { ...stage, id }, scenes }, baseUrl);
+    const persisted = await persistClassroom({ id, stage: { ...stage, id }, scenes }, baseUrl, {
+      source: 'browser',
+    });
 
     return apiSuccess({ id: persisted.id, url: persisted.url }, 201);
   } catch (error) {
+    if (error instanceof ClassroomSnapshotConflictError)
+      return apiError(API_ERROR_CODES.INVALID_REQUEST, 409, error.message);
     log.error(
       `Classroom storage failed [stageId=${stageId ?? 'unknown'}, scenes=${sceneCount ?? 0}]:`,
       error,

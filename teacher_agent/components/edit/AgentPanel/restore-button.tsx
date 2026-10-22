@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * Icon-only Restore (undo) control for regenerate tool cards. Whole-slide and
+ * Restore (undo) control for regenerate tool cards. Whole-slide and
  * narration regeneration both apply directly; the runtime snapshots the
  * pre-regenerate scene state, so this offers a one-tap revert. Rendered on the
  * card's always-visible bar (ToolCard `barAction`). Returns null when there is
@@ -44,9 +44,10 @@ export function RestoreButton({ toolCallId }: { toolCallId: string }) {
           .getState()
           .restore(toolCallId, (id, patch) => applyScenePatchInSync(id, patch))
       }
-      className="grid size-6 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+      className="inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
     >
       <Icon className="size-3.5" />
+      <span>{label}</span>
     </button>
   );
 }

@@ -351,6 +351,53 @@ describe('browser scene generation retry wrappers', () => {
     expect(scene.actions).toHaveLength(20);
   });
 
+  it('prepares a regenerated page through the TTS pipeline with a classroom-scoped audio file', async () => {
+    const { generateTTSForScene, removeFreshTtsAllocations } =
+      await import('@/lib/hooks/use-scene-generator');
+    const { prepareRegeneratedAudio } =
+      await import('@/lib/agent/client/prepare-regenerated-audio');
+    mockFetch.mockResolvedValue(
+      jsonResponse(200, {
+        success: true,
+        base64: btoa('audio'),
+        format: 'wav',
+        audioUrl: '/api/classroom-media/stage-1/audio/tts_s4_new.wav',
+      }),
+    );
+    const original = {
+      id: 'edited-scene',
+      stageId: 'stage-1',
+      order: 4,
+      type: 'slide',
+      actions: [{ type: 'speech', id: 'old', text: '原讲解', audioId: 'old-audio' }],
+    } as Scene;
+    const patch = await prepareRegeneratedAudio(
+      original,
+      { actions: [{ type: 'speech', id: 'new', text: '修改后的讲解', audioInvalidated: true }] },
+      {
+        enabled: true,
+        providerId: 'server-tts',
+        generate: generateTTSForScene,
+        dispose: removeFreshTtsAllocations,
+      },
+    );
+    expect(JSON.parse(mockFetch.mock.calls[0][1].body)).toMatchObject({
+      classroomId: 'stage-1',
+      audioId: 'tts_s4_new',
+      text: '修改后的讲解',
+    });
+    expect(mocks.audioPut).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'ast_audio_allocated',
+        stageId: 'stage-1',
+        blob: expect.any(Blob),
+      }),
+    );
+    expect(patch.actions?.[0]).toMatchObject({ audioId: 'ast_audio_allocated' });
+    expect(patch.actions?.[0]).not.toHaveProperty('audioInvalidated');
+    expect(original.actions?.[0]).toMatchObject({ audioId: 'old-audio' });
+  });
+
   it('keeps narration text but rolls back incomplete-page audio after an account failure', async () => {
     const { generateTTSForScene } = await import('@/lib/hooks/use-scene-generator');
     mockFetch
@@ -705,6 +752,23 @@ describe('browser scene generation retry wrappers', () => {
     expect(mocks.poolRemove).toHaveBeenCalledExactlyOnceWith('ast_late_audio');
     expect(mocks.audioDelete).toHaveBeenCalledExactlyOnceWith('ast_late_audio');
     expect(scene.actions?.every((action) => !('audioId' in action))).toBe(true);
+  });
+
+  it('does not start duration regeneration for an OpenMAIC target-only course', async () => {
+    const { calibrateCompletedCourse } = await import('@/lib/hooks/use-scene-generator');
+    const { useStageStore } = await import('@/lib/store/stage');
+    const state = {
+      stage: { id: 'target-only', timing: { budgetVersion: 1, durationPolicy: 'target' } },
+    };
+    const spy = vi
+      .spyOn(useStageStore, 'getState')
+      .mockImplementation(() => state as unknown as ReturnType<typeof useStageStore.getState>);
+    try {
+      await expect(calibrateCompletedCourse()).resolves.toEqual({ attempts: 0, changed: 0 });
+      expect(mockFetch).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it.each([false, true])(

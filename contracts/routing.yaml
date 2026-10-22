@@ -46,6 +46,12 @@ environments:
       - type: proxy
         path: /teacher/*
         service: teacher
+      - blank_before: true
+        comment:
+          - The PPTX importer is loaded by the teacher from a root-level URL.
+        type: proxy
+        path: /vendor/maic-importer/*
+        service: teacher
       - type: fallback
         service: platform
 
@@ -82,6 +88,11 @@ environments:
           - routes are unambiguous in the current platform topology.
         type: proxy
         path: /_next/*
+        service: teacher
+      - comment:
+          - Preserve the root URL of the dynamically imported PPTX parser.
+        type: proxy
+        path: /vendor/maic-importer/*
         service: teacher
       - comment:
           - Public static assets of the teacher agent (agent avatars etc.).
@@ -192,6 +203,11 @@ environments:
       - blank_before: true
         type: proxy
         path: /_next/*
+        service: teacher
+      - comment:
+          - Preserve the root URL of the dynamically imported PPTX parser.
+        type: proxy
+        path: /vendor/maic-importer/*
         service: teacher
       - type: proxy
         path: /avatars/*

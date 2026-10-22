@@ -1,5 +1,11 @@
-import { generateAlignedSceneActions as generateSceneActions } from '@/lib/server/aligned-scene-actions';
+import { generateCoursewareSceneActions as generateSceneActions } from '@/lib/server/scene-actions-strategy';
 import { FocusSpeechAlignmentError } from '@/lib/server/aligned-scene-actions';
+import { reviseAlignedSceneNarration } from '@/lib/server/aligned-scene-actions';
+import {
+  validNarrationPace,
+  type NarrationPace,
+  type NarrationRevision,
+} from '@/lib/generation/narration-budget';
 /**
  * Scene Actions Generation API
  *
@@ -56,6 +62,8 @@ export async function POST(req: NextRequest) {
       languageDirective,
       narrationScript,
       durationFeedback,
+      narrationPace,
+      narrationRevision,
     } = body as {
       outline: SceneOutline;
       allOutlines: SceneOutline[];
@@ -73,6 +81,8 @@ export async function POST(req: NextRequest) {
       languageDirective?: string;
       narrationScript?: string;
       durationFeedback?: DurationFeedback;
+      narrationPace?: NarrationPace;
+      narrationRevision?: NarrationRevision;
     };
 
     // Validate required fields
@@ -107,22 +117,40 @@ export async function POST(req: NextRequest) {
     const hasVision = !!modelInfo?.capabilities?.vision;
 
     // AI call function (actions typically don't use vision, but kept for consistency)
+    const generationTimings: Array<{ phase: string; durationMs: number }> = [];
     const aiCall = async (
       systemPrompt: string,
       userPrompt: string,
       images?: Array<{ id: string; src: string }>,
     ): Promise<string> => {
-      if (images?.length && hasVision) {
+      const started = performance.now();
+      try {
+        if (images?.length && hasVision) {
+          const result = await callLLM(
+            {
+              model: languageModel,
+              system: systemPrompt,
+              messages: [
+                {
+                  role: 'user' as const,
+                  content: buildVisionUserContent(userPrompt, images),
+                },
+              ],
+              maxOutputTokens: modelInfo?.outputWindow,
+              maxRetries: 0,
+              abortSignal: req.signal,
+            },
+            'scene-actions',
+            undefined,
+            thinkingConfig,
+          );
+          return result.text;
+        }
         const result = await callLLM(
           {
             model: languageModel,
             system: systemPrompt,
-            messages: [
-              {
-                role: 'user' as const,
-                content: buildVisionUserContent(userPrompt, images),
-              },
-            ],
+            prompt: userPrompt,
             maxOutputTokens: modelInfo?.outputWindow,
             maxRetries: 0,
             abortSignal: req.signal,
@@ -132,21 +160,16 @@ export async function POST(req: NextRequest) {
           thinkingConfig,
         );
         return result.text;
+      } finally {
+        generationTimings.push({
+          phase: systemPrompt.includes('[FOCUS_SPEECH_REVIEW]')
+            ? 'focus-review'
+            : systemPrompt.includes('[NARRATION_REVISION]')
+              ? 'narration-revision'
+              : 'narration-plan',
+          durationMs: Math.round(performance.now() - started),
+        });
       }
-      const result = await callLLM(
-        {
-          model: languageModel,
-          system: systemPrompt,
-          prompt: userPrompt,
-          maxOutputTokens: modelInfo?.outputWindow,
-          maxRetries: 0,
-          abortSignal: req.signal,
-        },
-        'scene-actions',
-        undefined,
-        thinkingConfig,
-      );
-      return result.text;
     };
 
     // ── Build cross-scene context ──
@@ -208,20 +231,35 @@ export async function POST(req: NextRequest) {
         durationBudget,
       }),
       durationFeedback,
+      narrationPace,
     );
-    const actions = await generateSceneActions(actionOutline, generationContent, aiCall, {
+    const generationOptions = {
+      logger: log,
       ctx,
       agents,
       userProfile,
       languageDirective,
-      transformActions: (generated) =>
-        alignActionsToPptNarration(
-          generated,
-          narrationScript,
-          'elements' in generationContent ? generationContent.elements : [],
-          { preserveGeneratedLength: Boolean(durationBudget) },
-        ),
-    });
+    };
+    const actions =
+      narrationRevision && validNarrationPace(narrationPace)
+        ? await reviseAlignedSceneNarration(
+            actionOutline,
+            generationContent,
+            aiCall,
+            narrationRevision,
+            narrationPace,
+            generationOptions,
+          )
+        : await generateSceneActions(actionOutline, generationContent, aiCall, {
+            ...generationOptions,
+            transformActions: (generated) =>
+              alignActionsToPptNarration(
+                generated,
+                narrationScript,
+                'elements' in generationContent ? generationContent.elements : [],
+                { preserveGeneratedLength: Boolean(durationBudget) },
+              ),
+          });
 
     log.info(`Generated ${actions.length} actions for: "${outline.title}"`);
 
@@ -250,10 +288,11 @@ export async function POST(req: NextRequest) {
       `Scene assembled successfully: "${outline.title}" — ${scene.actions?.length ?? 0} actions`,
     );
 
-    return apiSuccess({ scene, previousSpeeches: outputPreviousSpeeches });
+    return apiSuccess({ scene, previousSpeeches: outputPreviousSpeeches, generationTimings });
   } catch (error) {
     if (error instanceof FocusSpeechAlignmentError) {
-      return apiError('FOCUS_SPEECH_ALIGNMENT_FAILED', 422, error.message);
+      log.warn(`Focus/speech validation rejected page "${outlineTitle}":`, error.issues);
+      return apiError('FOCUS_SPEECH_ALIGNMENT_FAILED', 422, error.message, error.issues.join('\n'));
     }
     log.error(
       `Scene actions generation failed [scene="${outlineTitle ?? 'unknown'}", model=${resolvedModelString ?? 'unknown'}]:`,

@@ -16,7 +16,8 @@ const routes = JSON.parse(execFileSync(python,
 test('real route contract keeps platform, student and teacher APIs separate', () => {
   for (const [url, port] of [['/api/v1/internal/student/authorize', 8080],
     ['/api/session/health', 8000], ['/api/student/profile', 8000], ['/api/lessons', 8000],
-    ['/api/generate', 3200], ['/_next/a.js', 3200], ['/login', 8080], ['/app', 8000]]) {
+    ['/api/generate', 3200], ['/_next/a.js', 3200],
+    ['/vendor/maic-importer/index.js', 3200], ['/login', 8080], ['/app', 8000]]) {
     assert.equal(routeFor(url, routes).port, port, url);
   }
 });

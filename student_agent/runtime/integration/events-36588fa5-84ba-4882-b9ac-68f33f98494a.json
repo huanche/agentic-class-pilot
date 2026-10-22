@@ -1,0 +1,62 @@
+[
+ {
+  "user_id": "e2e-011986035112",
+  "course_id": "ch3-sched-course-e2e",
+  "publication_id": "ch3sched",
+  "classroom_id": null,
+  "event_type": "session_started",
+  "event_id": "session_started-1792501200938",
+  "payload": {},
+  "recorded_at": 1792501200938
+ },
+ {
+  "user_id": "e2e-011986035112",
+  "course_id": "ch3-sched-course-e2e",
+  "publication_id": "ch3sched",
+  "classroom_id": null,
+  "event_type": "lesson_began",
+  "event_id": "lesson_began-1792501201130",
+  "payload": {},
+  "recorded_at": 1792501201130
+ },
+ {
+  "user_id": "e2e-011986035112",
+  "course_id": "ch3-sched-course-e2e",
+  "publication_id": "ch3sched",
+  "classroom_id": null,
+  "event_type": "media_done",
+  "event_id": "media_done-__complete__",
+  "payload": {
+   "sceneId": "__complete__",
+   "segmentId": null
+  },
+  "recorded_at": 1792501202174
+ },
+ {
+  "user_id": "e2e-011986035112",
+  "course_id": "ch3-sched-course-e2e",
+  "publication_id": "ch3sched",
+  "classroom_id": null,
+  "event_type": "student_message",
+  "event_id": "student_message-1792501203110",
+  "payload": {
+   "phase": "tutoring"
+  },
+  "recorded_at": 1792501203110
+ },
+ {
+  "user_id": "e2e-011986035112",
+  "course_id": "ch3-sched-course-e2e",
+  "publication_id": "ch3sched",
+  "classroom_id": null,
+  "event_type": "tutoring_question",
+  "event_id": "tutoring_question-1792501203111",
+  "payload": {
+   "kp_id": "KP-002",
+   "question": "小检测：请用自己的话说说「三级调度」讲的是什么，最好举个例子。",
+   "hint_given": false,
+   "asked_at": "2026-10-20T21:00:03+08:00"
+  },
+  "recorded_at": 1792501203111
+ }
+]

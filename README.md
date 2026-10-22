@@ -164,6 +164,7 @@ Get-NetTCPConnection -State Listen -LocalPort 8088,8080,3200,8000
 - `teacher_agent/PLATFORM-INTEGRATION.md`
 - `teacher_agent/README-zh.md`
 - `student_agent/README.md`
+- [学生端运行机制：输入、输出与数据更新](docs/student-runtime-mechanism.md)
 
 ## 开源说明
 

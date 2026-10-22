@@ -25,7 +25,8 @@ import type { AgentEvent } from '@earendil-works/pi-agent-core';
 import { flushStageSave, useStageStore } from '@/lib/store/stage';
 import { useCanvasStore } from '@/lib/store/canvas';
 import { getCurrentModelConfig } from '@/lib/utils/model-config';
-import type { SceneContextMap } from '@/app/api/agent/edit/route';
+import type { SceneContextMap } from '@/lib/server/agent-edit';
+import { agentEditEndpoint, agentEditError } from './agent-edit-request';
 import { mergeAssistantParts, type PiPart } from './merge-assistant-parts';
 import { resolveSceneOutline } from './resolve-scene-outline';
 import { planRegenerateApply, type RegenerateDetails } from './apply-regenerate';
@@ -55,10 +56,15 @@ import { useThinkingTimers } from './thinking-timers';
 import { useSceneRuntimeErrors } from '@/lib/store/scene-runtime-errors';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { editElementsApplyCorrectionKey } from './edit-elements-result';
+import { reviewSceneContext } from './review-scene-context';
+import { consumeEditStream, EDIT_CONNECTION_INTERRUPTED } from './consume-edit-stream';
+import { prepareRegeneratedAudio } from './prepare-regenerated-audio';
+import { useSettingsStore } from '@/lib/store/settings';
 
 export interface UseAgentRuntimeOptions {
   scene?: { id: string; title: string };
   isSendDisabled?: boolean;
+  currentSceneOnly?: boolean;
 }
 
 /** A prior conversation turn sent to the server so the agent has memory. */
@@ -464,13 +470,55 @@ export function useAgentRuntime(opts: UseAgentRuntimeOptions) {
           const scene = details.sceneId
             ? useStageStore.getState().getSceneById(details.sceneId)
             : null;
-          const { snapshot, patch } = planRegenerateApply(details, scene, e.toolName);
+          const plan = planRegenerateApply(details, scene, e.toolName);
+          const { snapshot } = plan;
+          let { patch } = plan;
+          if (scene && patch?.actions?.some((action) => action.type === 'speech') && !e.isError) {
+            const owner = abortRef.current;
+            const settings = useSettingsStore.getState();
+            toolResultsRef.current.set(e.toolCallId, {
+              result: { ...e.result, __audioPending: true },
+              isError: false,
+            });
+            refresh();
+            try {
+              const { generateTTSForScene, removeFreshTtsAllocations } =
+                await import('@/lib/hooks/use-scene-generator');
+              patch = await prepareRegeneratedAudio(scene, patch, {
+                enabled: settings.ttsEnabled,
+                providerId: settings.ttsProviderId,
+                language: useStageStore.getState().stage?.languageDirective,
+                signal: owner?.signal,
+                isCurrent: () =>
+                  abortRef.current === owner &&
+                  useStageStore.getState().getSceneById(scene.id) === scene,
+                generate: generateTTSForScene,
+                dispose: removeFreshTtsAllocations,
+              });
+              if (owner?.signal.aborted || abortRef.current !== owner) return;
+              if (useStageStore.getState().getSceneById(scene.id) !== scene)
+                throw new Error('配音期间本页发生了变化，请重新提交修改建议。');
+              toolResultsRef.current.set(e.toolCallId, { result: e.result, isError: false });
+            } catch (error) {
+              if (abortRef.current !== owner) return;
+              toolResultsRef.current.set(e.toolCallId, {
+                result: owner?.signal.aborted
+                  ? { __stopped: true }
+                  : { details: { sceneId: scene.id, content: null, actions: [] } },
+                isError: !owner?.signal.aborted,
+              });
+              throw error;
+            }
+          }
           // Capture the applied patch as the snapshot's `redo` so an undo can be
           // resumed (the Restore button toggles undo ↔ resume).
           if (snapshot)
             useRegenSnapshots
               .getState()
-              .setSnapshot(e.toolCallId, patch ? { ...snapshot, redo: patch } : snapshot);
+              .setSnapshot(
+                e.toolCallId,
+                patch ? { ...snapshot, timing: scene?.timing, redo: patch } : snapshot,
+              );
           if (patch && details.sceneId) {
             // Apply to the stage store and keep the OPEN slide edit session in
             // lockstep — else the canvas keeps rendering its stale history.present
@@ -560,7 +608,7 @@ export function useAgentRuntime(opts: UseAgentRuntimeOptions) {
         // a server-side provider, so the agent would 500 when no server key is
         // configured even though generation works with the user's own config.
         const cfg = getCurrentModelConfig();
-        const res = await fetch('/api/agent/edit', {
+        const res = await fetch(agentEditEndpoint(stage?.id), {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -573,7 +621,11 @@ export function useAgentRuntime(opts: UseAgentRuntimeOptions) {
             message: userText,
             scene: opts.scene,
             history,
-            sceneContextMap,
+            sceneContextMap: reviewSceneContext(
+              sceneContextMap,
+              opts.scene?.id,
+              !!opts.currentSceneOnly,
+            ),
             // Selection-aware edit_elements: prefer "this title" against the
             // current canvas selection (trusted client state, not model-authored).
             selection: useCanvasStore.getState().activeElementIdList,
@@ -583,34 +635,16 @@ export function useAgentRuntime(opts: UseAgentRuntimeOptions) {
             ...(cfg.thinkingConfig ? { thinkingConfig: cfg.thinkingConfig } : {}),
           }),
           signal: abort.signal,
+        }).catch((error) => {
+          if (abort.signal.aborted) throw error;
+          throw new Error(EDIT_CONNECTION_INTERRUPTED);
         });
-        if (!res.ok || !res.body) throw new Error(`agent request failed: ${res.status}`);
+        if (!res.ok || !res.body) throw new Error(await agentEditError(res));
 
-        const reader = res.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = '';
-        for (;;) {
-          const { value, done } = await reader.read();
-          if (done) break;
-          buffer += decoder.decode(value, { stream: true });
-          const chunks = buffer.split('\n\n');
-          buffer = chunks.pop() ?? '';
-          for (const chunk of chunks) {
-            const line = chunk.split('\n').find((l) => l.startsWith('data:'));
-            if (!line) continue;
-            const json = line.slice(5).trim();
-            if (!json || json === '{}') continue;
-            let event: AgentEvent;
-            try {
-              event = JSON.parse(json) as AgentEvent;
-            } catch {
-              continue;
-            }
-            // Skip late events from a superseded run (don't apply stale tool
-            // results to the stage or rewrite the new run's message).
-            if (isCurrent()) await handleEvent(event, refresh, assistantId);
-          }
-        }
+        await consumeEditStream(res, async (event) => {
+          // A stopped or superseded turn must never apply a late tool result.
+          if (isCurrent()) await handleEvent(event, refresh, assistantId);
+        });
       } catch (err) {
         // User-initiated stop — keep whatever streamed, don't surface an error.
         if (abort.signal.aborted) {
@@ -667,7 +701,7 @@ export function useAgentRuntime(opts: UseAgentRuntimeOptions) {
         }
       }
     },
-    [buildAssistant, handleEvent, opts.scene, t],
+    [buildAssistant, handleEvent, opts.scene, opts.currentSceneOnly, t],
   );
 
   // Stop the current response: abort the fetch (cancels the server stream) and

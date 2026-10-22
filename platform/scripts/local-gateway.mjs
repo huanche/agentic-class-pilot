@@ -1,9 +1,12 @@
 import http from 'node:http';
 import net from 'node:net';
+import {pathToFileURL} from 'node:url';
 const teacherPages = /^\/(?:_next|avatars|teacher-workspace|course-space|classroom-player|classes|classroom|prepare|review|generation-preview|settings|logo-horizontal\.png)(?:\/|\?|$)/;
-function target(raw) {
+export function target(raw) {
   const path = new URL(raw, 'http://localhost').pathname;
   if (path.startsWith('/teacher/')) return {port:3200,path:raw.slice(8)};
+  // The browser imports this module from a root URL even on /teacher pages.
+  if (path.startsWith('/vendor/maic-importer/')) return {port:3200,path:raw};
   if (path === '/app' || path.startsWith('/app/') || path.startsWith('/api/session/')) return {port:8000,path:raw};
   if (path.startsWith('/api/v1/')) return {port:8080,path:raw};
   if (path.startsWith('/api/') || teacherPages.test(path)) return {port:3200,path:raw};
@@ -29,4 +32,6 @@ server.on('upgrade',(req,socket,head)=>{
   });
   upstream.on('error',()=>socket.destroy());socket.on('error',()=>upstream.destroy());
 });
-server.listen(8088,'127.0.0.1',()=>console.log('Local gateway ready http://localhost:8088'));
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  server.listen(8088,'127.0.0.1',()=>console.log('Local gateway ready http://localhost:8088'));
+}

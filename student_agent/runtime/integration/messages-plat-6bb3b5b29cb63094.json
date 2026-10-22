@@ -1,0 +1,50 @@
+[
+ {
+  "seq": 1,
+  "role": "teacher",
+  "phase": "guided_learning",
+  "content": "当前没有接入 AI 模型，无法进行对话。请先在平台的模型设置里配置好模型后再试。"
+ },
+ {
+  "seq": 2,
+  "role": "teacher",
+  "phase": "tutoring",
+  "content": "视频全部看完啦！接下来是课后辅导：我围绕你自己的情况，把这节课的内容再过一遍。\n\n本节课的知识点：\n1. 调度是什么\n2. 三级调度\n3. 调度评价指标\n4. FCFS 与 SJF\n5. 抢占式与非抢占式\n6. 时间片轮转与多级反馈队列\n\n你可以先告诉我（都可以省略，不说我就自己安排）：\n- 想按什么顺序复习，比如「先 2 再 1」；\n- 哪个编号的知识点还没听懂；\n- 给自己的掌握情况自评几颗星（1–5 星）；\n- 打算复习多长时间，比如「复习 15 分钟」。"
+ },
+ {
+  "seq": 3,
+  "role": "student",
+  "phase": "tutoring",
+  "content": "那我准备好了"
+ },
+ {
+  "seq": 4,
+  "role": "teacher",
+  "phase": "tutoring",
+  "content": "小检测：请用自己的话说说「调度是什么」讲的是什么，最好举个例子。"
+ },
+ {
+  "seq": 5,
+  "role": "student",
+  "phase": "tutoring",
+  "content": "我的作答"
+ },
+ {
+  "seq": 6,
+  "role": "teacher",
+  "phase": "tutoring",
+  "content": "{\"verdict\": \"wrong\", \"note\": \"stub\"}"
+ },
+ {
+  "seq": 7,
+  "role": "student",
+  "phase": "tutoring",
+  "content": "我的作答"
+ },
+ {
+  "seq": 8,
+  "role": "teacher",
+  "phase": "tutoring",
+  "content": "{\"verdict\": \"wrong\", \"note\": \"stub\"}"
+ }
+]

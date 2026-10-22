@@ -1,0 +1,73 @@
+{
+ "schemaVersion": 1,
+ "sessionId": "plat-5b0fbd764cbb2572",
+ "courseId": "ch3-sched-course-e2e",
+ "publicationId": "ch3sched",
+ "publicationVersion": 1,
+ "classroomId": null,
+ "courseTitle": "操作系统",
+ "lessonElapsedMinutes": 0.0,
+ "knowledgeMastery": {},
+ "stageSnapshots": [
+  {
+   "type": "stage_snapshot",
+   "snapshot_id": "ss-001",
+   "student_id": "00000000-0000-0000-0000-0000000000c3-TutoringIntentTimeTest-a7738e",
+   "lesson_id": "ch3-sched-course-e2e",
+   "stage": "guided_learning",
+   "stage_elapsed_minutes": 0.0,
+   "targets_closed": [],
+   "targets_open": [
+    "KP-001",
+    "KP-002",
+    "KP-003",
+    "KP-004",
+    "KP-005",
+    "KP-006"
+   ],
+   "stars_snapshot": {},
+   "evidence": "本幕无文字证据",
+   "occurred_at": "2026-10-20T20:47:44+08:00"
+  },
+  {
+   "type": "stage_snapshot",
+   "snapshot_id": "ss-002",
+   "student_id": "00000000-0000-0000-0000-0000000000c3-TutoringIntentTimeTest-a7738e",
+   "lesson_id": "ch3-sched-course-e2e",
+   "stage": "tutoring",
+   "stage_elapsed_minutes": 0.0,
+   "targets_closed": [],
+   "targets_open": [],
+   "stars_snapshot": {},
+   "evidence": "本幕无文字证据",
+   "occurred_at": "2026-10-20T20:47:44+08:00"
+  }
+ ],
+ "playedMedia": [
+  {
+   "segment_id": "seg-entry-1",
+   "at": "2026-10-20T20:47:44+08:00"
+  },
+  {
+   "segment_id": "seg-entry-2",
+   "at": "2026-10-20T20:47:44+08:00"
+  },
+  {
+   "segment_id": "seg-entry-3",
+   "at": "2026-10-20T20:47:44+08:00"
+  },
+  {
+   "segment_id": "seg-entry-4",
+   "at": "2026-10-20T20:47:44+08:00"
+  },
+  {
+   "segment_id": "seg-entry-5",
+   "at": "2026-10-20T20:47:44+08:00"
+  },
+  {
+   "segment_id": "seg-entry-6",
+   "at": "2026-10-20T20:47:44+08:00"
+  }
+ ],
+ "endedAt": "2026-10-20T20:47:44+08:00"
+}

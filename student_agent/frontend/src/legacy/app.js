@@ -22,6 +22,7 @@ import { createStage as createSummaryStage } from "./stage-summary.js";
 import { createStage as createReflectStage } from "./stage-reflect.js";
 import { createStage as createDiscussStage } from "./stage-discuss.js";
 import { createStage as createDoneStage } from "./stage-done.js";
+import { mountTutoringMastery, renderTutoringMastery } from "./tutoring-mastery.js";
 
 
 /* ═══════════════════════════════════════════════════════════
@@ -94,6 +95,9 @@ var catalogPromise = null;
 
 /* 后端当前说的那一幕。null 表示还没跟后端对过话 */
 var hostPhase = null;
+/* 后端说的「下一幕」（remaining_stages[0]）。视频播完前，它告诉前端
+   播完之后会去哪：tutoring = 课后辅导，recap_discussion = 原有编排。 */
+var nextStage = null;
 var messageCursor = 0;
 var pollTimer = null;
 
@@ -224,6 +228,8 @@ function renderCourses() {
   if (!courses.length) { grid.textContent = "目前没有已选课程。"; return; }
   courses.forEach(function (course) {
     var available = availableLessons(course);
+    /* 卡片与课程级反馈入口包在同一格子里：反馈入口只在全部课时完成时出现 */
+    var cell = makeNode("div", "course-cell");
     var card = makeNode("button", "course-tile");
     card.type = "button";
     card.appendChild(makeNode("span", "course-tile__stripe"));
@@ -240,7 +246,34 @@ function renderCourses() {
     card.appendChild(stats);
     card.appendChild(makeNode("span", "course-tile__action", "进入课程  →"));
     card.addEventListener("click", function () { go(courseHash(course.courseId)); });
-    grid.appendChild(card);
+    cell.appendChild(card);
+
+    var allDone = course.lessons.length > 0 && course.lessons.every(function (item) {
+      return item.status === "completed" || lessonEndedFlag(item.lessonId);
+    });
+    if (allDone) {
+      var fbBtn = makeNode("button", "course-feedback-btn");
+      fbBtn.type = "button";
+      fbBtn.textContent = "查看课程反馈";
+      var panel = makeNode("div", "course-feedback-panel");
+      panel.hidden = true;
+      panel.appendChild(makeNode("div", "course-feedback-panel__title",
+        "各课时课后反馈（最新版）"));
+      course.lessons.forEach(function (item) {
+        var row = makeNode("a", "course-feedback-row");
+        row.href = "#/review/" + encodeURIComponent(course.courseId)
+          + "/" + encodeURIComponent(item.lessonId);
+        row.textContent = item.title + " · 查看反馈 →";
+        panel.appendChild(row);
+      });
+      fbBtn.addEventListener("click", function (event) {
+        event.stopPropagation();
+        panel.hidden = !panel.hidden;
+      });
+      cell.appendChild(fbBtn);
+      cell.appendChild(panel);
+    }
+    grid.appendChild(cell);
   });
 }
 
@@ -275,6 +308,7 @@ function selectLesson(course, item) {
     sessionId = loadSessionId(item.lessonId);
     lesson = null;
     hostPhase = null;
+    nextStage = null;
     messageCursor = 0;
     resetClassroom();
   }
@@ -341,9 +375,15 @@ var PANE = {
 
 var currentStage = "idle";
 
+/* 本地测试开关（工单 07）：随轮询刷新，视频页据此显示「当作已播完」 */
+var videoSkipAllowed = false;
+/* 固定编号知识点目录（随轮询刷新）：下课页等展示用，与辅导目录同源 */
+var knowledgeCatalog = null;
+
 var owners = {};
 var classStage = null;    /* 课堂模块实例：idle/chat/video 三个子阶段共用 */
 var reviewView = null;    /* 课后（内容待定） */
+var tutoringMasteryEl = null;  /* 课后辅导掌握条：挂在聊天面板顶部，跟轮询刷新 */
 
 /* 页头那枚状态胶囊 —— 进度轨删掉后，这是学生判断「现在在哪一步」
    的唯一依据，所以每一幕切换都要更新它。 */
@@ -364,6 +404,13 @@ function ctxFor() {
     get lessonId() { return currentLessonId; },
     getLesson: function () { return lesson; },
     getPhase: function () { return hostPhase; },
+    /* 本地测试开关（工单 07）：视频页的「当作已播完」按钮是否显示 */
+    getVideoSkipAllowed: function () { return videoSkipAllowed; },
+    /* 固定编号知识点目录（与辅导同源）：下课页等展示用 */
+    getKnowledgeCatalog: function () { return knowledgeCatalog; },
+    /* 视频播完后的下一幕（后端 remaining_stages[0]），播放器收尾文案用它区分
+       「进入课后辅导」和「等老师准备下一环节」 */
+    getNextStage: function () { return nextStage; },
     /* 后端每轮返回后统一交给这里 —— 「完全跟随」的落点 */
     applyServerTurn: applyServerTurn,
     /* POST 响应里的回复是否已被轮询链路投递过。回复是本轮最后一条消息，
@@ -378,6 +425,22 @@ function ctxFor() {
     showStage: setStage,
     toast: showToast,
     goHome: function () { go(lessonHash(currentCourseId, currentLessonId)); },
+    getClassHash: function () { return partHash("class"); },
+    /* 继续辅导（工单 06）：清「课时已结束」标记、把内存里的课时状态复原，
+       然后直接回课堂。不能靠整页 reload——路由改道永远先落在课时 hub；
+       也要就地同步模块阶段，否则 openLessonRoute 看到 ending 会开新会话。 */
+    reopenClassroom: function () {
+      try { localStorage.removeItem("ai-learn.lessonEnded." + currentLessonId); } catch (e) {}
+      var course = courseById(currentCourseId);
+      var item = course && course.lessons.find(function (entry) {
+        return entry.lessonId === currentLessonId;
+      });
+      if (item && item.status === "completed") item.status = "current";
+      hostPhase = "tutoring";
+      currentStage = "chat";
+      nextStage = null;
+      go(partHash("class"));
+    },
     getReviewHash: function () { return partHash("review"); },
     getReplayHash: function () { return partHash("replay"); }
   };
@@ -408,10 +471,28 @@ function applyServerTurn(res) {
   if (typeof res.total === "number") messageCursor = Math.max(messageCursor, res.total);
 
   var phase = res.hostPhase;
+  if (typeof res.next_stage === "string") nextStage = res.next_stage;
 
   if (!isKnown(phase)) {
     console.warn("[app] 后端下发了不认识的 host_phase，已忽略：" + phase);
     return;
+  }
+
+  /* 课后辅导掌握条：每次轮询都刷新——倒计时和系统星级的变化不会伴随阶段变化，
+     所以必须放在「阶段没变就早退」之前维护。 */
+  if (res.tutoring && phase === "tutoring") {
+    if (!tutoringMasteryEl) tutoringMasteryEl = mountTutoringMastery($(PANE.chat));
+    if (tutoringMasteryEl) renderTutoringMastery(tutoringMasteryEl, res.tutoring);
+  } else if (tutoringMasteryEl) {
+    tutoringMasteryEl.remove();
+    tutoringMasteryEl = null;
+  }
+  /* 本地测试开关（工单 07）：随轮询刷新，视频页据此显示「当作已播完」 */
+  if (typeof res.video_skip_allowed === "boolean") {
+    videoSkipAllowed = res.video_skip_allowed;
+  }
+  if (Array.isArray(res.knowledge_points) && res.knowledge_points.length) {
+    knowledgeCatalog = res.knowledge_points;
   }
 
   if (phase === hostPhase) return;      /* 没变，什么都不做 */
@@ -522,6 +603,7 @@ function openLessonRoute() {
     if (hostPhase === "ending") {
       sessionId = renewSessionId(currentLessonId);
       hostPhase = null;
+      nextStage = null;
       messageCursor = 0;
       resetClassroom();
       lesson = null;
@@ -545,12 +627,16 @@ function openLessonRoute() {
       if (error.status !== 404) throw error;
       return startSession({ sessionId: sessionId, lessonId: requestedLessonId });
     }).then(function (state) {
-      if (!shouldRenewSession(state)) return state;
+      if (!shouldRenewSession(state)) {
+        // 重入也校验平台上下文，让旧会话遗漏的空知识点目录得到修复。
+        return startSession({ sessionId: sessionId, lessonId: requestedLessonId });
+      }
       // 换新会话之前先把旧的停掉：后端为它复活的心跳线程否则会一直跑到下课，
       // 在后台把这场"没人上的课"的学情写进这个学生的档案。
       stopSession(sessionId).catch(function () { /* 停不掉也别挡住上课 */ });
       sessionId = renewSessionId(requestedLessonId);
       hostPhase = null;
+      nextStage = null;
       messageCursor = 0;
       resetClassroom();
       return startSession({ sessionId: sessionId, lessonId: requestedLessonId });

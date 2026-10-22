@@ -28,6 +28,12 @@
                     "id": {
                       "type": "string"
                     },
+                    "resourceType": {
+                      "type": "string"
+                    },
+                    "scope": {
+                      "type": "object"
+                    },
                     "title": {
                       "type": "string"
                     }
@@ -38,6 +44,39 @@
                   "type": "object"
                 },
                 "type": "array"
+              },
+              "rubric": {
+                "properties": {
+                  "knowledgePoints": {
+                    "items": {
+                      "properties": {
+                        "expectedConcepts": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "title": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "title",
+                        "expectedConcepts"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "knowledgePoints"
+                ],
+                "type": "object"
               },
               "summary": {
                 "type": "string"

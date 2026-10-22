@@ -286,6 +286,30 @@ describe('fetchClassroomFromApi at the server-media boundary', () => {
     expect((await fetchApi())?.scenes.map((s) => s.id)).toEqual(['scene-1']);
   });
 
+  it('adopts a server job when an old preview cache incorrectly claims completion', async () => {
+    const payload = serverPayload();
+    Object.assign(payload.stage, { generationPlan: { version: 1, complete: true, outlines: [] } });
+    stubNetwork({ payload });
+    await fetchApi();
+    const outlines = [0, 1].map((order) => ({
+      id: `outline-${order}`,
+      order,
+      type: 'slide',
+      title: `Page ${order}`,
+      description: '',
+      keyPoints: [],
+    }));
+    Object.assign(payload.stage, {
+      generationPlan: { version: 1, complete: true, serverJobId: 'cw_server', outlines },
+    });
+    payload.scenes.push({ ...structuredClone(payload.scenes[0]), id: 'server-page', order: 1 });
+    stubNetwork({ payload });
+    const result = await fetchApi();
+    expect(result?.stage.generationPlan?.serverJobId).toBe('cw_server');
+    expect(result?.scenes.map((s) => s.id)).toEqual(['scene-1', 'server-page']);
+    expect(result?.stage.generationPlan?.complete).toBe(true);
+  });
+
   it('marks a clean partial refresh as a read rather than a new server write', async () => {
     const payload = serverPayload();
     Object.assign(payload.stage, { timing: { budgetVersion: 1, expectedAutomaticPages: 3 } });

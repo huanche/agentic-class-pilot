@@ -56,7 +56,9 @@ describe('course-scoped classroom attachment', () => {
   it('persists OpenMAIC scenes before indexing the review artifact', async () => {
     const response = await POST(request(), context);
     expect(response.status).toBe(200);
-    expect(storage.persistClassroom).toHaveBeenCalledWith(classroom, 'http://localhost:8088');
+    expect(storage.persistClassroom).toHaveBeenCalledWith(classroom, 'http://localhost:8088', {
+      source: 'browser',
+    });
     expect(storage.saveCourseArtifact).toHaveBeenCalledWith(
       expect.objectContaining({
         classroomId: classroom.id,

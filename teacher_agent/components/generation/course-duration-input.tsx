@@ -44,7 +44,7 @@ export function CourseDurationInput({
         className={error ? 'text-xs text-red-600' : 'text-xs text-muted-foreground'}
       >
         {error ||
-          '按课程难度填写，留空默认 28 分钟。指自动讲解与演示，不含自主答题、自由讨论或教师暂停。生成后按配音实测校验，目标误差 ±5%。'}
+          '留空默认 28 分钟，用于安排自动讲解与演示。实际时长以生成的配音为准，不含自主答题、自由讨论或教师暂停。'}
       </p>
     </div>
   );

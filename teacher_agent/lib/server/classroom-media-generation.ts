@@ -48,6 +48,9 @@ import { isGeneratedMediaPlaceholder } from '@/lib/media/media-ref';
 import { VOXCPM_AUTO_VOICE_ID, VOXCPM_TTS_PROVIDER_ID } from '@/lib/audio/voxcpm';
 import { type PlatformTtsConfig } from '@/lib/server/platform-user-model-config';
 import { recordGenerationUsage } from '@/lib/server/usage-storage';
+import { generateCachedTts, ttsAudioCacheKey, type AudioCacheStatus } from './tts-audio-cache';
+import { lazyBoundedMap } from '@/lib/utils/concurrency';
+import { ttsConcurrency } from '@/lib/audio/tts-concurrency';
 
 const log = createLogger('ClassroomMedia');
 
@@ -305,12 +308,22 @@ export async function generateTTSForClassroom(
   baseUrl: string,
   ttsOverride?: PlatformTtsConfig | null,
   options?: {
+    /** Independent clips may run concurrently; legacy callers remain serial. */
+    concurrency?: number;
     isolateAudio?: boolean;
     languageDirective?: string;
     signal?: AbortSignal;
     failFast?: boolean;
     recordUsage?: boolean;
     voiceSelection?: CoursewareVoiceSelection;
+    cacheScope?: string;
+    onAudioCache?: (status: AudioCacheStatus) => void;
+    onNarrationSample?: (sample: {
+      identity: string;
+      text: string;
+      seconds: number;
+      speed?: number;
+    }) => void;
   },
 ): Promise<{ generated: number; failed: number; skipped: number }> {
   const audioDir = path.join(CLASSROOMS_DIR, classroomId, 'audio');
@@ -351,7 +364,8 @@ export async function generateTTSForClassroom(
       log.warn('No server TTS provider configured, skipping TTS generation');
       return { generated: 0, failed: 0, skipped: 1 };
     }
-    providerId = ttsProviderIds[0] as TTSProviderId;
+    providerId = (ttsProviderIds.find((id) => id === options?.voiceSelection?.providerId) ||
+      ttsProviderIds[0]) as TTSProviderId;
     apiKey = resolveTTSApiKey(providerId);
   }
   const ttsProvider = TTS_PROVIDERS[providerId as keyof typeof TTS_PROVIDERS];
@@ -395,12 +409,13 @@ export async function generateTTSForClassroom(
 
     // Use scene order to make audio IDs unique across scenes
     const sceneOrder = scene.order;
+    let narrationFailed = false;
 
-    for (const action of scene.actions) {
+    const narrateAction = async (action: NonNullable<Scene['actions']>[number]) => {
       options?.signal?.throwIfAborted();
       if (action.type !== 'speech' || !(action as SpeechAction).text) {
         skipped += 1;
-        continue;
+        return;
       }
       const speechAction = action as ServerTransportSpeechAction;
       // Server transport emits the derived id plus the serving URL; the
@@ -409,7 +424,7 @@ export async function generateTTSForClassroom(
       const audioId = `tts_s${sceneOrder}_${action.id}${renderId ? `_${renderId}` : ''}`;
 
       try {
-        const result = await generateTTS(
+        const result = await generateCachedTts(
           {
             providerId,
             modelId:
@@ -424,21 +439,48 @@ export async function generateTTSForClassroom(
               : undefined,
           },
           speechAction.text,
+          { scope: options?.cacheScope || classroomId, onCache: options?.onAudioCache },
+          async (config, text) => {
+            const result = await generateTTS(config, text);
+            if (options?.recordUsage)
+              void recordGenerationUsage({
+                kind: 'tts',
+                unit: 'character',
+                providerId,
+                modelId: config.modelId,
+                quantity: text.length,
+              });
+            return result;
+          },
         );
-        if (options?.recordUsage)
-          void recordGenerationUsage({
-            kind: 'tts',
-            unit: 'character',
-            providerId,
-            modelId: byokModel || DEFAULT_TTS_MODELS[providerId as keyof typeof DEFAULT_TTS_MODELS],
-            quantity: speechAction.text.length,
-          });
         options?.signal?.throwIfAborted();
 
         const outputFormat = result.format || format;
         const audio =
           outputFormat === 'wav' ? finalizeWav(Buffer.from(result.audio)) : result.audio;
         audioSeconds[action.id] = measureAudioDuration(audio, outputFormat) ?? undefined;
+        if (audioSeconds[action.id])
+          options?.onNarrationSample?.({
+            identity: ttsAudioCacheKey(
+              {
+                providerId,
+                modelId:
+                  byokModel ||
+                  DEFAULT_TTS_MODELS[providerId as keyof typeof DEFAULT_TTS_MODELS] ||
+                  '',
+                apiKey,
+                baseUrl: ttsBaseUrl,
+                voice,
+                speed: speechAction.speed,
+                providerOptions: { languageType: options?.languageDirective },
+              },
+              '__narration-pace__',
+              options.cacheScope || classroomId,
+            ),
+            text: speechAction.text,
+            seconds: audioSeconds[action.id]!,
+            speed: speechAction.speed,
+          });
         const filename = `${audioId}.${outputFormat}`;
         await fs.writeFile(path.join(audioDir, filename), audio);
 
@@ -451,11 +493,29 @@ export async function generateTTSForClassroom(
         log.info(`Generated TTS: ${filename} (${result.audio.length} bytes)`);
       } catch (err) {
         options?.signal?.throwIfAborted();
-        if (options?.failFast) throw err;
+        if (options?.failFast) {
+          narrationFailed = true;
+          throw err;
+        }
         failed += 1;
         log.warn(`TTS generation failed for action ${action.id}:`, err);
       }
-    }
+    };
+    // Observe every in-flight result before cleanup. A rejected clip must not
+    // keep writing audio after its page has been discarded or cancelled.
+    const results = await Promise.allSettled(
+      lazyBoundedMap(
+        scene.actions,
+        options?.concurrency == null ? 1 : ttsConcurrency(options.concurrency),
+        narrateAction,
+        { shouldContinue: () => !narrationFailed && !options?.signal?.aborted },
+      ),
+    );
+    options?.signal?.throwIfAborted();
+    const rejection = results.find(
+      (result): result is PromiseRejectedResult => result.status === 'rejected',
+    );
+    if (rejection) throw rejection.reason;
     scene.timing = {
       ...scene.timing,
       measuredDurationSec: measureScenePlaybackSeconds(scene, audioSeconds),

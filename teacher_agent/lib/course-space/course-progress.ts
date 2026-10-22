@@ -78,7 +78,10 @@ export function summarizeCourseProgress(course: CourseSpace, artifacts: CourseAr
       .map((file) => ({ file, lesson })),
   );
   const reviewArtifacts = artifacts.filter(
-    (item) => item.type !== 'course-outline' && ['draft', 'review'].includes(item.status),
+    (item) =>
+      item.type !== 'course-outline' &&
+      item.type !== 'lesson-courseware' &&
+      ['draft', 'review'].includes(item.status),
   );
   if (reviewFiles.length || reviewArtifacts.length)
     todos.push({
@@ -106,11 +109,13 @@ export function summarizeCourseProgress(course: CourseSpace, artifacts: CourseAr
     });
   const unpublished = artifacts.filter(
     (item) =>
-      item.type === 'lesson-courseware' && item.status === 'approved' && !item.classPublicationId,
+      item.type === 'lesson-courseware' &&
+      ['draft', 'review', 'approved'].includes(item.status) &&
+      !item.classPublicationId,
   );
   if (unpublished.length)
     todos.push({
-      title: `${unpublished.length}份已审核课件待发布`,
+      title: `${unpublished.length}份课件待发布`,
       target: { folder: 'courseware', fileId: unpublished[0].id },
     });
   if (!lessons.length)

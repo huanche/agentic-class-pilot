@@ -4,7 +4,7 @@
    取值来源：ORCHESTRATOR.md §2 的
      host_phase: Literal["uninitialized", "intro", "guided_learning",
                          "recap_discussion", "deep_inquiry",
-                         "class_discussion", "ending"]
+                         "class_discussion", "tutoring", "ending"]
 
    前端不决定演到哪一幕，只负责把后端说的那一幕显示出来。
    ═══════════════════════════════════════════════════════════ */
@@ -12,7 +12,10 @@
 /* host_phase → 该显示哪个界面（app.js 的 stage 名）
 
    注意 guided_learning：它内部还有「AI 对话」和「教学视频」两段，
-   后者是前端自己的局部状态，不由 host_phase 区分。 */
+   后者是前端自己的局部状态，不由 host_phase 区分。
+
+   tutoring（课后辅导）复用 chat 界面与轮询：视频播完后课堂
+   直接进入辅导对话，不换新界面体系。 */
 export var UI_OF_PHASE = {
   uninitialized:    "idle",
   intro:            "chat",
@@ -20,6 +23,7 @@ export var UI_OF_PHASE = {
   recap_discussion: "summary",
   deep_inquiry:     "reflect",
   class_discussion: "discuss",
+  tutoring:         "chat",
   ending:           "done"
 };
 
@@ -31,6 +35,7 @@ export var LABEL_OF_PHASE = {
   recap_discussion: "总结复述",
   deep_inquiry:     "深入思考",
   class_discussion: "课堂讨论",
+  tutoring:         "课后辅导",
   ending:           "已结束"
 };
 

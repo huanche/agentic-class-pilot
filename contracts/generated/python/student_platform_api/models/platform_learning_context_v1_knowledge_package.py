@@ -13,6 +13,7 @@ from typing import cast
 
 if TYPE_CHECKING:
   from ..models.platform_learning_context_v1_knowledge_package_entries_item import PlatformLearningContextV1KnowledgePackageEntriesItem
+  from ..models.platform_learning_context_v1_knowledge_package_rubric import PlatformLearningContextV1KnowledgePackageRubric
 
 
 
@@ -27,11 +28,13 @@ class PlatformLearningContextV1KnowledgePackage:
     """
         Attributes:
             entries (list[PlatformLearningContextV1KnowledgePackageEntriesItem] | Unset):
+            rubric (PlatformLearningContextV1KnowledgePackageRubric | Unset):
             summary (str | Unset):
             title (str | Unset):
      """
 
     entries: list[PlatformLearningContextV1KnowledgePackageEntriesItem] | Unset = UNSET
+    rubric: PlatformLearningContextV1KnowledgePackageRubric | Unset = UNSET
     summary: str | Unset = UNSET
     title: str | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
@@ -42,6 +45,7 @@ class PlatformLearningContextV1KnowledgePackage:
 
     def to_dict(self) -> dict[str, Any]:
         from ..models.platform_learning_context_v1_knowledge_package_entries_item import PlatformLearningContextV1KnowledgePackageEntriesItem
+        from ..models.platform_learning_context_v1_knowledge_package_rubric import PlatformLearningContextV1KnowledgePackageRubric
         entries: list[dict[str, Any]] | Unset = UNSET
         if not isinstance(self.entries, Unset):
             entries = []
@@ -50,6 +54,10 @@ class PlatformLearningContextV1KnowledgePackage:
                 entries.append(entries_item)
 
 
+
+        rubric: dict[str, Any] | Unset = UNSET
+        if not isinstance(self.rubric, Unset):
+            rubric = self.rubric.to_dict()
 
         summary = self.summary
 
@@ -62,6 +70,8 @@ class PlatformLearningContextV1KnowledgePackage:
         })
         if entries is not UNSET:
             field_dict["entries"] = entries
+        if rubric is not UNSET:
+            field_dict["rubric"] = rubric
         if summary is not UNSET:
             field_dict["summary"] = summary
         if title is not UNSET:
@@ -74,6 +84,7 @@ class PlatformLearningContextV1KnowledgePackage:
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
         from ..models.platform_learning_context_v1_knowledge_package_entries_item import PlatformLearningContextV1KnowledgePackageEntriesItem
+        from ..models.platform_learning_context_v1_knowledge_package_rubric import PlatformLearningContextV1KnowledgePackageRubric
         d = dict(src_dict)
         _entries = d.pop("entries", UNSET)
         entries: list[PlatformLearningContextV1KnowledgePackageEntriesItem] | Unset = UNSET
@@ -87,12 +98,23 @@ class PlatformLearningContextV1KnowledgePackage:
                 entries.append(entries_item)
 
 
+        _rubric = d.pop("rubric", UNSET)
+        rubric: PlatformLearningContextV1KnowledgePackageRubric | Unset
+        if isinstance(_rubric,  Unset):
+            rubric = UNSET
+        else:
+            rubric = PlatformLearningContextV1KnowledgePackageRubric.from_dict(_rubric)
+
+
+
+
         summary = d.pop("summary", UNSET)
 
         title = d.pop("title", UNSET)
 
         platform_learning_context_v1_knowledge_package = cls(
             entries=entries,
+            rubric=rubric,
             summary=summary,
             title=title,
         )

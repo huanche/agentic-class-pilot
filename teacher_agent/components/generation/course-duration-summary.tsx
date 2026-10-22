@@ -24,16 +24,25 @@ export function CourseDurationSummary({ stage, scenes }: { stage: Stage | null; 
     'too-short': '偏短',
     'too-long': '偏长',
   }[report.status];
-  const busy = running || (report.actualSeconds != null && generationStatus === 'generating');
-  const needsCorrection = report.actualSeconds != null && report.status !== 'within-tolerance';
+  const targetOnly = stage.timing.durationPolicy === 'target';
+  const busy =
+    !targetOnly && (running || (report.actualSeconds != null && generationStatus === 'generating'));
+  const needsCorrection =
+    !targetOnly && report.actualSeconds != null && report.status !== 'within-tolerance';
   const attempts = stage.timing.courseCorrectionAttempts ?? 0;
   return (
     <span className="inline-flex flex-wrap items-center gap-2 text-xs tabular-nums text-violet-700 dark:text-violet-300">
-      <span title="正常语速下的自动讲解与演示。配音实测加已知同步动作时长；不含网络等待、教师暂停、自主答题和自由讨论。单页及整课各最多校正两轮，容差 ±5%；只采用总偏差更小的配音版本。视频或白板时长未测量时不会报告达标。">
+      <span
+        title={
+          targetOnly
+            ? '目标时长用于组织教学内容，实际时长以配音与演示实测为准；不含自主答题和教师暂停，不会为凑时长反复生成。'
+            : '正常语速下的自动讲解与演示。配音实测加已知同步动作时长；不含网络等待、教师暂停、自主答题和自由讨论。单页及整课各最多校正两轮，容差 ±5%；只采用总偏差更小的配音版本。视频或白板时长未测量时不会报告达标。'
+        }
+      >
         目标 {stage.timing.targetDurationMinutes} 分钟 ·{' '}
         {report.actualSeconds == null
           ? `已测 ${report.measuredPages}/${report.expectedPages} 页 · ${status}`
-          : `实测 ${formatPlaybackDuration(report.actualSeconds)} · ${status}`}
+          : `实测 ${formatPlaybackDuration(report.actualSeconds)}${targetOnly ? '' : ` · ${status}`}`}
       </span>
       {busy && <span>整课校正中…</span>}
       {needsCorrection && !busy && attempts < MAX_COURSE_DURATION_CORRECTIONS && (

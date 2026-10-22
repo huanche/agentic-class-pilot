@@ -23,7 +23,24 @@
           "type": "array",
           "items": {
             "type": "object", "required": ["id"],
-            "properties": {"id": {"type": "string"}, "title": {"type": "string"}, "content": {"type": "string"}}
+            "properties": {
+              "id": {"type": "string"}, "title": {"type": "string"}, "content": {"type": "string"},
+              "resourceType": {"type": "string"}, "scope": {"type": "object"}
+            }
+          }
+        },
+        "rubric": {
+          "type": "object", "required": ["knowledgePoints"],
+          "properties": {
+            "knowledgePoints": {
+              "type": "array", "items": {
+                "type": "object", "required": ["id", "title", "expectedConcepts"],
+                "properties": {
+                  "id": {"type": "string"}, "title": {"type": "string"},
+                  "expectedConcepts": {"type": "array", "items": {"type": "string"}}
+                }
+              }
+            }
           }
         }
       }

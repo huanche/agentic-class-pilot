@@ -1,0 +1,35 @@
+[
+ {
+  "user_id": "e2e-012032892897",
+  "course_id": "ch3-sched-course-e2e",
+  "publication_id": "ch3sched",
+  "classroom_id": null,
+  "event_type": "session_started",
+  "event_id": "session_started-1792501203724",
+  "payload": {},
+  "recorded_at": 1792501203724
+ },
+ {
+  "user_id": "e2e-012032892897",
+  "course_id": "ch3-sched-course-e2e",
+  "publication_id": "ch3sched",
+  "classroom_id": null,
+  "event_type": "lesson_began",
+  "event_id": "lesson_began-1792501203866",
+  "payload": {},
+  "recorded_at": 1792501203866
+ },
+ {
+  "user_id": "e2e-012032892897",
+  "course_id": "ch3-sched-course-e2e",
+  "publication_id": "ch3sched",
+  "classroom_id": null,
+  "event_type": "media_done",
+  "event_id": "media_done-__complete__",
+  "payload": {
+   "sceneId": "__complete__",
+   "segmentId": null
+  },
+  "recorded_at": 1792501204915
+ }
+]

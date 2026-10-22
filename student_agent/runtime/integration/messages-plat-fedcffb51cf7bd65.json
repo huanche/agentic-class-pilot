@@ -1,0 +1,14 @@
+[
+ {
+  "seq": 1,
+  "role": "teacher",
+  "phase": "guided_learning",
+  "content": "当前没有接入 AI 模型，无法进行对话。请先在平台的模型设置里配置好模型后再试。"
+ },
+ {
+  "seq": 2,
+  "role": "teacher",
+  "phase": "ending",
+  "content": "当前没有接入 AI 模型，无法进行对话。请先在平台的模型设置里配置好模型后再试。"
+ }
+]

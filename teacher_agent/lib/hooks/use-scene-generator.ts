@@ -458,6 +458,7 @@ export async function calibrateCompletedCourse(
   const stage = initial.stage;
   if (
     stage?.timing?.budgetVersion !== 1 ||
+    stage.timing.durationPolicy === 'target' ||
     courseCalibrations.has(stage.id) ||
     initial.generatingOutlines.length ||
     initial.failedOutlines.length

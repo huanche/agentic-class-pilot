@@ -12,6 +12,7 @@ import hashlib
 import hmac
 import json
 import logging
+import re
 import secrets
 import base64
 import time
@@ -116,6 +117,83 @@ def _published_classroom(session: SessionDep, course_id: uuid.UUID) -> str | Non
              "ORDER BY (a.payload->>'classPublishedAt')::bigint DESC NULLS LAST LIMIT 1"),
         {"id": course_id}).first()
     return row[0] if row else None
+
+
+def _knowledge_points_from_markdown(content: str) -> list[dict]:
+    """知识点工件（markdown）→ rubric 条目。纯函数，供单测共用。
+
+    二级到六级标题都可承载知识点；有子标题的周次/章节是分组，
+    只将末级标题登记为知识点，避免整周内容挤成一项。该标题自己的
+    列表是应会要点，代码围栏内的示例忽略。剥除中文及阿拉伯序号，
+    同标题只保留第一份；ID 按规范后的标题哈希，调整标题层级不改 ID。
+    """
+    sections: list[dict] = []
+    stack: list[dict] = []
+    fence = ""
+    for line in (content or "").splitlines():
+        marker = re.match(r"^ {0,3}(`{3,}|~{3,})(.*)$", line)
+        if fence:
+            if marker and marker[1][0] == fence[0] and len(marker[1]) >= len(fence) and not marker[2].strip():
+                fence = ""
+            continue
+        if marker:
+            fence = marker[1]
+            continue
+        heading = re.match(r"^ {0,3}(#{1,6})[ \t]+(.+?)\s*$", line)
+        if heading:
+            level = len(heading[1])
+            while stack and stack[-1]["level"] >= level:
+                stack.pop()
+            if stack:
+                stack[-1]["has_children"] = True
+            section = {"level": level, "title": heading[2], "lines": [], "has_children": False}
+            sections.append(section)
+            stack.append(section)
+        elif stack:
+            stack[-1]["lines"].append(line)
+
+    points: list[dict] = []
+    seen_titles: set[str] = set()
+    for section in sections:
+        if section["level"] < 2 or section["has_children"]:
+            continue
+        title = re.sub(r"\s+#+\s*$", "", section["title"]).strip()
+        title = re.sub(r"^(?:[一二三四五六七八九十百]+、\s*|\d+(?:\.\d+)*[、.)．]?[ \t]+)", "", title).strip()
+        if not title or title in seen_titles:
+            continue
+        seen_titles.add(title)
+        bullets = []
+        for line in section["lines"]:
+            m = re.match(r"^[-*][ \t]+(.+)$", line.strip())
+            if m and m.group(1).strip():
+                bullets.append(m.group(1).strip()[:200])
+        points.append({
+            "id": "kp-" + hashlib.sha1(title.encode("utf-8")).hexdigest()[:10],
+            "title": title,
+            "expectedConcepts": bullets,
+        })
+    return points
+
+
+def _knowledge_artifact_rubric(entries: list[dict], lesson_id: str | None) -> dict | None:
+    """已发布条目里的「知识点」工件 → rubric（学生端知识点的唯一来源）。
+
+    优先取课时归属匹配 lesson_id 的那份；全课程只有一份时允许无归属匹配。
+    没有 knowledge-points 工件 → None：学生端开场会明说「没有登记知识点」，
+    按视频内容复习（2026-10-21 与用户对齐的决策：不做其他兜底）。
+    """
+    docs = [entry for entry in entries
+            if entry.get("resourceType") == "knowledge-points"]
+    if not docs:
+        return None
+    chosen = next((entry for entry in docs
+                   if (entry.get("scope") or {}).get("lessonId") == lesson_id), None)
+    if chosen is None and len(docs) == 1:
+        chosen = docs[0]
+    if chosen is None:
+        return None
+    points = _knowledge_points_from_markdown(str(chosen.get("content") or ""))
+    return {"knowledgePoints": points} if points else None
 
 
 class StudentAuthorization(BaseModel):
@@ -233,6 +311,9 @@ def published_course_entries(session: SessionDep, course_id: uuid.UUID) -> list[
             entries.append({"id": item["id"], "title": item.get("title", ""),
                             "content": item.get("content", ""), "citations": item.get("citations", []),
                             "scope": item.get("scope"), "kind": "artifact",
+                            # 教师确认的类型保存在发布归属中，兼容旧版顶层字段。
+                            "resourceType": (item.get("publicationPlacement") or {}).get("resourceType")
+                                            or item.get("resourceType"),
                             "publicationId": item["classPublicationId"]})
     for module in course.get("modules", []):
         for lesson in module.get("lessons", []):
@@ -240,6 +321,9 @@ def published_course_entries(session: SessionDep, course_id: uuid.UUID) -> list[
                 if visible(item):
                     entries.append({"id": item["id"], "title": item.get("title", ""),
                                     "content": item.get("content", ""), "kind": "lesson-file",
+                                    # 课时知识点是 lesson.files，不是独立工件；两条链路都需保留类型。
+                                    "resourceType": (item.get("publicationPlacement") or {}).get("resourceType")
+                                                    or item.get("type"),
                                     "scope": {"type": "lesson", "lessonId": lesson["id"]},
                                     "publicationId": item["classPublicationId"]})
     for item in course.get("materials", []):
@@ -389,17 +473,27 @@ def student_learning_context(body: LearningContextRequest, session: SessionDep,
 
         lessons = _published_lessons(session, course_id, user_id)
         classroom_id = lessons[0]["classroom"]["id"] if lessons else None
+        knowledge_package = {
+            "title": package_payload.get("title") or course[0],
+            "summary": package_payload.get("summary") or "",
+            "entries": package_payload.get("entries") or [],
+        }
+        # 知识点只来自教师发布的「知识点」文件（markdown：末级标题=知识点，
+        # 其下列表=应会要点），以 rubric 结构化下发（学生端 evaluation 优先读
+        # rubric）。没有工件 → 不下发 rubric，学生端开场明说「没有登记知识
+        # 点」，按视频内容复习——不做场景大纲/知识图谱等其他兜底
+        # （2026-10-21 与用户对齐的决策）。锚定课时与课堂选择同源（lessons[0]）。
+        rubric = _knowledge_artifact_rubric(
+            knowledge_package["entries"], lessons[0]["id"] if lessons else None)
+        if rubric:
+            knowledge_package["rubric"] = rubric
         context = {
             "schemaVersion": SCHEMA_VERSION,
             "userId": str(user_id),
             "courseId": str(course_id),
             "courseTitle": course[0],
             "publication": {"id": package_payload.get("id"), "version": int(package_payload.get("version") or 1)},
-            "knowledgePackage": {
-                "title": package_payload.get("title") or course[0],
-                "summary": package_payload.get("summary") or "",
-                "entries": package_payload.get("entries") or [],
-            },
+            "knowledgePackage": knowledge_package,
             "classroom": _classroom_view(session, classroom_id) if classroom_id else None,
             "lessons": lessons,
             "grounding": _grounding_context(session, course_id),

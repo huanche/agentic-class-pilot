@@ -169,14 +169,14 @@ def _published_lessons(raw_lessons: Any, context: CourseLearningContext) -> List
 def load_plan_for_session(state) -> Optional[dict]:
     """Convert the session's learning context into a lesson-plan dict.
 
-    Returns None when the session carries no learning context (demo mode:
-    the orchestrator then loads its local lesson-plan.json).
+    Returns None when the session carries no platform learning context; the
+    orchestrator treats that as a failed platform launch and refuses to start.
 
     The generated plan reuses the orchestrator's plan schema so the state
     machine (stages, segments, advance policy) keeps working unchanged.
     """
     context = state.get("learning_context") if isinstance(state, dict) else None
-    if not context:  # None or empty dict (demo mode)
+    if not context:
         return None
     if isinstance(context, dict):
         context = CourseLearningContext(**context)
@@ -248,3 +248,43 @@ def load_plan_for_session(state) -> Optional[dict]:
         "knowledge_sources": [entry.model_dump() for entry in context.knowledge_package.entries],
     }
     return plan
+
+
+def repair_empty_knowledge_catalog(state: Dict[str, Any]) -> bool:
+    """重入时补齐旧桥接遗漏的空目录，不替换已有目录或跨发布版改课。
+
+    只改知识点评价与段落关联；课件内容、时间、星级和对话保留。
+    旧空目录生成的无归属检测题清掉，下次发言再按真实知识点出题。
+    """
+    plan = state.get("lesson_plan") or {}
+    if plan.get("source") != "platform-published" or plan.get("knowledge_points"):
+        return False
+    context = state.get("learning_context") or {}
+    if not context:
+        return False
+    if isinstance(context, dict):
+        context = CourseLearningContext(**context)
+    if (context.course_id != plan.get("course_id")
+            or context.publication.id != plan.get("publication_id")
+            or context.publication.version != plan.get("publication_version")
+            or not context.evaluation.knowledge_points
+            or not any(lesson.id == plan.get("lesson_id") for lesson in context.lessons)):
+        return False
+    fresh = load_plan_for_session({"learning_context": context, "lesson_id": plan["lesson_id"]})
+    if not fresh:
+        return False
+    segments = {segment["id"]: segment for segment in fresh["segments"]}
+    state["lesson_plan"] = {
+        **plan,
+        "knowledge_points": fresh["knowledge_points"],
+        "evaluation": fresh["evaluation"],
+        "knowledge_sources": fresh["knowledge_sources"],
+        "segments": [{**segment, "knowledge_point_ids":
+                      segments.get(segment["id"], {}).get("knowledge_point_ids", [])}
+                     for segment in plan.get("segments", [])],
+    }
+    question = state.get("tutoring_question")
+    if question and not question.get("kp_id"):
+        state["tutoring_question"] = None
+        state["tutoring_last_judgement"] = None
+    return True

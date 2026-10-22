@@ -1,4 +1,4 @@
-import { generateAlignedSceneActions as generateSceneActions } from '@/lib/server/aligned-scene-actions';
+import { generateCoursewareSceneActions as generateSceneActions } from '@/lib/server/scene-actions-strategy';
 /**
  * App adapters around the store-independent @openmaic/generation scene layer.
  */

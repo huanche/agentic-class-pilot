@@ -36,13 +36,15 @@ try {
     }});
     window.stage = createStage({lessonId:'lesson-selected',sessionId:'finished-session',
       getLesson:()=>({classroomId:'class-selected',segments:[]}),setStatus:()=>{},
+      showStage:()=>{},
       getReviewHash:()=> '#/review/course/lesson-selected',toast:()=>{},
       replySeenByPoll:()=>false,applyServerTurn:()=>{}});
     stage.mount();
     stage.startReplay();
   });
   await page.waitForFunction(() => window.mounts === 1);
-  assert.equal(await page.locator('#btn-skip-video').getAttribute('hidden'), '');
+  // 「跳过视频」按钮已随视频自动推进改造移除（03c3866）：回放里同样不该出现
+  assert.equal(await page.locator('#btn-skip-video').count(), 0);
   assert.equal(await page.locator('#btn-exit-replay').getAttribute('hidden'), null);
   assert.equal(await page.evaluate(() => playerContext.classroomId), 'class-selected');
   await page.evaluate(() => playerContext.onEnded('scene', 'event'));

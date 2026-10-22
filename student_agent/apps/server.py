@@ -21,11 +21,9 @@
 from __future__ import annotations
 
 import hashlib
-import hmac
 import json
 import os
 import re
-import secrets
 import sys
 import threading
 import time
@@ -37,18 +35,20 @@ sys.path.insert(0, str(ROOT / "orchestrator"))
 
 from agent import (  # noqa: E402
     EVENT_BEGIN, EVENT_MEDIA_DONE, EVENT_NEXT_STAGE, EVENT_END_LESSON,
-    STAGE_NAMES, STAR_STATUS, build_graph, initial_state, is_uploaded_lesson,
-    kp_title, lesson_source_label, list_lesson_ids, load_lesson,
-    run_turn_stateless, safe_lesson_id, save_lesson, validate_plan,
+    STAGE_NAMES, STAR_STATUS, build_graph, initial_state,
+    knowledge_catalog_public, kp_title, run_turn_stateless,
+    tutoring_feedback_payload, tutoring_public,
 )
 from llm_override import set_llm_override  # noqa: E402
+from apps.integration.data_cleanup import without_self_assessment  # noqa: E402
+from apps.integration.mastery import normalize_mastery_state  # noqa: E402
 
 try:
-    from fastapi import FastAPI, HTTPException, Request
+    from fastapi import FastAPI, HTTPException
     from fastapi.middleware.cors import CORSMiddleware
-    from fastapi.responses import FileResponse, Response
+    from fastapi.responses import FileResponse, HTMLResponse, Response
     from fastapi.staticfiles import StaticFiles
-    from pydantic import BaseModel, Field
+    from pydantic import BaseModel
 except ImportError:  # pragma: no cover
     raise SystemExit("缺依赖：pip install fastapi uvicorn")
 
@@ -114,9 +114,10 @@ def _path(sid: str) -> Path:
 
 
 def _persist(sid: str, state: dict) -> None:
+    normalize_mastery_state(state)
     SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
     _path(sid).write_text(
-        json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8"
+        json.dumps(without_self_assessment(state), ensure_ascii=False, indent=2), encoding="utf-8"
     )
 
 
@@ -126,12 +127,12 @@ def _restore(sid: str) -> dict | None:
     if not p.is_file():
         return None
     try:
-        saved = json.loads(p.read_text(encoding="utf-8"))
+        saved = without_self_assessment(json.loads(p.read_text(encoding="utf-8")))
     except json.JSONDecodeError:
         return None
     merged = initial_state(sid)
     merged.update(saved)
-    return merged
+    return normalize_mastery_state(merged)
 
 
 def _get(sid: str) -> dict:
@@ -236,17 +237,30 @@ def _step(sid: str, message: str = "", speaker: str = "student",
             ctx = st.get("platform") or {}
             if ctx.get("userId"):
                 from apps.integration import persistence
-                seen = s.get("_persisted_message_seq", 0)
+                # 两个标记分工：_persisted_message_count = 内存里已同步的条数；
+                # _persisted_message_seq = 库里最后写到的编号。会话被重建
+                # （同 key 重新 start）后两者不再相等——库里已有旧消息时，
+                # 新消息若从 seq 1 编起会被 (session_key, seq) 幂等键静默
+                # 吞掉，所以首sync先读库里的最大 seq 接着编。
+                last_seq = s.get("_persisted_message_seq")
+                if last_seq is None:
+                    try:
+                        last_seq = persistence.max_message_seq(sid)
+                    except Exception:
+                        last_seq = 0
                 messages = s.get("messages") or []
-                for index, msg in enumerate(messages[seen:], start=seen + 1):
+                done = s.get("_persisted_message_count", 0)
+                for msg in messages[done:]:
+                    last_seq += 1
                     persistence.upsert_message(
                         session_key=sid, user_id=ctx["userId"],
                         course_id=ctx.get("courseId", ""),
                         publication_id=ctx.get("publicationId", ""),
-                        seq=index, role=msg.get("role", "student"),
+                        seq=last_seq, role=msg.get("role", "student"),
                         phase=msg.get("phase") or st.get("host_phase"),
                         content=msg.get("text", ""))
-                s["_persisted_message_seq"] = len(messages)
+                s["_persisted_message_seq"] = last_seq
+                s["_persisted_message_count"] = len(messages)
                 updates = st.get("mastery_updates") or []
                 for item in updates:
                     persistence.upsert_mastery(
@@ -342,6 +356,63 @@ def _record_learning_event(sid: str, event_type: str,
         )
     except Exception as exc:  # 持久化失败不阻塞课堂，但要留痕
         print(f"[persistence] {event_type} 写入失败: {exc}")
+
+
+def _record_tutoring_event(sid: str, event_type: str, payload: dict) -> None:
+    """辅导的出题/判答事件：平台会话进 learning_events；
+    demo 会话（STUDENT_DEMO_MODE=true）走同一份 record_event 落 runtime JSON。
+    独立态（既非平台也没开 demo）不落盘——事件随会话 state 一起在
+    runtime/sessions 里，仍可追溯。"""
+    s = SESSIONS.get(sid)
+    if not s:
+        return
+    ctx = s.get("platform") or s.get("state", {}).get("platform") or {}
+    if ctx.get("userId"):
+        _record_learning_event(sid, event_type, payload)
+        return
+    try:
+        from apps.integration import config as integration_config
+        from apps.integration import persistence
+        if not integration_config.demo_mode():
+            return
+        persistence.record_event(
+            session_key=sid, user_id="demo", course_id="", publication_id="",
+            event_type=event_type, payload=payload,
+            event_id=f"{event_type}-{int(time.time() * 1000)}",
+        )
+    except Exception as exc:  # 持久化失败不阻塞课堂，但要留痕
+        print(f"[persistence] {event_type} demo 写入失败: {exc}")
+
+
+def _generate_tutoring_feedback(sid: str, trigger_text: str, st: dict) -> None:
+    """学生明确结束课后辅导：生成完整反馈并入库（多版本，只增不改）。
+
+    平台态/演示态走 append_report_version；独立态（无库无 demo）尽力而为：
+    写库失败不拦下课，反馈留在会话缓存里（素材随会话 state 落盘）。
+    教师视角摘要一并入库（本次不建教师端页面）。
+    """
+    payload, teacher_summary = tutoring_feedback_payload(st, trigger_text)
+    s = SESSIONS.get(sid)
+    ctx = (s.get("platform") if s else None) or (st.get("platform") or {})
+    reports = (s or {}).get("tutoring_reports") or []
+    version = len(reports) + 1
+    try:
+        from apps.integration import persistence
+        version = persistence.append_report_version(
+            session_key=sid, user_id=ctx.get("userId", "demo"),
+            course_id=ctx.get("courseId", ""), publication_id=ctx.get("publicationId", ""),
+            payload=payload, teacher_summary=teacher_summary)
+    except Exception as exc:  # 持久化失败不拦下课，但要留痕
+        print(f"[persistence] 辅导反馈写入失败: {exc}")
+    if s is not None:
+        s["tutoring_reports"] = reports + [{
+            "version": version, "payload": payload,
+            "teacher_summary": teacher_summary,
+        }]
+    _record_tutoring_event(sid, "tutoring_feedback", {
+        "version": version, "trigger": payload.get("trigger"),
+        "actual_minutes": payload.get("actual_minutes"),
+    })
 
 
 def _notify_platform_progress(sid: str, event: str) -> None:
@@ -453,74 +524,6 @@ def _preload_disk_sessions() -> None:
                     }
 
 
-def _require_lesson(lesson_id: str) -> tuple[dict, list[dict]]:
-    """取一份课时定义，非法 id 或找不到都 404。"""
-    try:
-        safe_lesson_id(lesson_id)
-    except ValueError as exc:
-        raise HTTPException(404, str(exc)) from exc
-    lesson = load_lesson(lesson_id)
-    if lesson is None:
-        raise HTTPException(404, f"课时不存在：{lesson_id}")
-    return lesson
-
-
-def _lesson_segments(plan: dict, segments: list[dict]) -> list[dict]:
-    """把段落整理成前端要的形状。旧式课时的段落散在 segments/ 目录，
-    新式的内联在同一个课时文件里 —— 两种都由 load_lesson 统一成第二参数。"""
-    result = []
-    elapsed = 0
-    for index, item in enumerate(plan.get("segments") or []):
-        segment_id = item.get("id")
-        detail = next(
-            (s for s in segments
-             if s.get("id") == segment_id or s.get("segment_id") == segment_id),
-            None,
-        ) or {}
-        minutes = float(item.get("minutes") or detail.get("minutes") or 0)
-        start_seconds = round(elapsed * 60)
-        elapsed += minutes
-        result.append({
-            "segmentId": segment_id,
-            "title": detail.get("title") or segment_id,
-            "order": detail.get("order") or index + 1,
-            "startSeconds": start_seconds,
-            "endSeconds": round(elapsed * 60),
-            "knowledgePoints": detail.get("knowledge_points") or [],
-        })
-    return result
-
-
-def _lesson_payload(lesson_id: str) -> dict:
-    plan, raw_segments = _require_lesson(lesson_id)
-    segments = _lesson_segments(plan, raw_segments)
-    knowledge_points = []
-    for segment in segments:
-        for name in segment.get("knowledgePoints") or []:
-            if name not in knowledge_points:
-                knowledge_points.append(name)
-    title = str(plan.get("lesson_title") or plan.get("title") or "本节课")
-    display_title = title.split(" ", 1)[-1] if " " in title else title
-    summary = plan.get("summary") or "；".join(segment["title"] for segment in segments[:3])
-    return {
-        "lessonId": plan.get("lesson_id"),
-        "courseId": plan.get("course_id") or "operating-systems",
-        "course": plan.get("course") or "操作系统",
-        "chapter": plan.get("chapter") or "",
-        # 课程级的三个字段跟着课时一起回，目录接口就不用为了分组再读一遍盘
-        "week": int(plan.get("week") or 0),
-        "courseIcon": plan.get("course_icon") or "▤",
-        "courseSummary": plan.get("course_summary") or "",
-        "title": display_title,
-        "summary": summary or "按照课程计划完成引导学习、复述与深入探究。",
-        "knowledgePointCount": len(knowledge_points),
-        "segmentCount": len(segments),
-        "estimatedMinutes": plan.get("total_minutes"),
-        "knowledgePoints": knowledge_points,
-        "segments": segments,
-    }
-
-
 def _begin_lesson(sid: str) -> dict:
     """起课铃：加载课程计划 → 说开场白 → 切进第一个环节，并开始计时。"""
     s = _get(sid)
@@ -558,546 +561,12 @@ def _running(sid: str) -> dict:
 
 class StartIn(BaseModel):
     session_id: str | None = None
-    student_id: str = "student-001"
-    lesson_id: str = "ch3-process-scheduling"
-    time_scale: float = 1.0        # >1 压缩时间：课前演练用 12 倍把 45 分钟压到 4 分钟
-    launch_token: str | None = None  # 平台签发的可信启动令牌；提供时覆盖 student_id 并绑定课程上下文
+    time_scale: float = 1.0
+    launch_token: str
 
 
 class MessageIn(BaseModel):
     text: str
-
-
-@app.get("/api/student/courses")
-def student_courses(request: Request) -> dict:
-    """课程目录。每门课带一个 `joined` 标记。
-
-    目录本身是公开的（能看见有哪些课），**能上哪门由登录后的选课决定** ——
-    前端据此把没加入的课渲染成"输课程码加入"。
-    """
-    student = _read_student(request.cookies.get(STUDENT_COOKIE, ""))
-    mine = set(_joined_courses(student["studentId"])) if student else set()
-
-    courses: dict[str, dict] = {}
-    for lesson_id in list_lesson_ids():
-        try:
-            lesson = _lesson_payload(lesson_id)
-        except HTTPException:
-            continue                      # 单节课坏了不该拖垮整个目录
-        entry = courses.setdefault(lesson["courseId"], {
-            "courseId": lesson["courseId"],
-            "name": lesson["course"],
-            "summary": lesson["courseSummary"],
-            "icon": lesson["courseIcon"],
-            "joined": lesson["courseId"] in mine,
-            "currentWeek": 0,
-            "lessons": [],
-        })
-        entry["currentWeek"] = max(entry["currentWeek"], lesson["week"])
-        entry["lessons"].append({
-            "lessonId": lesson["lessonId"],
-            "week": lesson["week"],
-            "chapter": lesson["chapter"],
-            "title": lesson["title"],
-            "summary": lesson["summary"],
-            "status": "current",
-            "estimatedMinutes": lesson["estimatedMinutes"],
-            "knowledgePoints": lesson["knowledgePoints"],
-        })
-    return {"ok": True, "courses": list(courses.values())}
-
-
-@app.get("/api/lesson")
-def lesson(lessonId: str) -> dict:
-    return {"ok": True, "lesson": _lesson_payload(lessonId)}
-
-
-@app.get("/api/lesson/video")
-def lesson_video(lessonId: str) -> dict:
-    payload = _lesson_payload(lessonId)
-    url = os.environ.get("LESSON_VIDEO_URL", "").strip()
-    video = None
-    if url:
-        video = {
-            "url": url,
-            "poster": os.environ.get("LESSON_VIDEO_POSTER", "").strip(),
-            "duration": int(payload["estimatedMinutes"] or 0) * 60,
-            "title": f"{payload['title']} · 教学视频",
-            "source": "published",
-        }
-    return {"ok": True, "video": video}
-
-
-# ═══════════════════════════════════════════════════════════════
-# 老师侧：上传课时定义
-#
-# 解决的问题：以前老师要让 AI 知道"这节课讲什么"，只能手工去改
-# rules/KNOWLEDGE-BASE.md、lesson-data/lesson-plan.json、
-# lesson-data/segments/*.json 三处文件；而编排器的 load_context 虽然
-# 会把这些装配进 assembled_prompt，那个字段却从没被送进模型。
-# 现在：写一个接口收课时定义，落盘成 lesson-data/lessons/<id>.json，
-# 由 agent 的 load_context 每轮读进 [本课知识点] 区块，
-# 再由 llm_polish 随 assembled_prompt 一起交给模型。
-# ═══════════════════════════════════════════════════════════════
-
-class KnowledgePointIn(BaseModel):
-    """一个知识点。字段名与 rules/KNOWLEDGE-BASE.md 一致，
-    老师从知识库里复制过来就能直接提交。"""
-    kp_id: str
-    title: str
-    定义: str = ""
-    检测问题: str = ""
-    掌握表现: str = ""
-    为什么这样设计: str = ""
-    如何实现: str = ""
-    解决什么实际问题: str = ""
-    关联学科: str = ""
-
-
-class SegmentIn(BaseModel):
-    id: str
-    minutes: float
-    title: str = ""
-    order: int | None = None
-    knowledge_point_ids: list[str] = Field(default_factory=list)
-    knowledge_points: list[str] = Field(default_factory=list)
-    summary: str = ""
-    content: str = ""
-    source: dict = Field(default_factory=dict)
-
-
-class StageIn(BaseModel):
-    """一个教学阶段。用模型接而不是 list[dict]：minutes 写成字符串时
-    pydantic 会转成数字，而裸 dict 会一路走到 validate_plan 的 sum() 里
-    炸成 500 —— 接口该回 422，不该 500。"""
-    id: str
-    enabled: bool = False
-    minutes: float = 0
-    advance_when: str = "either"
-    delivery: str | None = None
-
-
-class LessonIn(BaseModel):
-    lesson_id: str
-    lesson_title: str
-    total_minutes: float
-    stages: list[StageIn] = Field(default_factory=list)
-    segments: list[SegmentIn] = Field(default_factory=list)
-    knowledge_points: list[KnowledgePointIn] = Field(default_factory=list)
-    advance_policy: dict | None = None
-    course_id: str = "operating-systems"
-    course: str = "操作系统"
-    chapter: str = ""
-    week: int = 0
-    summary: str = ""
-    course_icon: str = ""
-    course_summary: str = ""
-
-
-DEFAULT_ADVANCE_POLICY = {
-    "on_budget_exhausted": "wrap_up",
-    "on_evidence_reached": "advance",
-    "min_stage_minutes": 2,
-    "max_stage_overrun_minutes": 3,
-}
-
-
-@app.post("/api/teacher/lesson")
-def teacher_upsert_lesson(body: LessonIn) -> dict:
-    """老师上传 / 覆盖一份课时定义。
-
-    校验用的就是开课时那一套 validate_plan —— 这里过了，开课就不会再因为
-    计划本身失败。写入是"先写临时文件再原子替换"，避免读端拿到写了一半的 JSON。
-    """
-    try:
-        lesson_id = safe_lesson_id(body.lesson_id)
-    except ValueError as exc:
-        raise HTTPException(400, str(exc)) from exc
-
-    segments = [seg.model_dump() for seg in body.segments]
-    for index, seg in enumerate(segments):
-        seg.setdefault("segment_id", seg["id"])
-        if not seg.get("order"):
-            seg["order"] = index + 1
-
-    doc = {
-        "lesson_id": lesson_id,
-        "lesson_title": body.lesson_title,
-        "course_id": body.course_id,
-        "course": body.course,
-        "chapter": body.chapter,
-        "week": body.week,
-        "summary": body.summary,
-        "course_icon": body.course_icon,
-        "course_summary": body.course_summary,
-        "total_minutes": body.total_minutes,
-        # exclude_none：没写 delivery 的阶段不该落一个 "delivery": null 进文件
-        "stages": [s.model_dump(exclude_none=True) for s in body.stages],
-        "segments": segments,
-        "knowledge_points": [kp.model_dump() for kp in body.knowledge_points],
-        "advance_policy": body.advance_policy or dict(DEFAULT_ADVANCE_POLICY),
-    }
-
-    problems = validate_plan(doc, uploaded=True)
-    if problems:
-        raise HTTPException(
-            422, detail="课时定义校验失败：\n- " + "\n- ".join(problems)
-        )
-
-    path_label = save_lesson(doc)
-
-    # 已经在跑的会话缓存了旧的 lesson_plan（load_plan 幂等），改了也读不到。
-    # 遍历注册表要持锁 —— 心跳线程会并发增删条目，裸迭代可能抛
-    # "dictionary changed size during iteration"。
-    with _REGISTRY_LOCK:
-        running = [
-            sid for sid, s in SESSIONS.items()
-            if s["state"].get("lesson_id") == lesson_id
-            and s["state"].get("lesson_status") == "running"
-        ]
-    return {
-        "ok": True,
-        "lesson_id": lesson_id,
-        "path": path_label,
-        "knowledgePointCount": len(doc["knowledge_points"]),
-        "segmentCount": len(segments),
-        "staleSessions": running,
-        "note": (
-            f"{len(running)} 个正在上课的会话仍在用旧版本，要等它们结束或新建会话才会读到本次改动。"
-            if running else ""
-        ),
-    }
-
-
-@app.get("/api/teacher/lesson/{lesson_id}")
-def teacher_get_lesson(lesson_id: str) -> dict:
-    """回读一份课时定义，确认存进去的是什么（含校验结果）。"""
-    try:
-        safe_lesson_id(lesson_id)
-    except ValueError as exc:
-        raise HTTPException(404, str(exc)) from exc
-    doc, _ = _require_lesson(lesson_id)
-    return {
-        "ok": True,
-        "lesson": doc,
-        "source": lesson_source_label(lesson_id),
-        "problems": validate_plan(doc, uploaded=is_uploaded_lesson(lesson_id)),
-    }
-# ═══════════════════════════════════════════════════════════════
-# 学生账户：自注册 + 用课程码加入
-#
-# 背景：本仓库原本没有任何身份概念 —— 前端 api.js 把 student_id 写死成
-# "student-001"。这一块补上：学生自己注册（学号 + 姓名 + 密码），
-# 拿老师给的课程码加入课程，之后只看得见自己加入的课。
-#
-# 存储（都在 runtime/ 下，已进 .gitignore）：
-#   runtime/accounts.json                       账户表（密码 PBKDF2 哈希，不存明文）
-#   runtime/students/<studentId>/courses.json   该学生的选课
-#   lesson-data/join-codes.json                 课程码（老师侧生成，随仓库走）
-#
-# ⚠️ 边界（别高估它）：
-#   · 密码是 PBKDF2-HMAC-SHA256（20 万轮）+ 每账户独立 salt，服务端校验；
-#     cookie 是 HMAC 签名的，改一个字节即失效。
-#   · **业务端点尚未强制校验 cookie** —— 这层拦得住界面，拦不住 curl。
-#     要真正封住接口需要再加一个 FastAPI 依赖挂到 /api/student/* 与
-#     /api/session/* 上，见 apps/API-SAAS.md §5。
-#   · 没做：token 过期（cookie 有 max_age，token 本身不过期）、
-#     登出黑名单、找回密码、并发登录限制。
-# ═══════════════════════════════════════════════════════════════
-
-ACCOUNTS_PATH = ROOT / "runtime" / "accounts.json"
-JOIN_CODES_PATH = ROOT / "lesson-data" / "join-codes.json"
-STUDENT_COOKIE = "student_session"
-
-# 签名密钥。设了 AGENT_SESSION_SECRET 就用它（重启后已发的 cookie 仍有效）；
-# 没设就每次启动随机生成一个（重启即全员掉线，本地开发够用）。
-SESSION_SECRET = os.environ.get("AGENT_SESSION_SECRET") or secrets.token_hex(32)
-PBKDF2_ROUNDS = 200_000
-
-_ACCOUNTS_LOCK = threading.Lock()
-
-
-class StudentRegisterIn(BaseModel):
-    student_number: str
-    name: str
-    password: str
-
-
-class StudentLoginIn(BaseModel):
-    student_number: str
-    password: str
-
-
-class StudentJoinIn(BaseModel):
-    code: str
-
-
-class CourseCodeIn(BaseModel):
-    course_id: str
-    regenerate: bool = False
-
-
-def _read_json_file(path: Path, default):
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return default
-
-
-def _write_json_file(path: Path, data) -> None:
-    """先写临时文件再原子替换 —— 半截 JSON 会让所有人登不进来。"""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-    os.replace(tmp, path)
-
-
-# ── 账户 ──────────────────────────────────────────────────────
-
-def _accounts() -> dict[str, dict]:
-    """学号 → 账户记录。"""
-    data = _read_json_file(ACCOUNTS_PATH, {})
-    return data.get("accounts", {}) if isinstance(data, dict) else {}
-
-
-def _save_accounts(accounts: dict[str, dict]) -> None:
-    _write_json_file(ACCOUNTS_PATH, {"accounts": accounts})
-
-
-def _hash_password(password: str, salt: str) -> str:
-    return hashlib.pbkdf2_hmac(
-        "sha256", password.encode("utf-8"), bytes.fromhex(salt), PBKDF2_ROUNDS
-    ).hex()
-
-
-def _student_id_for(number: str) -> str:
-    """学号 → 稳定的 studentId。
-
-    它会用作 runtime/students/<id>/ 的目录名，所以只留安全字符；
-    全被过滤掉时退回学号的哈希（保证稳定且不撞车）。
-    """
-    safe = re.sub(r"[^A-Za-z0-9._-]", "", number)
-    if safe and safe[0].isalnum():
-        return f"stu-{safe}"
-    return "stu-" + hashlib.sha256(number.encode("utf-8")).hexdigest()[:12]
-
-
-def _account_dir(student_id: str) -> Path:
-    """与大仓 agent._student_dir 同一套清洗规则。"""
-    safe = re.sub(r"[^\w\-.]", "_", student_id) or "unknown"
-    return ROOT / "runtime" / "students" / safe
-
-
-def _public_student(record: dict | None) -> dict | None:
-    """只回前端需要的字段 —— salt/hash 绝不能出门。"""
-    if not record:
-        return None
-    return {
-        "studentId": record.get("studentId"),
-        "name": record.get("name"),
-        "studentNumber": record.get("studentNumber"),
-    }
-
-
-def _sign_student(student_id: str) -> str:
-    mac = hmac.new(
-        SESSION_SECRET.encode(), student_id.encode(), hashlib.sha256
-    ).hexdigest()
-    return f"{student_id}.{mac}"
-
-
-def _token_student_id(token: str) -> str | None:
-    """只验签名，不查账户 —— 账户可能已被删。"""
-    if not token or "." not in token:
-        return None
-    student_id, _, mac = token.rpartition(".")
-    expected = hmac.new(
-        SESSION_SECRET.encode(), student_id.encode(), hashlib.sha256
-    ).hexdigest()
-    return student_id if hmac.compare_digest(mac, expected) else None
-
-
-def _read_student(token: str) -> dict | None:
-    """验签名 + 确认账户还在。"""
-    student_id = _token_student_id(token)
-    if not student_id:
-        return None
-    return next(
-        (r for r in _accounts().values() if r.get("studentId") == student_id), None
-    )
-
-
-def _set_session_cookie(response: Response, student_id: str) -> None:
-    response.set_cookie(
-        STUDENT_COOKIE,
-        _sign_student(student_id),
-        httponly=True,
-        # 跨域/跨站 iframe 部署需 AGENT_COOKIE_SAMESITE=none（此时浏览器还要求
-        # Secure，即同时设 AGENT_COOKIE_SECURE=1），否则登录态 Cookie 不会随请求带上。
-        samesite=os.environ.get("AGENT_COOKIE_SAMESITE", "lax"),
-        path="/",
-        max_age=60 * 60 * 12,
-        secure=os.environ.get("AGENT_COOKIE_SECURE") == "1",
-    )
-
-
-# ── 选课 ──────────────────────────────────────────────────────
-
-def _joined_courses(student_id: str) -> list[str]:
-    data = _read_json_file(_account_dir(student_id) / "courses.json", {})
-    courses = data.get("courses") if isinstance(data, dict) else None
-    if not isinstance(courses, list):
-        return []
-    return [c for c in courses if isinstance(c, str)]
-
-
-def _join_course(student_id: str, course_id: str) -> list[str]:
-    courses = _joined_courses(student_id)
-    if course_id not in courses:
-        courses.append(course_id)
-        _write_json_file(
-            _account_dir(student_id) / "courses.json", {"courses": courses}
-        )
-    return courses
-
-
-def _join_codes() -> dict[str, str]:
-    data = _read_json_file(JOIN_CODES_PATH, {})
-    return data.get("codes", {}) if isinstance(data, dict) else {}
-
-
-def _course_for_code(code: str) -> str | None:
-    """课程码 → course_id。大小写不敏感，忽略两头空格。"""
-    wanted = code.strip().upper()
-    if not wanted:
-        return None
-    return next((cid for cid, c in _join_codes().items() if c.upper() == wanted), None)
-
-
-def _known_course_ids() -> list[str]:
-    """本系统里出现过的 course_id（从课时定义推导，没有独立的课程表）。"""
-    ids: list[str] = []
-    for lesson_id in list_lesson_ids():
-        try:
-            course_id = _lesson_payload(lesson_id)["courseId"]
-        except HTTPException:
-            continue
-        if course_id and course_id not in ids:
-            ids.append(course_id)
-    return ids
-
-
-# ── 接口 ──────────────────────────────────────────────────────
-
-@app.get("/api/student/session")
-def student_session(request: Request) -> dict:
-    """当前登录状态 + 已加入的课程。前端靠它决定显示登录页还是课堂。"""
-    student = _read_student(request.cookies.get(STUDENT_COOKIE, ""))
-    return {
-        "ok": True,
-        "authenticated": student is not None,
-        "student": _public_student(student),
-        "courses": _joined_courses(student["studentId"]) if student else [],
-    }
-
-
-@app.post("/api/student/register")
-def student_register(body: StudentRegisterIn, response: Response) -> dict:
-    """自注册。学号即账号，注册完直接登录。"""
-    number = body.student_number.strip()
-    name = body.name.strip()
-    if not number or not name:
-        raise HTTPException(400, "学号和姓名都不能为空")
-    if len(body.password) < 6:
-        raise HTTPException(400, "密码至少 6 位")
-
-    with _ACCOUNTS_LOCK:
-        accounts = _accounts()
-        if number in accounts:
-            raise HTTPException(409, "该学号已注册，直接登录即可")
-        salt = secrets.token_hex(16)
-        accounts[number] = {
-            "studentNumber": number,
-            "studentId": _student_id_for(number),
-            "name": name,
-            "salt": salt,
-            "hash": _hash_password(body.password, salt),
-            "createdAt": _now(),
-        }
-        _save_accounts(accounts)
-        record = accounts[number]
-
-    _set_session_cookie(response, record["studentId"])
-    return {"ok": True, "student": _public_student(record), "courses": []}
-
-
-@app.post("/api/student/login")
-def student_login(body: StudentLoginIn, response: Response) -> dict:
-    number = body.student_number.strip()
-    with _ACCOUNTS_LOCK:
-        record = _accounts().get(number)
-    # 学号不存在和密码错回同一句 —— 别让人拿这个接口枚举注册过的学号
-    if not record:
-        raise HTTPException(401, "学号或密码不正确")
-    actual = _hash_password(body.password, str(record.get("salt") or ""))
-    if not hmac.compare_digest(actual, str(record.get("hash") or "")):
-        raise HTTPException(401, "学号或密码不正确")
-
-    _set_session_cookie(response, record["studentId"])
-    return {
-        "ok": True,
-        "student": _public_student(record),
-        "courses": _joined_courses(record["studentId"]),
-    }
-
-
-@app.post("/api/student/logout")
-def student_logout(response: Response) -> dict:
-    response.delete_cookie(STUDENT_COOKIE, path="/")
-    return {"ok": True}
-
-
-@app.post("/api/student/join")
-def student_join(body: StudentJoinIn, request: Request) -> dict:
-    """用老师给的课程码加入课程。"""
-    student = _read_student(request.cookies.get(STUDENT_COOKIE, ""))
-    if not student:
-        raise HTTPException(401, "请先登录再加入课程")
-
-    course_id = _course_for_code(body.code)
-    if not course_id:
-        raise HTTPException(404, "课程码无效，找老师确认一下")
-
-    return {
-        "ok": True,
-        "courseId": course_id,
-        "courses": _join_course(student["studentId"], course_id),
-    }
-
-
-@app.post("/api/teacher/course-code")
-def teacher_course_code(body: CourseCodeIn) -> dict:
-    """生成（或取回）某门课的加入码。regenerate=true 会换一个新码。"""
-    if body.course_id not in _known_course_ids():
-        raise HTTPException(404, f"课程不存在：{body.course_id}")
-
-    codes = _join_codes()
-    if body.regenerate or body.course_id not in codes:
-        # 去掉容易看错的 0/O/1/I
-        alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
-        codes[body.course_id] = "".join(secrets.choice(alphabet) for _ in range(6))
-        _write_json_file(JOIN_CODES_PATH, {"codes": codes})
-
-    return {"ok": True, "courseId": body.course_id, "code": codes[body.course_id]}
-
-
-@app.get("/api/teacher/course-code/{course_id}")
-def teacher_get_course_code(course_id: str) -> dict:
-    code = _join_codes().get(course_id)
-    if not code:
-        raise HTTPException(404, f"{course_id} 还没有课程码，先 POST 生成一个")
-    return {"ok": True, "courseId": course_id, "code": code}
-
 
 @app.post("/api/session/start")
 def start(body: StartIn) -> dict:
@@ -1111,8 +580,10 @@ def start(body: StartIn) -> dict:
     import uuid
     platform_context = None
     learning_context = None
-    student_id = body.student_id
-    lesson_id = body.lesson_id
+    if not body.launch_token:
+        raise HTTPException(status_code=401, detail="请从课程平台进入")
+    student_id = ""
+    lesson_id = ""
     if body.launch_token:
         from apps.integration import config as integration_config
         from apps.integration import course_adapter, launch_context, platform_client
@@ -1133,7 +604,7 @@ def start(body: StartIn) -> dict:
         platform_context["courseTitle"] = learning_context.course_title
         student_id = platform_context["userId"]
         requested = next((item for item in learning_context.lessons
-                          if item.id == body.lesson_id), None)
+                          if item.id == getattr(body, "lesson_id", "")), None)
         if requested:
             lesson_id = requested.id
             learning_context.classroom = requested.classroom
@@ -1144,7 +615,19 @@ def start(body: StartIn) -> dict:
             lesson_id = platform_context["courseId"]
 
     # 先校验再动注册表，非法 id 不该留下任何痕迹（_path 里还有一道兜底）
-    sid = _safe_sid(body.session_id) if body.session_id else f"cls-{uuid.uuid4().hex[:8]}"
+    if body.session_id:
+        sid = _safe_sid(body.session_id)
+    elif platform_context and lesson_id:
+        # 平台态：会话号由（用户, 课程, 课时）确定性派生 —— 换设备/换浏览器后
+        # 再进同一课时，落回**同一个**辅导会话（磁盘可恢复），而不是新开一个。
+        digest = hashlib.sha1("|".join([
+            str(platform_context.get("userId") or ""),
+            str(platform_context.get("courseId") or ""),
+            str(lesson_id),
+        ]).encode("utf-8")).hexdigest()[:16]
+        sid = f"plat-{digest}"
+    else:
+        sid = f"cls-{uuid.uuid4().hex[:8]}"
     created = False
     with _REGISTRY_LOCK:
         if sid not in SESSIONS:
@@ -1190,6 +673,10 @@ def start(body: StartIn) -> dict:
             # the same shape.
             s["state"]["learning_context"] = learning_context.model_dump()
             s["learning_context"] = learning_context.model_dump()
+            # 老版本漏转课时知识点类型，进行中的计划可能缓存了空目录。
+            # 同发布版重入只补知识点，不重开课或重置学生学情。
+            with s["lock"]:
+                course_adapter.repair_empty_knowledge_catalog(s["state"])
         _persist(sid, s["state"])
         _persist_session_record(sid)
         _record_learning_event(sid, event_type="session_started")
@@ -1350,9 +837,33 @@ def send(sid: str, body: MessageIn) -> dict:
         "at": _now(),
         "phase": s["state"].get("host_phase"),
     })
+    # 本轮跑之前拍快照：_step 结束后拿新值和这两项对比，才知道这一轮
+    # 发生了什么事件——出了新检测题（题变了）、学生明确结束（阶段从
+    # tutoring 切到 ending）。快照丢了，事件判定就没了依据。
+    state_before = s["state"]
+    prev_tutoring_question = state_before.get("tutoring_question")
+    prev_phase = state_before.get("host_phase")
     st = _step(sid, text, "student")
     _record_learning_event(sid, event_type="student_message",
                            payload={"phase": st.get("host_phase")})
+    # 辅导的出题/判答证据（工单 03）：新题出现记 tutoring_question，
+    # 本轮判出结果记 tutoring_answer（含提示标记与升星后星级）
+    new_question = st.get("tutoring_question")
+    if new_question and new_question != prev_tutoring_question:
+        _record_tutoring_event(sid, "tutoring_question", {
+            "kp_id": new_question.get("kp_id"),
+            "question": new_question.get("question", ""),
+            "hint_given": bool(new_question.get("hint_given")),
+            "asked_at": new_question.get("asked_at"),
+        })
+    judged = st.get("tutoring_last_judgement")
+    if judged:
+        _record_tutoring_event(sid, "tutoring_answer", judged)
+    # 明确结束（工单 05）：tutoring → ending 的那次切换生成完整反馈并入库。
+    # 只认切换那一轮——后续在 ending 里再说「结束」不会重复入库（幂等），
+    # 再次生成要等工单 06 的返回续聊把阶段拉回 tutoring 之后。
+    if prev_phase == "tutoring" and st.get("host_phase") == "ending":
+        _generate_tutoring_feedback(sid, text, st)
     return {
         "ok": True,
         "reply_text": st.get("reply_text", ""),
@@ -1361,6 +872,8 @@ def send(sid: str, body: MessageIn) -> dict:
         "status": st.get("lesson_status"),
         "current_question": st.get("current_question"),
         "stars": st.get("kp_stars") or {},
+        "mastery_schema": "knowledge-mastery/2",
+        "needs_review": st.get("mastery_needs_review") or [],
         "total": len(s["messages"]),
         "available_actions": ACTIONS[st.get("lesson_status", "running")],
     }
@@ -1375,6 +888,14 @@ def messages(sid: str, since: int = 0) -> dict:
         "total": len(s["messages"]),
         "student_id": s["state"].get("student_id"),
     }
+
+
+def _video_skip_allowed() -> bool:
+    """本地测试开关（工单 07）：教师端播放器不可用时允许学生端替它补上
+    「视频已播完」事件。生产默认关——这不是课堂退出按钮，触发的就是
+    同一个 media/done 完成事件，只在放视频这一步、且开关开启时出现。"""
+    return os.environ.get("AGENT_ALLOW_VIDEO_SKIP", "").strip().lower() in (
+        "1", "true", "yes", "on")
 
 
 @app.get("/api/session/{sid}/state")
@@ -1405,8 +926,82 @@ def state(sid: str) -> dict:
         "played_media": st.get("played_media") or [],
         "remaining_stages": st.get("remaining_stages") or [],
         "next_stage": (st.get("remaining_stages") or [None])[0],
+        # 本地测试：视频页显示「当作已播完」按钮（工单 07，生产默认关）
+        "video_skip_allowed": _video_skip_allowed(),
+        "mastery_schema": "knowledge-mastery/2",
+        "needs_review": st.get("mastery_needs_review") or [],
+        # 固定编号知识点目录（任何阶段都在）：下课页等展示用，与辅导同源
+        "knowledge_points": knowledge_catalog_public(st),
+        # 课后辅导：固定编号目录 + 复习顺序 + 时间预算（掌握条的渲染依据）
+        "tutoring": tutoring_public(st, _now(), s.get("time_scale", 1.0))
+        if st.get("host_phase") == "tutoring" else None,
         "available_actions": ACTIONS.get(status, []),
     }
+
+
+@app.post("/api/session/{sid}/resume-tutoring")
+def resume_tutoring(sid: str) -> dict:
+    """返回原辅导会话继续聊（工单 06）。
+
+    明确结束过的课后辅导可以重新打开：计划时间戳、星级、证据、已见题、
+    消息全部保留；再次明确结束会生成新版反馈（旧版可查）。
+    """
+    s = _get(sid)
+    with s["lock"]:
+        st = s["state"]
+        # 「进过辅导」的判据：计划时间戳在进辅导那一刻必然设置（默认时长），
+        # 学生开场就结束（没出过题、没报过顺序）也算进过。
+        has_tutoring = bool(st.get("tutoring_planned_end_at"))
+        if st.get("host_phase") != "ending" or not has_tutoring:
+            raise HTTPException(409, "当前没有可恢复的课后辅导")
+        st["host_phase"] = "tutoring"
+        st["student_status"] = "active"
+        if st.get("lesson_status") == "ended":
+            st["lesson_status"] = "running"
+        # 结束确认标记是回合级的一次性状态，恢复时不许残留（否则一开口就下课）
+        st["tutoring_end_confirm_pending"] = False
+        st["tutoring_end_confirmed"] = False
+        # 旧会话的 state 没有 active 键：用挂起题回填（高亮依据）
+        if not st.get("tutoring_active_kp") and st.get("tutoring_question"):
+            st["tutoring_active_kp"] = st["tutoring_question"].get("kp_id")
+        st["stage_started_at"] = _now()
+        s["_completion_persisted"] = False
+        if s["thread"] is None or not s["thread"].is_alive() or s["stop"].is_set():
+            s["stop"] = threading.Event()
+            s["thread"] = threading.Thread(target=_heartbeat, args=(sid, s["stop"]), daemon=True)
+            s["thread"].start()
+        s["state"] = st
+        _persist(sid, st)
+    return {"ok": True, "phase": "tutoring", "status": st.get("lesson_status")}
+
+
+def _current_mastery_report(st: dict, report: dict) -> dict:
+    """最新反馈展示当前唯一掌握记录，续聊后不再混用旧版报告星级。"""
+    current, teacher_summary = tutoring_feedback_payload(st)
+    return {**report, "teacher_summary": teacher_summary, "payload": {**report["payload"],
+        "schema": "tutoring-feedback/2",
+        "knowledge_points": current["knowledge_points"], "advice": current["advice"],
+        "mastery_schema": "knowledge-mastery/2"}}
+
+
+@app.get("/api/session/{sid}/tutoring-report")
+def tutoring_report(sid: str) -> dict:
+    """课后辅导反馈（最新版）：课后页与课程级入口的展示数据。"""
+    s = _get(sid)
+    cached = s.get("tutoring_reports") or []
+    if cached:
+        last = cached[-1]
+        return _current_mastery_report(s["state"], {
+            "version": last["version"], "payload": without_self_assessment(last["payload"]),
+            "teacher_summary": last["teacher_summary"]})
+    try:
+        from apps.integration import persistence
+        report = persistence.read_latest_report(sid)
+        if report:
+            return _current_mastery_report(s["state"], report)
+    except Exception as exc:  # 读取失败按没有处理，不拦展示
+        print(f"[persistence] 辅导反馈读取失败: {exc}")
+    raise HTTPException(status_code=404, detail="暂无课后辅导反馈")
 
 
 @app.delete("/api/session/{sid}")
@@ -1428,7 +1023,8 @@ def stop(sid: str) -> dict:
 def export(sid: str, fmt: str = "md") -> Response:
     """课后学情导出。md 给人读，json 给系统读。"""
     st = _get(sid)["state"]
-    stars = st.get("kp_stars") or {}
+    stars = {item["kp_id"]: int((st.get("kp_stars") or {}).get(item["kp_id"], 0))
+             for item in knowledge_catalog_public(st)}
     snaps = st.get("stage_snapshots") or []
     plan = st.get("lesson_plan") or {}
     student_id = st.get("student_id")
@@ -1442,7 +1038,8 @@ def export(sid: str, fmt: str = "md") -> Response:
                 "lesson_elapsed_minutes": st.get("lesson_elapsed_minutes"),
                 "knowledge_points": [
                     {"kp_id": kp, "title": kp_title(kp, lesson_id), "stars": v,
-                     "status": STAR_STATUS.get(v, "未检测")}
+                     "status": STAR_STATUS.get(v, "未检测"),
+                     "needs_review": kp in (st.get("mastery_needs_review") or [])}
                     for kp, v in sorted(stars.items())
                 ],
                 "stage_snapshots": snaps,
@@ -1614,13 +1211,6 @@ def session_health() -> dict:
     return {"ok": True, "frontendStale": bool(FRONTEND_STALE_REASON)}
 
 
-@app.get("/api/session/demo-flag")
-def demo_flag() -> dict:
-    """前端探测后端是否处于显式 demo 模式（仅此时允许加载内置演示课）。"""
-    from apps.integration import config as integration_config
-    return {"demoMode": integration_config.demo_mode()}
-
-
 # ═══════════════════════════════════════════════════════════════
 # 前端（Next.js 学生端）
 #
@@ -1718,9 +1308,17 @@ app.mount("/app", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend
 
 
 @app.get("/")
-def index() -> FileResponse:
-    """独立态首页（旧版单页）。平台入口走 /app。"""
-    return FileResponse(STATIC_DIR / "index.html")
+def index() -> HTMLResponse:
+    """无平台令牌时显示入口提示，避免与前端的令牌检查形成重定向循环。"""
+    return HTMLResponse(
+        "<!doctype html><html lang='zh-CN'><meta charset='utf-8'>"
+        "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+        "<title>学生端入口</title><body style='font:16px system-ui;max-width:640px;"
+        "margin:15vh auto;padding:24px;color:#172033'>"
+        "<h1>请从课程平台进入</h1><p>学生端课堂需要平台签发的启动令牌。"
+        "请先在课程平台选择已发布课程，再打开学生端。</p></body></html>",
+        status_code=200,
+    )
 
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")

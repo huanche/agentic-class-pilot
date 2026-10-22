@@ -19,7 +19,10 @@ function makeRequest(path: string, options: TestRequestOptions = {}): NextReques
 }
 
 function authorizeResponse(body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  });
 }
 
 describe('platformMiddleware', () => {
@@ -68,8 +71,8 @@ describe('platformMiddleware', () => {
 
   it('sends cookie, method, origin and the full path with query to the platform', async () => {
     fetchMock.mockResolvedValueOnce(authorizeResponse({ userId: 'user-1', isAdmin: false }));
-    const request = makeRequest('/api/classroom?id=cls-1', {
-      method: 'GET',
+    const request = makeRequest('/api/classroom/agent-edit?id=cls-1', {
+      method: 'POST',
       headers: { cookie: 'agentedu_session=session-token', origin: 'http://teacher.test:3200' },
     });
     const response = await platformMiddleware(request);
@@ -78,8 +81,8 @@ describe('platformMiddleware', () => {
     expect(init.headers['X-Teacher-Service-Key']).toBe(SERVICE_KEY);
     expect(JSON.parse(String(init.body))).toEqual({
       cookie: 'session-token',
-      path: '/api/classroom?id=cls-1',
-      method: 'GET',
+      path: '/api/classroom/agent-edit?id=cls-1',
+      method: 'POST',
       origin: 'http://teacher.test:3200',
       service_user_id: undefined,
     });
@@ -98,7 +101,9 @@ describe('platformMiddleware', () => {
       },
     });
     const response = await platformMiddleware(request);
-    const overrideList = (response.headers.get('x-middleware-override-headers') || '').toLowerCase();
+    const overrideList = (
+      response.headers.get('x-middleware-override-headers') || ''
+    ).toLowerCase();
     expect(overrideList).toContain('x-platform-user-id');
     expect(overrideList).toContain('x-platform-admin');
     const body = JSON.parse(String(fetchMock.mock.calls[0][1].body));
@@ -106,15 +111,22 @@ describe('platformMiddleware', () => {
   });
 
   it('delegates service calls and marks them as platform-initiated', async () => {
-    fetchMock.mockResolvedValueOnce(authorizeResponse({ userId: 'delegated-user', isAdmin: false }));
+    fetchMock.mockResolvedValueOnce(
+      authorizeResponse({ userId: 'delegated-user', isAdmin: false }),
+    );
     const request = makeRequest('/api/course-space', {
       method: 'POST',
-      headers: { 'x-platform-service-key': SERVICE_KEY, 'x-platform-subject': 'platform-course-owner' },
+      headers: {
+        'x-platform-service-key': SERVICE_KEY,
+        'x-platform-subject': 'platform-course-owner',
+      },
     });
     const response = await platformMiddleware(request);
     const body = JSON.parse(String(fetchMock.mock.calls[0][1].body));
     expect(body.service_user_id).toBe('platform-course-owner');
-    const overrideList = (response.headers.get('x-middleware-override-headers') || '').toLowerCase();
+    const overrideList = (
+      response.headers.get('x-middleware-override-headers') || ''
+    ).toLowerCase();
     expect(overrideList).toContain('x-platform-delegated');
   });
 
@@ -122,7 +134,10 @@ describe('platformMiddleware', () => {
     fetchMock.mockRejectedValueOnce(new TypeError('network down'));
     const response = await platformMiddleware(makeRequest('/api/course-space'));
     expect(response.status).toBe(503);
-    await expect(response.json()).resolves.toMatchObject({ success: false, error: '平台身份服务暂不可用' });
+    await expect(response.json()).resolves.toMatchObject({
+      success: false,
+      error: '平台身份服务暂不可用',
+    });
   });
 });
 

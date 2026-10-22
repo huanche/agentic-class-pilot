@@ -107,6 +107,7 @@ export async function POST(req: NextRequest, context: { params: Promise<{ course
     await persistClassroom(
       { id: classrooms[0].id, stage: body.stage, scenes: body.scenes },
       buildRequestOrigin(req),
+      { source: 'browser' },
     );
   }
   const now = Date.now();

@@ -9,6 +9,9 @@ const storage = vi.hoisted(() => ({
   updateCourseJobIfPresent: vi.fn(),
   updateServerCourse: vi.fn(),
   deleteCourseArtifact: vi.fn(),
+  listCourseArtifacts: vi.fn(),
+  listKnowledgePackages: vi.fn(),
+  saveKnowledgePackage: vi.fn(),
 }));
 vi.mock('@/lib/server/course-space-storage', () => storage);
 import { PATCH, DELETE } from '@/app/api/course-space/[courseId]/artifacts/[artifactId]/route';
@@ -57,6 +60,9 @@ describe('artifact activation', () => {
       update(structuredClone(course)),
     );
     storage.saveCourseArtifact.mockImplementation(async (artifact) => artifact);
+    storage.listCourseArtifacts.mockResolvedValue([]);
+    storage.listKnowledgePackages.mockResolvedValue([]);
+    storage.saveKnowledgePackage.mockImplementation(async (pkg) => pkg);
   });
 
   it('activates an attached courseware artifact that has no job record', async () => {
@@ -110,12 +116,19 @@ describe('artifact activation', () => {
     expect(storage.saveCourseArtifact.mock.calls[0][0].publicationPlacement).toBeUndefined();
   });
 
-  it('requires the course to be published before artifact activation', async () => {
-    storage.readServerCourse.mockResolvedValue({ id: 'course-a', status: 'draft' });
+  it('automatically enables student publication when confirming draft courseware', async () => {
+    const draft = { ...structuredClone(course), status: 'draft' };
+    storage.readServerCourse.mockResolvedValue(draft);
+    storage.updateServerCourse.mockImplementation(async (_id, update) =>
+      Object.assign(draft, update(draft)),
+    );
     storage.readCourseArtifact.mockResolvedValue(attachedArtifact);
 
     const response = await PATCH(patchRequest({ action: 'activate' }), context);
-    expect(response.status).toBe(409);
+    expect(response.status).toBe(200);
+    expect((await response.json()).artifact.status).toBe('published');
+    expect(draft.status).toBe('active');
+    expect(storage.saveKnowledgePackage).toHaveBeenCalledTimes(1);
   });
   it('deletes only resources owned by the canonical course', async () => {
     storage.readServerCourse.mockResolvedValue(course);

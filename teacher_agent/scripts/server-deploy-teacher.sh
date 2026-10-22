@@ -3,7 +3,7 @@
 # and automatic rollback. Invoked by CI (.github/workflows/teacher-deploy.yml)
 # over SSH; can also be run manually on the server after `docker login`.
 # After a successful swap it also prunes old main-* tags, keeping the deployed
-# image plus one rollback slot so the disk stays flat across deploys.
+# image plus two successful rollback slots so disk usage stays bounded.
 #
 # Usage: server-deploy-teacher.sh <image> <tag>
 #   e.g. server-deploy-teacher.sh zmzm1443/agentic-teacher main-ceb00dd
@@ -14,6 +14,10 @@ TAG="${2:?usage: server-deploy-teacher.sh <image> <tag>}"
 NEW="$IMAGE:$TAG"
 CONTAINER=agentic-teacher-prod
 HEALTH_URL=http://127.0.0.1:3200/api/health
+
+BACKUP_POLICY=/usr/local/lib/agentic-class-pilot/server-backup-policy.py
+test -f "$BACKUP_POLICY" || { echo "FATAL: backup policy not installed"; exit 1; }
+sudo -n python3 "$BACKUP_POLICY" apply
 
 run_container() {
   docker run -d --name "$CONTAINER" \
@@ -57,6 +61,14 @@ run_container "$NEW"
 echo "[3/3] Health check (up to 60s) ..."
 if wait_healthy; then
   echo "DEPLOY OK: $NEW"
+  HISTORY=/opt/agentic-class-pilot/.runtime/teacher-successful-images
+  mkdir -p "$(dirname "$HISTORY")"
+  touch "$HISTORY"
+  # Only images observed running or passing this deployment's health check
+  # enter the rollback history. Keep current plus two successful predecessors.
+  { printf '%s\n' "$NEW"; [ -z "$PREV" ] || printf '%s\n' "$PREV"; cat "$HISTORY"; } \
+    | awk 'NF && !seen[$0]++' | head -n 3 > "$HISTORY.tmp"
+  mv "$HISTORY.tmp" "$HISTORY"
   if [ -n "$PREV" ] && [ "$PREV" != "$NEW" ]; then
     echo "rollback image kept locally: $PREV"
   fi
@@ -64,7 +76,7 @@ if wait_healthy; then
   docker image prune -f >/dev/null 2>&1 || true
 
   # Prune old deploy tags so disk usage stays flat across deploys: keep the
-  # image just deployed and one rollback slot ($PREV when distinct); delete
+  # image just deployed and two successful rollback slots; delete
   # every other main-* tag (they stay re-pullable from Docker Hub). The
   # running image is skipped explicitly and plain `docker rmi` also refuses
   # in-use images, so this cannot take down the live container. Best-effort:
@@ -76,6 +88,7 @@ if wait_healthy; then
     | while read -r t id; do
         [ "$t" = "$TAG" ] && continue
         [ -n "$KEEP_PREV" ] && [ "$t" = "$KEEP_PREV" ] && continue
+        grep -Fxq "$IMAGE:$t" "$HISTORY" && continue
         [[ "$RUNNING_ID" == sha256:"$id"* ]] && continue
         echo "[cleanup] docker rmi $IMAGE:$t"
         docker rmi "$IMAGE:$t" >/dev/null 2>&1 || true

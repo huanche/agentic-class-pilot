@@ -8,6 +8,7 @@ import hmac
 import importlib.util
 import json
 import logging
+import re
 from pathlib import Path
 import secrets
 import tempfile
@@ -187,15 +188,20 @@ class ProviderPayloadTests(unittest.TestCase):
             pass
         identity = {"uid": self.payload["userId"], "cid": self.payload["courseId"]}
         classroom = copy.deepcopy(self.payload["classroom"])
-        for lessons in ([], [{"id": "fixture-lesson", "title": "Fixture", "order": 1, "classroom": classroom}]):
-            with self.subTest(classroom=bool(lessons)):
+        lesson = {"id": "fixture-lesson", "title": "Fixture", "order": 1, "classroom": classroom}
+        knowledge_entry = {"id": "fixture-artifact", "resourceType": "knowledge-points",
+                           "scope": {"lessonId": "fixture-lesson"},
+                           "content": "## 第一周\n### 沙盘\n- 认识组成\n- 做准备"}
+        for lessons, entries in (([], []), ([lesson], []), ([lesson], [knowledge_entry])):
+            with self.subTest(classroom=bool(lessons), rubric=bool(entries)):
                 namespace = load_functions(ROOT / "platform/backend/app/api/routes/student_bridge.py",
-                    {"student_learning_context"}, {
+                    {"student_learning_context", "_knowledge_artifact_rubric", "_knowledge_points_from_markdown"}, {
                         "Header": lambda **kwargs: None, "HTTPException": HTTPError,
                         "uuid": uuid, "SCHEMA_VERSION": 1, "text": lambda sql: sql,
+                        "re": re, "hashlib": hashlib,
                         "check_student_service_key": lambda _: None,
                         "verify_launch_token": lambda _: identity, "_resolve_launch_context": lambda *_: None,
-                        "_published_package_payload": lambda *_: {"id": "fixture-publication", "version": 1, "entries": []},
+                        "_published_package_payload": lambda *_: {"id": "fixture-publication", "version": 1, "entries": entries},
                         "_published_lessons": lambda *_: lessons, "_classroom_view": lambda *_: copy.deepcopy(classroom),
                         "_grounding_context": lambda *_: {}, "_issue_playback_grant": lambda *_: "fixture-grant",
                     })
@@ -204,6 +210,12 @@ class ProviderPayloadTests(unittest.TestCase):
                 self.validator.validate(result)
                 self.assertEqual(bool(result["lessons"]), bool(lessons))
                 self.assertEqual(result["classroom"] is None, not lessons)
+                rubric = result["knowledgePackage"].get("rubric")
+                if entries:
+                    self.assertEqual(rubric["knowledgePoints"][0]["title"], "沙盘")
+                    self.assertEqual(rubric["knowledgePoints"][0]["expectedConcepts"], ["认识组成", "做准备"])
+                else:
+                    self.assertIsNone(rubric)
 
 
 class TokenCompatibilityTests(unittest.TestCase):

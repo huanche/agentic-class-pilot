@@ -37,6 +37,8 @@ export type {
 } from '@openmaic/dsl';
 
 export interface StageTiming {
+  /** OpenMAIC targets guide generation; strict legacy courses may still calibrate. */
+  durationPolicy?: 'target';
   targetDurationMinutes?: number;
   /** Only new courses with an explicit normalized generation contract. */
   budgetVersion?: 1;

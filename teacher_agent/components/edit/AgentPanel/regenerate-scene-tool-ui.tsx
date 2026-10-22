@@ -14,18 +14,21 @@ import { ToolCard, isStoppedResult, type ToolStatus } from './tool-card';
 import { RestoreButton } from './restore-button';
 
 interface RegenerateSceneResult {
+  __audioPending?: boolean;
   content?: { type: string; text?: string }[];
   details?: { sceneId?: string; content?: { elements?: unknown[] } | null; actions?: unknown[] };
 }
 
 function RegenerateSceneCard({
   running,
+  audioPending,
   stopped,
   failed,
   sceneId,
   toolCallId,
 }: {
   running: boolean;
+  audioPending?: boolean;
   stopped: boolean;
   failed: boolean;
   sceneId?: string;
@@ -49,7 +52,7 @@ function RegenerateSceneCard({
 
   return (
     <ToolCard
-      title={t('edit.regenScene.title')}
+      title={audioPending ? '正在生成本页配音' : t('edit.regenScene.title')}
       icon={Wrench}
       sceneId={sceneId}
       status={toolStatus}
@@ -66,7 +69,8 @@ export const RegenerateSceneUI = makeAssistantToolUI<
 >({
   toolName: 'regenerate_scene',
   render: ({ args, status, result, isError, toolCallId }) => {
-    const running = status.type === 'running' || status.type === 'requires-action';
+    const audioPending = !!result?.__audioPending;
+    const running = audioPending || status.type === 'running' || status.type === 'requires-action';
     // The user cancelled the turn before this tool finished → loud stopped state.
     const stopped = !running && isStoppedResult(result);
     // pi-agent-core 0.78.0 does NOT propagate a tool result's `isError` into
@@ -81,6 +85,7 @@ export const RegenerateSceneUI = makeAssistantToolUI<
     return (
       <RegenerateSceneCard
         running={running}
+        audioPending={audioPending}
         stopped={stopped}
         failed={failed}
         sceneId={args?.sceneId ?? result?.details?.sceneId}

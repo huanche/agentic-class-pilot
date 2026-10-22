@@ -8,6 +8,12 @@ import type { Scene } from '@/lib/types/stage';
 import type { DurationFeedback } from '@/lib/generation/course-duration';
 import { calibrateNarrationDuration } from '@/lib/generation/course-duration';
 import {
+  createNarrationPace,
+  estimateNarrationSeconds,
+  narrationUnits,
+  type NarrationRevision,
+} from '@/lib/generation/narration-budget';
+import {
   calibrateCourseDuration,
   MAX_COURSE_DURATION_CORRECTIONS,
 } from '@/lib/generation/course-duration-calibration';
@@ -37,6 +43,8 @@ import {
   generateMediaForClassroom,
   replaceMediaPlaceholders,
 } from './classroom-media-generation';
+import { createCoursewarePerformance } from './courseware-performance';
+import { createCoursewarePrefetch, settle, unwrap, type Outcome } from './courseware-prefetch';
 
 // A shared registry also prevents duplicate workers across Next route bundles/HMR.
 const root = globalThis as typeof globalThis & {
@@ -49,7 +57,12 @@ const submissions = (root.__coursewareSubmissions ??= new Map());
 const slots = (root.__coursewareSlots ??= { active: 0, waiting: new Set() });
 const safeId = (id: string) => /^[A-Za-z0-9_-]{1,100}$/.test(id);
 
-type StoredInput = { input: BackgroundCoursewareInput; baseUrl: string; teacherId: string };
+type StoredInput = {
+  input: BackgroundCoursewareInput;
+  baseUrl: string;
+  teacherId: string;
+  engine?: 'openmaic';
+};
 function inputFile(jobId: string) {
   if (!/^[A-Za-z0-9_-]{1,110}$/.test(jobId)) throw new Error('无效任务编号');
   return path.join(CLASSROOM_JOBS_DIR, `${jobId}.courseware-input.json`);
@@ -139,6 +152,9 @@ export async function createBackgroundCoursewareJob(
       input,
       baseUrl: context.baseUrl,
       teacherId: context.teacherId,
+      ...(process.env.COURSEWARE_GENERATION_ENGINE === 'openmaic'
+        ? { engine: 'openmaic' as const }
+        : {}),
     } satisfies StoredInput);
     return saveCourseJob({
       id: jobId,
@@ -180,6 +196,30 @@ export async function cancelBackgroundCoursewareJob(jobId: string) {
   return job;
 }
 
+/** Only an explicit retry may restart a failed task; successful pages are checkpoints. */
+export async function retryBackgroundCoursewareJob(jobId: string) {
+  const current = await readCourseJob(jobId);
+  if (current && isActiveCourseJob(current.status)) return current;
+  await workers.get(jobId)?.promise;
+  return mutateCourseJob(jobId, async (current) => {
+    if (!current.backgroundGeneration || !['failed', 'queued', 'running'].includes(current.status))
+      throw new Error('只有未完成的失败任务可以重试');
+    if (isActiveCourseJob(current.status)) return current;
+    try {
+      await fs.access(inputFile(jobId));
+    } catch {
+      throw new Error('原生成计划已不存在，请重新创建生成任务');
+    }
+    return {
+      ...current,
+      status: 'queued',
+      error: undefined,
+      message: '等待重试未完成页面，已完成页面保留',
+      backgroundGeneration: { ...current.backgroundGeneration, phase: 'queued', failedPages: [] },
+    };
+  });
+}
+
 /** Detached from the browser request. A cancelled/read-only visit never starts a worker. */
 export function runBackgroundCoursewareJob(
   jobId: string,
@@ -198,11 +238,66 @@ async function execute(
   controller: AbortController,
   requestHeaders: Record<string, string>,
 ) {
+  try {
+    const current = await readCourseJob(jobId);
+    if (!current || !isActiveCourseJob(current.status)) return;
+    const initial = JSON.parse(await fs.readFile(inputFile(jobId), 'utf8')) as StoredInput;
+    if (controller.signal.aborted) return;
+    if (!initial.input?.stage || !Array.isArray(initial.input.outlines))
+      throw new Error('生成计划不完整，请重新创建生成任务');
+    if (initial.engine === 'openmaic') {
+      const { executeOpenmaicCourseware } = await import('./openmaic-background-courseware');
+      await executeOpenmaicCourseware(jobId, initial, controller, requestHeaders, acquireSlot);
+    } else {
+      await executeLegacy(jobId, controller, requestHeaders);
+    }
+  } catch (error) {
+    // Loading/dispatch failures happen before either engine's recovery handler.
+    // Settle them here without overwriting cancellation or a completed job.
+    await mutateCourseJob(jobId, (job) =>
+      isActiveCourseJob(job.status)
+        ? {
+            ...job,
+            status: 'failed',
+            message: '无法读取生成计划，请重新创建任务',
+            error:
+              (error as NodeJS.ErrnoException)?.code === 'ENOENT'
+                ? '原生成计划已不存在，请重新创建生成任务'
+                : error instanceof Error
+                  ? error.message
+                  : String(error),
+          }
+        : job,
+    ).catch(() => undefined);
+  }
+}
+
+/** Existing queued jobs keep their original generation contract across an engine switch. */
+async function executeLegacy(
+  jobId: string,
+  controller: AbortController,
+  requestHeaders: Record<string, string>,
+) {
   const signal = controller.signal;
   let heartbeat: ReturnType<typeof setInterval> | undefined;
   let releaseSlot: (() => void) | undefined;
   let stored: StoredInput | undefined;
+  let began = false;
+  const pipeline = process.env.COURSEWARE_PIPELINE_ENABLED !== 'false';
+  // Opt-in while the five-page local trial is being qualified. Existing deployments stay unchanged.
+  const scriptBudget = process.env.COURSEWARE_NARRATION_BUDGET_ENABLED === 'true';
+  const narrationPace = createNarrationPace();
+  const configuredPrefetch = Number(process.env.COURSEWARE_CONTENT_PREFETCH || 2);
+  const prefetchWindow =
+    pipeline && Number.isSafeInteger(configuredPrefetch)
+      ? Math.max(1, Math.min(configuredPrefetch, 3))
+      : 1;
+  const metrics = createCoursewarePerformance(pipeline, prefetchWindow);
+  let closePrefetch: (() => Promise<void>) | undefined;
+  let pendingPage: { scene: Scene; work: Promise<Outcome<void>> } | undefined;
   let scenes: Scene[] = [];
+  const failedPages: Array<{ order: number; title: string; message: string; issues: string[] }> =
+    [];
   const check = async () => {
     signal.throwIfAborted();
     const job = await readCourseJob(jobId);
@@ -214,12 +309,25 @@ async function execute(
   };
   try {
     await check();
+    began = true;
     heartbeat = setInterval(() => {
       void check()
-        .then(() => updateCourseJob(jobId, {}))
+        .then(() =>
+          mutateCourseJob(jobId, (job) =>
+            isActiveCourseJob(job.status) && job.backgroundGeneration
+              ? {
+                  ...job,
+                  backgroundGeneration: {
+                    ...job.backgroundGeneration,
+                    performance: metrics.snapshot(),
+                  },
+                }
+              : job,
+          ),
+        )
         .catch(() => controller.abort());
     }, 10_000);
-    releaseSlot = await acquireSlot(signal);
+    releaseSlot = await metrics.measure('queue', () => acquireSlot(signal));
     await check();
     stored = JSON.parse(await fs.readFile(inputFile(jobId), 'utf8')) as StoredInput;
     const { input, baseUrl, teacherId } = stored;
@@ -231,7 +339,9 @@ async function execute(
     if (saved?.stage.timing) stage.timing = saved.stage.timing;
     const snapshot = () => {
       stage.updatedAt = Date.now();
-      return persistClassroom({ id: stage.id, stage, scenes }, baseUrl);
+      return metrics.measure('save', () =>
+        persistClassroom({ id: stage.id, stage, scenes }, baseUrl),
+      );
     };
     const report = async (phase: string, message: string, progress: number) => {
       await check();
@@ -244,6 +354,8 @@ async function execute(
           completedPages: scenes.length,
           totalPages: outlines.length,
           phase,
+          failedPages: [...failedPages],
+          performance: metrics.snapshot(),
         },
       });
       if (!isActiveCourseJob(job.status)) {
@@ -263,45 +375,70 @@ async function execute(
       ...requestHeaders,
       ...internalPlatformHeaders(teacherId),
     };
-    const request = async <T>(endpoint: string, body: unknown): Promise<T> =>
-      withGenerationRetry(
+    const request = async <T>(
+      endpoint: string,
+      body: unknown,
+      requestSignal = signal,
+    ): Promise<T> => {
+      let attempt = 0;
+      const order = (body as { outline?: { order: number } }).outline?.order;
+      return withGenerationRetry(
         async () => {
           await check();
-          const response = await fetch(`${baseUrl}${endpoint}`, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify(body),
-            signal: AbortSignal.any([signal, AbortSignal.timeout(300_000)]),
-          });
-          const result = await response.json();
-          await check();
-          if (!response.ok || result.success === false) {
-            const error = new Error(result.error || `生成服务返回 ${response.status}`);
-            Object.assign(error, { statusCode: response.status });
-            throw error;
-          }
-          return result as T;
+          return metrics.measure(
+            endpoint.endsWith('scene-content') ? 'content' : 'actions',
+            async () => {
+              const response = await fetch(`${baseUrl}${endpoint}`, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify(body),
+                signal: AbortSignal.any([requestSignal, AbortSignal.timeout(300_000)]),
+              });
+              const result = await response.json();
+              await check();
+              if (!response.ok || result.success === false) {
+                const error = new Error(result.error || `生成服务返回 ${response.status}`);
+                Object.assign(error, {
+                  statusCode: response.status,
+                  errorCode: typeof result.errorCode === 'string' ? result.errorCode : undefined,
+                  details: typeof result.details === 'string' ? result.details : undefined,
+                });
+                throw error;
+              }
+              return result as T;
+            },
+            order,
+            ++attempt,
+          );
         },
-        { signal, maxRetries: 2, label: endpoint },
+        { signal: requestSignal, maxRetries: 2, label: endpoint },
       );
+    };
     const actions = async (
       outline: (typeof outlines)[number],
       content: unknown,
       feedback?: DurationFeedback,
+      previousSpeeches?: string[],
+      revision?: NarrationRevision,
     ) => {
       const previous = scenes
         .filter((page) => page.order < outline.order)
         .sort((a, b) => b.order - a.order)[0];
-      const result = await request<{ scene: Scene }>('/api/generate/scene-actions', {
+      const result = await request<{
+        scene: Scene;
+        generationTimings?: Array<{ phase: string; durationMs: number }>;
+      }>('/api/generate/scene-actions', {
         outline,
         allOutlines: outlines,
         content,
         stageId: stage.id,
         agents: input.agents,
         previousSpeeches:
+          previousSpeeches ??
           previous?.actions
             ?.filter((action) => action.type === 'speech')
-            .map((action) => action.text) ?? [],
+            .map((action) => action.text) ??
+          [],
         languageDirective: stage.languageDirective,
         userProfile:
           input.requirements.userNickname || input.requirements.userBio
@@ -309,34 +446,64 @@ async function execute(
             : undefined,
         narrationScript: input.narrationScripts?.[outline.order - 1],
         durationFeedback: feedback,
+        ...(scriptBudget && input.enableTTS
+          ? {
+              narrationPace: narrationPace.estimate(),
+              narrationRevision: outline.type === 'slide' ? revision : undefined,
+            }
+          : {}),
       });
+      for (const timing of result.generationTimings ?? [])
+        metrics.detail(timing.phase, timing.durationMs, outline.order);
       return result.scene;
     };
-    const audio = async (scene: Scene) => {
-      if (!input.enableTTS || !scene.actions?.some((action) => action.type === 'speech')) return;
-      await check();
-      let result;
-      try {
-        result = await generateTTSForClassroom([scene], stage.id, baseUrl, modelConfig?.tts, {
-          isolateAudio: true,
-          failFast: true,
-          recordUsage: true,
-          voiceSelection: input.ttsVoice,
-          languageDirective: stage.languageDirective,
-          signal,
-        });
-      } catch (error) {
-        await removeClassroomTtsAudio(scene, stage.id);
-        throw error;
-      }
-      await check();
-      if (result.failed || (!result.generated && result.skipped))
-        throw new Error('配音未完成，请检查语音服务配置后重试');
-    };
+    const audio = async (scene: Scene, phase = 'audio') =>
+      metrics.measure(
+        phase,
+        async () => {
+          if (!input.enableTTS || !scene.actions?.some((action) => action.type === 'speech'))
+            return;
+          await check();
+          let result;
+          try {
+            result = await generateTTSForClassroom([scene], stage.id, baseUrl, modelConfig?.tts, {
+              isolateAudio: true,
+              failFast: true,
+              recordUsage: true,
+              voiceSelection: input.ttsVoice,
+              languageDirective: stage.languageDirective,
+              signal,
+              cacheScope: teacherId,
+              onAudioCache: (status) => metrics.cache(status),
+              onNarrationSample: scriptBudget
+                ? (sample) => narrationPace.observe(sample)
+                : undefined,
+            });
+          } catch (error) {
+            await removeClassroomTtsAudio(scene, stage.id);
+            throw error;
+          }
+          await check();
+          if (result.failed || (!result.generated && result.skipped))
+            throw new Error('配音未完成，请检查语音服务配置后重试');
+        },
+        scene.order,
+      );
     const dispose = (scene: Scene) => removeClassroomTtsAudio(scene, stage.id);
     const regenerate = async (previous: Scene, feedback: DurationFeedback) => {
       const outline = outlines.find((page) => page.order === previous.order)!;
-      const candidate = await actions(outline, previous.content, feedback);
+      const candidate = await actions(
+        outline,
+        previous.content,
+        feedback,
+        undefined,
+        scriptBudget && narrationPace.estimate()
+          ? {
+              actions: previous.actions ?? [],
+              audioSeconds: narrationPace.durations(previous.actions ?? []),
+            }
+          : undefined,
+      );
       candidate.id = previous.id;
       candidate.timing = {
         ...previous.timing,
@@ -351,77 +518,259 @@ async function execute(
         throw error;
       }
     };
-    for (const outline of outlines) {
-      await check();
-      if (scenes.some((page) => page.order === outline.order)) continue;
-      const progress = 3 + Math.floor((scenes.length / outlines.length) * 82);
-      await report(
-        'content',
-        `第 ${scenes.length + 1}/${outlines.length} 页：生成页面内容`,
-        progress,
-      );
-      const imported = input.importedSlides?.[outline.order - 1];
-      const content =
-        input.preferImportedCanvas &&
-        imported &&
-        !input.formulaEnhancedOrders?.includes(outline.order)
-          ? { type: 'slide', canvas: imported }
-          : (
-              await request<{ content: unknown }>('/api/generate/scene-content', {
-                outline,
-                allOutlines: outlines,
-                stageId: stage.id,
-                stageInfo: { name: stage.name, description: stage.description, style: stage.style },
-                requirements: input.requirements,
-                agents: input.agents,
-                pdfImages: input.pdfImages,
-                imageMapping: input.imageMapping,
-                languageDirective: stage.languageDirective,
-              })
-            ).content;
-      await report(
-        'actions',
-        `第 ${scenes.length + 1}/${outlines.length} 页：生成讲解与聚焦`,
-        progress + 1,
-      );
-      let scene = await actions(outline, content);
-      scene.timing = {
-        plannedDurationSec: getOutlineDurationSeconds(
-          outline,
-          stage.timing?.targetDurationMinutes ?? 28,
-          outlines.length,
-        ),
-        mode:
-          scene.type === 'quiz'
-            ? 'quiz'
-            : scene.type === 'interactive'
-              ? 'interactive-demo'
-              : 'narration-fit',
-        quizSecondsPerQuestion: scene.type === 'quiz' ? QUIZ_SECONDS_PER_QUESTION : undefined,
-        autoAdvance: true,
-      };
-      await report(
-        input.enableTTS ? 'audio' : 'saving-page',
-        `第 ${scenes.length + 1}/${outlines.length} 页：${input.enableTTS ? '生成配音并核对时长' : '保存页面'}`,
-        progress + 2,
-      );
-      await audio(scene);
-      if (input.enableTTS && outline.durationBudget) {
-        scene = await calibrateNarrationDuration(scene, {
-          regenerate: (feedback, previous) => regenerate(previous, feedback),
-          dispose,
-        });
+    const prepareNarration = async (scene: Scene, outline: (typeof outlines)[number]) => {
+      if (!scriptBudget || !input.enableTTS || scene.type !== 'slide' || !outline.durationBudget)
+        return scene;
+      // Bootstrap with useful, uncut lecture paragraphs. Their exact audio is cached for reuse.
+      if (!narrationPace.estimate()) {
+        const sampleActions = (scene.actions ?? [])
+          .filter((action) => action.type === 'speech' && narrationUnits(action.text) >= 10)
+          .slice(0, 2);
+        if (sampleActions.length) {
+          const sample = { ...scene, actions: structuredClone(sampleActions), timing: undefined };
+          try {
+            await audio(sample, 'narration-probe');
+          } finally {
+            await dispose(sample);
+          }
+        }
       }
+      const pace = narrationPace.estimate();
+      if (!pace) return scene;
+      const measured = narrationPace.durations(scene.actions ?? []);
+      const estimated = estimateNarrationSeconds(scene.actions ?? [], pace, measured);
+      const target = outline.durationBudget.targetSeconds;
+      // A proxy is only used to catch large first-draft errors. Final real-audio ±5% stays intact.
+      if (!estimated || Math.abs(estimated - target) / target <= 0.12) return scene;
+      try {
+        const candidate = await metrics.measure(
+          'script-budget',
+          () =>
+            actions(outline, scene.content, undefined, undefined, {
+              actions: scene.actions ?? [],
+              audioSeconds: measured,
+            }),
+          outline.order,
+        );
+        candidate.id = scene.id;
+        candidate.timing = {
+          ...scene.timing,
+          measuredDurationSec: undefined,
+          measurementKey: undefined,
+        };
+        return candidate;
+      } catch (error) {
+        // A rejected local text repair cannot replace an already reviewed draft.
+        if ((error as { errorCode?: string }).errorCode !== 'FOCUS_SPEECH_ALIGNMENT_FAILED')
+          throw error;
+        return scene;
+      }
+    };
+    const missing = outlines.filter(
+      (outline) => !scenes.some((page) => page.order === outline.order),
+    );
+    const contentPrefetch = createCoursewarePrefetch(
+      missing.length,
+      prefetchWindow,
+      async (index, contentSignal) => {
+        const outline = missing[index];
+        const imported = input.importedSlides?.[outline.order - 1];
+        if (
+          input.preferImportedCanvas &&
+          imported &&
+          !input.formulaEnhancedOrders?.includes(outline.order)
+        )
+          return { type: 'slide', canvas: imported };
+        return (
+          await request<{ content: unknown }>(
+            '/api/generate/scene-content',
+            {
+              outline,
+              allOutlines: outlines,
+              stageId: stage.id,
+              stageInfo: { name: stage.name, description: stage.description, style: stage.style },
+              requirements: input.requirements,
+              agents: input.agents,
+              pdfImages: input.pdfImages,
+              imageMapping: input.imageMapping,
+              languageDirective: stage.languageDirective,
+            },
+            contentSignal,
+          )
+        ).content;
+      },
+      signal,
+      pipeline,
+    );
+    closePrefetch = () => contentPrefetch.close();
+    const speeches = (scene?: Scene) =>
+      scene?.actions?.filter((action) => action.type === 'speech').map((action) => action.text) ??
+      [];
+    const previousPage = (order: number) =>
+      scenes.filter((page) => page.order < order).sort((a, b) => b.order - a.order)[0];
+    // Compare the exact accepted context, including meaningful spaces in code examples.
+    const speechContextKey = (values: string[]) => JSON.stringify(values);
+    const flushPrevious = async () => {
+      const pending = pendingPage;
+      if (pending) {
+        unwrap(await pending.work);
+        if (pendingPage === pending) pendingPage = undefined;
+      }
+    };
+    const finishPage = async (
+      scene: Scene,
+      outline: (typeof outlines)[number],
+      progress: number,
+    ) => {
+      let checkpointed = false;
+      try {
+        await report(
+          input.enableTTS ? 'audio' : 'saving-page',
+          `第 ${outline.order}/${outlines.length} 页：${input.enableTTS ? '生成配音并核对时长' : '保存页面'}`,
+          progress + 2,
+        );
+        await audio(scene);
+        if (input.enableTTS && outline.durationBudget)
+          scene = await metrics.measure(
+            'page-duration',
+            () =>
+              calibrateNarrationDuration(scene, {
+                regenerate: (feedback, previous) => regenerate(previous, feedback),
+                dispose,
+              }),
+            outline.order,
+          );
+        await check();
+        await finalizeClassroomTtsAudio(scene, stage.id, baseUrl);
+        scenes.push(scene);
+        scenes.sort((a, b) => a.order - b.order);
+        await snapshot();
+        checkpointed = true;
+        metrics.pageReady();
+        await report(
+          'page-complete',
+          `已完成 ${scenes.length}/${outlines.length} 页`,
+          3 + Math.floor(((scenes.length + failedPages.length) / outlines.length) * 82),
+        );
+      } catch (error) {
+        if (!checkpointed) await dispose(scene);
+        throw error;
+      }
+    };
+    for (let index = 0; index < missing.length; index++) {
+      const outline = missing[index];
       await check();
-      await finalizeClassroomTtsAudio(scene, stage.id, baseUrl);
-      scenes.push(scene);
-      scenes.sort((a, b) => a.order - b.order);
-      await snapshot();
-      await report(
-        'page-complete',
-        `已完成 ${scenes.length}/${outlines.length} 页`,
-        3 + Math.floor((scenes.length / outlines.length) * 82),
-      );
+      let candidate: Scene | undefined;
+      try {
+        const progress =
+          3 + Math.floor(((scenes.length + failedPages.length) / outlines.length) * 82);
+        await report(
+          'content',
+          `第 ${outline.order}/${outlines.length} 页：生成页面内容`,
+          progress,
+        );
+        const content = await contentPrefetch.take(index);
+        await report(
+          'actions',
+          `第 ${outline.order}/${outlines.length} 页：生成讲解与聚焦`,
+          progress + 1,
+        );
+        const acceptedPrior = previousPage(outline.order);
+        const prior =
+          pendingPage &&
+          pendingPage.scene.order < outline.order &&
+          (!acceptedPrior || acceptedPrior.order < pendingPage.scene.order)
+            ? pendingPage.scene
+            : acceptedPrior;
+        const contextSpeeches = speeches(prior);
+        const proposed = await settle(actions(outline, content, undefined, contextSpeeches));
+        // Never allow speculation to change the final predecessor context.
+        // If duration correction changed its words, re-plan against the accepted page.
+        await flushPrevious();
+        const contextChanged =
+          speechContextKey(contextSpeeches) !==
+          speechContextKey(speeches(previousPage(outline.order)));
+        const contextRetryAllowed =
+          proposed.ok ||
+          (proposed.error as { errorCode?: string })?.errorCode === 'FOCUS_SPEECH_ALIGNMENT_FAILED';
+        let scene =
+          contextChanged && contextRetryAllowed
+            ? await metrics.measure(
+                'context-repair',
+                () => actions(outline, content),
+                outline.order,
+              )
+            : unwrap(proposed);
+        candidate = scene;
+        scene.timing = {
+          plannedDurationSec: getOutlineDurationSeconds(
+            outline,
+            stage.timing?.targetDurationMinutes ?? 28,
+            outlines.length,
+          ),
+          mode:
+            scene.type === 'quiz'
+              ? 'quiz'
+              : scene.type === 'interactive'
+                ? 'interactive-demo'
+                : 'narration-fit',
+          quizSecondsPerQuestion: scene.type === 'quiz' ? QUIZ_SECONDS_PER_QUESTION : undefined,
+          autoAdvance: true,
+        };
+        scene = await prepareNarration(scene, outline);
+        candidate = scene;
+        pendingPage = {
+          scene,
+          work: settle(finishPage(scene, outline, progress)).then((outcome) => {
+            if (!outcome.ok) controller.abort(outcome.error);
+            return outcome;
+          }),
+        };
+        candidate = undefined; // The audio worker now owns cleanup of this candidate.
+        if (!pipeline) await flushPrevious();
+      } catch (error) {
+        // A rejected binding is a page-level content problem. Keep the gate,
+        // retain its diagnostics, and let unrelated pages finish. Provider,
+        // quota, network and cancellation failures still stop the worker.
+        await flushPrevious();
+        await check();
+        const failure = error as Error & { errorCode?: string; details?: string };
+        if (failure.errorCode !== 'FOCUS_SPEECH_ALIGNMENT_FAILED') throw error;
+        if (candidate) await dispose(candidate);
+        failedPages.push({
+          order: outline.order,
+          title: outline.title,
+          message: failure.message,
+          issues: failure.details?.split('\n').filter(Boolean) ?? [],
+        });
+        await report(
+          'page-failed',
+          `第 ${outline.order} 页校验未通过，继续生成其他页面`,
+          3 + Math.floor(((scenes.length + failedPages.length) / outlines.length) * 82),
+        );
+      }
+    }
+    await flushPrevious();
+    await contentPrefetch.close();
+    closePrefetch = undefined;
+    if (failedPages.length) {
+      await check();
+      await updateCourseJob(jobId, {
+        status: 'failed',
+        message: `${scenes.length}/${outlines.length} 页已生成，${failedPages.length} 页待重试`,
+        error: failedPages
+          .map((page) => `第 ${page.order} 页「${page.title}」：${page.message}`)
+          .join('\n'),
+        backgroundGeneration: {
+          classroomId: stage.id,
+          completedPages: scenes.length,
+          totalPages: outlines.length,
+          phase: 'page-failed',
+          failedPages,
+          performance: metrics.snapshot(),
+        },
+      });
+      return;
     }
     if (input.enableMedia && outlines.some((outline) => outline.mediaGenerations?.length)) {
       await report('media', '生成课件中的图片与视频素材', 86);
@@ -439,27 +788,31 @@ async function execute(
       await snapshot();
     }
     if (input.enableTTS && stage.timing?.targetDurationMinutes) {
+      const targetMinutes = stage.timing.targetDurationMinutes;
+      const expectedPages = stage.timing.expectedAutomaticPages ?? 0;
       await report('duration', '汇总并校正整课实测时长', 92);
       const used = stage.timing.courseCorrectionAttempts ?? 0;
-      const calibrated = await calibrateCourseDuration(
-        scenes,
-        stage.timing.targetDurationMinutes,
-        stage.timing.expectedAutomaticPages ?? 0,
-        {
-          regenerate,
-          dispose,
-          onAttempt: async (attempt) => {
-            stage.timing!.courseCorrectionAttempts = used + attempt;
-            await snapshot();
+      const calibrated = await metrics.measure('course-duration', () =>
+        calibrateCourseDuration(
+          scenes,
+          targetMinutes,
+          expectedPages,
+          {
+            regenerate,
+            dispose,
+            onAttempt: async (attempt) => {
+              stage.timing!.courseCorrectionAttempts = used + attempt;
+              await snapshot();
+            },
+            onAccepted: async (previous, candidate) => {
+              await check();
+              await finalizeClassroomTtsAudio(candidate, stage.id, baseUrl);
+              scenes = scenes.map((page) => (page.id === previous.id ? candidate : page));
+              await snapshot();
+            },
           },
-          onAccepted: async (previous, candidate) => {
-            await check();
-            await finalizeClassroomTtsAudio(candidate, stage.id, baseUrl);
-            scenes = scenes.map((page) => (page.id === previous.id ? candidate : page));
-            await snapshot();
-          },
-        },
-        { maxAttempts: MAX_COURSE_DURATION_CORRECTIONS - used },
+          { maxAttempts: MAX_COURSE_DURATION_CORRECTIONS - used },
+        ),
       );
       scenes = calibrated.scenes;
     }
@@ -500,11 +853,14 @@ async function execute(
           completedPages: scenes.length,
           totalPages: outlines.length,
           phase: 'completed',
+          failedPages: [],
+          performance: metrics.snapshot(true),
         },
       };
     });
     await fs.unlink(inputFile(jobId)).catch(() => undefined);
   } catch (error) {
+    if (pendingPage) await pendingPage.work; // Retain a usable predecessor checkpoint on a later-page failure.
     const current = await readCourseJob(jobId);
     if (current && isActiveCourseJob(current.status)) {
       await updateCourseJob(jobId, {
@@ -514,6 +870,27 @@ async function execute(
       });
     }
   } finally {
+    await closePrefetch?.();
+    // Persist timings for failures/cancellations as well, without reviving terminal jobs.
+    if (began)
+      await fs
+        .appendFile(
+          path.join(CLASSROOM_JOBS_DIR, `${jobId}.performance.jsonl`),
+          JSON.stringify({ jobId, performance: metrics.snapshot(true) }) + '\n',
+        )
+        .catch(() => undefined);
+    if (began)
+      await mutateCourseJob(jobId, (job) =>
+        job.backgroundGeneration
+          ? {
+              ...job,
+              backgroundGeneration: {
+                ...job.backgroundGeneration,
+                performance: metrics.snapshot(true),
+              },
+            }
+          : job,
+      ).catch(() => undefined);
     if (heartbeat) clearInterval(heartbeat);
     releaseSlot?.();
   }

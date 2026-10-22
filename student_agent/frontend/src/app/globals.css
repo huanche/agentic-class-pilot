@@ -1661,3 +1661,140 @@ body::before { background: none; }
 @media (max-width: 780px) {
   .join-fab { right: 16px; bottom: 16px; }
 }
+
+/* ── 课后辅导掌握条（工单 02 外壳：剩余时间 + 编号顺序 + 系统星级）── */
+.tutoring-mastery {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--hairline);
+  background: var(--surface-solid);
+  border-radius: var(--r-lg) var(--r-lg) 0 0;
+  font-size: 13px;
+}
+.tm-head { color: var(--brand); font-weight: 600; white-space: nowrap; }
+.tm-clock { font-variant-numeric: tabular-nums; }
+.tm-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.tm-item { display: inline-flex; align-items: center; gap: 5px; color: var(--muted, inherit); }
+.tm-no {
+  display: inline-block;
+  min-width: 18px;
+  text-align: center;
+  border-radius: 999px;
+  background: var(--bg);
+  border: 1px solid var(--surface-border);
+  font-size: 11px;
+  line-height: 16px;
+}
+.tm-current { color: var(--brand-strong, inherit); font-weight: 600; }
+
+/* 量规小图标（工单 04）：悬停显示/移开隐藏、键盘聚焦可查、触屏点击切换 */
+.tm-item { position: relative; }
+.tm-rubric {
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--brand);
+  padding: 0 2px;
+  line-height: 1;
+}
+.tm-rubric-text {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 5;
+  background: var(--surface-solid);
+  border: 1px solid var(--surface-border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 12px;
+  font-weight: 400;
+  white-space: pre-line;
+  max-width: 320px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+}
+.tm-item:hover .tm-rubric-text,
+.tm-rubric:focus + .tm-rubric-text,
+.tm-rubric-text.tm-open {
+  display: block;
+}
+
+/* ── 课后辅导反馈卡 + 课程级反馈入口（工单 05）── */
+.tfeedback {
+  margin-top: 18px;
+  padding: 16px 18px;
+  border: 1px solid var(--surface-border);
+  border-radius: var(--r-lg);
+  background: var(--surface-solid);
+  text-align: left;
+}
+.tfeedback__title { margin: 0 0 6px; font-size: 15px; color: var(--brand); }
+.tfeedback__meta { margin: 0 0 10px; font-size: 13px; opacity: 0.85; }
+.tfeedback__kps { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.tfeedback__kp { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; font-size: 13px; }
+.tfeedback__no { color: var(--brand); font-weight: 600; min-width: 20px; }
+.tfeedback__name { flex: 1; }
+.tfeedback__stars { color: var(--brand-strong, inherit); font-weight: 600; }
+.tfeedback__evidence { font-size: 12px; opacity: 0.65; }
+.tfeedback__unfinished { margin: 10px 0 0; font-size: 13px; color: var(--brand-strong, inherit); }
+.tfeedback__advice { margin: 8px 0 0; font-size: 13px; }
+
+.course-cell { display: grid; gap: 8px; }
+.course-feedback-btn {
+  justify-self: start;
+  border: 1px solid var(--brand);
+  color: var(--brand);
+  background: none;
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.course-feedback-panel {
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1px solid var(--surface-border);
+  border-radius: var(--r-lg);
+  background: var(--surface-solid);
+}
+.course-feedback-panel__title { font-size: 13px; font-weight: 600; color: var(--brand); }
+.course-feedback-row { font-size: 13px; color: inherit; text-decoration: none; }
+.course-feedback-row:hover { text-decoration: underline; }
+
+.tfeedback__resume {
+  margin-top: 12px;
+  border: 1px solid var(--brand);
+  color: var(--brand);
+  background: none;
+  border-radius: 999px;
+  padding: 6px 16px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.tfeedback__resume:hover { background: var(--brand-soft, transparent); }
+
+/* 本地测试：视频页「当作已播完」按钮（工单 07，生产默认不渲染） */
+.video-skip-dev {
+  margin-top: 10px;
+  align-self: center;
+  border: 1px dashed var(--brand);
+  color: var(--brand);
+  background: none;
+  border-radius: 8px;
+  padding: 6px 14px;
+  font-size: 13px;
+  cursor: pointer;
+  opacity: 0.85;
+}

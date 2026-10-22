@@ -7,6 +7,15 @@
   "knowledgePackage": {
     "title": "心理沙盘游戏初识",
     "summary": "认识心理沙盘游戏的组成、作用与体验准备。",
+    "rubric": {
+      "knowledgePoints": [
+        {
+          "id": "kp-sandplay",
+          "title": "心理沙盘游戏初识",
+          "expectedConcepts": ["认识心理沙盘游戏的组成", "了解其作用", "体验准备"]
+        }
+      ]
+    },
     "entries": [
       {
         "id": "4DBnQ-1-a54hHV",

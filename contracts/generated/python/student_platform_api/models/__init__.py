@@ -13,6 +13,9 @@ from .platform_learning_context_v1 import PlatformLearningContextV1
 from .platform_learning_context_v1_grounding import PlatformLearningContextV1Grounding
 from .platform_learning_context_v1_knowledge_package import PlatformLearningContextV1KnowledgePackage
 from .platform_learning_context_v1_knowledge_package_entries_item import PlatformLearningContextV1KnowledgePackageEntriesItem
+from .platform_learning_context_v1_knowledge_package_entries_item_scope import PlatformLearningContextV1KnowledgePackageEntriesItemScope
+from .platform_learning_context_v1_knowledge_package_rubric import PlatformLearningContextV1KnowledgePackageRubric
+from .platform_learning_context_v1_knowledge_package_rubric_knowledge_points_item import PlatformLearningContextV1KnowledgePackageRubricKnowledgePointsItem
 from .platform_learning_context_v1_lessons_item import PlatformLearningContextV1LessonsItem
 from .platform_learning_context_v1_publication import PlatformLearningContextV1Publication
 from .platform_learning_context_v1_schema_version import PlatformLearningContextV1SchemaVersion
@@ -35,6 +38,9 @@ __all__ = (
     "PlatformLearningContextV1Grounding",
     "PlatformLearningContextV1KnowledgePackage",
     "PlatformLearningContextV1KnowledgePackageEntriesItem",
+    "PlatformLearningContextV1KnowledgePackageEntriesItemScope",
+    "PlatformLearningContextV1KnowledgePackageRubric",
+    "PlatformLearningContextV1KnowledgePackageRubricKnowledgePointsItem",
     "PlatformLearningContextV1LessonsItem",
     "PlatformLearningContextV1Publication",
     "PlatformLearningContextV1SchemaVersion",

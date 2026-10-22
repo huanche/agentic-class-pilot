@@ -7,16 +7,12 @@ import {
   FileDown,
   Film,
   Loader2,
-  Monitor,
-  Moon,
   Package,
   Settings,
   ShieldCheck,
-  Sun,
 } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { useI18n } from '@/lib/hooks/use-i18n';
-import { useTheme } from '@/lib/hooks/use-theme';
 import { useStageStore } from '@/lib/store';
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
 import { useExportPPTX } from '@/lib/export/use-export-pptx';
@@ -25,14 +21,7 @@ import { isVideoExportEnabled } from '@/lib/config/feature-flags';
 import { useVideoRenderStore } from '@/lib/store/video-render';
 import { CircularProgress } from '@/components/ui/circular-progress';
 import { VideoExportDialog } from './video-export-dialog';
-import { LanguageSwitcher } from '../language-switcher';
 import { SettingsDialog } from '../settings';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 import type { StageMode } from '@/lib/types/stage';
 import { CourseReleaseReviewDialog } from '@/components/governance/course-release-review-dialog';
@@ -50,11 +39,13 @@ interface HeaderControlsProps {
    * off ring weight / blur to keep the CommandBar quiet).
    */
   readonly variant?: 'default' | 'compact';
+  readonly showSettings?: boolean;
 }
 
 /**
- * Stage-level global controls: language picker, theme picker, settings
- * modal trigger, and the Pro Switch. Extracted out of `Header` so the
+ * Stage-level global controls: settings modal trigger and the Pro Switch.
+ * Language and theme live in the dialog's system settings section.
+ * Extracted out of `Header` so the
  * Pro mode CommandBar can absorb the same affordances and the playback
  * Header doesn't need to stay mounted just to host them — Pro mode
  * therefore lands on a single top-chrome bar instead of stacking the
@@ -70,9 +61,9 @@ export function HeaderControls({
   canEdit,
   onToggleEditMode,
   variant = 'default',
+  showSettings = true,
 }: HeaderControlsProps) {
   const { t } = useI18n();
-  const { theme, setTheme } = useTheme();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [videoDialogOpen, setVideoDialogOpen] = useState(false);
   const [reviewDialogOpen, setReviewDialogOpen] = useState(false);
@@ -85,6 +76,7 @@ export function HeaderControls({
   // CommandBar's right cluster).
   const scenes = useStageStore((s) => s.scenes);
   const stage = useStageStore((s) => s.stage);
+  const stageId = stage?.id;
   const generatingOutlines = useStageStore((s) => s.generatingOutlines);
   const failedOutlines = useStageStore((s) => s.failedOutlines);
   const generationStatus = useStageStore((s) => s.generationStatus);
@@ -102,15 +94,15 @@ export function HeaderControls({
   const exportRef = useRef<HTMLDivElement>(null);
 
   const refreshReleaseGate = useCallback(async () => {
-    if (!stage?.id) {
-      setReleaseGate(undefined);
-      return;
-    }
-    setReleaseGate(await evaluateCourseReleaseGate(stage.id, scenes));
-  }, [stage?.id, scenes]);
+    const gate = await (stageId
+      ? evaluateCourseReleaseGate(stageId, scenes)
+      : Promise.resolve(undefined));
+    setReleaseGate(gate);
+  }, [stageId, scenes]);
 
   useEffect(() => {
-    void refreshReleaseGate();
+    const timer = setTimeout(() => void refreshReleaseGate(), 0);
+    return () => clearTimeout(timer);
   }, [refreshReleaseGate]);
 
   const canExport =
@@ -146,77 +138,25 @@ export function HeaderControls({
   // anchors identically too.
   return (
     <div className="flex items-center gap-4">
-      <div
-        className={cn(
-          'shrink-0 flex items-center gap-1 backdrop-blur-md shadow-sm rounded-full',
-          compact
-            ? 'bg-zinc-100/70 dark:bg-zinc-800/70 border border-zinc-200/60 dark:border-zinc-700/60 px-1.5 py-1'
-            : 'bg-white/60 dark:bg-gray-800/60 border border-gray-100/50 dark:border-gray-700/50 px-2 py-1.5',
-        )}
-      >
-        {/* Language — Radix DropdownMenu so its menu portals to body
-            and never gets clipped by an ancestor's overflow-hidden. */}
-        <LanguageSwitcher />
-
-        {/* Theme — same Portal-backed DropdownMenu pattern. Non-modal keeps
-            Radix from body scroll-locking a fixed-height classroom layout. */}
-        <DropdownMenu modal={false}>
-          <DropdownMenuTrigger asChild>
-            <button
-              className="p-2 rounded-full text-gray-400 dark:text-gray-500 hover:bg-white dark:hover:bg-gray-700 hover:text-gray-800 dark:hover:text-gray-200 hover:shadow-sm transition-all group"
-              aria-label={t('settings.theme')}
-            >
-              {theme === 'light' && <Sun className="w-4 h-4" />}
-              {theme === 'dark' && <Moon className="w-4 h-4" />}
-              {theme === 'system' && <Monitor className="w-4 h-4" />}
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" sideOffset={8} className="min-w-[140px]">
-            <DropdownMenuItem
-              onSelect={() => setTheme('light')}
-              className={cn(
-                'cursor-pointer gap-2',
-                theme === 'light' &&
-                  'bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400',
-              )}
-            >
-              <Sun className="w-4 h-4" />
-              {t('settings.themeOptions.light')}
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onSelect={() => setTheme('dark')}
-              className={cn(
-                'cursor-pointer gap-2',
-                theme === 'dark' &&
-                  'bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400',
-              )}
-            >
-              <Moon className="w-4 h-4" />
-              {t('settings.themeOptions.dark')}
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onSelect={() => setTheme('system')}
-              className={cn(
-                'cursor-pointer gap-2',
-                theme === 'system' &&
-                  'bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400',
-              )}
-            >
-              <Monitor className="w-4 h-4" />
-              {t('settings.themeOptions.system')}
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-
-        {/* Settings */}
-        <button
-          onClick={() => setSettingsOpen(true)}
-          className="p-2 rounded-full text-gray-400 dark:text-gray-500 hover:bg-white dark:hover:bg-gray-700 hover:text-gray-800 dark:hover:text-gray-200 hover:shadow-sm transition-all group"
-          aria-label={t('settings.title')}
+      {showSettings && (
+        <div
+          className={cn(
+            'shrink-0 flex items-center gap-1 backdrop-blur-md shadow-sm rounded-full',
+            compact
+              ? 'bg-zinc-100/70 dark:bg-zinc-800/70 border border-zinc-200/60 dark:border-zinc-700/60 px-1.5 py-1'
+              : 'bg-white/60 dark:bg-gray-800/60 border border-gray-100/50 dark:border-gray-700/50 px-2 py-1.5',
+          )}
         >
-          <Settings className="w-4 h-4 group-hover:rotate-90 transition-transform duration-500" />
-        </button>
-      </div>
+          {/* Settings */}
+          <button
+            onClick={() => setSettingsOpen(true)}
+            className="p-2 rounded-full text-gray-400 dark:text-gray-500 hover:bg-white dark:hover:bg-gray-700 hover:text-gray-800 dark:hover:text-gray-200 hover:shadow-sm transition-all group"
+            aria-label={t('settings.title')}
+          >
+            <Settings className="w-4 h-4 group-hover:rotate-90 transition-transform duration-500" />
+          </button>
+        </div>
+      )}
 
       {/* Pro Switch — toggle property: on/off both clickable, not a
           one-way "Done" button. Disabled only when the current scene
@@ -391,7 +331,13 @@ export function HeaderControls({
         )}
       </div>
 
-      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
+      {showSettings && (
+        <SettingsDialog
+          open={settingsOpen}
+          onOpenChange={setSettingsOpen}
+          initialSection="general"
+        />
+      )}
       {videoExportEnabled && (
         <VideoExportDialog open={videoDialogOpen} onOpenChange={setVideoDialogOpen} />
       )}
