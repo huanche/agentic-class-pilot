@@ -65,9 +65,9 @@ test("顶部仅展示知识点，星级在结束、报告、反馈和续聊后�
 });
 
 /** 平台深链入口：签一枚 launch_token（与 launch_context.verify 同算法）。 */
-function launchEntry() {
+function launchEntry(prefix = "e2e-") {
   const payload = {
-    uid: "e2e-" + String(Date.now()).slice(-8) + String(Math.random()).slice(2, 6),
+    uid: prefix + String(Date.now()).slice(-8) + String(Math.random()).slice(2, 6),
     cid: COURSE_ID, rid: null, pub: PUBLICATION,
     exp: Math.floor(Date.now() / 1000) + 3600,
   };
@@ -76,6 +76,23 @@ function launchEntry() {
   const signature = createHmac("sha256", SERVICE_KEY).update(payloadJson).digest("hex");
   return `/app?launch_token=${encodeURIComponent(encoded + "." + signature)}`;
 }
+
+test("selecting the second lesson binds its player and tutoring knowledge", async ({ page }) => {
+  await page.goto(launchEntry("scope-"));
+  await expect(page.locator(".week-tile")).toHaveCount(2);
+  await page.locator(".week-tile").filter({hasText: "第二课时"}).click();
+  await page.locator('[data-goto="class"]').click();
+  await expect(page.locator("#class-title")).toContainText("第二课时");
+  await page.locator("#btn-start").click();
+  await page.getByRole("button", {name: /开始播放教学视频/}).click();
+  await expect(page.locator("iframe").first()).toHaveAttribute("src", /player-second/);
+  const sid = await reportVideoDone(page);
+  await expect(page.locator("#chat-log")).toContainText("第二课时专属概念");
+  await expect(page.locator("#chat-log")).not.toContainText("调度是什么");
+  const report = await (await page.request.get(`/api/session/${sid}/export?fmt=json`)).json();
+  expect(report.lesson_id).toBe("lesson-second");
+  expect(report.knowledge_points.map(point => point.kp_id)).toEqual(["kp-second"]);
+});
 
 /** 走到教学视频页：平台深链进学生端（单课课程自动落到选课时页）→ 开课 → 播放。 */
 async function reachVideoStage(page) {

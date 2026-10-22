@@ -585,7 +585,15 @@ function openReplayRoute() {
   $("video-player-status").parentElement.hidden = false;
   var requestedHash = location.hash;
   var requestedLessonId = currentLessonId;
-  fetchLesson(requestedLessonId).then(function (data) {
+  var replaySessionId = sessionId;
+  startSession({ sessionId: replaySessionId, lessonId: requestedLessonId }).catch(function (error) {
+    if (error.status !== 409) throw error;
+    // 历史错误绑定的会话保留供报告查阅；回放使用独立的新上下文。
+    replaySessionId = createSessionId();
+    return startSession({ sessionId: replaySessionId, lessonId: requestedLessonId });
+  }).then(function () {
+    return fetchLesson(requestedLessonId, replaySessionId);
+  }).then(function (data) {
     if (request !== replayRouteRequest || location.hash !== requestedHash) return;
     lesson = data;
     $("class-title").textContent = data.title + " · 回放";
@@ -621,9 +629,7 @@ function openLessonRoute() {
   $("btn-start").disabled = true;   /* 课程没到位不让开课 */
 
   var requestedLessonId = currentLessonId;
-  Promise.all([
-    fetchLesson(requestedLessonId),
-    fetchSessionState(sessionId).catch(function (error) {
+  fetchSessionState(sessionId).catch(function (error) {
       if (error.status !== 404) throw error;
       return startSession({ sessionId: sessionId, lessonId: requestedLessonId });
     }).then(function (state) {
@@ -640,10 +646,18 @@ function openLessonRoute() {
       messageCursor = 0;
       resetClassroom();
       return startSession({ sessionId: sessionId, lessonId: requestedLessonId });
-    })
-  ]).then(function (values) {
-    var data = values[0];
-    var session = values[1];
+    }).catch(function (error) {
+      if (error.status !== 409) throw error;
+      sessionId = renewSessionId(requestedLessonId);
+      return startSession({ sessionId: sessionId, lessonId: requestedLessonId });
+    }).then(function (session) {
+      // 先绑定所选课时，再从这一个课堂会话取详情，避免读目录入口的旧内容。
+      return fetchLesson(requestedLessonId, session.sessionId).then(function (data) {
+        return { data: data, session: session };
+      });
+    }).then(function (values) {
+    var data = values.data;
+    var session = values.session;
     if (currentLessonId !== requestedLessonId) return;
     lesson = data;
     classStage.renderLesson(data);

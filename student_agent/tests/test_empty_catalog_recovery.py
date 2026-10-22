@@ -61,7 +61,7 @@ class EmptyCatalogRecoveryTests(unittest.TestCase):
         context = self.state["learning_context"]
         state = agent.initial_state(sid, context["user_id"], context["course_id"])
         state.update(self.state)
-        state.update({"lesson_id": context["course_id"], "lesson_status": "running",
+        state.update({"lesson_id": context["selected_lesson_id"], "lesson_status": "running",
                       "tutoring_planned_end_at": "2026-10-21T12:00:00+00:00", "tutoring_planned_minutes": 15})
         server.SESSIONS[sid] = {
             "state": state, "messages": [], "lock": threading.Lock(),
@@ -80,7 +80,8 @@ class EmptyCatalogRecoveryTests(unittest.TestCase):
                 mock.patch.object(server, "_persist_session_record"), \
                 mock.patch.object(server, "_record_learning_event"):
             client = TestClient(server.app)
-            response = client.post("/api/session/start", json={"session_id": sid, "launch_token": "test-token"})
+            response = client.post("/api/session/start", json={"session_id": sid, "launch_token": "test-token",
+                                                              "lesson_id": context["selected_lesson_id"]})
             self.assertEqual(response.status_code, 200, response.text)
             public = client.get(f"/api/session/{sid}/state").json()
         self.assertEqual(public["phase"], "tutoring")

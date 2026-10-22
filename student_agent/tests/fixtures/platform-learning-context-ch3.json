@@ -3,7 +3,10 @@
   "userId": "00000000-0000-0000-0000-0000000000c3",
   "courseId": "ch3-sched-course-e2e",
   "courseTitle": "操作系统",
-  "publication": { "id": "ch3sched", "version": 1 },
+  "publication": {
+    "id": "ch3sched",
+    "version": 1
+  },
   "knowledgePackage": {
     "title": "处理机调度",
     "summary": "调度是什么、三级调度、评价指标、FCFS 与 SJF、抢占式与非抢占式、时间片轮转与多级反馈队列。",
@@ -12,32 +15,44 @@
         {
           "id": "kp-001",
           "title": "调度是什么",
-          "expectedConcepts": ["CPU 一次只能服务一个进程，系统决定多个就绪进程先服务谁的规则就是处理机调度。"]
+          "expectedConcepts": [
+            "CPU 一次只能服务一个进程，系统决定多个就绪进程先服务谁的规则就是处理机调度。"
+          ]
         },
         {
           "id": "kp-002",
           "title": "三级调度",
-          "expectedConcepts": ["高级调度调度作业进入内存并创建进程；中级调度负责对换；低级调度从就绪队列中选择进程上 CPU。"]
+          "expectedConcepts": [
+            "高级调度调度作业进入内存并创建进程；中级调度负责对换；低级调度从就绪队列中选择进程上 CPU。"
+          ]
         },
         {
           "id": "kp-003",
           "title": "调度评价指标",
-          "expectedConcepts": ["周转时间、带权周转时间、平均等待时间、响应时间是评价调度算法的指标。"]
+          "expectedConcepts": [
+            "周转时间、带权周转时间、平均等待时间、响应时间是评价调度算法的指标。"
+          ]
         },
         {
           "id": "kp-004",
           "title": "FCFS 与 SJF",
-          "expectedConcepts": ["FCFS 按到达顺序执行；SJF 按运行时间短的先执行，平均等待时间更短但长作业可能饥饿。"]
+          "expectedConcepts": [
+            "FCFS 按到达顺序执行；SJF 按运行时间短的先执行，平均等待时间更短但长作业可能饥饿。"
+          ]
         },
         {
           "id": "kp-005",
           "title": "抢占式与非抢占式",
-          "expectedConcepts": ["非抢占式不打断正在运行的进程；抢占式可以因新到达进程更短、时间片耗尽或优先级更高而中断当前进程。"]
+          "expectedConcepts": [
+            "非抢占式不打断正在运行的进程；抢占式可以因新到达进程更短、时间片耗尽或优先级更高而中断当前进程。"
+          ]
         },
         {
           "id": "kp-006",
           "title": "时间片轮转与多级反馈队列",
-          "expectedConcepts": ["RR 用时间片轮流服务进程，响应更快；多级反馈队列允许进程在不同队列间移动，不需要预先知道进程长度。"]
+          "expectedConcepts": [
+            "RR 用时间片轮流服务进程，响应更快；多级反馈队列允许进程在不同队列间移动，不需要预先知道进程长度。"
+          ]
         }
       ]
     },
@@ -46,38 +61,234 @@
         "id": "KP-001",
         "title": "调度是什么",
         "content": "CPU 一次只能服务一个进程，系统决定多个就绪进程先服务谁的规则就是处理机调度。",
-        "citations": []
+        "citations": [],
+        "scope": {
+          "type": "lesson",
+          "lessonId": "lesson-ch3sched"
+        }
       },
       {
         "id": "KP-002",
         "title": "三级调度",
         "content": "高级调度调度作业进入内存并创建进程；中级调度负责对换；低级调度从就绪队列中选择进程上 CPU。",
-        "citations": []
+        "citations": [],
+        "scope": {
+          "type": "lesson",
+          "lessonId": "lesson-ch3sched"
+        }
       },
       {
         "id": "KP-003",
         "title": "调度评价指标",
         "content": "周转时间、带权周转时间、平均等待时间、响应时间是评价调度算法的指标。",
-        "citations": []
+        "citations": [],
+        "scope": {
+          "type": "lesson",
+          "lessonId": "lesson-ch3sched"
+        }
       },
       {
         "id": "KP-004",
         "title": "FCFS 与 SJF",
         "content": "FCFS 按到达顺序执行；SJF 按运行时间短的先执行，平均等待时间更短但长作业可能饥饿。",
-        "citations": []
+        "citations": [],
+        "scope": {
+          "type": "lesson",
+          "lessonId": "lesson-ch3sched"
+        }
       },
       {
         "id": "KP-005",
         "title": "抢占式与非抢占式",
         "content": "非抢占式不打断正在运行的进程；抢占式可以因新到达进程更短、时间片耗尽或优先级更高而中断当前进程。",
-        "citations": []
+        "citations": [],
+        "scope": {
+          "type": "lesson",
+          "lessonId": "lesson-ch3sched"
+        }
       },
       {
         "id": "KP-006",
         "title": "时间片轮转与多级反馈队列",
         "content": "RR 用时间片轮流服务进程，响应更快；多级反馈队列允许进程在不同队列间移动，不需要预先知道进程长度。",
-        "citations": []
+        "citations": [],
+        "scope": {
+          "type": "lesson",
+          "lessonId": "lesson-ch3sched"
+        }
       }
     ]
-  }
+  },
+  "classroom": {
+    "id": "classroom-ch3sched",
+    "playerUrl": "https://example.test/classroom/ch3sched",
+    "scenes": [
+      {
+        "id": "scene-1",
+        "order": 1,
+        "title": "调度是什么",
+        "actions": [
+          {
+            "id": "speech-1",
+            "type": "speech",
+            "text": "CPU 一次只能服务一个进程，系统决定多个就绪进程先服务谁的规则就是处理机调度。"
+          }
+        ]
+      },
+      {
+        "id": "scene-2",
+        "order": 2,
+        "title": "三级调度",
+        "actions": [
+          {
+            "id": "speech-2",
+            "type": "speech",
+            "text": "高级调度调度作业进入内存并创建进程；中级调度负责对换；低级调度从就绪队列中选择进程上 CPU。"
+          }
+        ]
+      },
+      {
+        "id": "scene-3",
+        "order": 3,
+        "title": "调度评价指标",
+        "actions": [
+          {
+            "id": "speech-3",
+            "type": "speech",
+            "text": "周转时间、带权周转时间、平均等待时间、响应时间是评价调度算法的指标。"
+          }
+        ]
+      },
+      {
+        "id": "scene-4",
+        "order": 4,
+        "title": "FCFS 与 SJF",
+        "actions": [
+          {
+            "id": "speech-4",
+            "type": "speech",
+            "text": "FCFS 按到达顺序执行；SJF 按运行时间短的先执行，平均等待时间更短但长作业可能饥饿。"
+          }
+        ]
+      },
+      {
+        "id": "scene-5",
+        "order": 5,
+        "title": "抢占式与非抢占式",
+        "actions": [
+          {
+            "id": "speech-5",
+            "type": "speech",
+            "text": "非抢占式不打断正在运行的进程；抢占式可以因新到达进程更短、时间片耗尽或优先级更高而中断当前进程。"
+          }
+        ]
+      },
+      {
+        "id": "scene-6",
+        "order": 6,
+        "title": "时间片轮转与多级反馈队列",
+        "actions": [
+          {
+            "id": "speech-6",
+            "type": "speech",
+            "text": "RR 用时间片轮流服务进程，响应更快；多级反馈队列允许进程在不同队列间移动，不需要预先知道进程长度。"
+          }
+        ]
+      }
+    ]
+  },
+  "selectedLessonId": "lesson-ch3sched",
+  "lessonCatalog": [
+    {
+      "id": "lesson-ch3sched",
+      "title": "处理机调度",
+      "order": 1,
+      "segmentCount": 6
+    }
+  ],
+  "lessons": [
+    {
+      "id": "lesson-ch3sched",
+      "title": "处理机调度",
+      "order": 1,
+      "classroom": {
+        "id": "classroom-ch3sched",
+        "playerUrl": "https://example.test/classroom/ch3sched",
+        "scenes": [
+          {
+            "id": "scene-1",
+            "order": 1,
+            "title": "调度是什么",
+            "actions": [
+              {
+                "id": "speech-1",
+                "type": "speech",
+                "text": "CPU 一次只能服务一个进程，系统决定多个就绪进程先服务谁的规则就是处理机调度。"
+              }
+            ]
+          },
+          {
+            "id": "scene-2",
+            "order": 2,
+            "title": "三级调度",
+            "actions": [
+              {
+                "id": "speech-2",
+                "type": "speech",
+                "text": "高级调度调度作业进入内存并创建进程；中级调度负责对换；低级调度从就绪队列中选择进程上 CPU。"
+              }
+            ]
+          },
+          {
+            "id": "scene-3",
+            "order": 3,
+            "title": "调度评价指标",
+            "actions": [
+              {
+                "id": "speech-3",
+                "type": "speech",
+                "text": "周转时间、带权周转时间、平均等待时间、响应时间是评价调度算法的指标。"
+              }
+            ]
+          },
+          {
+            "id": "scene-4",
+            "order": 4,
+            "title": "FCFS 与 SJF",
+            "actions": [
+              {
+                "id": "speech-4",
+                "type": "speech",
+                "text": "FCFS 按到达顺序执行；SJF 按运行时间短的先执行，平均等待时间更短但长作业可能饥饿。"
+              }
+            ]
+          },
+          {
+            "id": "scene-5",
+            "order": 5,
+            "title": "抢占式与非抢占式",
+            "actions": [
+              {
+                "id": "speech-5",
+                "type": "speech",
+                "text": "非抢占式不打断正在运行的进程；抢占式可以因新到达进程更短、时间片耗尽或优先级更高而中断当前进程。"
+              }
+            ]
+          },
+          {
+            "id": "scene-6",
+            "order": 6,
+            "title": "时间片轮转与多级反馈队列",
+            "actions": [
+              {
+                "id": "speech-6",
+                "type": "speech",
+                "text": "RR 用时间片轮流服务进程，响应更快；多级反馈队列允许进程在不同队列间移动，不需要预先知道进程长度。"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
 }

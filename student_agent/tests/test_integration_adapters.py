@@ -33,19 +33,17 @@ class CourseAdapterTests(unittest.TestCase):
         self.assertIn("心理沙盘游戏课堂", segment.content)
         self.assertEqual(segment.completion_rule, "scene-completed")
 
-    def test_text_only_context_without_classroom(self):
-        payload = dict(self.payload)
-        payload["classroom"] = None
-        context = self.adapter.from_platform_payload(payload)
-        self.assertIsNone(context.classroom)
-        self.assertEqual(context.lessons[0].segments[0].completion_rule, "discussed")
-        self.assertIn("心理沙盘", context.lessons[0].segments[0].content)
+    def test_selected_lesson_without_classroom_is_rejected(self):
+        import copy
+        payload = copy.deepcopy(self.payload)
+        payload["lessons"][0]["classroom"] = None
+        with self.assertRaises(self.adapter.ContextContractError):
+            self.adapter.from_platform_payload(payload)
 
     def test_explicit_empty_lesson_catalog_does_not_reuse_course_video(self):
         payload = dict(self.payload, lessons=[])
-        context = self.adapter.from_platform_payload(payload)
-        self.assertIsNone(context.classroom)
-        self.assertTrue(all(lesson.classroom is None for lesson in context.lessons))
+        with self.assertRaises(self.adapter.ContextContractError):
+            self.adapter.from_platform_payload(payload)
 
     def test_unknown_schema_version_rejected(self):
         payload = dict(self.payload, schemaVersion=99)
@@ -73,12 +71,12 @@ class CourseAdapterTests(unittest.TestCase):
 
     def test_generated_plan_uses_frontend_phase_contract(self):
         context = self.adapter.from_platform_payload(self.payload)
-        plan = self.adapter.load_plan_for_session({"learning_context": context.model_dump()})
+        plan = self.adapter.load_plan_for_session({"learning_context": context.model_dump(), "lesson_id": context.selected_lesson_id})
         self.assertEqual(plan["stages"][0]["id"], "guided_learning")
 
     def test_platform_plan_binds_segments_to_published_knowledge(self):
         context = self.adapter.from_platform_payload(self.payload)
-        plan = self.adapter.load_plan_for_session({"learning_context": context.model_dump()})
+        plan = self.adapter.load_plan_for_session({"learning_context": context.model_dump(), "lesson_id": context.selected_lesson_id})
         self.assertTrue(plan["segments"][0]["knowledge_point_ids"])
         published_ids = {item["id"] for item in plan["knowledge_points"]}
         self.assertTrue(set(plan["segments"][0]["knowledge_point_ids"]).issubset(published_ids))
@@ -87,7 +85,7 @@ class CourseAdapterTests(unittest.TestCase):
         from apps.integration import prompt_context
 
         context = self.adapter.from_platform_payload(self.payload)
-        plan = self.adapter.load_plan_for_session({"learning_context": context.model_dump()})
+        plan = self.adapter.load_plan_for_session({"learning_context": context.model_dump(), "lesson_id": context.selected_lesson_id})
         state = {"lesson_plan": plan, "active_segment_id": plan["segments"][0]["id"]}
         prompt = prompt_context.tutor_context(state)
         questions = prompt_context.question_queue("recap_discussion", plan, [])

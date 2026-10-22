@@ -146,9 +146,9 @@ def test_knowledge_artifact_rubric_picks_by_lesson() -> None:
     assert [p["title"] for p in rubric["knowledgePoints"]] == ["周二的要点"]
     assert rubric["knowledgePoints"][0]["expectedConcepts"] == ["要点乙（page:2）。"]
 
-    # 唯一一份且无课时归属匹配 → 仍可用
+    # 即使唯一一份，不属于所选课时也禁止使用。
     only = [entries[2]]
-    assert _knowledge_artifact_rubric(only, "L9") is not None
+    assert _knowledge_artifact_rubric(only, "L9") is None
     # 多份且都匹配不上 → None（宁缺毋滥，学生端明说没有）
     assert _knowledge_artifact_rubric(entries, "L9") is None
     # 没有 knowledge-points 工件 → None

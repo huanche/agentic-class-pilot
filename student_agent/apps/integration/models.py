@@ -82,6 +82,17 @@ class Lesson(BaseModel):
     classroom: Optional[ClassroomRef] = None
 
 
+class LessonCatalogItem(BaseModel):
+    """仅供目录展示的课时摘要，不携带课件、材料或知识点正文。"""
+    id: str
+    title: str = ""
+    order: int = 1
+    week: Optional[int] = None
+    lesson_number: Optional[int] = None
+    teaching_hours: Optional[float] = None
+    segment_count: int = 0
+
+
 class CourseLearningContext(BaseModel):
     """Versioned learning context resolved from a verified launch token."""
     schema_version: int = 1
@@ -90,6 +101,8 @@ class CourseLearningContext(BaseModel):
     course_title: str
     publication: PublicationRef
     knowledge_package: KnowledgePackage
+    selected_lesson_id: Optional[str] = None
+    lesson_catalog: List[LessonCatalogItem] = Field(default_factory=list)
     lessons: List[Lesson] = Field(default_factory=list)
     classroom: Optional[ClassroomRef] = None
     evaluation: EvaluationContract = Field(default_factory=EvaluationContract)

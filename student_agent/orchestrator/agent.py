@@ -334,7 +334,13 @@ def load_plan(state: ClassroomState) -> dict:
         return {}
 
     from apps.integration import course_adapter
-    plan = course_adapter.load_plan_for_session(state)
+    try:
+        plan = course_adapter.load_plan_for_session(state)
+    except course_adapter.ContextContractError as error:
+        return {
+            "host_phase": "ending", "student_status": "ended",
+            "reply_text": f"开课失败：{error}", "advance_reason": "课时上下文不一致",
+        }
     if plan is None:
         return {
             "host_phase": "ending", "student_status": "ended",

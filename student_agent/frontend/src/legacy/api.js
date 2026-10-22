@@ -61,8 +61,8 @@ export function fetchSessionCourses(sessionId) {
   return request("GET", "/api/session/courses" + query);
 }
 
-export function fetchLesson(lessonId) {
-  var sid = currentSessionId();
+export function fetchLesson(lessonId, sessionId) {
+  var sid = sessionId || currentSessionId();
   var query = "?lessonId=" + encodeURIComponent(lessonId || "") +
     (sid ? "&sessionId=" + encodeURIComponent(sid) : "");
   return request("GET", "/api/session/lesson" + query);

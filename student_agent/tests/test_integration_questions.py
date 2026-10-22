@@ -21,8 +21,13 @@ class GroundedQuestionTests(unittest.TestCase):
                                                 "expectedConcepts": ["独占资源"]}]}
             },
         }
+        self.payload["selectedLessonId"] = "lesson-1"
+        self.payload["knowledgePackage"]["entries"][0]["scope"] = {"type": "lesson", "lessonId": "lesson-1"}
+        self.payload["lessons"] = [{"id": "lesson-1", "title": "电路交换", "classroom": {
+            "id": "classroom-1", "scenes": [{"id": "scene-1", "title": "电路交换",
+                "actions": [{"id": "speech-1", "type": "speech", "text": self.evidence}]}]}}]
         context = course_adapter.from_platform_payload(self.payload)
-        self.plan = course_adapter.load_plan_for_session({"learning_context": context.model_dump()})
+        self.plan = course_adapter.load_plan_for_session({"learning_context": context.model_dump(), "lesson_id": context.selected_lesson_id})
 
     def response(self, **overrides):
         item = {"kp_id": "entry-1", "source_id": "entry-1", "evidence": self.evidence,

@@ -39,7 +39,35 @@ const server = createServer((req, res) => {
     } else if (req.method === "GET" && req.url === "/healthz") {
       json('{"ok":true}');
     } else if (req.method === "POST" && req.url === "/api/v1/internal/student/learning-context") {
-      json(readFileSync(FIXTURE, "utf8"));
+      const context = JSON.parse(readFileSync(FIXTURE, "utf8"));
+      const request = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+      const tokenPayload = JSON.parse(Buffer.from(request.launch_token.split(".")[0], "base64url").toString("utf8"));
+      if (tokenPayload.uid.startsWith("scope-")) {
+        context.lessonCatalog.push({id: "lesson-second", title: "第二课时", order: 2,
+          week: 2, lessonNumber: 1, segmentCount: 1});
+        if (request.lesson_id === "lesson-second") {
+          context.selectedLessonId = "lesson-second";
+          context.classroom = {id: "classroom-second", playerUrl: "https://example.test/player-second",
+            scenes: [{id: "scene-second", order: 1, title: "第二课时专属概念",
+              actions: [{id: "speech-second", type: "speech", text: "第二课时只讲专属内容。"}]}]};
+          context.lessons = [{id: "lesson-second", title: "第二课时", order: 2, classroom: context.classroom}];
+          context.knowledgePackage.entries = [{id: "material-second", title: "第二课时材料",
+            scope: {type: "lesson", lessonId: "lesson-second"}, content: "第二课时专属内容。"}];
+          context.knowledgePackage.rubric = {knowledgePoints: [{id: "kp-second", title: "第二课时专属概念",
+            expectedConcepts: ["第二课时只讲专属内容。"]}]};
+        }
+      }
+      if (!request.lesson_id) {
+        context.selectedLessonId = null;
+        context.lessons = [];
+        context.classroom = null;
+        context.knowledgePackage.entries = [];
+        delete context.knowledgePackage.rubric;
+      } else if (request.lesson_id !== context.selectedLessonId) {
+        res.writeHead(404, {"content-type": "application/json"}).end('{"detail":"所选课时不存在"}');
+        return;
+      }
+      json(JSON.stringify(context));
     } else if (req.method === "POST" && req.url === "/api/v1/internal/student/learning-progress") {
       json('{"ok":true}');
     } else {

@@ -91,11 +91,12 @@ def fetch_user_model_config(user_id: str) -> Optional[Dict[str, Any]]:
         return None
 
 
-def fetch_learning_context(launch_token: str) -> Dict[str, Any]:
+def fetch_learning_context(launch_token: str, lesson_id: Optional[str] = None) -> Dict[str, Any]:
     """POST /internal/student/learning-context → raw platform payload."""
     if not platform_auth_url() or not student_service_key():
         raise IntegrationConfigError("平台客户端未配置（PLATFORM_AUTH_URL / STUDENT_SERVICE_KEY）")
-    return _post_json("/internal/student/learning-context", {"launch_token": launch_token})
+    return _post_json("/internal/student/learning-context", {
+        "launch_token": launch_token, "lesson_id": lesson_id or None})
 
 
 def post_learning_progress(user_id: str, course_id: str, session_key: str,

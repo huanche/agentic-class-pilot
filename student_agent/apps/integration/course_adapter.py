@@ -5,11 +5,9 @@ teaching state machine consumes the resulting CourseLearningContext.
 """
 from typing import Any, Dict, List, Optional
 
-from pydantic import ValidationError
-
 from . import evaluation as evaluation_adapter
 from .models import (ClassroomRef, ClassroomScene, CourseLearningContext,
-                     KnowledgeEntry, KnowledgePackage, Lesson, PublicationRef,
+                     KnowledgeEntry, KnowledgePackage, Lesson, LessonCatalogItem, PublicationRef,
                      SceneAction, Segment)
 
 SUPPORTED_SCHEMA_VERSION = 1
@@ -19,7 +17,7 @@ class ContextContractError(ValueError):
     """Payload violates the learning-context contract."""
 
 
-def from_platform_payload(payload: Dict[str, Any]) -> CourseLearningContext:
+def from_platform_payload(payload: Dict[str, Any], lesson_id: Optional[str] = None) -> CourseLearningContext:
     version = int(payload.get("schemaVersion") or 0)
     if version != SUPPORTED_SCHEMA_VERSION:
         raise ContextContractError(
@@ -32,24 +30,43 @@ def from_platform_payload(payload: Dict[str, Any]) -> CourseLearningContext:
         if field not in publication:
             raise ContextContractError(f"publication 缺少必需字段：{field}")
 
+    selected_id = payload.get("selectedLessonId")
+    if lesson_id and selected_id != lesson_id:
+        raise ContextContractError("平台返回的课时与所选课时不一致，请重新进入课程")
+    raw_catalog = payload.get("lessonCatalog") or []
+    catalog = [LessonCatalogItem(
+        id=str(item["id"]), title=str(item.get("title") or ""), order=int(item.get("order") or 1),
+        week=item.get("week"), lesson_number=item.get("lessonNumber"),
+        teaching_hours=item.get("teachingHours"), segment_count=int(item.get("segmentCount") or 0),
+    ) for item in raw_catalog if isinstance(item, dict) and item.get("id")]
+    package = payload["knowledgePackage"]
+    entries = []
+    if selected_id:
+        for entry in package.get("entries") or []:
+            scope = entry.get("scope") or {}
+            if (scope.get("lessonId") == selected_id or
+                    (scope.get("type") == "course" and not scope.get("lessonId")
+                     and entry.get("resourceType") != "knowledge-points")):
+                entries.append(entry)
     context = CourseLearningContext(
         schema_version=version,
         user_id=str(payload["userId"]),
         course_id=str(payload["courseId"]),
         course_title=str(payload.get("courseTitle") or ""),
         publication=PublicationRef(id=str(publication["id"]), version=int(publication["version"])),
-        knowledge_package=_package(payload["knowledgePackage"]),
-        classroom=_classroom(payload.get("classroom")),
+        knowledge_package=_package({**package, "entries": entries}),
+        selected_lesson_id=selected_id,
+        lesson_catalog=catalog,
     )
-    if isinstance(payload.get("lessons"), list):
-        context.lessons = _published_lessons(payload["lessons"], context)
-        if not context.lessons:
-            # A course-wide legacy player is not an authorized lesson mapping.
-            context.classroom = None
-            context.lessons = _lessons(context)
+    if selected_id:
+        selected = [item for item in payload.get("lessons") or [] if item.get("id") == selected_id]
+        context.lessons = _published_lessons(selected)
+        if len(context.lessons) != 1:
+            raise ContextContractError("所选课时没有有效的已发布课堂")
+        context.classroom = context.lessons[0].classroom
+        context.evaluation = evaluation_adapter.from_platform_context(payload)
     else:
-        context.lessons = _lessons(context)
-    context.evaluation = evaluation_adapter.from_platform_context(payload)
+        context.evaluation = evaluation_adapter.from_platform_context({})
     return context
 
 
@@ -92,40 +109,7 @@ def _classroom(raw: Optional[Dict[str, Any]]) -> Optional[ClassroomRef]:
     return ClassroomRef(id=str(raw["id"]), player_url=str(raw.get("playerUrl") or ""), scenes=scenes)
 
 
-def _lessons(context: CourseLearningContext) -> List[Lesson]:
-    """One lesson per learning session.
-
-    With a classroom: each scene becomes a segment (completion = scene
-    completed in the player). Without: each knowledge entry becomes a text
-    segment (completion = discussed), so text-only courses still start.
-    """
-    segments: List[Segment] = []
-    if context.classroom and context.classroom.scenes:
-        for index, scene in enumerate(context.classroom.scenes, start=1):
-            speech = " ".join(a.text for a in scene.actions if a.type == "speech" and a.text)
-            segments.append(Segment(
-                id=f"seg-scene-{index}",
-                title=scene.title or f"第 {index} 页",
-                order=index,
-                source_scene_id=scene.id,
-                content=speech.strip(),
-                completion_rule="scene-completed",
-            ))
-    else:
-        for index, entry in enumerate(context.knowledge_package.entries, start=1):
-            segments.append(Segment(
-                id=f"seg-entry-{index}",
-                title=entry.title or f"第 {index} 节",
-                order=index,
-                content=entry.content,
-                completion_rule="discussed",
-            ))
-    lesson_title = context.knowledge_package.title or context.course_title or "课程学习"
-    return [Lesson(id=f"lesson-{context.publication.id}", title=lesson_title,
-                   order=1, segments=segments, classroom=context.classroom)]
-
-
-def _published_lessons(raw_lessons: Any, context: CourseLearningContext) -> List[Lesson]:
+def _published_lessons(raw_lessons: Any) -> List[Lesson]:
     """Convert the platform's published classroom catalog.
 
     Each published classroom is a selectable lesson.  Keeping this mapping in
@@ -191,8 +175,9 @@ def load_plan_for_session(state) -> Optional[dict]:
         print(f"[course_adapter] 知识点标题注册失败: {error}")
     selected = next((lesson for lesson in context.lessons
                      if lesson.id == state.get("lesson_id")), None)
-    selected = selected or (context.lessons[0] if context.lessons else None)
-    segments = selected.segments if selected else []
+    if selected is None or context.selected_lesson_id != state.get("lesson_id"):
+        raise ContextContractError("请先选择有效课时，禁止回退到其他课时")
+    segments = selected.segments
     total_minutes = max(20, 5 * len(segments))
     knowledge_points = [
         {"id": kp.id, "title": kp.title,
@@ -216,12 +201,12 @@ def load_plan_for_session(state) -> Optional[dict]:
         "source": "platform-published",
         "publication_id": context.publication.id,
         "publication_version": context.publication.version,
-        "lesson_id": selected.id if selected else context.course_id,
+        "lesson_id": selected.id,
         "course_id": context.course_id,
         # 开场白/报告等学生可见文案读的是 lesson_title；以前只有 title，
         # 取不到就回退成 lesson-N7fcx... 这类原始 ID 念给学生听。
-        "lesson_title": selected.title if selected else (context.course_title or "今天的课程"),
-        "title": selected.title if selected else context.course_title,
+        "lesson_title": selected.title,
+        "title": selected.title,
         "total_minutes": total_minutes,
         "stages": [
             {"id": "guided_learning", "name": "讲解", "enabled": True, "delivery": "video",

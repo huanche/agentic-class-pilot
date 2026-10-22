@@ -561,6 +561,7 @@ def _running(sid: str) -> dict:
 
 class StartIn(BaseModel):
     session_id: str | None = None
+    lesson_id: str | None = None
     time_scale: float = 1.0
     launch_token: str
 
@@ -574,8 +575,8 @@ def start(body: StartIn) -> dict:
 
     幂等：同一个 session_id 重复调用不会重新开课。
     携带平台 launch_token 时：身份与课程上下文**以令牌为准**（调用方传入的
-    student_id 被忽略），并把 publication version 固定进会话，教师后续
-    重新发布不影响进行中的这节课。
+    student_id 被忽略）。按显式lesson_id取内容；未选课时只建立目录入口。
+    已有教学计划的课时或发布版本不一致时拒绝混用，返回409。
     """
     import uuid
     platform_context = None
@@ -592,7 +593,10 @@ def start(body: StartIn) -> dict:
             integration_config.require_platform_config()
             payload = launch_context.verify_launch_token(body.launch_token)
             learning_context = course_adapter.from_platform_payload(
-                platform_client.fetch_learning_context(body.launch_token))
+                platform_client.fetch_learning_context(body.launch_token, lesson_id=body.lesson_id),
+                lesson_id=body.lesson_id)
+            if learning_context.selected_lesson_id != (body.lesson_id or None):
+                raise course_adapter.ContextContractError("平台返回了非请求课时的上下文")
         except LaunchTokenError as error:
             raise HTTPException(status_code=401, detail=f"launch token 无效：{error}") from error
         except course_adapter.ContextContractError as error:
@@ -602,9 +606,14 @@ def start(body: StartIn) -> dict:
             raise HTTPException(status_code=status, detail=str(error)) from error
         platform_context = launch_context.launch_identity(payload)
         platform_context["courseTitle"] = learning_context.course_title
+        platform_context["publicationId"] = learning_context.publication.id
+        platform_context["publicationVersion"] = learning_context.publication.version
         student_id = platform_context["userId"]
+        # 未选课时只建立目录入口，清除令牌中可能携带的旧默认课堂。
+        platform_context["classroomId"] = None
+        platform_context["playerUrl"] = ""
         requested = next((item for item in learning_context.lessons
-                          if item.id == getattr(body, "lesson_id", "")), None)
+                          if item.id == body.lesson_id), None)
         if requested:
             lesson_id = requested.id
             learning_context.classroom = requested.classroom
@@ -612,18 +621,20 @@ def start(body: StartIn) -> dict:
                 platform_context["classroomId"] = requested.classroom.id
                 platform_context["playerUrl"] = requested.classroom.player_url
         else:
-            lesson_id = platform_context["courseId"]
+            if body.lesson_id:
+                raise HTTPException(404, "所选课时不存在或尚未发布")
+            lesson_id = ""
 
     # 先校验再动注册表，非法 id 不该留下任何痕迹（_path 里还有一道兜底）
     if body.session_id:
         sid = _safe_sid(body.session_id)
-    elif platform_context and lesson_id:
+    elif platform_context:
         # 平台态：会话号由（用户, 课程, 课时）确定性派生 —— 换设备/换浏览器后
         # 再进同一课时，落回**同一个**辅导会话（磁盘可恢复），而不是新开一个。
         digest = hashlib.sha1("|".join([
             str(platform_context.get("userId") or ""),
             str(platform_context.get("courseId") or ""),
-            str(lesson_id),
+            str(lesson_id or "catalog"),
         ]).encode("utf-8")).hexdigest()[:16]
         sid = f"plat-{digest}"
     else:
@@ -653,6 +664,15 @@ def start(body: StartIn) -> dict:
         raise HTTPException(409, "该会话属于另一节课")
     if st.get("student_id") not in (None, student_id):
         raise HTTPException(409, "该会话属于另一名学生")
+    old_plan = st.get("lesson_plan") or {}
+    old_context = st.get("learning_context") or {}
+    if old_plan and (
+        old_plan.get("lesson_id") != lesson_id
+        or old_context.get("selected_lesson_id") != lesson_id
+        or old_plan.get("publication_id") != learning_context.publication.id
+        or old_plan.get("publication_version") != learning_context.publication.version
+    ):
+        raise HTTPException(409, "旧会话内容与所选课时或发布版本不一致，请新建课堂")
     if created or st.get("lesson_status") in (None, "idle"):
         st = _create_session(sid, student_id, lesson_id, body.time_scale)
     elif st.get("lesson_status") == "running" and (
@@ -685,7 +705,7 @@ def start(body: StartIn) -> dict:
         "session_id": sid,
         "status": st.get("lesson_status"),
         "phase": st.get("host_phase"),
-        "available_actions": ACTIONS[st.get("lesson_status", "idle")],
+        "available_actions": ACTIONS[st.get("lesson_status", "idle")] if lesson_id else [],
         "reply_text": "",
     }
 
@@ -704,6 +724,9 @@ def begin(sid: str) -> dict:
 
     这一轮会加载课程计划、说开场白、切进第一个环节并开始计时。
     """
+    context = _get(sid)["state"].get("learning_context") or {}
+    if not context.get("selected_lesson_id"):
+        raise HTTPException(409, "请先选择课时，再开始上课")
     st = _begin_lesson(sid)
     _record_learning_event(sid, event_type="lesson_began")
     _notify_platform_progress(sid, "started")
@@ -1128,11 +1151,11 @@ def _session_courses_payload(session_id: str = "") -> list:
             "name": context.course_title or context.course_id,
             "summary": context.knowledge_package.summary or "",
             "icon": "◆",
-            "currentWeek": max((lesson.week or lesson.order for lesson in context.lessons), default=1),
+            "currentWeek": max((lesson.week or lesson.order for lesson in context.lesson_catalog), default=1),
             "lessons": [],
         })
         seen_lesson_ids = {item["lessonId"] for item in course["lessons"]}
-        for lesson in context.lessons:
+        for lesson in context.lesson_catalog:
             if lesson.id in seen_lesson_ids:
                 continue
             seen_lesson_ids.add(lesson.id)
@@ -1145,8 +1168,9 @@ def _session_courses_payload(session_id: str = "") -> list:
                 "title": lesson.title,
                 "summary": context.knowledge_package.summary or "",
                 "status": "current",
-                "estimatedMinutes": max(20, 5 * len(lesson.segments)),
-                "knowledgePoints": [kp.title for kp in context.evaluation.knowledge_points],
+                "estimatedMinutes": max(20, 5 * lesson.segment_count),
+                "knowledgePoints": ([kp.title for kp in context.evaluation.knowledge_points]
+                                    if lesson.id == context.selected_lesson_id else []),
             })
     return list(courses.values())
 
@@ -1162,6 +1186,8 @@ def session_courses(sessionId: str = "") -> list:
 @app.get("/api/session/lesson")
 def session_lesson(lessonId: str = "", sessionId: str = "") -> dict:
     """课时信息：从会话的 learning_context 取对应 lesson（正式链路）。"""
+    if not lessonId or not sessionId:
+        raise HTTPException(status_code=400, detail="请指定课时及对应会话")
     _preload_disk_sessions()
     with _REGISTRY_LOCK:
         snapshot = ([(sessionId, SESSIONS[sessionId])] if sessionId and sessionId in SESSIONS
@@ -1178,8 +1204,10 @@ def session_lesson(lessonId: str = "", sessionId: str = "") -> dict:
                 context = _M(**context)
             except Exception:
                 continue
+        if context.selected_lesson_id != lessonId:
+            continue
         for lesson in context.lessons:
-            if not lessonId or lesson.id == lessonId:
+            if lesson.id == lessonId:
                 return {
                     "lessonId": lesson.id,
                     "course": context.course_title,
