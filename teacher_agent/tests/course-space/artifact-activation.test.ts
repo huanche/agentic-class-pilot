@@ -4,6 +4,7 @@ import { NextRequest } from 'next/server';
 const storage = vi.hoisted(() => ({
   readServerCourse: vi.fn(),
   readCourseArtifact: vi.fn(),
+  readCourseJob: vi.fn(),
   saveCourseArtifact: vi.fn(),
   saveCourseArtifactFile: vi.fn(),
   updateCourseJobIfPresent: vi.fn(),
@@ -60,6 +61,7 @@ describe('artifact activation', () => {
       update(structuredClone(course)),
     );
     storage.saveCourseArtifact.mockImplementation(async (artifact) => artifact);
+    storage.readCourseJob.mockResolvedValue(null);
     storage.listCourseArtifacts.mockResolvedValue([]);
     storage.listKnowledgePackages.mockResolvedValue([]);
     storage.saveKnowledgePackage.mockImplementation(async (pkg) => pkg);
