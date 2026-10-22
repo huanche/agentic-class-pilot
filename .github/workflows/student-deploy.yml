@@ -71,7 +71,7 @@ jobs:
       - name: Test student backend and lesson contract
         run: |
           python -m pip install -r student_agent/backend/requirements.txt pytest
-          python -m pytest -q student_agent/tests
+          python -m pytest -q student_agent/backend/tests
 
   deploy:
     # PR builds stop after the build check; only main pushes / manual runs deploy.

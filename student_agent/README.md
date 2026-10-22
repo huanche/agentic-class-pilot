@@ -2,6 +2,8 @@
 
 目录分为 `frontend/`（Next.js 静态页面）、`backend/`（FastAPI）和 `agent/`（LangGraph 复述与讨论）。平台负责登录、选课码加入课程、课程选择及签发课堂令牌；本服务使用令牌读取当前学生已发布的课时。课后补完与自由提问已接入，全班讨论尚未接入。
 
+`apps/` 仅保留服务器现有启动命令使用的兼容入口，教学功能在 `backend/` 和 `agent/`。本地启动脚本是根目录的 `start-platform.ps1`；`scripts/` 只存放服务器部署脚本。验证用例放在 `backend/tests/`，部署工作流会运行它们。
+
 ## 课堂流程
 
 平台登录 → 使用选课码加入课程 → 选择课程 → 选择课时 → 教学视频 → 复述与讨论 → 本节课结束。点击“开始上课”后，Agent 只读取当前视频的画面文字和讲解旁白，从视频实际讲清的内容提取知识点。视频嵌入逻辑沿用旧版 `platform-player-adapter.js`。视频页面可直接点击“进入复述与讨论”；播放结束也会给出提示。
@@ -27,7 +29,7 @@
 在 `frontend/` 中运行 `npm install` 和 `npm run build`，然后在 `backend/` 中安装 `requirements.txt`。本地平台已配置时，从项目根目录运行：
 
 ```powershell
-.\student_agent\scripts\start-platform.ps1
+.\student_agent\start-platform.ps1
 ```
 
 脚本从本机 `platform/.env` 读取服务密钥和数据库地址，并设置 `PLATFORM_AUTH_URL`，监听 `127.0.0.1:8001`。Agent 优先使用 `STUDENT_AGENT_API_KEY`、`STUDENT_AGENT_BASE_URL`、`STUDENT_AGENT_MODEL`；本地未设置时读取本目录 `.env.local` 中的 `AGENT_LLM_*` 配置，仍可用平台的 `LLM_API_KEY` 兜底。数据库可用 `STUDENT_DATABASE_URL` 覆盖。平台启动脚本将 `/app` 和 `/api/session` 转发到该服务。请从 `http://localhost:8088/login` 登录，在平台学生首页加入和选择课程，再点击“进入学习”。平台只为已选课且已发布的课程签发短期 `launch_token`。

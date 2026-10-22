@@ -65,7 +65,7 @@ try {
 
   if (-not (Test-Path -LiteralPath $StudentProject)) { throw "Student project not found: $StudentProject" }
   if (-not (Test-Port 8001)) {
-    $studentLauncher = Join-Path $StudentProject 'scripts\start-platform.ps1'
+    $studentLauncher = Join-Path $StudentProject 'start-platform.ps1'
     if (-not (Test-Path -LiteralPath $studentLauncher)) {
       throw "Student launcher not found: $studentLauncher"
     }

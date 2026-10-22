@@ -28,7 +28,7 @@ if (-not (Has-Port 3200)) {
 }
 if (-not (Has-Port 8001)) {
   $studentRoot=Join-Path $projectRoot 'student_agent'
-  $studentLauncher=Join-Path $studentRoot 'scripts/start-platform.ps1'
+  $studentLauncher=Join-Path $studentRoot 'start-platform.ps1'
   $started += Start-Process -FilePath 'powershell.exe' -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$studentLauncher`"" -WorkingDirectory $studentRoot -WindowStyle Hidden -RedirectStandardOutput (Join-Path $runtimeRoot 'student.stdout.log') -RedirectStandardError (Join-Path $runtimeRoot 'student.stderr.log') -PassThru
 }
 if (-not (Has-Port 8088)) {

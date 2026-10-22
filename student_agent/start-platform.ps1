@@ -1,6 +1,6 @@
 $ErrorActionPreference = 'Stop'
 
-$studentRoot = Split-Path $PSScriptRoot -Parent
+$studentRoot = $PSScriptRoot
 $suiteRoot = Split-Path $studentRoot -Parent
 $platformRoot = Join-Path $suiteRoot 'platform'
 $platformEnv = Join-Path $platformRoot '.env'
