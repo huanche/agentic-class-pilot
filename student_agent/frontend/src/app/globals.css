@@ -1103,6 +1103,22 @@ body::before {
   color: var(--text-2);
 }
 
+.done__summary {
+  width: 100%;
+  margin-bottom: 18px;
+  padding-top: 20px;
+  border-top: 1px solid var(--hairline);
+  text-align: left;
+}
+.done__summary-text {
+  margin: 0;
+  color: var(--text-1);
+  font-size: 14.5px;
+  line-height: 1.8;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .done__kps {
   width: 100%;
   margin-bottom: 26px;

@@ -42,6 +42,7 @@ export function normalizeTurn(result) {
     ok: result.ok !== false,
     sessionId: result.session_id || null,
     message: { text: result.reply_text || "", speech: "" },
+    endingSummary: result.ending_summary || "",
     hostPhase: result.phase || null,
     phaseName: result.phase_name || "",
     status: result.status,
@@ -111,6 +112,7 @@ export function endLesson(sessionId) {
 export function fetchSessionState(sessionId) {
   return request("GET", sessionUrl(sessionId, "/state")).then(function (state) {
     return { ...state, hostPhase: state.phase, currentQuestion: state.current_question,
+      endingSummary: state.ending_summary || "",
       availableActions: state.available_actions || [] };
   });
 }

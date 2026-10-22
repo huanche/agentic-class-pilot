@@ -35,6 +35,13 @@ export function createView(ctx) {
   var stageList = $("report-stages");
   var stageCard = $("report-stage-card");
   var adviceList = $("report-advice");
+  var summaryCard = el("section", "panel report__card");
+  summaryCard.hidden = true;
+  summaryCard.appendChild(el("p", "report__card-label", "下课小结"));
+  var summaryText = el("p", "done__summary-text");
+  summaryText.id = "report-ending-summary";
+  summaryCard.appendChild(summaryText);
+  content.parentNode.insertBefore(summaryCard, content);
 
   /* 课后辅导反馈卡（工单 05）：挂在学情报告下方（content 的兄弟位）——
      学情报告为空（empty 态隐藏 content）时反馈卡也要能独立显示 */
@@ -163,6 +170,8 @@ export function createView(ctx) {
   }
 
   function render(report) {
+    summaryText.textContent = report.ending_summary || "";
+    summaryCard.hidden = !summaryText.textContent;
     var points = report.knowledge_points || [];
     var snapshots = report.stage_snapshots || [];
 
@@ -216,6 +225,7 @@ export function createView(ctx) {
     var seq = ++requestSeq;
     var lessonId = ctx.lessonId;
     showState("loading");
+    summaryCard.hidden = true;
 
     fetchLessonReport(ctx.sessionId, lessonId).then(function (report) {
       if (seq !== requestSeq) return;   /* 期间又切走了，丢弃这次结果 */

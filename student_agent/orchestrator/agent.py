@@ -313,6 +313,7 @@ class ClassroomState(TypedDict):
 
     # ── 输出 ──
     reply_text: str
+    ending_summary: str             # 下课时生成并持久保存的小结，独立于本轮回复
     speech_kind: Literal["none", "auto"]
     advance_reason: str | None
     target_phase: str | None
@@ -2163,6 +2164,7 @@ def advance_stage(state: ClassroomState) -> dict:
             "kp_stars": kp_stars,
             "mastery_updates": mastery_updates,
             "reply_text": (reply + "\n\n" + remark).strip(),
+            "ending_summary": remark,
             "advance_reason": state.get("advance_reason"),
             "llm_used": gen,
             # 到 ending 就下课：会话层看到这个标记会停掉心跳线程
@@ -2295,7 +2297,7 @@ def _ending_summary(state: ClassroomState, pending_snapshot: dict | None = None)
     lines.append(
         f"本课计划 {state.get('lesson_plan', {}).get('total_minutes')} 分钟，"
         f"实际上了 {state.get('lesson_elapsed_minutes')} 分钟，"
-        f"共 {len(snaps)} 幕。"
+        f"完成 {len(snaps)} 个学习环节。"
     )
     if stars:
         lines.append("掌握情况：")
@@ -2304,7 +2306,7 @@ def _ending_summary(state: ClassroomState, pending_snapshot: dict | None = None)
             lines.append(f"  - {kp_title(kp, state.get('lesson_id'))}：{st} 星（{STAR_STATUS.get(st, '未检测')}{review}）")
     open_kps = [k for k, st in stars.items() if st < 3]
     if open_kps:
-        lines.append(f"建议课后补一补：{('、'.join(open_kps))}。")
+        lines.append(f"建议课后补一补：{'、'.join(kp_title(k, state.get('lesson_id')) for k in open_kps)}。")
     return "\n".join(lines)
 
 
@@ -2461,6 +2463,7 @@ def initial_state(session_id: str, student_id: str = "", lesson_id: str = "") ->
         "tutoring_end_confirm_pending": False,
         "tutoring_end_confirmed": False,
         "reply_text": "",
+        "ending_summary": "",
         "speech_kind": "none",
         "advance_reason": None,
         "target_phase": None,

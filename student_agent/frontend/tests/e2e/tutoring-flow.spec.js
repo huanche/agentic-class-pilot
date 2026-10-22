@@ -178,10 +178,17 @@ test("explicit end shows feedback on review page and resume reopens chat", async
   await expect(page.locator("#chat-log")).toContainText("1. 调度是什么", { timeout: 10_000 });
 
   // 明确结束 → 下课总结（done 阶段）→ 去课后（按钮文案「去看看掌握情况」）
+  const endingResponse = page.waitForResponse(response => response.url().endsWith('/message') && response.request().method() === 'POST');
   await page.locator("#composer-input").fill("今天就到这");
   await page.locator("#composer-send").click();
+  const ending = await (await endingResponse).json();
   await expect(page.locator("#stage-done")).toBeVisible({ timeout: 15_000 });
+  expect(ending.ending_summary).toBeTruthy();
+  await expect(page.locator("#done-summary")).toHaveText(ending.ending_summary);
   await page.locator("#done-to-review").click();
+  await expect(page.locator("#report-ending-summary")).toHaveText(ending.ending_summary);
+  await page.reload();
+  await expect(page.locator("#report-ending-summary")).toHaveText(ending.ending_summary);
 
   // 课后页：辅导反馈卡（第 1 版）+ 继续辅导入口
   await expect(page.locator(".tfeedback__title")).toContainText("第 1 版", { timeout: 15_000 });

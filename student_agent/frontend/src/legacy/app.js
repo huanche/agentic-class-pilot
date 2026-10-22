@@ -436,8 +436,9 @@ function ctxFor() {
         return entry.lessonId === currentLessonId;
       });
       if (item && item.status === "completed") item.status = "current";
-      hostPhase = "tutoring";
-      currentStage = "chat";
+      // 刷新报告页后尚无课堂详情，等待后端响应切换界面，避免提前标记阶段后被早退。
+      hostPhase = lesson ? "tutoring" : null;
+      currentStage = lesson ? "chat" : "idle";
       nextStage = null;
       go(partHash("class"));
     },
@@ -493,6 +494,9 @@ function applyServerTurn(res) {
   }
   if (Array.isArray(res.knowledge_points) && res.knowledge_points.length) {
     knowledgeCatalog = res.knowledge_points;
+  }
+  if (phase === "ending" && owners.done && owners.done.updateSummary) {
+    owners.done.updateSummary(res);
   }
 
   if (phase === hostPhase) return;      /* 没变，什么都不做 */

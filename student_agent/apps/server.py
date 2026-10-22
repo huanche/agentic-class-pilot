@@ -93,6 +93,13 @@ def _now() -> str:
     return datetime.now().astimezone().isoformat(timespec="seconds")
 
 
+def _ending_summary_text(state: dict) -> str:
+    """优先读取持久小结；旧结束会话兼容最后一条回复，不重新调用模型。"""
+    if state.get("host_phase") != "ending":
+        return ""
+    return str(state.get("ending_summary") or state.get("reply_text") or "")
+
+
 # session_id 来自请求体，却会被直接拼进文件名 —— 必须白名单。
 # 实测（2026-09-22）：不加这道校验时，POST /api/session/start 传
 # "../../pwned" 会把 json 写到仓库根目录，且全程无需任何凭证。
@@ -733,6 +740,7 @@ def begin(sid: str) -> dict:
     return {
         "ok": True,
         "reply_text": st.get("reply_text", ""),
+        "ending_summary": _ending_summary_text(st),
         "phase": st.get("host_phase"),
         "phase_name": STAGE_NAMES.get(st.get("host_phase"), st.get("host_phase")),
         "status": st.get("lesson_status"),
@@ -780,6 +788,7 @@ def media_done(sid: str, body: EventIn | None = None) -> dict:
     return {
         "ok": True,
         "reply_text": st.get("reply_text", ""),
+        "ending_summary": _ending_summary_text(st),
         "phase": st.get("host_phase"),
         "phase_name": STAGE_NAMES.get(st.get("host_phase"), st.get("host_phase")),
         "status": st.get("lesson_status"),
@@ -801,6 +810,7 @@ def stage_next(sid: str, body: EventIn | None = None) -> dict:
     return {
         "ok": True,
         "reply_text": st.get("reply_text", ""),
+        "ending_summary": _ending_summary_text(st),
         "phase": st.get("host_phase"),
         "phase_name": STAGE_NAMES.get(st.get("host_phase"), st.get("host_phase")),
         "status": st.get("lesson_status"),
@@ -822,6 +832,7 @@ def end_lesson(sid: str, body: EventIn | None = None) -> dict:
     return {
         "ok": True,
         "reply_text": st.get("reply_text", ""),
+        "ending_summary": _ending_summary_text(st),
         "phase": st.get("host_phase"),
         "phase_name": STAGE_NAMES.get(st.get("host_phase"), st.get("host_phase")),
         "status": st.get("lesson_status"),
@@ -890,6 +901,7 @@ def send(sid: str, body: MessageIn) -> dict:
     return {
         "ok": True,
         "reply_text": st.get("reply_text", ""),
+        "ending_summary": _ending_summary_text(st),
         "phase": st.get("host_phase"),
         "phase_name": STAGE_NAMES.get(st.get("host_phase"), st.get("host_phase")),
         "status": st.get("lesson_status"),
@@ -941,6 +953,7 @@ def state(sid: str) -> dict:
         "advance_reason": st.get("advance_reason"),
         "student_status": st.get("student_status"),
         "updated_at": st.get("now"),
+        "ending_summary": _ending_summary_text(st),
         "time_scale": s["time_scale"],
         "stars": st.get("kp_stars") or {},
         # 讲解素材进度：第几段 / 共几段，播完几段
@@ -984,6 +997,7 @@ def resume_tutoring(sid: str) -> dict:
         # 结束确认标记是回合级的一次性状态，恢复时不许残留（否则一开口就下课）
         st["tutoring_end_confirm_pending"] = False
         st["tutoring_end_confirmed"] = False
+        st["ending_summary"] = ""
         # 旧会话的 state 没有 active 键：用挂起题回填（高亮依据）
         if not st.get("tutoring_active_kp") and st.get("tutoring_question"):
             st["tutoring_active_kp"] = st["tutoring_question"].get("kp_id")
@@ -1058,6 +1072,7 @@ def export(sid: str, fmt: str = "md") -> Response:
             content=json.dumps({
                 "student_id": student_id, "lesson_id": lesson_id,
                 "session_id": sid,
+                "ending_summary": _ending_summary_text(st),
                 "lesson_elapsed_minutes": st.get("lesson_elapsed_minutes"),
                 "knowledge_points": [
                     {"kp_id": kp, "title": kp_title(kp, lesson_id), "stars": v,
