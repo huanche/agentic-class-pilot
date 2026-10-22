@@ -39,7 +39,7 @@ def upsert_message(session_key: str, user_id: str, course_id: str,
         connection.execute(
             "INSERT INTO student.student_messages "
             "(session_key, user_id, course_id, publication_id, seq, role, phase, content) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s) "
             "ON CONFLICT (session_key, seq) DO NOTHING",
             (session_key, user_id, course_id, publication_id, seq, role, phase, content),
         )
@@ -64,7 +64,7 @@ def upsert_mastery(session_key: str, user_id: str, course_id: str,
         connection.execute(
             "INSERT INTO student.knowledge_mastery "
             "(session_key, user_id, course_id, publication_id, knowledge_point_id, stars, status, evidence, source) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) "
             "ON CONFLICT (user_id, course_id, publication_id, knowledge_point_id) DO UPDATE SET "
             "stars = GREATEST(student.knowledge_mastery.stars, EXCLUDED.stars), "
             "status = EXCLUDED.status, evidence = EXCLUDED.evidence, "
@@ -82,7 +82,7 @@ def record_event(session_key: str, user_id: str, course_id: str,
         connection.execute(
             "INSERT INTO student.learning_events "
             "(session_key, user_id, course_id, publication_id, classroom_id, event_type, event_id, payload) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s) "
             "ON CONFLICT (session_key, event_type, event_id) DO NOTHING",
             (session_key, user_id, course_id, publication_id, classroom_id,
              event_type, event_id, json.dumps(payload, ensure_ascii=False)),

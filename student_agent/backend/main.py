@@ -122,6 +122,7 @@ def commit(session: dict, changed: dict) -> None:
     try:
         persistence.save(draft, old_count)
     except Exception as error:
+        logger.exception("Failed to persist student learning record")
         raise HTTPException(503, "保存学习记录失败，请稍后重试") from error
     session.update(changed)
 
