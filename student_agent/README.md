@@ -18,11 +18,11 @@
 
 `agent/progression.py` 控制顺序和计数。首轮上限由 `STUDENT_AGENT_RECALL_ROUNDS` 配置（默认 8），加强阶段上限由 `STUDENT_AGENT_REINFORCE_ROUNDS` 配置（默认 4）；两个值范围均为 1–20。开始课堂时保存上限，刷新不会清零。每次学生针对当前点发送消息计一轮，包括求助和表示不会；模型请求失败不计轮数。旧会话保留已知掌握结果，首次使用新流程时初始化分阶段计数。
 
-结束本课后，`agent/feedback.py` 依据本次实际评估生成逐知识点反馈，区分掌握较好、加强后掌握、仍需巩固、评估未完成和尚未评估。完成页可回看视频，也可进入课后 AI 对话。课后先逐项补完课堂未掌握的知识点；学生独立讲清后标记“课后补完”，全部补完后在同一对话框自由提问。当前反馈作为 `lesson_feedback` 事件写入 `student.learning_events`（`event_id=final`），课堂结束时的原始反馈另存为 `classroom_feedback`。反馈与会话快照持久化，刷新可恢复。`GET /api/session/{sid}/feedback` 返回更新后的个人反馈。已有跨课次最高掌握度不用于替代本次课的实际结果。
+结束本课后，`agent/feedback.py` 依据本次实际评估生成逐知识点反馈，区分掌握较好、加强后掌握、仍需巩固、评估未完成和尚未评估。完成页可回看视频，也可进入课后 AI 对话。课后先逐项补完课堂未掌握的知识点；学生独立讲清后标记“课后补完”，全部补完后在同一对话框自由提问。当前反馈作为 `lesson_feedback` 事件写入 `student.learning_events`（`event_id=final`），课堂结束时的原始反馈另存为 `classroom_feedback`。反馈与会话快照仍写入数据库；默认从当前浏览器保存的记录恢复，刷新可继续学习，新的无痕窗口不会读取数据库旧记录。`GET /api/session/{sid}/feedback` 返回更新后的个人反馈。已有跨课次最高掌握度不用于替代本次课的实际结果。
 
 新版本的开场文案、评估提示词、复述/补强/讨论提示词及各类对话策略统一维护在 `agent/prompts.py`；LangGraph 的状态跳转在 `agent/graph.py`。已保存的历史消息保留原文，新进入复述与讨论的课堂使用新的开场。
 
-深入讨论对每个已掌握知识点各提出一个问题，学生回答后进入下一个点，全部完成后进入课堂总结。加强复述后仍未掌握的点不会进入讨论；学生只是求助时仍保留当前题目。每轮学生消息由 LangGraph 调用模型评估与生成回复，阶段跳转由代码规则执行。正式课程会话、消息、知识点掌握度和 Agent 状态快照分别写入平台数据库的 `student.student_sessions`、`student.student_messages`、`student.knowledge_mastery` 和 `student.learning_events`。页面刷新和后端重启后可从数据库恢复已开始的课程会话。
+深入讨论对每个已掌握知识点各提出一个问题，学生回答后进入下一个点，全部完成后进入课堂总结。加强复述后仍未掌握的点不会进入讨论；学生只是求助时仍保留当前题目。每轮学生消息由 LangGraph 调用模型评估与生成回复，阶段跳转由代码规则执行。正式课程会话、消息、知识点掌握度和 Agent 状态快照分别写入平台数据库的 `student.student_sessions`、`student.student_messages`、`student.knowledge_mastery` 和 `student.learning_events`。服务默认只从当前浏览器记录恢复学习状态；如需恢复原来的数据库读取行为，可显式设置 `STUDENT_FRESH_SESSION_MODE=0`。
 
 ## 启动
 

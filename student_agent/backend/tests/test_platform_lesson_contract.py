@@ -47,6 +47,7 @@ def _context(selected: str | None = None) -> dict:
 
 
 def test_catalog_then_selected_lesson(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("STUDENT_SERVICE_KEY", "test-key")
     calls = []
 
     def fake_platform_context(token: str, lesson_id: str | None = None) -> dict:
@@ -74,6 +75,7 @@ def test_catalog_then_selected_lesson(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_selected_lesson_must_match_catalog(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("STUDENT_SERVICE_KEY", "test-key")
     monkeypatch.setattr(main, "platform_context", lambda token, lesson_id=None: _context("L2") if lesson_id else _context())
     monkeypatch.setattr(main.persistence, "save", lambda *args: None)
     sid = main.start(main.StartRequest(launch_token="ticket"))["sessionId"]
@@ -87,6 +89,7 @@ def test_selected_lesson_must_match_catalog(monkeypatch: pytest.MonkeyPatch) -> 
 
 
 def test_new_launch_resumes_saved_discussion_for_selected_lesson(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("STUDENT_FRESH_SESSION_MODE", "0")
     monkeypatch.setattr(main, "platform_context", lambda token, lesson_id=None: _context(lesson_id))
     monkeypatch.setattr(main.persistence, "save", lambda *args: None)
     lookups = []
@@ -121,6 +124,7 @@ def test_new_launch_resumes_saved_discussion_for_selected_lesson(monkeypatch: py
 
 
 def test_new_launch_resumes_completed_lesson_and_feedback(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("STUDENT_FRESH_SESSION_MODE", "0")
     monkeypatch.setattr(main, "platform_context", lambda token, lesson_id=None: _context(lesson_id))
     monkeypatch.setattr(main.persistence, "save", lambda *args: None)
     monkeypatch.setattr(main.persistence, "latest_session_key", lambda *args: "finished-session")
@@ -146,3 +150,22 @@ def test_new_launch_resumes_completed_lesson_and_feedback(monkeypatch: pytest.Mo
     finally:
         main.sessions.pop(sid, None)
         main.sessions.pop("finished-session", None)
+
+
+def test_new_browser_launch_does_not_read_saved_lesson_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("STUDENT_FRESH_SESSION_MODE", raising=False)
+    monkeypatch.setenv("STUDENT_SERVICE_KEY", "test-key")
+    monkeypatch.setattr(main, "platform_context", lambda token, lesson_id=None: _context(lesson_id))
+    monkeypatch.setattr(main.persistence, "save", lambda *args: None)
+    monkeypatch.setattr(main.persistence, "latest_session_key",
+                        lambda *args: pytest.fail("a new browser must not read saved lessons"))
+    started = main.start(main.StartRequest(launch_token="new-ticket"))
+    sid = started["sessionId"]
+    try:
+        assert started["browserKey"] == "u:c:catalog"
+        lesson = main.begin(sid, "L2", BackgroundTasks())
+        assert lesson["sessionId"] == sid
+        assert lesson["phase"] == "video"
+    finally:
+        main.sessions.pop(sid, None)
+        main.preparing.discard(sid)

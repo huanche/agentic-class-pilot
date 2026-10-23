@@ -8,6 +8,11 @@ from uuid import uuid4
 from . import database
 
 
+def fresh_session_mode() -> bool:
+    """Keep history in each browser unless server configuration opts back in to DB reads."""
+    return os.environ.get("STUDENT_FRESH_SESSION_MODE", "1").strip().lower() not in {"0", "false", "off"}
+
+
 def _bind_database() -> None:
     os.environ.setdefault("STUDENT_DATABASE_URL", os.environ.get("DATABASE_URL", ""))
     if not os.environ.get("STUDENT_DATABASE_URL") and not os.environ.get("STUDENT_DEMO_MODE"):
@@ -36,7 +41,7 @@ def save(session: dict, old_count: int) -> None:
             phase=item.get("phase"), content=item["text"])
     mastery = {"mastered": (4, "掌握"), "verify": (3, "待独立验证"),
                "partial": (2, "部分理解"), "misconception": (1, "存在误区")}
-    previous = ({} if os.environ.get("STUDENT_FRESH_SESSION_MODE") == "1" else
+    previous = ({} if fresh_session_mode() else
                 database.read_mastery(ids["user_id"], ids["course_id"], ids["publication_id"]))
     for point in (session.get("dialogue") or {}).get("points") or []:
         if point.get("status") in mastery:

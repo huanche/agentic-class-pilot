@@ -129,8 +129,8 @@ def get_session(sid: str) -> dict:
     with session_lock:
         session = sessions.get(sid)
     if session is None:
-        if os.environ.get("STUDENT_FRESH_SESSION_MODE") == "1":
-            raise HTTPException(404, "本地测试会话已结束，请重新打开课程")
+        if persistence.fresh_session_mode():
+            raise HTTPException(404, "浏览器学习会话已结束，请重新打开课程")
         try:
             session = persistence.restore(sid)
         except Exception as error:
@@ -158,7 +158,7 @@ def state(session: dict) -> dict:
             "postclassStage": session.get("postclassStage"),
             "postclassMessages": [item for item in session["messages"]
                                   if str(item.get("phase") or "").startswith("postclass-")]}
-    if os.environ.get("STUDENT_FRESH_SESSION_MODE") == "1":
+    if persistence.fresh_session_mode():
         context = session.get("context") or {}
         course_key = f"{context.get('userId')}:{context.get('courseId')}" if context else "demo"
         result["browserCourseKey"] = course_key
@@ -305,7 +305,7 @@ def start(body: StartRequest) -> dict:
 
 @app.post("/api/session/browser-restore")
 def browser_restore(body: BrowserRestoreRequest) -> dict:
-    if os.environ.get("STUDENT_FRESH_SESSION_MODE") != "1":
+    if not persistence.fresh_session_mode():
         raise HTTPException(404, "浏览器学习记录恢复未启用")
     restored = _restore_browser_snapshot(body.snapshot)
     restored["launchToken"] = body.launch_token or None
@@ -333,7 +333,7 @@ def platform_entry() -> dict:
     return {
         "platformUrl": os.environ.get("FRONTEND_HOST", "http://localhost:8088").rstrip("/"),
         "demoEnabled": bool(os.environ.get("STUDENT_NEW_DEMO_PLAYER_URL")),
-        "freshSessionMode": os.environ.get("STUDENT_FRESH_SESSION_MODE") == "1",
+        "freshSessionMode": persistence.fresh_session_mode(),
     }
 
 
@@ -384,7 +384,7 @@ def begin(sid: str, lesson_id: str, background_tasks: BackgroundTasks) -> dict:
         if not lesson or not lesson.get("playerUrl"):
             raise HTTPException(409, "所选课时没有已发布的播放器")
         try:
-            old_id = None if os.environ.get("STUDENT_FRESH_SESSION_MODE") == "1" else persistence.latest_session_key(
+            old_id = None if persistence.fresh_session_mode() else persistence.latest_session_key(
                 str(original["userId"]), str(original["courseId"]),
                 str((original.get("publication") or {})["id"]),
                 int((original.get("publication") or {})["version"]),
