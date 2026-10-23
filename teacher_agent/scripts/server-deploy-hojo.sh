@@ -55,8 +55,7 @@ for attempt in $(seq 1 30); do
   sleep 2
 done
 [ "$ready" = 1 ]
-docker cp /tmp/hojo-smoke.py "$NAME:/tmp/smoke.py"
-docker exec "$NAME" python /tmp/smoke.py | tee "$SNAP/smoke.txt"
+docker exec -i "$NAME" python - < /tmp/hojo-smoke.py | tee "$SNAP/smoke.txt"
 [ "$(docker inspect "$NAME" --format '{{.RestartCount}}')" = 0 ]
 [ "$(docker inspect "$NAME" --format '{{.State.OOMKilled}}')" = false ]
 

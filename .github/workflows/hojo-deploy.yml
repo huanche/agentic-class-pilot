@@ -52,8 +52,7 @@ jobs:
             sleep 2
           done
           [ "$ready" = 1 ]
-          docker cp teacher_agent/devtools/hojo-local/smoke.py hojo-ci:/tmp/smoke.py
-          docker exec hojo-ci python /tmp/smoke.py
+          docker exec -i hojo-ci python - < teacher_agent/devtools/hojo-local/smoke.py
           [ "$(docker inspect hojo-ci --format '{{.RestartCount}}')" = 0 ]
           [ "$(docker inspect hojo-ci --format '{{.State.OOMKilled}}')" = false ]
   deploy:
