@@ -46,10 +46,10 @@ def _context(selected: str | None = None) -> dict:
     return result
 
 
-def test_catalog_uses_published_material_title_for_lesson_card() -> None:
+def test_catalog_uses_published_courseware_title_for_lesson_card() -> None:
     context = _context()
-    context["lessonCatalog"][0]["displayTitle"] = "计算机网络概述"
-    context["lessonCatalog"][1]["displayTitle"] = "电子邮件系统与SMTP协议"
+    context["lessonCatalog"][0]["title"] = "计算机网络概述"
+    context["lessonCatalog"][1]["title"] = "电子邮件系统与SMTP协议"
     lessons = main.catalog(context)[0]["lessons"]
     assert [lesson["title"] for lesson in lessons] == ["计算机网络概述", "电子邮件系统与SMTP协议"]
 
