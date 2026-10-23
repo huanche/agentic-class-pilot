@@ -4,6 +4,7 @@ import type { GenerationSessionState } from '@/app/generation-preview/types';
 import { ensureCoursewareSourceFingerprint } from '@/lib/course-space/source-fingerprint';
 import { initializeCourseGovernance } from '@/lib/course-governance/governance';
 import { db } from '@/lib/utils/database';
+import { planCourseDuration } from '@/lib/generation/course-duration';
 
 afterEach(() => db.courseGovernance.clear());
 
@@ -64,6 +65,53 @@ it('passes the original required source gate and persists governance for all fiv
       (page) => page.sourceRefs[0].sourceSha256 === fixed.sourceFingerprint!.sha256,
     ),
   ).toBe(true);
+});
+
+it('keeps only the five retained pages after deletion, reindexes them and replans the six-minute budget', async () => {
+  const original = session();
+  const pages = (['slide', 'slide', 'slide', 'slide', 'slide', 'interactive', 'quiz'] as const).map(
+    (type, i) => ({
+      id: `original-${i + 1}`,
+      type,
+      order: i + 1,
+      title: `第${i + 1}页`,
+      description: '解释循环边界',
+      keyPoints: [],
+      estimatedDuration: 60,
+    }),
+  );
+  const retained = pages.filter((page) => !['original-2', 'original-4'].includes(page.id));
+  const edited = {
+    ...original,
+    sceneOutlines: planCourseDuration(
+      retained.map((page, i) => ({ ...page, order: i + 1 })),
+      original.requirements.targetDurationMinutes!,
+    ),
+  };
+  const fixed = await ensureCoursewareSourceFingerprint(edited);
+  expect(fixed.sceneOutlines).toBe(edited.sceneOutlines);
+  expect(fixed.sceneOutlines?.map((page) => page.id)).toEqual([
+    'original-1',
+    'original-3',
+    'original-5',
+    'original-6',
+    'original-7',
+  ]);
+  expect(fixed.sceneOutlines?.map((page) => page.order)).toEqual([1, 2, 3, 4, 5]);
+  expect(fixed.sceneOutlines?.map((page) => page.type)).toEqual([
+    'slide',
+    'slide',
+    'slide',
+    'interactive',
+    'quiz',
+  ]);
+  expect(
+    fixed.sceneOutlines?.reduce((sum, page) => sum + (page.durationBudget?.targetSeconds ?? 0), 0),
+  ).toBe(360);
+  expect(fixed.sourceFingerprint?.sha256).toBe(
+    (await ensureCoursewareSourceFingerprint(original)).sourceFingerprint?.sha256,
+  );
+  expect(fixed.pdfText).toBe(original.pdfText);
 });
 
 it('hashes every selected source and its content, but not an edited overview or generation requirements', async () => {
