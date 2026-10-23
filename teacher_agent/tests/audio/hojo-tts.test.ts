@@ -5,6 +5,22 @@ import { HOJO_40M_MODEL, HOJO_80M_MODEL } from '@/lib/audio/hojo';
 
 afterEach(() => vi.unstubAllGlobals());
 
+it('keeps Kokoro first when Hojo is also configured, while honoring an explicit Hojo choice', () => {
+  const providers = getEnabledProvidersWithVoices({
+    'hojo-tts': { isServerConfigured: true },
+    'lemonade-tts': { isServerConfigured: true },
+  });
+  const agent = { id: 'teacher', name: 'Teacher', role: 'teacher' } as Parameters<
+    typeof resolveAgentVoice
+  >[0];
+  expect(resolveAgentVoice(agent, 0, providers)?.providerId).toBe('lemonade-tts');
+  expect(
+    resolveAgentVoice(agent, 0, providers, {
+      teacher: { providerId: 'hojo-tts', modelId: HOJO_40M_MODEL, voiceId: 'hojo_zh_f_01' },
+    }),
+  ).toMatchObject({ providerId: 'hojo-tts', modelId: HOJO_40M_MODEL });
+});
+
 it('keeps 40M preset voices and 80M cloned voices in their compatible model groups', () => {
   const provider = getEnabledProvidersWithVoices({
     'hojo-tts': {

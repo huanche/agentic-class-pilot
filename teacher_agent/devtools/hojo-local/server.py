@@ -43,8 +43,9 @@ def split_text(text):
 
 
 class Engine:
-    def __init__(self, root, threads):
+    def __init__(self, root, threads, model_root=None):
         self.root, self.threads = root, threads
+        self.model_root = model_root or root
         self.lock = threading.Lock()
         self.model = self.size = None
         self.references = root / 'references'
@@ -55,13 +56,13 @@ class Engine:
             return self.model
         self.model = self.size = None
         gc.collect()
-        source = self.root / 'upstream' / size / 'onnx_model.py'
-        if not source.exists() or not (self.root / 'models' / size).exists():
+        source = self.model_root / 'upstream' / size / 'onnx_model.py'
+        if not source.exists() or not (self.model_root / 'models' / size).exists():
             raise ValueError(f'{size} 模型尚未安装，请先运行模型下载脚本')
         spec = importlib.util.spec_from_file_location(f'hojo_runtime_{size}', source)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
-        model = module.HojoTTSLightOnnx(self.root / 'models' / size,
+        model = module.HojoTTSLightOnnx(self.model_root / 'models' / size,
                                        provider='cpu', num_threads=self.threads)
         self.model, self.size = model, size
         return model
@@ -104,7 +105,7 @@ class Engine:
         reference = None
         if size == '80m':
             if voice == 'hojo_80m_zh1':
-                reference = (self.root / 'upstream' / size / 'assets' / 'zh1.wav', REFERENCE_TEXT)
+                reference = (self.model_root / 'upstream' / size / 'assets' / 'zh1.wav', REFERENCE_TEXT)
             elif isinstance(voice, str) and self.voice_exists(voice):
                 data = json.loads((self.references / f'{voice}.json').read_text(encoding='utf-8'))
                 reference = (self.references / f'{voice}.wav', data['text'])
@@ -161,7 +162,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == '/health':
             return self.send(200, {'status': 'ok', 'loadedModel': self.server.engine.size})
         if path == '/v1/models':
-            return self.send(200, {'data': [{'id': key} for key, size in MODEL_IDS.items() if (self.server.engine.root / 'models' / size).exists()]})
+            return self.send(200, {'data': [{'id': key} for key, size in MODEL_IDS.items() if (self.server.engine.model_root / 'models' / size).exists()]})
         if path.startswith('/v1/audio/voices/'):
             voice = path.rsplit('/', 1)[-1]
             return self.send(200 if self.server.engine.voice_exists(voice) else 404, {'voice_id': voice})
@@ -195,12 +196,13 @@ class Handler(BaseHTTPRequestHandler):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--root', type=Path, required=True)
+    parser.add_argument('--model-root', type=Path)
     parser.add_argument('--port', type=int, default=13306)
     parser.add_argument('--threads', type=int, default=4)
     args = parser.parse_args()
     if not 1 <= args.threads <= 32:
         parser.error('threads must be 1..32')
     server = ThreadingHTTPServer(('127.0.0.1', args.port), Handler)
-    server.engine = Engine(args.root.resolve(), args.threads)
+    server.engine = Engine(args.root.resolve(), args.threads, args.model_root.resolve() if args.model_root else None)
     print(json.dumps({'listening': f'http://127.0.0.1:{args.port}', 'threads': args.threads}), flush=True)
     server.serve_forever()

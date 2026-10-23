@@ -33,6 +33,12 @@ TTS_HOJO_ENABLED=true
 
 2026-10-23 Windows 本机 4 线程功能冒烟中，36 字中英混读：40M 冷启动约 9.65 秒生成 6.98 秒音频；后续一次约 11.07 秒。80M 官方音色冷启动约 34.33 秒生成 6.70 秒音频。这些测试与开发编译同时运行，不作为稳定性能基准，也未达到用户引用的 RTF 0.23。经教师服务的 80M 克隆接口使用合成音频作为参考，已成功注册并生成可解码 WAV；不代表真人音色相似度已评测。
 
-原始记录位于本机 `teacher_agent/.runtime/hojo-local-20261023/`。本次接入先验证本地功能，不自动部署云服务器或改变云端默认配音。
+原始记录位于本机 `teacher_agent/.runtime/hojo-local-20261023/`。
+
+## 云端可选服务
+
+`hojo-deploy.yml` 的 PR 检查构建 CPU 镜像并合成 40M 固定音色、80M 参考音色；手动发布才安装到云端。模型版本固定为本地验证版本。容器仅监听主机回环地址，限制 0.75 CPU、1.5 GiB 内存、总计 2.5 GiB 内存与交换空间，只有请求到来才加载模型。参考音色写入独立持久化 runtime。
+
+部署脚本先验证两种模型、再启用 Hojo 可选配置，保留 Kokoro 配置和默认配音；失败恢复此前环境与服务。云端 CPU 较少，Hojo 不保证比 Kokoro 更快；启用可选服务不会替换已有配音。教师在设置中主动切换音色后，后续生成才使用 Hojo。
 
 官方来源：[40M 模型](https://huggingface.co/HojoAI/Hojo-TTS-Light-40M)、[80M 模型](https://huggingface.co/HojoAI/Hojo-TTS-Light)、[Apache-2.0 源码](https://github.com/HojoAI/Hojo-TTS-Light)。
