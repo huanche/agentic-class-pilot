@@ -325,24 +325,6 @@ def published_course_entries(session: SessionDep, course_id: uuid.UUID) -> list[
     return entries
 
 
-def _lesson_catalog_titles(entries: list[dict]) -> dict[str, str]:
-    """Use each lesson's published resource title for the student catalog."""
-    ranked: dict[str, tuple[int, str]] = {}
-    priority = {"material": 0, "objectives": 1, "outline": 2,
-                "courseware": 3, "knowledge-points": 4}
-    for entry in entries:
-        scope = entry.get("scope") or {}
-        lesson_id = scope.get("lessonId") if scope.get("type") == "lesson" else None
-        title = str(entry.get("title") or "").strip()
-        if not lesson_id or not title:
-            continue
-        resource_type = entry.get("resourceType") or entry.get("kind")
-        rank = priority.get(resource_type, 5)
-        if lesson_id not in ranked or rank < ranked[lesson_id][0]:
-            ranked[lesson_id] = (rank, title)
-    return {lesson_id: title for lesson_id, (_, title) in ranked.items()}
-
-
 def _classroom_view(session: SessionDep, classroom_id: str) -> dict:
     row = session.execute(
         text("SELECT stage, scenes FROM teacher.mentra_classrooms WHERE id = :id"),
@@ -415,7 +397,7 @@ def _published_lessons(session: SessionDep, course_id: uuid.UUID,
         classroom = _classroom_view(session, artifact["classroomId"])
         classroom["playbackToken"] = _issue_playback_grant(user_id, course_id, artifact["classroomId"])
         selected[lesson_id] = {
-            "id": lesson_id, "title": lesson.get("title") or artifact.get("title"),
+            "id": lesson_id, "title": artifact.get("title") or lesson.get("title"),
             "order": lesson.get("order", 1), "week": placement.get("week") or lesson.get("week"),
             "lessonNumber": placement.get("lessonNumber") or lesson.get("lessonNumber"),
             "teachingHours": placement.get("teachingHours") or lesson.get("teachingHours"),
@@ -489,12 +471,10 @@ def student_learning_context(body: LearningContextRequest, session: SessionDep,
             raise HTTPException(409, "课程尚未发布学习内容")
 
         published_lessons = _published_lessons(session, course_id, user_id)
-        catalog_titles = _lesson_catalog_titles(package_payload.get("entries") or [])
         # 目录只含摘要。未选课时不下发任何课堂正文、材料或知识点。
         lesson_catalog = [
             {**{key: lesson.get(key) for key in (
                 "id", "title", "order", "week", "lessonNumber", "teachingHours")},
-             "displayTitle": catalog_titles.get(lesson["id"]) or lesson.get("title"),
              "segmentCount": len(lesson["classroom"].get("scenes") or [])}
             for lesson in published_lessons
         ]

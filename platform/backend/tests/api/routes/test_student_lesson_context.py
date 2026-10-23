@@ -26,10 +26,8 @@ def context_setup(monkeypatch):
                 "content": f"## Topic {n}\n- Expected {n}"} for n in (1, 2)]
     entries += [{"id": "shared", "scope": {"type": "course"}, "content": "Shared"},
                 {"id": "unknown", "content": "Unbound"},
-                {"id": "M1", "title": "计算机网络概述", "resourceType": "material",
-                 "scope": {"type": "lesson", "lessonId": "L1"}, "content": "OTHER_MATERIAL"},
-                {"id": "M2", "title": "电子邮件系统与SMTP协议", "resourceType": "material",
-                 "scope": {"type": "lesson", "lessonId": "L2"}, "content": "Selected"}]
+                {"id": "M1", "scope": {"type": "lesson", "lessonId": "L1"}, "content": "OTHER_MATERIAL"},
+                {"id": "M2", "scope": {"type": "lesson", "lessonId": "L2"}, "content": "Selected"}]
     monkeypatch.setattr(bridge, "_published_lessons", lambda *args: copy.deepcopy(lessons))
     monkeypatch.setattr(bridge, "_published_package_payload", lambda *args: {
         "id": "pub", "version": 1, "entries": copy.deepcopy(entries)})
@@ -62,8 +60,7 @@ def test_no_selection_returns_catalog_only(context_setup):
     assert "rubric" not in context["knowledgePackage"]
     assert "BODY_1" not in str(context)
     assert "BODY_2" not in str(context)
-    assert [item["displayTitle"] for item in context["lessonCatalog"]] == [
-        "计算机网络概述", "电子邮件系统与SMTP协议"]
+    assert [item["title"] for item in context["lessonCatalog"]] == ["Lesson 1", "Lesson 2"]
 
 
 def test_unknown_lesson_is_rejected(context_setup):
@@ -77,3 +74,19 @@ def test_only_other_lesson_knowledge_is_never_used():
     entries = [{"resourceType": "knowledge-points", "scope": {"type": "lesson", "lessonId": "L1"},
                 "content": "## Other topic\n- Other fact"}]
     assert bridge._knowledge_artifact_rubric(entries, "L2") is None
+
+
+def test_published_lesson_uses_its_bound_courseware_title(monkeypatch):
+    course = {"modules": [{"title": "第1周", "lessons": [{
+        "id": "L1", "title": "第1次课", "order": 1, "week": 1, "lessonNumber": 1}]}]}
+    artifact = {"title": "计算机网络概述", "classroomId": "room-1",
+                "publicationPlacement": {"lessonId": "L1", "week": 1, "lessonNumber": 1}}
+    session = Mock()
+    session.execute.side_effect = [
+        SimpleNamespace(first=lambda: (course,)),
+        SimpleNamespace(all=lambda: [(artifact,)]),
+    ]
+    monkeypatch.setattr(bridge, "_classroom_view", lambda *args: {"id": "room-1", "scenes": []})
+    monkeypatch.setattr(bridge, "_issue_playback_grant", lambda *args: "grant")
+    lessons = bridge._published_lessons(session, "course-id", "student-id")
+    assert lessons[0]["title"] == "计算机网络概述"
