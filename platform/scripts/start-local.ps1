@@ -33,9 +33,11 @@ function Test-Port([int]$Port) {
 
 Push-Location $root
 try {
-  docker compose -f compose.local.yml up -d
-  if ($LASTEXITCODE -ne 0) {
-    throw 'Docker services failed to start. Make sure Docker Desktop is running and this terminal can access it.'
+  if (-not (Test-Port 55432)) {
+    docker compose -f compose.local.yml up -d
+    if ($LASTEXITCODE -ne 0) {
+      throw 'Docker services failed to start. Make sure Docker Desktop is running and this terminal can access it.'
+    }
   }
   Push-Location (Join-Path $root 'backend')
   try { & (Join-Path $root '.venv\Scripts\python.exe') -m alembic upgrade head } finally { Pop-Location }
@@ -62,13 +64,17 @@ try {
   }
 
   if (-not (Test-Path -LiteralPath $StudentProject)) { throw "Student project not found: $StudentProject" }
-  if (-not (Test-Port 8000)) {
-    $studentLauncher = Join-Path $StudentProject 'scripts\dev-8000-platform.ps1'
+  if (-not (Test-Port 8001)) {
+    $studentLauncher = Join-Path $StudentProject 'start-platform.ps1'
     if (-not (Test-Path -LiteralPath $studentLauncher)) {
       throw "Student launcher not found: $studentLauncher"
     }
     $studentArgs = "-NoProfile -ExecutionPolicy Bypass -File `"$studentLauncher`""
     Start-Process -FilePath 'powershell.exe' -ArgumentList $studentArgs -WorkingDirectory $StudentProject -WindowStyle Hidden
+  }
+
+  if (-not (Test-Port 8088)) {
+    Start-Process -FilePath 'node.exe' -ArgumentList @((Join-Path $root 'scripts\local-gateway.mjs')) -WorkingDirectory $root -WindowStyle Hidden
   }
 } finally {
   Pop-Location

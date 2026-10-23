@@ -7,7 +7,7 @@ export function target(raw) {
   if (path.startsWith('/teacher/')) return {port:3200,path:raw.slice(8)};
   // The browser imports this module from a root URL even on /teacher pages.
   if (path.startsWith('/vendor/maic-importer/')) return {port:3200,path:raw};
-  if (path === '/app' || path.startsWith('/app/') || path.startsWith('/api/session/')) return {port:8000,path:raw};
+  if (path === '/app' || path.startsWith('/app/') || path.startsWith('/api/session/')) return {port:8001,path:raw};
   if (path.startsWith('/api/v1/')) return {port:8080,path:raw};
   if (path.startsWith('/api/') || teacherPages.test(path)) return {port:3200,path:raw};
   return {port:8080,path:raw};

@@ -1,0 +1,5 @@
+fastapi>=0.115,<1
+uvicorn>=0.30,<1
+langgraph>=1.2,<2
+langchain-openai>=1.6,<2
+psycopg[binary]>=3.2,<4

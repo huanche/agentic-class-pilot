@@ -47,6 +47,13 @@
   --conversation-height: clamp(420px, calc(100dvh - 130px), 660px);
 }
 
+.new-course-card { display:flex; flex-direction:column; align-items:flex-start; gap:12px; min-height:150px; padding:28px; border:1px solid var(--surface-border); border-radius:var(--r-lg); background:var(--surface-solid); box-shadow:var(--shadow-rest); color:var(--text-1); text-align:left; cursor:pointer; font:inherit; }
+.new-course-card:hover { box-shadow:var(--shadow-hover); transform:translateY(-2px); }
+.new-course-card strong { font-size:22px; }
+.new-course-card span { color:var(--text-2); }
+.new-stage-title { margin:0; padding:18px 22px 4px; font-size:20px; }
+.new-error { position:fixed; bottom:16px; left:50%; transform:translateX(-50%); max-width:90vw; padding:12px 18px; border-radius:12px; background:#fff1f0; color:#9d251a; box-shadow:var(--shadow-rest); z-index:10; }
+
 /* ── 基础 ────────────────────────────────────────────────── */
 * { box-sizing: border-box; }
 
@@ -665,8 +672,11 @@ body::before {
 
 .composer__input {
   flex: 1;
+  min-width: 0;
+  height: 44px;
+  min-height: 44px;
   max-height: 132px;
-  padding: 11px 16px;
+  padding: 10px 14px;
 
   font: inherit;
   font-size: 15px;
@@ -678,6 +688,7 @@ body::before {
   border-radius: 20px;
   outline: none;
   resize: none;
+  overflow-y: auto;
   transition: box-shadow .2s var(--ease);
 }
 .composer__input::placeholder { color: var(--text-3); }
@@ -687,8 +698,8 @@ body::before {
   flex: none;
   display: grid;
   place-items: center;
-  width: 38px;
-  height: 38px;
+  width: 44px;
+  height: 44px;
   color: #fff;
   cursor: pointer;
 
@@ -846,7 +857,7 @@ body::before {
 .week-tile__number { color: #a71958; font-weight: 750; }
 .week-tile__status { background: rgba(107,114,128,.11); color: var(--text-2); }
 .week-tile--current .week-tile__status { background: rgba(176,0,85,.1); color: #a71958; }
-.week-tile__title { margin-top: 19px; font-size: 19px; font-weight: 750; }
+.week-tile__title { margin-top: 19px; font-size: clamp(21px, 2vw, 24px); line-height: 1.35; font-weight: 750; }
 .week-tile__summary { margin-top: 6px; color: var(--text-2); font-size: 13px; line-height: 1.55; }
 .week-tile__action { margin-top: auto; }
 @media (max-width: 850px) { .course-grid, .week-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
@@ -872,6 +883,26 @@ body::before {
   flex: 1;
   min-height: 0;
 }
+
+.done.done--feedback { max-width: 820px; width: 100%; margin: 0 auto; padding: clamp(18px, 4vw, 42px); }
+.lesson-feedback { width: 100%; text-align: left; margin-top: 28px; }
+.lesson-feedback h4 { margin: 0 0 12px; font-size: 21px; }
+.lesson-feedback__summary { color: var(--text-2); line-height: 1.8; }
+.lesson-feedback__list { display: grid; gap: 16px; margin-top: 22px; }
+.lesson-feedback__item {
+  padding: 20px; border: 1px solid var(--hairline); border-radius: 16px;
+  background: var(--surface); overflow-wrap: anywhere; line-height: 1.7;
+}
+.lesson-feedback__heading { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; }
+.lesson-feedback__heading h5 { flex: 1; min-width: 160px; margin: 0; font-size: 17px; }
+.lesson-feedback__status { font-size: 13px; color: var(--text-2); }
+.lesson-feedback__item--mastered .lesson-feedback__status { color: #16835b; }
+.lesson-feedback__item--needs_review .lesson-feedback__status { color: #a85c08; }
+.lesson-feedback__rounds, .lesson-feedback__note { font-size: 13px; color: var(--text-2); }
+.lesson-feedback__evidence { white-space: pre-wrap; }
+.lesson-feedback__item p:last-child { margin-bottom: 0; }
+.postclass-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; margin-top: 26px; }
+.postclass-actions .btn { padding: 13px 26px; font-size: 15px; }
 
 .conversation-actions {
   display: flex;
@@ -1640,6 +1671,52 @@ body::before { background: none; }
 .login__switch-btn:hover:not(:disabled) { color: var(--brand-strong); }
 .login__switch-btn:disabled { opacity: .5; cursor: default; }
 
+/* Keep the active lesson and its stage progress close to the lesson heading. */
+.view.classroom-view { max-width: 1480px; gap: 16px; padding: 24px 32px; }
+.classroom-layout { display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 24px; align-items: start; }
+.classroom-content { min-width: 0; }
+.classroom-content .stage--summary { justify-content: flex-start; }
+.classroom-content .conversation-panel { width: 100%; height: clamp(500px, calc(100dvh - 130px), 1000px); margin: 0; }
+.conversation-heading { padding: 18px 24px 14px; border-bottom: 1px solid var(--hairline); flex-shrink: 0; }
+.conversation-heading .new-stage-title { padding: 0; }
+.conversation-stage { margin: 6px 0 0; font-size: 14px; color: var(--brand); overflow-wrap: anywhere; }
+.conversation-log > *:first-child { margin-top: 0; }
+.msg__stage { display: block; margin-bottom: 7px; color: var(--brand); font-size: 12px; font-weight: 700; }
+.conversation-complete { padding: 16px 24px; background: var(--brand-soft); border-top: 1px solid var(--brand-border); }
+.conversation-complete strong { color: var(--brand); }
+.conversation-complete p { margin: 5px 0 0; font-size: 14px; color: var(--text-2); }
+.conversation-actions { flex-wrap: wrap; align-items: center; justify-content: space-between; flex-shrink: 0; }
+.conversation-end-hint { font-size: 12px; color: var(--text-2); }
+.lesson-progress { position: sticky; top: 24px; padding: 22px 16px; background: var(--surface-solid); border: 1px solid var(--surface-border); border-radius: 22px; }
+.lesson-progress__eyebrow { margin: 0 0 24px; font-size: 14px; font-weight: 700; }
+.lesson-progress__steps { list-style: none; margin: 0; padding: 0; }
+.lesson-progress__step { position: relative; display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 10px; padding-bottom: 25px; color: var(--text-3); }
+.lesson-progress__step:not(:last-child)::after { content: ""; position: absolute; left: 13px; top: 32px; bottom: 5px; width: 2px; background: var(--hairline); }
+.lesson-progress__step.is-past::after { background: var(--brand-border); }
+.lesson-progress__marker { display: grid; place-items: center; width: 28px; height: 28px; border: 1px solid var(--hairline); border-radius: 50%; font-size: 12px; font-weight: 700; }
+.lesson-progress__step strong { display: block; font-size: 14px; }
+.lesson-progress__status { font-size: 11px; }
+.lesson-progress__step p { margin: 4px 0 0; font-size: 12px; }
+.lesson-progress__step.is-current { color: var(--brand); }
+.lesson-progress__step.is-current .lesson-progress__marker { background: var(--brand); border-color: var(--brand); color: white; box-shadow: 0 0 0 4px var(--brand-soft); }
+.lesson-progress__step.is-past { color: var(--text-2); }
+.lesson-progress__step.is-past .lesson-progress__marker { color: var(--brand); background: var(--brand-soft); border-color: var(--brand-border); }
+.lesson-progress__note { border-top: 1px solid var(--hairline); padding-top: 14px; margin: 0; font-size: 12px; color: var(--text-2); }
+@media (max-width: 780px) {
+  .view.classroom-view { padding: 16px 12px 24px; gap: 12px; }
+  .classroom-layout { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .lesson-progress { position: static; padding: 14px 8px; border-radius: 16px; }
+  .lesson-progress__eyebrow, .lesson-progress__note, .lesson-progress__step p { display: none; }
+  .lesson-progress__steps { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; }
+  .lesson-progress__step { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 8px; padding: 0; }
+  .lesson-progress__step strong { font-size: 12px; }
+  .lesson-progress__step:not(:last-child)::after { left: calc(50% + 18px); top: 13px; bottom: auto; width: calc(100% - 32px); height: 2px; }
+  .classroom-content .conversation-panel { height: max(440px, calc(100dvh - 236px)); border-radius: 16px; }
+  .conversation-heading { padding: 16px; }
+  .conversation-actions { justify-content: center; gap: 8px; }
+  .conversation-end-hint { width: 100%; text-align: center; }
+}
+
 /* 课程码：等宽 + 拉开字距，六位码好读好核对 */
 .login__input--code {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -1660,141 +1737,4 @@ body::before { background: none; }
 
 @media (max-width: 780px) {
   .join-fab { right: 16px; bottom: 16px; }
-}
-
-/* ── 课后辅导掌握条（工单 02 外壳：剩余时间 + 编号顺序 + 系统星级）── */
-.tutoring-mastery {
-  display: flex;
-  align-items: baseline;
-  gap: 14px;
-  flex-wrap: wrap;
-  padding: 10px 16px;
-  border-bottom: 1px solid var(--hairline);
-  background: var(--surface-solid);
-  border-radius: var(--r-lg) var(--r-lg) 0 0;
-  font-size: 13px;
-}
-.tm-head { color: var(--brand); font-weight: 600; white-space: nowrap; }
-.tm-clock { font-variant-numeric: tabular-nums; }
-.tm-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 12px;
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-.tm-item { display: inline-flex; align-items: center; gap: 5px; color: var(--muted, inherit); }
-.tm-no {
-  display: inline-block;
-  min-width: 18px;
-  text-align: center;
-  border-radius: 999px;
-  background: var(--bg);
-  border: 1px solid var(--surface-border);
-  font-size: 11px;
-  line-height: 16px;
-}
-.tm-current { color: var(--brand-strong, inherit); font-weight: 600; }
-
-/* 量规小图标（工单 04）：悬停显示/移开隐藏、键盘聚焦可查、触屏点击切换 */
-.tm-item { position: relative; }
-.tm-rubric {
-  border: none;
-  background: none;
-  cursor: pointer;
-  font-size: 12px;
-  color: var(--brand);
-  padding: 0 2px;
-  line-height: 1;
-}
-.tm-rubric-text {
-  display: none;
-  position: absolute;
-  top: 100%;
-  left: 0;
-  z-index: 5;
-  background: var(--surface-solid);
-  border: 1px solid var(--surface-border);
-  border-radius: 8px;
-  padding: 8px 10px;
-  font-size: 12px;
-  font-weight: 400;
-  white-space: pre-line;
-  max-width: 320px;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
-}
-.tm-item:hover .tm-rubric-text,
-.tm-rubric:focus + .tm-rubric-text,
-.tm-rubric-text.tm-open {
-  display: block;
-}
-
-/* ── 课后辅导反馈卡 + 课程级反馈入口（工单 05）── */
-.tfeedback {
-  margin-top: 18px;
-  padding: 16px 18px;
-  border: 1px solid var(--surface-border);
-  border-radius: var(--r-lg);
-  background: var(--surface-solid);
-  text-align: left;
-}
-.tfeedback__title { margin: 0 0 6px; font-size: 15px; color: var(--brand); }
-.tfeedback__meta { margin: 0 0 10px; font-size: 13px; opacity: 0.85; }
-.tfeedback__kps { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
-.tfeedback__kp { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; font-size: 13px; }
-.tfeedback__no { color: var(--brand); font-weight: 600; min-width: 20px; }
-.tfeedback__name { flex: 1; }
-.tfeedback__stars { color: var(--brand-strong, inherit); font-weight: 600; }
-.tfeedback__evidence { font-size: 12px; opacity: 0.65; }
-.tfeedback__unfinished { margin: 10px 0 0; font-size: 13px; color: var(--brand-strong, inherit); }
-.tfeedback__advice { margin: 8px 0 0; font-size: 13px; }
-
-.course-cell { display: grid; gap: 8px; }
-.course-feedback-btn {
-  justify-self: start;
-  border: 1px solid var(--brand);
-  color: var(--brand);
-  background: none;
-  border-radius: 999px;
-  padding: 6px 14px;
-  font-size: 13px;
-  cursor: pointer;
-}
-.course-feedback-panel {
-  display: grid;
-  gap: 6px;
-  padding: 12px 14px;
-  border: 1px solid var(--surface-border);
-  border-radius: var(--r-lg);
-  background: var(--surface-solid);
-}
-.course-feedback-panel__title { font-size: 13px; font-weight: 600; color: var(--brand); }
-.course-feedback-row { font-size: 13px; color: inherit; text-decoration: none; }
-.course-feedback-row:hover { text-decoration: underline; }
-
-.tfeedback__resume {
-  margin-top: 12px;
-  border: 1px solid var(--brand);
-  color: var(--brand);
-  background: none;
-  border-radius: 999px;
-  padding: 6px 16px;
-  font-size: 13px;
-  cursor: pointer;
-}
-.tfeedback__resume:hover { background: var(--brand-soft, transparent); }
-
-/* 本地测试：视频页「当作已播完」按钮（工单 07，生产默认不渲染） */
-.video-skip-dev {
-  margin-top: 10px;
-  align-self: center;
-  border: 1px dashed var(--brand);
-  color: var(--brand);
-  background: none;
-  border-radius: 8px;
-  padding: 6px 14px;
-  font-size: 13px;
-  cursor: pointer;
-  opacity: 0.85;
 }

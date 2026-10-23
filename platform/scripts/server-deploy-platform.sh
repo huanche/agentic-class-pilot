@@ -31,6 +31,8 @@ export PATH="$HOME/.local/bin:$PATH"
 BACKUP_POLICY=/usr/local/lib/agentic-class-pilot/server-backup-policy.py
 test -f "$BACKUP_POLICY" || { echo "FATAL: backup policy not installed"; exit 1; }
 sudo -n python3 "$BACKUP_POLICY" apply
+exec 9>/tmp/agentic-class-pilot-deploy.lock
+flock -w 600 9 || { echo "FATAL: another deployment holds the repo"; exit 1; }
 
 restart_service() { sudo -n systemctl restart "$SERVICE"; }
 

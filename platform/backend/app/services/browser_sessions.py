@@ -62,9 +62,11 @@ def check_origin(request: Request) -> None:
     if request.method in {"GET", "HEAD", "OPTIONS"}:
         return
     origin = request.headers.get("origin")
-    # Cookie-authenticated writes originate from the single public frontend.
-    if origin != settings.FRONTEND_HOST and \
-            not _loopback_equivalent(origin or "", settings.FRONTEND_HOST):
+    allowed_origins = {settings.FRONTEND_HOST} | {
+        value.strip() for value in settings.BROWSER_ALLOWED_ORIGINS.split(",") if value.strip()
+    }
+    if origin not in allowed_origins and \
+            not any(_loopback_equivalent(origin or "", allowed) for allowed in allowed_origins):
         raise HTTPException(403, "请求来源不被允许")
 
 

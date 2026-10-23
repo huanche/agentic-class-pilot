@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { createFileRoute, redirect } from "@tanstack/react-router";
+import { createFileRoute, Link, redirect } from "@tanstack/react-router";
 import { BookOpen, CircleAlert, Hourglass, PlayCircle } from "lucide-react";
 import { useState } from "react";
 
@@ -75,6 +75,9 @@ function StudentHome() {
         <p className="mt-2 text-muted-foreground">
           {user?.full_name || user?.email}，查看你的课程并开始学习。
         </p>
+        <Button asChild className="mt-4">
+          <Link to="/join">使用选课码加入课程</Link>
+        </Button>
       </div>
       {!studentAgentReady && (
         <Card className="border-dashed">

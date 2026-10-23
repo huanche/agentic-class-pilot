@@ -49,7 +49,13 @@ def context_world(db):
                      "VALUES (:id, :owner, 'active', :title, CAST(:payload AS jsonb), 1, 1) "
                      "ON CONFLICT (id) DO NOTHING"),
                 {"id": str(course_id), "owner": str(student_id),
-                 "title": course_row(course_id)["title"], "payload": json.dumps({"id": str(course_id)})})
+                 "title": course_row(course_id)["title"], "payload": json.dumps({
+                     "id": str(course_id),
+                     "modules": ([{"id": "module-1", "lessons": [{
+                         "id": "lesson-1", "title": "第一课", "order": 1, "week": 1,
+                         "lessonNumber": 1,
+                     }]}] if course_id == course_full else []),
+                 })})
             session.execute(
                 text("INSERT INTO teacher_course_link (course_id, external_course_id) VALUES (:c, :e) "
                      "ON CONFLICT (course_id) DO NOTHING"),
@@ -77,12 +83,15 @@ def context_world(db):
                  "VALUES (:id, :job, :c, :t, 'lesson-courseware', 'published', CAST(:payload AS jsonb), 1, 1)"),
             {"id": f"art-{course_full.hex[:8]}", "job": "job-1", "c": str(course_full), "t": str(student_id),
              "payload": json.dumps({"id": f"art-{course_full.hex[:8]}", "classroomId": classroom_id,
+                                    "title": "条目一", "content": "内容一", "classVisible": True,
+                                    "publicationPlacement": {"lessonId": "lesson-1", "week": 1,
+                                                             "lessonNumber": 1},
                                     "classPublicationId": "CLS-A-ctx", "classPublishedAt": now})})
         session.commit()
 
     yield {"student_id": str(student_id), "course_full": str(course_full),
            "course_text": str(course_text), "course_draft": str(course_draft),
-           "classroom_id": classroom_id}
+           "classroom_id": classroom_id, "lesson_id": "lesson-1"}
 
     with Session(engine) as session:
         for course_id in (course_full, course_text, course_draft):
@@ -97,10 +106,10 @@ def context_world(db):
         session.commit()
 
 
-def _fetch(client: TestClient, token: str) -> object:
+def _fetch(client: TestClient, token: str, lesson_id: str | None = None) -> object:
     return client.post("/api/v1/internal/student/learning-context",
                        headers={"X-Student-Service-Key": BRIDGE_KEY},
-                       json={"launch_token": token})
+                       json={"launch_token": token, "lesson_id": lesson_id})
 
 
 def test_full_context_with_classroom_and_playback_grant(client: TestClient, context_world) -> None:
@@ -108,7 +117,7 @@ def test_full_context_with_classroom_and_playback_grant(client: TestClient, cont
                                uuid.UUID(context_world["course_full"]),
                                context_world["classroom_id"],
                                {"publicationId": "pkg-x", "version": 1})
-    response = _fetch(client, token)
+    response = _fetch(client, token, context_world["lesson_id"])
     assert response.status_code == 200, response.text[:300]
     body = response.json()
     assert body["schemaVersion"] == 1
