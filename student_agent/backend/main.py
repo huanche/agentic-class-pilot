@@ -113,7 +113,7 @@ def catalog(context: dict) -> list[dict]:
         details = selected.get(str(item.get("id")), item)
         classroom = details.get("classroom") or {}
         classroom_title = str(classroom.get("title") or "").strip()
-        lesson_title = str(item.get("title") or f"第 {index} 课").strip()
+        lesson_title = str(item.get("displayTitle") or item.get("title") or f"第 {index} 课").strip()
         lessons.append({
             "id": str(item.get("id") or index), "title": lesson_title,
             "week": item.get("week") or index, "lessonNumber": item.get("lessonNumber") or 1,

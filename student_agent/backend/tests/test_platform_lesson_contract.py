@@ -46,6 +46,14 @@ def _context(selected: str | None = None) -> dict:
     return result
 
 
+def test_catalog_uses_published_material_title_for_lesson_card() -> None:
+    context = _context()
+    context["lessonCatalog"][0]["displayTitle"] = "计算机网络概述"
+    context["lessonCatalog"][1]["displayTitle"] = "电子邮件系统与SMTP协议"
+    lessons = main.catalog(context)[0]["lessons"]
+    assert [lesson["title"] for lesson in lessons] == ["计算机网络概述", "电子邮件系统与SMTP协议"]
+
+
 def test_catalog_then_selected_lesson(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("STUDENT_SERVICE_KEY", "test-key")
     calls = []

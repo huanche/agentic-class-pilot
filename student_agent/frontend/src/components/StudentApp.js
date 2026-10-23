@@ -351,12 +351,9 @@ export default function StudentApp() {
       <div className="week-grid">{course?.lessons.map((item, index) => {
         const isLatest = index === course.lessons.length - 1;
         const savedPhase = savedLessonPhase(browserCourseKey.current, item.id);
-        const sharedSummary = item.summary && course.lessons.length > 1 && course.lessons.every((lesson) => lesson.summary === item.summary);
-        const topicTitle = item.summary && !sharedSummary && item.summary !== course.title
-          ? item.summary : item.title;
         return <button type="button" className={`week-tile${isLatest ? " week-tile--current" : ""}`} key={item.id} disabled={busy} onClick={() => chooseLesson(item)}>
           <span className="week-tile__top"><span className="week-tile__number">第 {item.week} 周 · 第 {item.lessonNumber} 次课</span><span className="week-tile__status">{savedPhase === "done" ? "已完成" : savedPhase ? "继续学习" : isLatest ? "最新开放" : "已开放"}</span></span>
-          <span className="week-tile__title">{topicTitle}</span>
+          <span className="week-tile__title">{item.title}</span>
           <span className="week-tile__action">{savedPhase === "done" ? "查看本课反馈 →" : savedPhase ? "继续本课 →" : "选择课时 →"}</span>
         </button>;
       })}</div>
