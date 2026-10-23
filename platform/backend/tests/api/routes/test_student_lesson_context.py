@@ -26,8 +26,10 @@ def context_setup(monkeypatch):
                 "content": f"## Topic {n}\n- Expected {n}"} for n in (1, 2)]
     entries += [{"id": "shared", "scope": {"type": "course"}, "content": "Shared"},
                 {"id": "unknown", "content": "Unbound"},
-                {"id": "M1", "scope": {"type": "lesson", "lessonId": "L1"}, "content": "OTHER_MATERIAL"},
-                {"id": "M2", "scope": {"type": "lesson", "lessonId": "L2"}, "content": "Selected"}]
+                {"id": "M1", "title": "计算机网络概述", "resourceType": "material",
+                 "scope": {"type": "lesson", "lessonId": "L1"}, "content": "OTHER_MATERIAL"},
+                {"id": "M2", "title": "电子邮件系统与SMTP协议", "resourceType": "material",
+                 "scope": {"type": "lesson", "lessonId": "L2"}, "content": "Selected"}]
     monkeypatch.setattr(bridge, "_published_lessons", lambda *args: copy.deepcopy(lessons))
     monkeypatch.setattr(bridge, "_published_package_payload", lambda *args: {
         "id": "pub", "version": 1, "entries": copy.deepcopy(entries)})
@@ -60,6 +62,8 @@ def test_no_selection_returns_catalog_only(context_setup):
     assert "rubric" not in context["knowledgePackage"]
     assert "BODY_1" not in str(context)
     assert "BODY_2" not in str(context)
+    assert [item["displayTitle"] for item in context["lessonCatalog"]] == [
+        "计算机网络概述", "电子邮件系统与SMTP协议"]
 
 
 def test_unknown_lesson_is_rejected(context_setup):
