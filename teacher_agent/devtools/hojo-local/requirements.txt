@@ -1,0 +1,8 @@
+numpy==1.26.4
+onnxruntime==1.21.1
+onnx>=1.22.0,<2
+soundfile>=0.13.1,<1
+tokenizers>=0.22.1,<1
+huggingface_hub>=0.33.0,<3
+scipy>=1.17.1,<2
+librosa>=0.11.0,<1

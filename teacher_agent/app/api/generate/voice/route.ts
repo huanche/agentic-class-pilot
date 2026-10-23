@@ -45,6 +45,7 @@ export async function POST(req: NextRequest) {
       descriptor?: unknown;
       language?: string;
       referenceAudioBase64?: string;
+      referenceText?: string;
       mimeType?: string;
       ttsApiKey?: string;
       ttsBaseUrl?: string;
@@ -117,6 +118,8 @@ export async function POST(req: NextRequest) {
         voiceId,
         referenceAudioBase64: body.referenceAudioBase64,
         mimeType: body.mimeType,
+        referenceText:
+          typeof body.referenceText === 'string' ? body.referenceText.slice(0, 2000) : undefined,
       });
       return apiSuccess({ voiceId, registered: true });
     }

@@ -1,0 +1,7 @@
+HojoAI Hojo-TTS-Light runtime and ONNX models are Apache-2.0 licensed.
+Official code: https://github.com/HojoAI/Hojo-TTS-Light
+40M weights: https://huggingface.co/HojoAI/Hojo-TTS-Light-40M
+80M weights: https://huggingface.co/HojoAI/Hojo-TTS-Light
+The downloader pins source revision fc8d11832644890a6c490033fc9e00c57e35a73d,
+records model revisions and SHA-256 checksums, and saves the upstream license.
+No model files, reference recordings, or downloaded upstream sources belong in Git.

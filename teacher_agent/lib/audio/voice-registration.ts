@@ -11,6 +11,7 @@
 
 import type { VoiceDesign } from '@/lib/audio/voice-design';
 import { voxcpmVoiceRegistrationAdapter } from '@/lib/audio/voxcpm-registration';
+import { hojoVoiceRegistrationAdapter } from '@/lib/audio/hojo-registration';
 
 /** Resolved backend connection for a registration call (server-injected for managed providers). */
 export interface VoiceRegistrationConfig {
@@ -27,7 +28,12 @@ export interface VoiceRegistrationAdapter {
   /** Register (or idempotently re-register) a reference clip under `voiceId`; returns the id. */
   registerVoice(
     cfg: VoiceRegistrationConfig,
-    params: { voiceId: string; referenceAudioBase64: string; mimeType?: string },
+    params: {
+      voiceId: string;
+      referenceAudioBase64: string;
+      mimeType?: string;
+      referenceText?: string;
+    },
   ): Promise<string>;
   /** Synthesize the voice design once into a reference clip. */
   bootstrapReferenceClip(
@@ -39,6 +45,7 @@ export interface VoiceRegistrationAdapter {
 /** providerId → adapter. The only seam to touch when adding a provider. */
 const VOICE_REGISTRATION_ADAPTERS: Record<string, VoiceRegistrationAdapter> = {
   'voxcpm-tts': voxcpmVoiceRegistrationAdapter,
+  'hojo-tts': hojoVoiceRegistrationAdapter,
 };
 
 export function getVoiceRegistrationAdapter(

@@ -14,6 +14,7 @@ vi.mock('@/lib/server/provider-config', () => ({
   resolveTTSApiKey: () => 'test',
   resolveTTSBaseUrl: () => undefined,
   resolveTTSVoice: (_provider: string, voice?: string) => voice,
+  resolveTTSModel: (_provider: string, model?: string) => model,
 }));
 import { generateTTSForClassroom } from '@/lib/server/classroom-media-generation';
 
@@ -38,6 +39,30 @@ function narrationScene() {
   } as unknown as Scene;
 }
 describe('server narration language', () => {
+  it('preserves the chosen Hojo model and voice for background narration', async () => {
+    mocks.providers.mockReturnValue({ 'lemonade-tts': {}, 'hojo-tts': {} });
+    await generateTTSForClassroom(
+      [narrationScene()],
+      'voice-stage',
+      'http://localhost',
+      undefined,
+      {
+        voiceSelection: {
+          providerId: 'hojo-tts',
+          modelId: 'hojo-tts-light-80m',
+          voice: 'hojo_80m_zh1',
+        },
+      },
+    );
+    expect(mocks.tts).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerId: 'hojo-tts',
+        modelId: 'hojo-tts-light-80m',
+        voice: 'hojo_80m_zh1',
+      }),
+      expect.any(String),
+    );
+  });
   it('stops queued clips on failure and waits for in-flight audio before returning to cleanup', async () => {
     let release: () => void = () => {};
     let finished = false;

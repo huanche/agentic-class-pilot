@@ -487,6 +487,7 @@ const getDefaultAudioConfig = () => ({
     'doubao-tts': { apiKey: '', baseUrl: '', enabled: true },
     'elevenlabs-tts': { apiKey: '', baseUrl: '', enabled: true },
     'minimax-tts': { apiKey: '', baseUrl: '', modelId: 'speech-2.8-hd', enabled: true },
+    'hojo-tts': { apiKey: '', baseUrl: '', modelId: 'hojo-tts-light-40m', enabled: true },
     'lemonade-tts': {
       apiKey: '',
       baseUrl: '',

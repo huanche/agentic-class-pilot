@@ -51,6 +51,49 @@ function mockRequest(requirements: Record<string, unknown>) {
 }
 
 describe('task-engine outline route', () => {
+  test('returns a concise lesson overview in the same model call as the outline', async () => {
+    vi.resetModules();
+    streamLLMMock.mockReset();
+    resolveModelFromRequestMock.mockReset();
+    resolveModelFromRequestMock.mockResolvedValue({
+      model: { modelId: 'test-model' },
+      modelInfo: { outputWindow: 4096, capabilities: {} },
+      modelString: 'test:model',
+    });
+    const summary = '本节课比较三种循环，重点判断退出条件。';
+    streamLLMMock.mockReturnValue({
+      textStream: (async function* () {
+        yield JSON.stringify({
+          courseTitle: '循环',
+          lessonOverview: summary,
+          outlines: [
+            {
+              id: 'one',
+              type: 'slide',
+              title: '循环边界',
+              description: '解释条件',
+              keyPoints: ['退出条件'],
+              order: 1,
+            },
+          ],
+        });
+      })(),
+    });
+    const { POST } = await import('@/app/api/generate/scene-outlines-stream/route');
+    const response = await POST({
+      ...mockRequest({ requirement: '讲解循环' }),
+      json: async () => ({
+        requirements: { requirement: '讲解循环' },
+        includeLessonOverview: true,
+      }),
+    } as unknown as Parameters<typeof POST>[0]);
+    const done = parseSseEvents(await readStreamBody(response)).find(
+      (event) => event.type === 'done',
+    );
+    expect(done.lessonOverview).toBe(summary);
+    expect(done.outlines).toHaveLength(1);
+    expect(streamLLMMock).toHaveBeenCalledOnce();
+  });
   beforeEach(() => {
     originalVocationalFlag = process.env[VOCATIONAL_FLAG];
     delete process.env[VOCATIONAL_FLAG];
