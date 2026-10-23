@@ -1,6 +1,7 @@
 import type { GenerationSessionState } from '@/app/generation-preview/types';
 import type { CourseArtifactJob, CourseMaterialExtraction, CourseSpace } from './types';
 import { resolveCourseMinutes } from '@/lib/generation/course-duration';
+import { ensureCoursewareSourceFingerprint } from './source-fingerprint';
 import {
   buildLearningSkillsEnhancementRequirement,
   type CoursewareConversionMode,
@@ -162,5 +163,7 @@ export async function createCoursewareGenerationSession(
     sourceType: conversionMode === 'faithful' ? 'pptx-faithful' : 'learning-skills-enhanced',
     courseSpaceContext: { courseId: course.id, scope, materialIds },
   };
-  return pptxMaterial && preparePptx ? preparePptx(pptxMaterial, session) : session;
+  return pptxMaterial && preparePptx
+    ? preparePptx(pptxMaterial, session)
+    : ensureCoursewareSourceFingerprint(session);
 }

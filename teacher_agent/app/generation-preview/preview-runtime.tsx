@@ -94,6 +94,7 @@ import {
   sessionWithLessonOverview,
 } from '@/lib/generation/lesson-overview';
 import { readOutlineStream } from '@/lib/generation/outline-stream-client';
+import { ensureCoursewareSourceFingerprint } from '@/lib/course-space/source-fingerprint';
 
 const log = createLogger('GenerationPreview');
 const OUTLINE_REVIEW_AUTO_CONTINUE_MS = 2500;
@@ -997,7 +998,14 @@ function GenerationPreviewContent() {
         stage.name = courseTitle;
       }
 
-      if (currentSession.conversionMode) {
+      const conversionMode = currentSession.conversionMode;
+      if (conversionMode) {
+        const sourcedSession = await ensureCoursewareSourceFingerprint(currentSession);
+        signal.throwIfAborted();
+        if (sourcedSession !== currentSession) {
+          currentSession = sourcedSession;
+          persistSession(currentSession);
+        }
         if (!currentSession.sourceFingerprint) {
           throw new Error('来源指纹缺失，不能进入强制治理流程，请重新导入文件');
         }
@@ -1011,7 +1019,7 @@ function GenerationPreviewContent() {
         };
         await initializeCourseGovernance({
           stageId: stage.id,
-          mode: currentSession.conversionMode,
+          mode: conversionMode,
           source: governedSource,
           outlines,
           draft: currentSession.pptContentDraft,
