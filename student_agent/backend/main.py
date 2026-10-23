@@ -2,9 +2,14 @@
 from __future__ import annotations
 
 import json
+import base64
+import hashlib
+import hmac
 import logging
 import os
 import secrets
+import time
+import traceback
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -17,7 +22,7 @@ from pydantic import BaseModel, Field
 
 from agent.context import classroom_materials, lesson_points
 from agent.graph import dialogue_graph, initial_state, opening
-from agent.knowledge import CURRICULUM_VERSION, learning_points
+from agent.knowledge import CURRICULUM_VERSION, KnowledgePreparationError, learning_points
 from agent.progression import normalize, progress
 from agent.feedback import lesson_feedback
 from agent.postclass import pending_points, postclass_graph, postclass_stage
@@ -38,6 +43,41 @@ class StartRequest(BaseModel):
 
 class MessageRequest(BaseModel):
     text: str = Field(min_length=1, max_length=2000)
+
+
+class BrowserRestoreRequest(BaseModel):
+    snapshot: str = Field(min_length=1, max_length=4_000_000)
+    launch_token: str = ""
+
+
+def _browser_snapshot(session: dict) -> str:
+    payload = {key: value for key, value in session.items()
+               if key not in {"lock", "launchToken"}}
+    raw = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode()
+    encoded = base64.urlsafe_b64encode(raw).decode().rstrip("=")
+    secret = os.environ["STUDENT_SERVICE_KEY"].encode()
+    signature = hmac.new(secret, b"browser-session:" + encoded.encode(), hashlib.sha256).hexdigest()
+    return f"{encoded}.{signature}"
+
+
+def _restore_browser_snapshot(value: str) -> dict:
+    encoded, separator, signature = value.partition(".")
+    secret = os.environ.get("STUDENT_SERVICE_KEY", "").encode()
+    expected = hmac.new(secret, b"browser-session:" + encoded.encode(), hashlib.sha256).hexdigest()
+    if not secret or not separator or not hmac.compare_digest(signature, expected):
+        raise HTTPException(400, "浏览器学习记录无效，请重新进入课程")
+    try:
+        raw = base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4))
+        restored = json.loads(raw)
+    except (ValueError, UnicodeError, TypeError) as error:
+        raise HTTPException(400, "浏览器学习记录无效，请重新进入课程") from error
+    if (not isinstance(restored, dict) or not isinstance(restored.get("id"), str)
+            or not isinstance(restored.get("courses"), list)
+            or not isinstance(restored.get("messages"), list)
+            or restored.get("phase") not in {"idle", "video", "discussion", "done", "replay", "postclass"}):
+        raise HTTPException(400, "浏览器学习记录不完整，请重新进入课程")
+    restored["lock"] = Lock()
+    return restored
 
 
 def platform_context(token: str, lesson_id: str | None = None) -> dict:
@@ -89,6 +129,8 @@ def get_session(sid: str) -> dict:
     with session_lock:
         session = sessions.get(sid)
     if session is None:
+        if os.environ.get("STUDENT_FRESH_SESSION_MODE") == "1":
+            raise HTTPException(404, "本地测试会话已结束，请重新打开课程")
         try:
             session = persistence.restore(sid)
         except Exception as error:
@@ -103,16 +145,26 @@ def get_session(sid: str) -> dict:
 
 def state(session: dict) -> dict:
     dialogue = normalize(session["dialogue"]) if session.get("dialogue") else None
-    return {"sessionId": session["id"], "phase": session["phase"], "lessonId": session.get("lessonId"),
+    result = {"sessionId": session["id"], "phase": session["phase"], "lessonId": session.get("lessonId"),
             "messages": list(session["messages"]), "courses": session["courses"],
             "preparation": session.get("preparation", "ready" if session.get("dialogue") else "idle"),
             "preparationError": session.get("preparationError", ""),
+            "preparationErrorCode": session.get("preparationErrorCode", ""),
+            "preparationRequestId": session.get("preparationRequestId", ""),
+            "preparationCoverage": session.get("preparationCoverage"),
             "feedback": session.get("feedback"),
             "agentStage": (dialogue or {}).get("stage"),
             "learningProgress": progress(dialogue) if dialogue else None,
             "postclassStage": session.get("postclassStage"),
             "postclassMessages": [item for item in session["messages"]
                                   if str(item.get("phase") or "").startswith("postclass-")]}
+    if os.environ.get("STUDENT_FRESH_SESSION_MODE") == "1":
+        context = session.get("context") or {}
+        course_key = f"{context.get('userId')}:{context.get('courseId')}" if context else "demo"
+        result["browserCourseKey"] = course_key
+        result["browserKey"] = f"{course_key}:{session.get('lessonId') or 'catalog'}"
+        result["browserSnapshot"] = _browser_snapshot(session)
+    return result
 
 
 def commit(session: dict, changed: dict) -> None:
@@ -127,14 +179,28 @@ def commit(session: dict, changed: dict) -> None:
     session.update(changed)
 
 
-def prepared_dialogue(materials: list[dict]) -> dict:
-    try:
-        points = learning_points(materials)
-    except Exception as error:
-        raise HTTPException(503, "课堂知识点整理失败，请稍后重试") from error
-    if not points:
-        raise HTTPException(409, "当前视频没有可供复述的实质知识点，请教师检查视频内容")
-    return dict(initial_state(points), curriculum_version=CURRICULUM_VERSION)
+def prepared_dialogue(materials: list[dict]) -> tuple[dict, dict]:
+    result = learning_points(materials)
+    coverage = {"partial": result.partial, "acceptedCount": len(result.points),
+                "rejectedCount": result.rejected_count,
+                "candidateCount": result.candidate_count,
+                "repairAttempted": result.repair_attempted}
+    return dict(initial_state(result.points), curriculum_version=CURRICULUM_VERSION), coverage
+
+
+def _safe_failure(error: Exception, request_id: str, elapsed: float) -> tuple[str, str]:
+    typed = error if isinstance(error, KnowledgePreparationError) else KnowledgePreparationError("unexpected")
+    cause = error.__cause__
+    frames = traceback.extract_tb((cause or error).__traceback__)
+    logger.error("knowledge_preparation_failed request_id=%s code=%s stage=%s error_type=%s "
+                 "cause_type=%s provider_status=%s elapsed_ms=%d candidates=%d accepted=%d rejected=%d issues=%s frames=%s",
+                 request_id, typed.code, typed.stage, type(error).__name__,
+                 type(cause).__name__ if cause else "", getattr(cause, "status_code", None),
+                 int(elapsed * 1000), typed.candidate_count,
+                 typed.accepted_count, typed.rejected_count,
+                 [{"index": issue.index, "reason": issue.reason} for issue in typed.issues],
+                 [(Path(frame.filename).name, frame.lineno, frame.name) for frame in frames[-8:]])
+    return typed.code, str(typed)
 
 
 def current_materials(session: dict) -> list[dict]:
@@ -148,18 +214,29 @@ def current_materials(session: dict) -> list[dict]:
 
 
 def prepare_in_background(session: dict) -> None:
+    request_id = secrets.token_hex(8)
+    started = time.monotonic()
     try:
         # The model must never hold the session lock while a video is playing.
         materials = current_materials(session)
-        dialogue = prepared_dialogue(materials)
+        dialogue, coverage = prepared_dialogue(materials)
+        logger.info("knowledge_preparation_completed request_id=%s elapsed_ms=%d accepted=%d rejected=%d repair=%s",
+                    request_id, int((time.monotonic() - started) * 1000),
+                    coverage["acceptedCount"], coverage["rejectedCount"], coverage["repairAttempted"])
         with session["lock"]:
-            commit(session, {"dialogue": dialogue, "preparation": "ready",
+            commit(session, {"dialogue": dialogue,
+                             "preparation": "partial" if coverage["partial"] else "ready",
                              "preparationMaterials": materials,
-                             "preparationError": ""})
+                             "preparationError": "", "preparationErrorCode": "",
+                             "preparationRequestId": request_id, "preparationCoverage": coverage})
     except Exception as error:
-        message = error.detail if isinstance(error, HTTPException) else "课堂资料准备失败，请重试"
+        code, message = _safe_failure(error, request_id, time.monotonic() - started)
         with session["lock"]:
-            changed = {"preparation": "error", "preparationError": str(message)}
+            had_partial = bool(session.get("dialogue") and
+                               (session.get("preparationCoverage") or {}).get("partial"))
+            changed = {"preparation": "partial" if had_partial else "error",
+                       "preparationError": message,
+                       "preparationErrorCode": code, "preparationRequestId": request_id}
             try:
                 commit(session, changed)
             except HTTPException:
@@ -185,13 +262,22 @@ def upgrade_curriculum(session: dict) -> None:
     if previous.get("curriculum_version") == CURRICULUM_VERSION:
         return
     materials = current_materials(session)
-    dialogue = prepared_dialogue(materials)
+    try:
+        dialogue, coverage = prepared_dialogue(materials)
+    except Exception as error:
+        request_id = secrets.token_hex(8)
+        code, message = _safe_failure(error, request_id, 0)
+        raise HTTPException(409 if code == "no_content" else 503,
+                            f"{message}（问题编号：{request_id}）") from error
     messages = list(session["messages"])
     if session["phase"] == "discussion":
         messages.append({"role": "assistant", "phase": "recall",
                          "text": "我已重新整理本课的学习内容，接下来以这份清单为准。\n\n"
                                  + opening(dialogue["points"])})
     commit(session, {"dialogue": dialogue, "preparationMaterials": materials,
+                     "preparation": "partial" if coverage["partial"] else "ready",
+                     "preparationCoverage": coverage, "preparationError": "",
+                     "preparationErrorCode": "",
                      "messages": messages})
 
 
@@ -214,7 +300,21 @@ def start(body: StartRequest) -> dict:
                          "launchToken": body.launch_token if context else None,
                          "phase": "idle", "lessonId": None, "messages": [],
                          "dialogue": None, "lock": Lock()}
-    return {"sessionId": sid, "courses": courses}
+    return state(sessions[sid])
+
+
+@app.post("/api/session/browser-restore")
+def browser_restore(body: BrowserRestoreRequest) -> dict:
+    if os.environ.get("STUDENT_FRESH_SESSION_MODE") != "1":
+        raise HTTPException(404, "浏览器学习记录恢复未启用")
+    restored = _restore_browser_snapshot(body.snapshot)
+    restored["launchToken"] = body.launch_token or None
+    with session_lock:
+        session = sessions.setdefault(restored["id"], restored)
+    if body.launch_token:
+        with session["lock"]:
+            session["launchToken"] = body.launch_token
+    return state(session)
 
 
 @app.get("/api/session/health")
@@ -233,6 +333,7 @@ def platform_entry() -> dict:
     return {
         "platformUrl": os.environ.get("FRONTEND_HOST", "http://localhost:8088").rstrip("/"),
         "demoEnabled": bool(os.environ.get("STUDENT_NEW_DEMO_PLAYER_URL")),
+        "freshSessionMode": os.environ.get("STUDENT_FRESH_SESSION_MODE") == "1",
     }
 
 
@@ -283,7 +384,7 @@ def begin(sid: str, lesson_id: str, background_tasks: BackgroundTasks) -> dict:
         if not lesson or not lesson.get("playerUrl"):
             raise HTTPException(409, "所选课时没有已发布的播放器")
         try:
-            old_id = persistence.latest_session_key(
+            old_id = None if os.environ.get("STUDENT_FRESH_SESSION_MODE") == "1" else persistence.latest_session_key(
                 str(original["userId"]), str(original["courseId"]),
                 str((original.get("publication") or {})["id"]),
                 int((original.get("publication") or {})["version"]),
@@ -326,6 +427,8 @@ def begin(sid: str, lesson_id: str, background_tasks: BackgroundTasks) -> dict:
                          "lessonId": lesson_id, "classroomId": lesson.get("classroomId"),
                          "phase": "video", "dialogue": None,
                          "preparation": "pending", "preparationError": "",
+                         "preparationErrorCode": "", "preparationRequestId": "",
+                         "preparationCoverage": None,
                          "preparationMaterials": materials})
         schedule_preparation(session, background_tasks)
     return state(session)
@@ -337,8 +440,9 @@ def retry_preparation(sid: str, background_tasks: BackgroundTasks) -> dict:
     with session["lock"]:
         if session["phase"] != "video":
             raise HTTPException(409, "当前不在视频阶段")
-        if session.get("preparation") == "error":
-            commit(session, {"preparation": "pending", "preparationError": ""})
+        if session.get("preparation") in {"error", "partial"}:
+            commit(session, {"preparation": "pending", "preparationError": "",
+                             "preparationErrorCode": ""})
         schedule_preparation(session, background_tasks)
         return state(session)
 

@@ -50,6 +50,7 @@ def lesson_feedback(session: dict) -> dict:
         "recallRoundLimit": dialogue["recall_round_limit"],
         "reinforceRoundLimit": dialogue["reinforce_round_limit"],
         "points": entries, "counts": counts,
+        "preparationCoverage": session.get("preparationCoverage"),
         "summary": (f"本次共涉及 {len(entries)} 个知识点：已掌握 {counts['mastered']} 个"
                     f"（其中课后补完 {counts['postclass_completed']} 个），"
                     f"仍需巩固 {counts['needs_review']} 个，评估未完成 {counts['incomplete']} 个，"

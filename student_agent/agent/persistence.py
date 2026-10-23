@@ -36,7 +36,8 @@ def save(session: dict, old_count: int) -> None:
             phase=item.get("phase"), content=item["text"])
     mastery = {"mastered": (4, "掌握"), "verify": (3, "待独立验证"),
                "partial": (2, "部分理解"), "misconception": (1, "存在误区")}
-    previous = database.read_mastery(ids["user_id"], ids["course_id"], ids["publication_id"])
+    previous = ({} if os.environ.get("STUDENT_FRESH_SESSION_MODE") == "1" else
+                database.read_mastery(ids["user_id"], ids["course_id"], ids["publication_id"]))
     for point in (session.get("dialogue") or {}).get("points") or []:
         if point.get("status") in mastery:
             stars, status = mastery[point["status"]]
@@ -52,6 +53,9 @@ def save(session: dict, old_count: int) -> None:
                 "messages": session["messages"], "dialogue": session.get("dialogue"),
                 "preparation": session.get("preparation", "ready"),
                 "preparationError": session.get("preparationError", ""),
+                "preparationErrorCode": session.get("preparationErrorCode", ""),
+                "preparationRequestId": session.get("preparationRequestId", ""),
+                "preparationCoverage": session.get("preparationCoverage"),
                 "preparationMaterials": session.get("preparationMaterials", []),
                 "feedback": session.get("feedback"),
                 "classroomFeedback": session.get("classroomFeedback"),

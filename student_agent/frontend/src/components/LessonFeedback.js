@@ -3,6 +3,7 @@ export default function LessonFeedback({ feedback }) {
   return <section className="lesson-feedback" aria-labelledby="lesson-feedback-title">
     <h4 id="lesson-feedback-title">本节课知识点反馈</h4>
     <p className="lesson-feedback__summary">{feedback.summary}</p>
+    {feedback.preparationCoverage?.partial && <p role="status">本次仅整理出 {feedback.preparationCoverage.acceptedCount} 个可核对原文的知识点，反馈范围可能不完整。</p>}
     <div className="lesson-feedback__list">
       {feedback.points.map((point, index) => <article
         className={`lesson-feedback__item lesson-feedback__item--${point.category}`} key={point.id}>
