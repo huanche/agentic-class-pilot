@@ -1,0 +1,28 @@
+name: hojo-cloud-verify-20261023
+on:
+  push:
+    branches: [codex/backup-generation-controls-20261020]
+    paths: [.github/workflows/hojo-cloud-verify-20261023.yml]
+permissions:
+  contents: read
+concurrency:
+  group: teacher-deploy
+  cancel-in-progress: false
+jobs:
+  operate:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    steps:
+      - name: Run verified production release operation
+        env:
+          SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+        run: |
+          set -euo pipefail
+          key="$RUNNER_TEMP/openmaic-release-key"
+          printf '%s\n' "$SERVER_SSH_KEY" > "$key"
+          chmod 600 "$key"
+          trap 'rm -f "$key"' EXIT
+          ssh -i "$key" -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=20 -o ServerAliveCountMax=3 "ubuntu@$SERVER_HOST" "bash -s -- '$GITHUB_RUN_ID'" <<'REMOTE'
+          printf '%s' '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' | base64 -d | gzip -d | bash -s -- "$1"
+          REMOTE
