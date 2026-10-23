@@ -10,6 +10,7 @@ import {
   Minimize2,
   Minus,
   Plus,
+  RefreshCw,
   Sparkles,
   Trash2,
   X,
@@ -48,6 +49,11 @@ interface OutlinesEditorProps {
   /** Collapse the editor back to the preview surface (small streaming card / outline-ready). */
   onCollapse?: () => void;
   targetDurationMinutes?: number;
+  lessonOverview?: string;
+  onOverviewChange?: (value: string) => void;
+  onRegenerateOutline?: () => void;
+  overviewChanged?: boolean;
+  isRegenerating?: boolean;
 }
 
 const SCENE_TYPES: SceneType[] = ['slide', 'quiz', 'interactive', 'pbl'];
@@ -123,6 +129,11 @@ export function OutlinesEditor({
   isStreaming = false,
   onCollapse,
   targetDurationMinutes = 45,
+  lessonOverview,
+  onOverviewChange,
+  onRegenerateOutline,
+  overviewChanged = false,
+  isRegenerating = false,
 }: OutlinesEditorProps) {
   const { t } = useI18n();
   const sceneTypeLabel = useSceneTypeLabel();
@@ -299,6 +310,43 @@ export function OutlinesEditor({
 
       {/* Scene list */}
       <div className="relative max-h-[64vh] overflow-y-auto px-3 pb-2 md:px-6">
+        {onOverviewChange && (
+          <section className="mx-2 mb-4 rounded-2xl border border-[#B00055]/15 bg-[#fff8fb] p-4 md:mx-4 md:p-5 dark:bg-slate-900">
+            <label htmlFor="lesson-overview" className="text-base font-semibold">
+              本节课概述
+            </label>
+            <textarea
+              id="lesson-overview"
+              value={lessonOverview ?? ''}
+              onChange={(event) => onOverviewChange(event.target.value)}
+              disabled={editingDisabled}
+              maxLength={4000}
+              rows={5}
+              placeholder="说明本节课要讲什么、重点是什么、希望学生掌握什么。"
+              className="mt-3 block w-full resize-y rounded-lg border border-slate-200 bg-background px-3 py-2 text-sm leading-6 outline-none focus:border-[#B00055] disabled:opacity-70"
+            />
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+              <p className="text-xs text-muted-foreground">
+                {overviewChanged
+                  ? '概述已修改，请重新生成大纲后再确认。'
+                  : '修改概述后，可重新生成下方大纲。'}
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={onRegenerateOutline}
+                disabled={editingDisabled || !lessonOverview?.trim()}
+              >
+                {isRegenerating ? (
+                  <Loader2 className="mr-2 size-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="mr-2 size-4" />
+                )}
+                {isRegenerating ? '正在重新生成…' : '重新生成本节课大纲'}
+              </Button>
+            </div>
+          </section>
+        )}
         {outlines.length === 0 ? (
           <EmptyState isStreaming={isStreaming} disabled={editingDisabled} onAdd={addOutline} />
         ) : (
@@ -415,7 +463,13 @@ export function OutlinesEditor({
           )}
           <Button
             onClick={onConfirm}
-            disabled={isLoading || isStreaming || outlines.length === 0 || blockingCount > 0}
+            disabled={
+              isLoading ||
+              isStreaming ||
+              overviewChanged ||
+              outlines.length === 0 ||
+              blockingCount > 0
+            }
             className="rounded-full px-6 shadow-lg shadow-blue-500/20"
           >
             {isLoading ? (
@@ -735,8 +789,12 @@ function EditableKeyPoint({
 }) {
   const { t } = useI18n();
   const [draft, setDraft] = useState(value);
-
-  useEffect(() => setDraft(value), [value]);
+  const [previousValue, setPreviousValue] = useState(value);
+  // A replacement outline resets the local edit before rendering, without an effect cascade.
+  if (value !== previousValue) {
+    setPreviousValue(value);
+    setDraft(value);
+  }
 
   const commit = () => {
     const trimmed = draft.trim();

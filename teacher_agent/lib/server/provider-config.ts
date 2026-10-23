@@ -84,6 +84,7 @@ const TTS_ENV_MAP: Record<string, string> = {
   TTS_ELEVENLABS: 'elevenlabs-tts',
   TTS_MINIMAX: 'minimax-tts',
   TTS_LEMONADE: 'lemonade-tts',
+  TTS_HOJO: 'hojo-tts',
 };
 
 /**
@@ -466,7 +467,7 @@ function buildConfig(yamlData: YamlData): ServerConfig {
   return {
     providers,
     tts: loadEnvSection(TTS_ENV_MAP, yamlData.tts, {
-      keylessProviders: new Set(['voxcpm-tts', 'lemonade-tts']),
+      keylessProviders: new Set(['voxcpm-tts', 'lemonade-tts', 'hojo-tts']),
     }),
     asr: applyQwenASRFallback(
       loadEnvSection(ASR_ENV_MAP, yamlData.asr, {

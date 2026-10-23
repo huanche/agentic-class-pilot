@@ -18,10 +18,12 @@ import {
 import {
   coursewareScopeContext,
   defaultCoursewareMaterialIds,
+  faithfulCoursewareDisabledReason,
   type CoursewareGenerationOptions,
 } from '@/lib/course-space/courseware-generation';
 import { DEFAULT_TARGET_MINUTES } from '@/lib/generation/course-duration';
 import type { CourseArtifactJob, CourseSpace } from '@/lib/course-space';
+import type { CoursewareConversionMode } from '@/lib/learning-skills/courseware-mode';
 
 const STATUS_LABELS = {
   ready: '已解析',
@@ -62,25 +64,35 @@ export function CoursewareGenerationDialog({
     String(DEFAULT_TARGET_MINUTES),
   );
   const [instruction, setInstruction] = useState(initialInstruction ?? '');
+  const [conversionMode, setConversionMode] = useState<CoursewareConversionMode>(
+    'learning-skills-enhanced',
+  );
   const [busy, setBusy] = useState(false);
   const [parsingId, setParsingId] = useState('');
   const [error, setError] = useState('');
   const selectedIds = materialIds.filter((id) =>
     course.materials.some((item) => item.id === id && item.status === 'ready'),
   );
+  const faithfulReason = faithfulCoursewareDisabledReason(course, selectedIds);
   const submit = async () => {
     if (
       !context ||
       busy ||
       generationLocked ||
       !selectedIds.length ||
+      (conversionMode === 'faithful' && Boolean(faithfulReason)) ||
       courseDurationInputError(targetDurationMinutes)
     )
       return;
     setBusy(true);
     setError('');
     try {
-      await onSubmit({ materialIds: selectedIds, targetDurationMinutes, instruction });
+      await onSubmit({
+        materialIds: selectedIds,
+        targetDurationMinutes,
+        instruction,
+        conversionMode,
+      });
       onClose();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -188,6 +200,43 @@ export function CoursewareGenerationDialog({
             )}
           </fieldset>
           <div className="min-w-0 space-y-4">
+            <fieldset disabled={busy} className="space-y-2">
+              <legend className="mb-2 text-sm font-medium">生成模式</legend>
+              {(
+                [
+                  ['faithful', '高保真还原', '保留 PPTX 原始画面和页序，补充讲解与配音。'],
+                  [
+                    'learning-skills-enhanced',
+                    'AI 增强',
+                    '依据资料重新组织讲解、画面、互动和测验。',
+                  ],
+                ] as const
+              ).map(([mode, title, description]) => (
+                <label
+                  key={mode}
+                  className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 ${conversionMode === mode ? 'border-[#B00055] bg-[#fff8fb]' : 'border-slate-200'} ${mode === 'faithful' && faithfulReason ? 'cursor-not-allowed opacity-60' : ''}`}
+                >
+                  <input
+                    type="radio"
+                    name="courseware-mode"
+                    value={mode}
+                    checked={conversionMode === mode}
+                    disabled={mode === 'faithful' && Boolean(faithfulReason)}
+                    onChange={() => setConversionMode(mode)}
+                    className="mt-1 accent-[#B00055]"
+                  />
+                  <span className="min-w-0 text-sm font-medium">
+                    {title}
+                    <span className="mt-1 block text-xs font-normal leading-5 text-slate-500">
+                      {description}
+                    </span>
+                  </span>
+                </label>
+              ))}
+              {faithfulReason && (
+                <p className="text-xs leading-5 text-slate-500">{faithfulReason}</p>
+              )}
+            </fieldset>
             <fieldset disabled={busy}>
               <CourseDurationInput
                 value={targetDurationMinutes}
@@ -228,6 +277,7 @@ export function CoursewareGenerationDialog({
               generationLocked ||
               !context ||
               !selectedIds.length ||
+              (conversionMode === 'faithful' && Boolean(faithfulReason)) ||
               Boolean(courseDurationInputError(targetDurationMinutes))
             }
             onClick={() => void submit()}

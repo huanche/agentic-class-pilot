@@ -2,6 +2,7 @@ import type { TTSProviderId } from '@/lib/audio/types';
 import { isCustomTTSProvider } from '@/lib/audio/types';
 import type { AgentConfig } from '@/lib/orchestration/registry/types';
 import { TTS_PROVIDERS } from '@/lib/audio/constants';
+import { HOJO_80M_MODEL, HOJO_CLONE_PREFIX } from './hojo';
 import {
   BROWSER_NATIVE_TTS_PROVIDER_ID,
   isTTSProviderEnabled,
@@ -69,6 +70,16 @@ export function resolveAgentVoice(
     }
     const fromEnabled = enabledProviders.find((p) => p.providerId === choice.providerId);
     if (!fromEnabled) continue;
+    if (choice.providerId === 'hojo-tts') {
+      const group = fromEnabled.modelGroups.find(
+        (group) =>
+          (!choice.modelId || group.modelId === choice.modelId) &&
+          group.voices.some((voice) => voice.id === choice.voiceId),
+      );
+      if (group)
+        return { providerId: choice.providerId, modelId: group.modelId, voiceId: choice.voiceId };
+      continue;
+    }
     const list = getServerVoiceList(choice.providerId);
     const allVoiceIds = new Set([...list, ...fromEnabled.voices.map((v) => v.id)]);
     if (allVoiceIds.has(choice.voiceId)) {
@@ -83,6 +94,15 @@ export function resolveAgentVoice(
       return {
         providerId: first.providerId,
         voiceId: first.voices[agentIndex % first.voices.length].id,
+        ...(first.providerId === 'hojo-tts'
+          ? {
+              modelId: first.modelGroups.find((group) =>
+                group.voices.some(
+                  (voice) => voice.id === first.voices[agentIndex % first.voices.length].id,
+                ),
+              )?.modelId,
+            }
+          : {}),
       };
     }
   }
@@ -157,6 +177,12 @@ export function getEnabledProvidersWithVoices(
 
     const providerConfig = ttsProvidersConfig[providerId];
     if (!isTTSProviderEnabled(providerId, providerConfig)) continue;
+    const hojoClones =
+      providerId === 'hojo-tts'
+        ? (providerConfig?.customVoices ?? [])
+            .filter((voice) => voice.id.startsWith(HOJO_CLONE_PREFIX))
+            .map((voice) => ({ ...voice, language: 'auto' }))
+        : [];
 
     const visibleVoxCPMProfiles =
       providerId === VOXCPM_TTS_PROVIDER_ID
@@ -168,6 +194,7 @@ export function getEnabledProvidersWithVoices(
 
     {
       const allVoices = [
+        ...hojoClones,
         ...config.voices.map((v) => ({
           id: v.id,
           name: v.name,
@@ -189,6 +216,7 @@ export function getEnabledProvidersWithVoices(
           const compatibleVoices = config.voices
             .filter((v) => !v.compatibleModels || v.compatibleModels.includes(model.id))
             .map((v) => ({ id: v.id, name: v.name, language: v.language }));
+          if (model.id === HOJO_80M_MODEL) compatibleVoices.push(...hojoClones);
           if (providerId === VOXCPM_TTS_PROVIDER_ID) {
             compatibleVoices.push(
               ...visibleVoxCPMProfiles.map((profile) => ({
@@ -215,7 +243,12 @@ export function getEnabledProvidersWithVoices(
       result.push({
         providerId,
         providerName: config.name,
-        voices: allVoices,
+        voices:
+          providerId === 'hojo-tts'
+            ? (modelGroups.find(
+                (group) => group.modelId === (providerConfig?.modelId || config.defaultModelId),
+              )?.voices ?? [])
+            : allVoices,
         modelGroups,
       });
     }

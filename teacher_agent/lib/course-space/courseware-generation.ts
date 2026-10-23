@@ -1,6 +1,10 @@
 import type { GenerationSessionState } from '@/app/generation-preview/types';
 import type { CourseArtifactJob, CourseMaterialExtraction, CourseSpace } from './types';
 import { resolveCourseMinutes } from '@/lib/generation/course-duration';
+import {
+  buildLearningSkillsEnhancementRequirement,
+  type CoursewareConversionMode,
+} from '@/lib/learning-skills/courseware-mode';
 
 type Scope = CourseArtifactJob['scope'];
 const MAX_SOURCE_CHARACTERS = 60000;
@@ -59,6 +63,14 @@ export interface CoursewareGenerationOptions {
   materialIds: string[];
   targetDurationMinutes: string;
   instruction: string;
+  conversionMode?: CoursewareConversionMode;
+}
+
+export function faithfulCoursewareDisabledReason(course: CourseSpace, materialIds: string[]) {
+  const selected = course.materials.filter((item) => materialIds.includes(item.id));
+  return selected.length === 1 && /\.pptx$/i.test(selected[0].name)
+    ? undefined
+    : '高保真还原需要选择一份原始 PPTX；其他资料或多份资料可使用 AI 增强。';
 }
 
 /** Both the lesson button and chat use this handoff into the existing outline-review flow. */
@@ -71,6 +83,10 @@ export async function createCoursewareGenerationSession(
     userBio?: string;
   },
   readExtraction: (materialId: string) => Promise<CourseMaterialExtraction>,
+  preparePptx?: (
+    material: CourseSpace['materials'][number],
+    session: GenerationSessionState,
+  ) => Promise<GenerationSessionState>,
 ): Promise<GenerationSessionState> {
   const { course, scope } = input;
   const context = coursewareScopeContext(course, scope);
@@ -84,8 +100,16 @@ export async function createCoursewareGenerationSession(
     }
     return material;
   });
+  const conversionMode = input.conversionMode ?? 'learning-skills-enhanced';
+  if (conversionMode === 'faithful') {
+    const reason = faithfulCoursewareDisabledReason(course, materialIds);
+    if (reason) throw new Error(reason);
+    if (!preparePptx) throw new Error('无法读取原始 PPTX 画布，请重新选择资料。');
+  }
+  const pptxMaterial =
+    materials.length === 1 && /\.pptx$/i.test(materials[0].name) ? materials[0] : undefined;
   const sections = await Promise.all(
-    materials.map(async (material) => {
+    (pptxMaterial && preparePptx ? [] : materials).map(async (material) => {
       let extraction: CourseMaterialExtraction;
       try {
         extraction = await readExtraction(material.id);
@@ -102,21 +126,28 @@ export async function createCoursewareGenerationSession(
   if (pdfText.length > MAX_SOURCE_CHARACTERS) {
     throw new Error('所选资料正文合计超过 6 万字，请改选本课时需要的资料后重试。');
   }
-  return {
+  const requirement = [
+    `请为“${context.title}”生成课时 PPT / 互动课件。`,
+    `课程：${course.title}；当前课时范围：${context.path}。只围绕当前范围组织教学内容，不扩展为整门课程。`,
+    context.objectives.length ? `【本次教学目标】\n${context.objectives.join('\n')}` : '',
+    context.lessonNotes ? `【已审核的课时目标与知识点】\n${context.lessonNotes}` : '',
+    `【教师选定的资料】\n${materials.map((item) => item.name).join('\n')}\n以本次选定的资料为依据，围绕当前课时选取相关内容。`,
+    input.instruction.trim() ? `【教师补充要求】\n${input.instruction.trim()}` : '',
+    '请先生成可供教师审阅的课件大纲，再根据确认的大纲制作课件。',
+  ]
+    .filter(Boolean)
+    .join('\n\n');
+  const session: GenerationSessionState = {
     sessionId: input.sessionId,
     requirements: {
       targetDurationMinutes,
-      requirement: [
-        `请为“${context.title}”生成课时 PPT / 互动课件。`,
-        `课程：${course.title}；当前课时范围：${context.path}。只围绕当前范围组织教学内容，不扩展为整门课程。`,
-        context.objectives.length ? `【本次教学目标】\n${context.objectives.join('\n')}` : '',
-        context.lessonNotes ? `【已审核的课时目标与知识点】\n${context.lessonNotes}` : '',
-        `【教师选定的资料】\n${materials.map((item) => item.name).join('\n')}\n以本次选定的资料为依据，围绕当前课时选取相关内容。`,
-        input.instruction.trim() ? `【教师补充要求】\n${input.instruction.trim()}` : '',
-        '请先生成可供教师审阅的课件大纲，再根据确认的大纲制作课件。',
-      ]
-        .filter(Boolean)
-        .join('\n\n'),
+      requirement:
+        conversionMode === 'learning-skills-enhanced'
+          ? buildLearningSkillsEnhancementRequirement(
+              requirement,
+              pptxMaterial ? 'pptx' : 'document',
+            )
+          : requirement,
       userNickname: input.userNickname,
       userBio: input.userBio,
       webSearch: false,
@@ -127,6 +158,9 @@ export async function createCoursewareGenerationSession(
     imageStorageIds: [],
     currentStep: 'generating',
     previewPhase: 'preparing',
+    conversionMode,
+    sourceType: conversionMode === 'faithful' ? 'pptx-faithful' : 'learning-skills-enhanced',
     courseSpaceContext: { courseId: course.id, scope, materialIds },
   };
+  return pptxMaterial && preparePptx ? preparePptx(pptxMaterial, session) : session;
 }

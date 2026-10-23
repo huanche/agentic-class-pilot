@@ -89,6 +89,11 @@ import { getOutlineDurationSeconds } from '@/lib/playback/timing-display';
 import { planCourseDuration, resolveCourseMinutes } from '@/lib/generation/course-duration';
 import { prepareBackgroundInput } from '@/lib/generation/prepare-background-input';
 import type { CourseArtifactJob } from '@/lib/course-space/types';
+import {
+  lessonOverviewFromOutlines,
+  sessionWithLessonOverview,
+} from '@/lib/generation/lesson-overview';
+import { readOutlineStream } from '@/lib/generation/outline-stream-client';
 
 const log = createLogger('GenerationPreview');
 const OUTLINE_REVIEW_AUTO_CONTINUE_MS = 2500;
@@ -179,6 +184,7 @@ function GenerationPreviewContent() {
   );
   const [showAgentReveal, setShowAgentReveal] = useState(false);
   const [isConfirmingOutlines, setIsConfirmingOutlines] = useState(false);
+  const [isRegeneratingOutlines, setIsRegeneratingOutlines] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [cancelError, setCancelError] = useState('');
   const [generatedAgents, setGeneratedAgents] = useState<
@@ -436,7 +442,11 @@ function GenerationPreviewContent() {
       audioSettings.setTTSEnabled(true);
       // Retain an available managed provider, including project-local Kokoro.
       if (
-        !audioSettings.ttsProvidersConfig[audioSettings.ttsProviderId]?.isServerConfigured &&
+        (!isTTSProviderEnabled(
+          audioSettings.ttsProviderId,
+          audioSettings.ttsProvidersConfig[audioSettings.ttsProviderId],
+        ) ||
+          audioSettings.ttsProviderId === 'browser-native-tts') &&
         !audioSettings.ttsProvidersConfig['qwen-tts']?.serverDisabled
       ) {
         audioSettings.setTTSProvider('qwen-tts');
@@ -737,6 +747,7 @@ function GenerationPreviewContent() {
           outlines: SceneOutline[];
           languageDirective: string;
           courseTitle?: string;
+          lessonOverview?: string;
           taskEngineMode: boolean;
         }>((resolve, reject) => {
           const collected: SceneOutline[] = [];
@@ -750,6 +761,7 @@ function GenerationPreviewContent() {
               withThinkingConfig(
                 {
                   requirements: currentSession.requirements,
+                  includeLessonOverview: true,
                   pdfText: currentSession.pdfText,
                   pdfImages: currentSession.pdfImages,
                   imageMapping,
@@ -812,6 +824,7 @@ function GenerationPreviewContent() {
                               directive ||
                               'Teach in the language that matches the user requirement.',
                             courseTitle: evt.courseTitle || title,
+                            lessonOverview: evt.lessonOverview,
                             taskEngineMode: resolveTaskEngineModeFromOutlineDoneEvent(evt),
                           });
                           return;
@@ -868,6 +881,7 @@ function GenerationPreviewContent() {
               return {
                 outlines: fallbackOutlines,
                 languageDirective: '使用中文授课，忠实解释教师审核后的页面内容。',
+                lessonOverview: undefined,
                 courseTitle: currentSession.requirements.requirement
                   .replace(/\s+/g, ' ')
                   .slice(0, 60),
@@ -901,6 +915,14 @@ function GenerationPreviewContent() {
         const updatedSession: GenerationSessionState = {
           ...currentSession,
           sceneOutlines: outlines,
+          lessonOverview:
+            currentSession.lessonOverview ??
+            outlineResult.lessonOverview ??
+            lessonOverviewFromOutlines(outlines),
+          outlineOverview:
+            currentSession.lessonOverview ??
+            outlineResult.lessonOverview ??
+            lessonOverviewFromOutlines(outlines),
           languageDirective,
           courseTitle,
           taskEngineMode: effectiveTaskEngineMode,
@@ -1230,6 +1252,7 @@ function GenerationPreviewContent() {
           ttsVoice: {
             providerId: settings.ttsProviderId,
             voice: settings.ttsVoice,
+            modelId: settings.ttsProvidersConfig[settings.ttsProviderId]?.modelId,
           },
           enableMedia: Boolean(settings.imageGenerationEnabled || settings.videoGenerationEnabled),
           enableImageGeneration: settings.imageGenerationEnabled,
@@ -1505,6 +1528,7 @@ function GenerationPreviewContent() {
       sessionStorage.removeItem('generationSession');
       if (visibleRef.current) router.push(`/classroom/${stage.id}`);
     } catch (err) {
+      if (abortControllerRef.current !== controller) return;
       setIsOutlineStreaming(false);
       // AbortError is expected when navigating away — don't show as error
       if (taskFinishedRef.current || isAbortError(err)) {
@@ -1643,6 +1667,77 @@ function GenerationPreviewContent() {
       ),
       previewPhase: 'review',
     }));
+  };
+
+  const handleRegenerateOutline = async () => {
+    if (!session || isRegeneratingOutlines || isOutlineStreaming || isConfirmingOutlines) return;
+    let next: GenerationSessionState;
+    try {
+      next = sessionWithLessonOverview(
+        session,
+        session.lessonOverview ?? lessonOverviewFromOutlines(session.sceneOutlines ?? []),
+      );
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+      return;
+    }
+    abortControllerRef.current?.abort();
+    clearOutlineReviewTimer();
+    outlineReviewResolveRef.current = null;
+    outlineReviewIntentRef.current = true;
+    hasStartedRef.current = true;
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+    setIsRegeneratingOutlines(true);
+    setError(null);
+    try {
+      const preferServerModel = shouldUseServerGenerationModel(next);
+      const imageMapping = next.imageStorageIds?.length
+        ? await loadImageMapping(next.imageStorageIds)
+        : next.imageMapping;
+      const result = await readOutlineStream(
+        await fetch('/api/generate/scene-outlines-stream', {
+          method: 'POST',
+          headers: getApiHeaders(preferServerModel),
+          body: JSON.stringify(
+            withThinkingConfig(
+              {
+                requirements: next.requirements,
+                includeLessonOverview: true,
+                pdfText: next.pdfText,
+                pdfImages: next.pdfImages,
+                imageMapping,
+                researchContext: next.researchContext,
+              },
+              preferServerModel,
+            ),
+          ),
+          signal: controller.signal,
+        }),
+      );
+      controller.signal.throwIfAborted();
+      const outlines = planCourseDuration(
+        next.pptContentDraft
+          ? bindPptOutlinesToReviewedPages(result.outlines, next.pptContentDraft)
+          : result.outlines,
+        resolveCourseMinutes(next.requirements.targetDurationMinutes),
+      );
+      persistSession({
+        ...next,
+        sceneOutlines: outlines,
+        outlineOverview: next.lessonOverview,
+        languageDirective: result.languageDirective || next.languageDirective,
+        courseTitle: result.courseTitle || next.courseTitle,
+        taskEngineMode: result.taskEngineMode,
+        previewPhase: 'review',
+      });
+      setStreamingOutlines(outlines);
+    } catch (reason) {
+      if (!isAbortError(reason))
+        setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      if (abortControllerRef.current === controller) setIsRegeneratingOutlines(false);
+    }
   };
 
   const handlePptContentChange = (
@@ -1883,7 +1978,18 @@ function GenerationPreviewContent() {
               }
               alwaysReview={reviewOutlineEnabled || Boolean(session.courseSpaceContext)}
               onAlwaysReviewChange={setReviewOutlineEnabled}
-              isLoading={isConfirmingOutlines}
+              isLoading={isConfirmingOutlines || isRegeneratingOutlines}
+              isRegenerating={isRegeneratingOutlines}
+              lessonOverview={session.lessonOverview ?? lessonOverviewFromOutlines(editorOutlines)}
+              overviewChanged={Boolean(
+                session.lessonOverview !== undefined &&
+                session.lessonOverview.trim() !==
+                  (session.outlineOverview ?? lessonOverviewFromOutlines(editorOutlines)).trim(),
+              )}
+              onOverviewChange={(value) =>
+                updatePersistedSession((current) => ({ ...current, lessonOverview: value }))
+              }
+              onRegenerateOutline={() => void handleRegenerateOutline()}
               isStreaming={isOutlineStreaming}
               onCollapse={
                 session.conversionMode || session.courseSpaceContext

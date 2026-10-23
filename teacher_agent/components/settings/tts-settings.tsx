@@ -49,6 +49,8 @@ import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { createLogger } from '@/lib/logger';
 import { useTTSPreview } from '@/lib/audio/use-tts-preview';
+import { HojoTTSSettings } from './hojo-tts-settings';
+import { HOJO_80M_MODEL, HOJO_REFERENCE_VOICE } from '@/lib/audio/hojo';
 import { isTTSProviderConfigured, isTTSProviderEnabled } from '@/lib/audio/provider-enablement';
 import { isCustomTTSProvider } from '@/lib/audio/types';
 import {
@@ -114,7 +116,9 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
       : isCustomTTSProvider(selectedProviderId)
         ? ((providerConfig?.customVoices as Array<{ id: string }> | undefined) || [])[0]?.id ||
           'default'
-        : DEFAULT_TTS_VOICES[selectedProviderId as keyof typeof DEFAULT_TTS_VOICES] || 'default';
+        : selectedProviderId === 'hojo-tts' && providerConfig?.modelId === HOJO_80M_MODEL
+          ? HOJO_REFERENCE_VOICE
+          : DEFAULT_TTS_VOICES[selectedProviderId as keyof typeof DEFAULT_TTS_VOICES] || 'default';
 
   const [showApiKey, setShowApiKey] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -145,13 +149,13 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
     setTestText(t('settings.ttsTestTextDefault'));
   }, [t]);
 
-  // Reset transient UI state when switching providers.
+  // A successful preview only belongs to the provider/model/voice that was tested.
   useEffect(() => {
     stopPreview();
     setShowApiKey(false);
     setTestStatus('idle');
     setTestMessage('');
-  }, [selectedProviderId, stopPreview]);
+  }, [selectedProviderId, providerConfig?.modelId, effectiveVoice, stopPreview]);
 
   const handleTestTTS = async () => {
     if (!testText.trim()) return;
@@ -483,6 +487,7 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
           </>
         ))}
 
+      {selectedProviderId === 'hojo-tts' && <HojoTTSSettings enabled={providerEnabled} />}
       {selectedProviderId === 'lemonade-tts' && (
         <div className="space-y-2">
           <Label htmlFor="local-tts-voice" className="text-sm">

@@ -181,6 +181,9 @@ export async function generateTTS(
     case 'lemonade-tts':
       return await generateLemonadeTTS(config, text);
 
+    case 'hojo-tts':
+      return await generateLocalOnnxTTS(config, text);
+
     case 'browser-native-tts':
       throw new Error(
         'Browser Native TTS must be handled client-side using Web Speech API. This provider cannot be used on the server.',
@@ -192,6 +195,43 @@ export async function generateTTS(
       }
       throw new Error(`Unsupported TTS provider: ${config.providerId}`);
   }
+}
+
+async function generateLocalOnnxTTS(
+  config: TTSModelConfig,
+  text: string,
+): Promise<TTSGenerationResult> {
+  const provider = TTS_PROVIDERS['hojo-tts'];
+  const response = await fetch(
+    `${(config.baseUrl || provider.defaultBaseUrl || '').replace(/\/$/, '')}/audio/speech`,
+    {
+      method: 'POST',
+      signal: config.signal,
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8',
+        ...getBackendAuthHeaders(config.apiKey),
+      },
+      body: JSON.stringify({
+        model: config.modelId || provider.defaultModelId,
+        input: text,
+        voice: config.voice || DEFAULT_TTS_VOICES['hojo-tts'],
+        response_format: 'wav',
+        speed: 1,
+      }),
+    },
+  );
+  if (!response.ok) {
+    throwIfTtsRateLimited('Hojo', response.status);
+    throw new Error(`Hojo TTS: ${await readTTSApiError(response)}`);
+  }
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  if (
+    bytes.length < 44 ||
+    String.fromCharCode(...bytes.slice(0, 4)) !== 'RIFF' ||
+    String.fromCharCode(...bytes.slice(8, 12)) !== 'WAVE'
+  )
+    throw new Error('Hojo 未返回有效 WAV 音频，请检查本地服务');
+  return { audio: bytes, format: 'wav' };
 }
 
 /**

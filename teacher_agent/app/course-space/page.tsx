@@ -6,7 +6,6 @@ import { nanoid } from 'nanoid';
 import { ArrowLeft, ChevronDown, GripHorizontal, LayoutGrid } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { CoursewareModeDialog } from '@/components/generation/courseware-mode-dialog';
-import { resolveCourseMinutes } from '@/lib/generation/course-duration';
 import { CoursewareSourceDialog } from '@/components/course-space/courseware-source-dialog';
 import { CoursewareGenerationDialog } from '@/components/course-space/courseware-generation-dialog';
 import {
@@ -27,22 +26,9 @@ import type { CourseStatusTarget } from '@/lib/course-space/course-progress';
 import { reconcileCoursewareTaskSnapshot } from '@/lib/course-space/courseware-task-progress';
 import { CourseCenter } from '@/components/course-space/course-center';
 import { WorkspaceSettingsButton } from '@/components/course-space/workspace-settings';
-import type { Slide } from '@openmaic/dsl';
-import type * as MaicImport from '@openmaic/importer';
-import type { PptContentDraft } from '@/lib/types/generation';
 import type { CoursewareConversionMode } from '@/lib/learning-skills/courseware-mode';
-import { useSettingsStore } from '@/lib/store/settings';
 import { useUserProfileStore } from '@/lib/store/user-profile';
-import { fingerprintCoursewareFile } from '@/lib/course-governance/fingerprint';
-import {
-  buildFaithfulCoursewareRequirement,
-  buildLearningSkillsEnhancementRequirement,
-} from '@/lib/learning-skills/courseware-mode';
-import {
-  buildImportedPptDraft,
-  removeImportedPptSlides,
-  storeImportedPptSlides,
-} from '@/lib/import/pptx-course';
+import { prepareCourseSpacePptx } from '@/lib/import/course-space-pptx';
 import {
   ApiCourseSpaceRepository,
   DEFAULT_TEACHER_ID,
@@ -60,38 +46,6 @@ async function api<T>(response: Response): Promise<T> {
   if (!response.ok || payload.success === false)
     throw new Error(payload.error || `HTTP ${response.status}`);
   return payload;
-}
-
-function buildLegacyPptDraft(extraction: CourseMaterialExtraction): PptContentDraft {
-  return {
-    slides: extraction.chunks.map((chunk) => {
-      const lines = chunk.text
-        .split('\n')
-        .map((line) =>
-          line
-            .replace(/^#+\s*/, '')
-            .replace(/\*\*/g, '')
-            .trim(),
-        )
-        .filter(Boolean);
-      return {
-        id: `course-material-${extraction.materialId}-${chunk.page}`,
-        originalIndex: Math.max(0, chunk.page - 1),
-        title: lines[0]?.slice(0, 80) || `第 ${chunk.page} 页`,
-        content: lines.slice(1).join('\n'),
-        speakerNotes: '',
-        include: true,
-        formulas: extraction.formulas
-          .filter((formula) => formula.page === chunk.page)
-          .map((formula) => formula.latex),
-        generationStrategy: extraction.formulas.some((formula) => formula.page === chunk.page)
-          ? ('ai-formula-enhanced' as const)
-          : ('faithful' as const),
-      };
-    }),
-    revision: 1,
-    updatedAt: Date.now(),
-  };
 }
 
 function CourseSpaceRoute() {
@@ -429,118 +383,19 @@ function CourseWorkspace({ workspaceCourseId }: { workspaceCourseId: string }) {
   }, [selected, activeScopeKey, workbenchLocation]);
 
   const launchCoursewareFlow = async (mode: CoursewareConversionMode) => {
-    if (!selected || !selectedCoursewareMaterial) return;
-    if (mode === 'faithful' && !selectedCoursewareMaterial.name.toLowerCase().endsWith('.pptx')) {
-      setMessage('旧版 .ppt 无法保留可编辑视觉画布，请上传 .pptx，或选择 AI 增强课件。');
-      return;
-    }
-    setCoursewareModeOpen(false);
+    if (!selected || !selectedCoursewareMaterial || launchingCourseware) return;
     setLaunchingCourseware(true);
-    let importStorageKey: string | undefined;
     try {
-      const materialResponse = await fetch(
-        `/api/course-space/${selected.id}/materials/${selectedCoursewareMaterial.id}`,
-        { cache: 'no-store' },
-      );
-      if (!materialResponse.ok) throw new Error('读取课程原始材料失败');
-      const file = new File([await materialResponse.blob()], selectedCoursewareMaterial.name, {
-        type: selectedCoursewareMaterial.mimeType,
-        lastModified: selectedCoursewareMaterial.updatedAt,
+      await launchChatCoursewareFlow(resolveGenerationScope(), {
+        materialIds: [selectedCoursewareMaterial.id],
+        targetDurationMinutes: targetDuration,
+        instruction: '',
+        conversionMode: mode,
       });
-      let draft: PptContentDraft;
-      let sourceFingerprint;
-      if (file.name.toLowerCase().endsWith('.pptx')) {
-        const parserUrl = '/vendor/maic-importer/index.js';
-        const parserProbe = await fetch(parserUrl, { method: 'HEAD' });
-        if (!parserProbe.ok) throw new Error('PPTX 解析器尚未部署');
-        const importer = (await import(
-          /* webpackIgnore: true */
-          /* turbopackIgnore: true */
-          /* @vite-ignore */
-          parserUrl
-        )) as typeof MaicImport;
-        const slides = (await importer.importPptx(file)) as Slide[];
-        if (slides.length === 0) throw new Error('PPTX 中没有可用页面');
-        sourceFingerprint = await fingerprintCoursewareFile(file, slides.length);
-        draft = buildImportedPptDraft(slides);
-        // Match the quick-generation workflow: retain the visual canvas for
-        // both routes. AI enhancement still redraws when the model succeeds;
-        // this canvas prevents a text-only degradation when it does not.
-        importStorageKey = `course-space-pptx-${nanoid()}`;
-        await storeImportedPptSlides(importStorageKey, slides, sourceFingerprint);
-      } else {
-        const extraction = (
-          await api<{ extraction: CourseMaterialExtraction }>(
-            await fetch(
-              `/api/course-space/${selected.id}/materials/${selectedCoursewareMaterial.id}/extraction`,
-              { cache: 'no-store' },
-            ),
-          )
-        ).extraction;
-        draft = buildLegacyPptDraft(extraction);
-        sourceFingerprint = {
-          algorithm: 'SHA-256' as const,
-          sha256: selectedCoursewareMaterial.sha256 || extraction.sourceSha256,
-          fileName: selectedCoursewareMaterial.name,
-          mimeType: selectedCoursewareMaterial.mimeType,
-          byteLength: selectedCoursewareMaterial.size,
-          lastModified: selectedCoursewareMaterial.updatedAt,
-          pageCount: extraction.pageCount,
-          importedAt: Date.now(),
-        };
-      }
-
-      const settings = useSettingsStore.getState();
-      settings.setTTSEnabled(true);
-      if (
-        !settings.ttsProvidersConfig[settings.ttsProviderId]?.isServerConfigured &&
-        !settings.ttsProvidersConfig['qwen-tts']?.serverDisabled
-      ) {
-        settings.setTTSProvider('qwen-tts');
-      }
-      const profile = useUserProfileStore.getState();
-      const target = scopeTitle();
-      const requirement =
-        mode === 'faithful'
-          ? `${buildFaithfulCoursewareRequirement('pptx', draft.slides.length)}\n\n课程空间范围：${target}`
-          : buildLearningSkillsEnhancementRequirement(
-              `围绕“${target}”生成课时 PPT 或互动课件。`,
-              'pptx',
-            );
-      sessionStorage.setItem(
-        'generationSession',
-        JSON.stringify({
-          sessionId: nanoid(),
-          requirements: {
-            requirement,
-            targetDurationMinutes: resolveCourseMinutes(targetDuration),
-            userNickname: profile.nickname || undefined,
-            userBio: profile.bio || undefined,
-            webSearch: false,
-            interactiveMode: false,
-          },
-          pdfText: '',
-          pdfImages: [],
-          imageStorageIds: [],
-          sceneOutlines: undefined,
-          pptContentDraft: draft,
-          currentStep: 'generating',
-          previewPhase: 'ppt-review',
-          sourceType: mode === 'faithful' ? 'pptx-faithful' : 'learning-skills-enhanced',
-          conversionMode: mode,
-          pptxImportStorageKey: importStorageKey,
-          sourceFingerprint,
-          courseSpaceContext: {
-            courseId: selected.id,
-            materialId: selectedCoursewareMaterial.id,
-            scope: resolveGenerationScope(),
-          },
-        }),
-      );
-      router.push('/generation-preview');
+      setCoursewareModeOpen(false);
     } catch (error) {
-      await removeImportedPptSlides(importStorageKey).catch(() => undefined);
       setMessage(error instanceof Error ? error.message : String(error));
+    } finally {
       setLaunchingCourseware(false);
     }
   };
@@ -578,6 +433,7 @@ function CourseWorkspace({ workspaceCourseId }: { workspaceCourseId: string }) {
             }),
           )
         ).extraction,
+      prepareCourseSpacePptx,
     );
     sessionStorage.setItem('generationSession', JSON.stringify(session));
     router.push('/generation-preview');
