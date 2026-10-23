@@ -74,7 +74,6 @@ export default function StudentApp() {
   const [preparation, setPreparation] = useState("idle");
   const [preparationError, setPreparationError] = useState("");
   const [preparationRequestId, setPreparationRequestId] = useState("");
-  const [preparationCoverage, setPreparationCoverage] = useState(null);
   const [platformUrl, setPlatformUrl] = useState("");
   const [feedback, setFeedback] = useState(null);
   const [agentStage, setAgentStage] = useState("");
@@ -104,7 +103,6 @@ export default function StudentApp() {
     setPreparation(saved.preparation || "ready");
     setPreparationError(saved.preparationError || "");
     setPreparationRequestId(saved.preparationRequestId || "");
-    setPreparationCoverage(saved.preparationCoverage || null);
     const selectedCourse = visibleCourses.find((item) => item.lessons.some((entry) => entry.id === saved.lessonId)) || visibleCourses[0];
     setCourse(selectedCourse || null);
     setLesson(selectedCourse?.lessons.find((entry) => entry.id === saved.lessonId) || null);
@@ -189,7 +187,6 @@ export default function StudentApp() {
         setLearningProgress(current.learningProgress || null);
         setPreparationError(current.preparationError || "");
         setPreparationRequestId(current.preparationRequestId || "");
-        setPreparationCoverage(current.preparationCoverage || null);
         if (current.preparation !== "pending") return;
       } catch {
         // A temporary network failure must not interrupt the video.
@@ -242,7 +239,7 @@ export default function StudentApp() {
     if (busy) return;
     setBusy(true); setError("");
     setVideoEnded(false);
-    setPreparation("pending"); setPreparationError(""); setPreparationCoverage(null);
+    setPreparation("pending"); setPreparationError("");
     try {
       const state = await api(`/session/${sessionId.current}/begin/${encodeURIComponent(selected.id)}`, "POST");
       const selectedCourse = (state.courses || []).find((item) => item.lessons.some((candidate) => candidate.id === selected.id));
@@ -259,7 +256,6 @@ export default function StudentApp() {
       setLearningProgress(state.learningProgress || null);
       setPreparation(state.preparation); setPreparationError(state.preparationError || "");
       setPreparationRequestId(state.preparationRequestId || "");
-      setPreparationCoverage(state.preparationCoverage || null);
     } catch (err) { setError(err.message); setPhase("lesson"); setPreparation("idle"); }
     finally { setBusy(false); }
   }
@@ -270,7 +266,6 @@ export default function StudentApp() {
       const current = await api(`/session/${sessionId.current}/prepare`, "POST");
       setPreparation(current.preparation); setPreparationError(current.preparationError || "");
       setPreparationRequestId(current.preparationRequestId || "");
-      setPreparationCoverage(current.preparationCoverage || null);
     } catch (err) { setError(err.message); }
     finally { setBusy(false); }
   }
@@ -284,7 +279,6 @@ export default function StudentApp() {
       setLearningProgress(state.learningProgress || null);
       setPreparation(state.preparation); setPreparationError(state.preparationError || "");
       setPreparationRequestId(state.preparationRequestId || "");
-      setPreparationCoverage(state.preparationCoverage || null);
     } catch (err) { setError(err.message); }
     finally { setBusy(false); }
   }
@@ -372,7 +366,7 @@ export default function StudentApp() {
     {(phase === "video" || phase === "discussion" || phase === "done" || phase === "replay" || phase === "postclass") && <section className="view classroom-view"><header className="view__header"><h2 className="view__title">{lesson?.title || "课堂"}</h2><span className="view__badge">{phase === "video" ? "教学视频" : phase === "discussion" ? STAGE_TITLES[agentStage] || "复述与讨论" : phase === "replay" ? "课后回看" : phase === "postclass" ? "课后对话" : "已结束"}</span></header><div className="classroom-layout">
       <LessonProgress phase={phase} agentStage={agentStage} progress={learningProgress} postclassStage={postclassStage} />
       <div className="view__body classroom-content">
-      {phase === "video" && <div className="stage stage--video"><div className="video"><div className="video-player-slot" ref={playerSlot} aria-label="视频播放器挂载区域" /><div className="video-player-actions"><p className="video-player-status">{videoEnded ? "视频播放完毕，可以进入复述与讨论。" : "观看视频后，点击按钮进入下一阶段。"}</p><button className="btn btn--primary" type="button" disabled={busy || preparation === "pending"} onClick={preparation === "error" ? retryPreparation : goDiscussion}>{preparation === "pending" ? "复述与讨论准备中…" : preparation === "error" ? "重试准备复述与讨论" : "进入复述与讨论 →"}</button>{preparation === "partial" && <p role="status">已整理 {preparationCoverage?.acceptedCount || 0} 个知识点，仍有 {preparationCoverage?.rejectedCount || 0} 个未能匹配视频原文。可以先复述已整理部分，或<button type="button" disabled={busy} onClick={retryPreparation}>重新整理</button>。</p>}{preparationError && <p role="alert">{preparationError}{preparationRequestId && `（问题编号：${preparationRequestId}）`}</p>}</div></div></div>}
+      {phase === "video" && <div className="stage stage--video"><div className="video"><div className="video-player-slot" ref={playerSlot} aria-label="视频播放器挂载区域" /><div className="video-player-actions"><p className="video-player-status">{videoEnded ? "视频播放完毕，可以进入复述与讨论。" : "观看视频后，点击按钮进入下一阶段。"}</p><button className="btn btn--primary" type="button" disabled={busy || preparation === "pending"} onClick={preparation === "error" ? retryPreparation : goDiscussion}>{preparation === "pending" ? "复述与讨论准备中…" : preparation === "error" ? "重试准备复述与讨论" : "进入复述与讨论 →"}</button>{preparation === "error" && preparationError && <p role="alert">{preparationError}{preparationRequestId && `（问题编号：${preparationRequestId}）`}</p>}</div></div></div>}
       {phase === "replay" && <div className="stage stage--video"><div className="video"><div className="video-player-slot" ref={playerSlot} aria-label="课后视频播放器" /><div className="video-player-actions"><p className="video-player-status">可以按自己的节奏回看本节课。</p><button className="btn btn--primary" type="button" onClick={() => setPhase("done")}>返回学习反馈</button></div></div></div>}
       {(phase === "discussion" || phase === "postclass") && <div className="stage stage--summary">
         <div className="conversation-panel">
