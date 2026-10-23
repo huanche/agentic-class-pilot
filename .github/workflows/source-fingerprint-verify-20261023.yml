@@ -1,0 +1,28 @@
+name: source-fingerprint-verify-20261023
+on:
+  push:
+    branches: [codex/backup-generation-controls-20261020]
+    paths: [.github/workflows/source-fingerprint-verify-20261023.yml]
+permissions:
+  contents: read
+concurrency:
+  group: teacher-deploy
+  cancel-in-progress: false
+jobs:
+  operate:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    steps:
+      - name: Run verified production release operation
+        env:
+          SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+        run: |
+          set -euo pipefail
+          key="$RUNNER_TEMP/openmaic-release-key"
+          printf '%s\n' "$SERVER_SSH_KEY" > "$key"
+          chmod 600 "$key"
+          trap 'rm -f "$key"' EXIT
+          ssh -i "$key" -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=20 -o ServerAliveCountMax=3 "ubuntu@$SERVER_HOST" "bash -s -- '$GITHUB_RUN_ID'" <<'REMOTE'
+          printf '%s' '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' | base64 -d | gzip -d | bash -s -- "$1"
+          REMOTE
