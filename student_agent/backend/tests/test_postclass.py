@@ -22,3 +22,30 @@ def test_postclass_completes_only_the_active_gap():
     assert updated[0]["postclass_rounds"] == 1
     assert postclass_stage(updated) == "open"
     assert points[0]["status"] == "partial"
+
+
+def test_confirmation_and_discussion_must_both_finish():
+    from agent.postclass import pending_kind, advance
+    point = {"id": "a", "title": "A", "status": "mastered", "reinforcement_required": True,
+             "reinforce_done": False, "discussion_required": True, "assessment_history": []}
+    state = advance({"points": [point], "stage": "remediation", "student_text": "explanation",
+                     "assessment": {"result": "mastered"}})
+    assert state["transition"] == "next"
+    assert pending_kind(state["points"][0]) == "discussion"
+    failed = apply_assessment(state["points"], "a", {"result": "unanswered"}, "I do not know")
+    assert failed[0]["status"] == "mastered"
+    assert postclass_stage(failed) == "remediation"
+    finished = apply_assessment(failed, "a", {"result": "mastered"}, "correct answer")
+    assert postclass_stage(finished) == "open"
+    assert finished[0]["assessment_history"][-1]["stage"] == "postclass_discuss"
+
+
+def test_early_end_queues_unattempted_discussion_without_another_points_question():
+    from agent.postclass import prepare_points, pending_kind
+    points = [{"id": key, "status": "mastered"} for key in ("a", "b")]
+    prepared = prepare_points({"points": points, "discussion_point_ids": ["a", "b"],
+                               "discussion_index": 0}, [{"phase": "discuss", "text": "question A"}])
+    assert [pending_kind(p) for p in prepared] == ["discussion", "discussion"]
+    assert prepared[0]["discussion_context"]
+    assert prepared[1]["discussion_context"] == []
+    assert "discussion_required" not in points[0]

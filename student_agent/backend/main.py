@@ -25,7 +25,7 @@ from agent.graph import dialogue_graph, initial_state, opening
 from agent.knowledge import CURRICULUM_VERSION, KnowledgePreparationError, learning_points
 from agent.progression import normalize, progress
 from agent.feedback import lesson_feedback
-from agent.postclass import pending_points, postclass_graph, postclass_stage
+from agent.postclass import pending_points, postclass_graph, postclass_stage, prepare_points, opening_task
 from agent import persistence
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -152,7 +152,7 @@ def state(session: dict) -> dict:
             "preparationErrorCode": session.get("preparationErrorCode", ""),
             "preparationRequestId": session.get("preparationRequestId", ""),
             "preparationCoverage": session.get("preparationCoverage"),
-            "feedback": session.get("feedback"),
+            "feedback": current_feedback(session),
             "agentStage": (dialogue or {}).get("stage"),
             "learningProgress": progress(dialogue) if dialogue else None,
             "postclassStage": session.get("postclassStage"),
@@ -165,6 +165,13 @@ def state(session: dict) -> dict:
         result["browserKey"] = f"{course_key}:{session.get('lessonId') or 'catalog'}"
         result["browserSnapshot"] = _browser_snapshot(session)
     return result
+
+
+def current_feedback(session: dict) -> dict | None:
+    saved = session.get("feedback")
+    if saved and saved.get("schemaVersion", 1) < 3 and session.get("dialogue"):
+        return lesson_feedback(session)
+    return saved
 
 
 def commit(session: dict, changed: dict) -> None:
@@ -503,8 +510,12 @@ def end(sid: str) -> dict:
             return state(session)
         if session["phase"] not in {"discussion", "done"}:
             raise HTTPException(409, "请先进入复述与讨论")
-        feedback = lesson_feedback(session)
-        commit(session, {"phase": "done", "feedback": feedback})
+        dialogue = normalize(session["dialogue"])
+        if dialogue["stage"] != "wrapup":
+            dialogue["completion_reason"] = "student_ended_early"
+            dialogue["ended_at_stage"] = dialogue["stage"]
+        feedback = lesson_feedback(dict(session, dialogue=dialogue))
+        commit(session, {"phase": "done", "dialogue": dialogue, "feedback": feedback})
     return state(session)
 
 
@@ -513,7 +524,7 @@ def feedback(sid: str) -> dict:
     session = get_session(sid)
     if not session.get("feedback"):
         raise HTTPException(409, "本次课堂反馈尚未生成，请先结束本节课")
-    return session["feedback"]
+    return current_feedback(session)
 
 
 @app.post("/api/session/{sid}/postclass/start")
@@ -522,15 +533,17 @@ def start_postclass(sid: str) -> dict:
     with session["lock"]:
         if session["phase"] != "done" or not session.get("dialogue"):
             raise HTTPException(409, "请先结束本节课")
-        if not session.get("postclassStage"):
-            stage = postclass_stage(normalize(session["dialogue"])["points"])
+        points = prepare_points(normalize(session["dialogue"]), session["messages"])
+        if not session.get("postclassStage") or (session.get("postclassStage") == "open" and pending_points(points)):
+            stage = postclass_stage(points)
             if stage == "remediation":
-                focus = pending_points(session["dialogue"]["points"])[0]
-                opening_text = f"我们先补完课堂上还没掌握的知识点。从「{focus['title']}」开始：你现在能用自己的话说说它吗？不记得可以直接问我。"
+                focus = pending_points(points)[0]
+                opening_text = opening_task(focus)
             else:
                 opening_text = "课堂知识点已经完成了。现在可以自由向我提问其他问题。"
             first = {"role": "assistant", "text": opening_text, "phase": "postclass-" + stage}
-            commit(session, {"postclassStage": stage, "classroomFeedback": session["feedback"],
+            commit(session, {"postclassStage": stage, "dialogue": dict(session["dialogue"], points=points),
+                             "classroomFeedback": session.get("classroomFeedback") or current_feedback(session),
                              "messages": session["messages"] + [first]})
     return state(session)
 
@@ -547,7 +560,7 @@ def postclass_message(sid: str, body: MessageRequest) -> dict:
                    if str(item.get("phase") or "").startswith("postclass-")]
         try:
             result = postclass_graph.invoke({
-                "points": normalize(session["dialogue"])["points"],
+                "points": prepare_points(normalize(session["dialogue"]), session["messages"]),
                 "messages": history + [student], "student_text": student["text"],
                 "stage": stage, "assessment": {}, "transition": "continue", "reply": "",
             })
