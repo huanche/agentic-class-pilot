@@ -2,7 +2,7 @@
 
 > 团队目标（2026-10-26 确认）：让平台、教师端、学生端各自主要在自己的模块内开发；跨模块依赖通过稳定、可验证的接口表达，内部实现变化不迫使其他端同步修改。不是追求零依赖，也不预设必须拆物理数据库、建副表或引入事件总线。数据库视图可作为所属服务内部的稳定查询层；平台优先通过所属服务 API 消费数据。只有性能、可用性或故障演练证明有必要时，才另行设计副本及可靠同步。
 
-> 状态：设计与现状导航，不是“已全面解耦”的声明。更新日期：2026-10-22。本文描述当前隔离分支 `decouple-implementation`，未表示已推送、合并或部署。
+> 状态：设计与现状导航，不是“已全面解耦”的声明。更新日期：2026-10-26。本文描述当前隔离分支 `decouple-implementation`，未表示已推送、合并或部署。
 
 ## 先读这三句话
 
@@ -46,7 +46,7 @@
 | 学习上下文字段 | [`contracts/learning-context.schema.json`](../contracts/learning-context.schema.json) | `schemaVersion=1`，包含兼容旧响应的规则 |
 | 网关 URL 归属 | [`contracts/routing.yaml`](../contracts/routing.yaml) | 三种环境的生成来源；保留已标注的环境差异 |
 | 契约如何验证与生成客户端 | [`contracts/README.md`](../contracts/README.md) | 校验范围、局限、生成命令和安全约束 |
-| 具体业务实现 | 平台 `backend/app/api/routes/teacher_bridge.py`、`student_bridge.py`；教师端 `app/api/course-space/`；学生端 `apps/integration/` | 实现仍可能包含契约未覆盖的页面/内部路由；变更前应查看调用方与测试 |
+| 具体业务实现 | 平台 `backend/app/api/routes/teacher_bridge.py`、`student_bridge.py`；教师端 `app/api/course-space/`；学生端 `backend/main.py`、`agent/` 与 `frontend/` | 学生端已随 2026-10-26 上游更新重组；`apps/start.py` 是兼容启动器。实现仍可能包含契约未覆盖的页面/内部路由；变更前应查看调用方与测试 |
 | 已完成、未完成及合并门槛 | [`docs/decoupling-progress.md`](decoupling-progress.md)、[`docs/decoupling-execution.md`](decoupling-execution.md) | 前者记证据，后者记顺序与验收条件 |
 
 目前**没有覆盖全系统每一个 API 的单份 OpenAPI**。OpenAPI 文件是各调用方向的权威约定来源；运行提供方代码必须与其保持一致，校验器只覆盖已声明且可静态判断的部分。生成客户端存在，但尚未接管业务调用。不能把本导航页或工具检查当作真实鉴权、数据库一致性和三端联调已通过的证明。
