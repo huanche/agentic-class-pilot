@@ -153,7 +153,7 @@ Get-NetTCPConnection -State Listen -LocalPort 8088,8080,3200,8000
 
 ## 开发边界
 
-三端职责、数据归属、关键流程和跨服务契约的统一导航见[三端架构与接口](docs/architecture-boundaries.md)。
+三端职责、数据归属、关键流程和跨服务契约的统一导航见[三端架构与接口](docs/architecture-boundaries.md)；数据库、表字典、ER 与实际读写边界见[数据库架构说明](docs/database-architecture.md)。
 
 - 平台负责统一身份、角色权限、课程访问关系、统一入口和服务编排。
 - 教师 Agent 负责课程内容建设、课件与课堂发布、授课和播放器业务。
