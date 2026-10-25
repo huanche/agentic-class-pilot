@@ -16,6 +16,7 @@ from .platform_learning_context_v1_knowledge_package_entries_item import Platfor
 from .platform_learning_context_v1_knowledge_package_entries_item_scope import PlatformLearningContextV1KnowledgePackageEntriesItemScope
 from .platform_learning_context_v1_knowledge_package_rubric import PlatformLearningContextV1KnowledgePackageRubric
 from .platform_learning_context_v1_knowledge_package_rubric_knowledge_points_item import PlatformLearningContextV1KnowledgePackageRubricKnowledgePointsItem
+from .platform_learning_context_v1_lesson_catalog_item import PlatformLearningContextV1LessonCatalogItem
 from .platform_learning_context_v1_lessons_item import PlatformLearningContextV1LessonsItem
 from .platform_learning_context_v1_publication import PlatformLearningContextV1Publication
 from .platform_learning_context_v1_schema_version import PlatformLearningContextV1SchemaVersion
@@ -41,6 +42,7 @@ __all__ = (
     "PlatformLearningContextV1KnowledgePackageEntriesItemScope",
     "PlatformLearningContextV1KnowledgePackageRubric",
     "PlatformLearningContextV1KnowledgePackageRubricKnowledgePointsItem",
+    "PlatformLearningContextV1LessonCatalogItem",
     "PlatformLearningContextV1LessonsItem",
     "PlatformLearningContextV1Publication",
     "PlatformLearningContextV1SchemaVersion",

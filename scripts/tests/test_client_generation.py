@@ -36,7 +36,7 @@ class ClientGenerationTests(unittest.TestCase):
         spec = generation.bundled_spec(ROOT / 'contracts/internal-student-api.yaml')
         schema = {'$ref': '#/components/schemas/LearningContextV1', 'components': spec['components']}
         validator = Draft202012Validator(schema)
-        fixture = json.loads((ROOT / 'student_agent/tests/fixtures/platform-learning-context-v1.json').read_text(encoding='utf-8'))
+        fixture = json.loads((ROOT / 'contracts/fixtures/platform-learning-context-v1.json').read_text(encoding='utf-8'))
         validator.validate(fixture)
         modified = copy.deepcopy(fixture)
         modified['schemaVersion'] = 2

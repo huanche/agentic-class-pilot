@@ -17,6 +17,7 @@ if TYPE_CHECKING:
   from ..models.platform_learning_context_v1_publication import PlatformLearningContextV1Publication
   from ..models.platform_learning_context_v1_grounding import PlatformLearningContextV1Grounding
   from ..models.learning_context_v1_classroom_type_0 import LearningContextV1ClassroomType0
+  from ..models.platform_learning_context_v1_lesson_catalog_item import PlatformLearningContextV1LessonCatalogItem
   from ..models.platform_learning_context_v1_knowledge_package import PlatformLearningContextV1KnowledgePackage
   from ..models.platform_learning_context_v1_lessons_item import PlatformLearningContextV1LessonsItem
 
@@ -42,7 +43,9 @@ class PlatformLearningContextV1:
             classroom (LearningContextV1ClassroomType0 | None | Unset):
             course_title (str | Unset):
             grounding (PlatformLearningContextV1Grounding | Unset):
+            lesson_catalog (list[PlatformLearningContextV1LessonCatalogItem] | Unset):
             lessons (list[PlatformLearningContextV1LessonsItem] | Unset):
+            selected_lesson_id (None | str | Unset):
      """
 
     course_id: UUID
@@ -53,7 +56,9 @@ class PlatformLearningContextV1:
     classroom: LearningContextV1ClassroomType0 | None | Unset = UNSET
     course_title: str | Unset = UNSET
     grounding: PlatformLearningContextV1Grounding | Unset = UNSET
+    lesson_catalog: list[PlatformLearningContextV1LessonCatalogItem] | Unset = UNSET
     lessons: list[PlatformLearningContextV1LessonsItem] | Unset = UNSET
+    selected_lesson_id: None | str | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
 
@@ -64,6 +69,7 @@ class PlatformLearningContextV1:
         from ..models.platform_learning_context_v1_publication import PlatformLearningContextV1Publication
         from ..models.platform_learning_context_v1_grounding import PlatformLearningContextV1Grounding
         from ..models.learning_context_v1_classroom_type_0 import LearningContextV1ClassroomType0
+        from ..models.platform_learning_context_v1_lesson_catalog_item import PlatformLearningContextV1LessonCatalogItem
         from ..models.platform_learning_context_v1_knowledge_package import PlatformLearningContextV1KnowledgePackage
         from ..models.platform_learning_context_v1_lessons_item import PlatformLearningContextV1LessonsItem
         course_id = str(self.course_id)
@@ -90,6 +96,15 @@ class PlatformLearningContextV1:
         if not isinstance(self.grounding, Unset):
             grounding = self.grounding.to_dict()
 
+        lesson_catalog: list[dict[str, Any]] | Unset = UNSET
+        if not isinstance(self.lesson_catalog, Unset):
+            lesson_catalog = []
+            for lesson_catalog_item_data in self.lesson_catalog:
+                lesson_catalog_item = lesson_catalog_item_data.to_dict()
+                lesson_catalog.append(lesson_catalog_item)
+
+
+
         lessons: list[dict[str, Any]] | Unset = UNSET
         if not isinstance(self.lessons, Unset):
             lessons = []
@@ -98,6 +113,12 @@ class PlatformLearningContextV1:
                 lessons.append(lessons_item)
 
 
+
+        selected_lesson_id: None | str | Unset
+        if isinstance(self.selected_lesson_id, Unset):
+            selected_lesson_id = UNSET
+        else:
+            selected_lesson_id = self.selected_lesson_id
 
 
         field_dict: dict[str, Any] = {}
@@ -115,8 +136,12 @@ class PlatformLearningContextV1:
             field_dict["courseTitle"] = course_title
         if grounding is not UNSET:
             field_dict["grounding"] = grounding
+        if lesson_catalog is not UNSET:
+            field_dict["lessonCatalog"] = lesson_catalog
         if lessons is not UNSET:
             field_dict["lessons"] = lessons
+        if selected_lesson_id is not UNSET:
+            field_dict["selectedLessonId"] = selected_lesson_id
 
         return field_dict
 
@@ -127,6 +152,7 @@ class PlatformLearningContextV1:
         from ..models.platform_learning_context_v1_publication import PlatformLearningContextV1Publication
         from ..models.platform_learning_context_v1_grounding import PlatformLearningContextV1Grounding
         from ..models.learning_context_v1_classroom_type_0 import LearningContextV1ClassroomType0
+        from ..models.platform_learning_context_v1_lesson_catalog_item import PlatformLearningContextV1LessonCatalogItem
         from ..models.platform_learning_context_v1_knowledge_package import PlatformLearningContextV1KnowledgePackage
         from ..models.platform_learning_context_v1_lessons_item import PlatformLearningContextV1LessonsItem
         d = dict(src_dict)
@@ -187,6 +213,18 @@ class PlatformLearningContextV1:
 
 
 
+        _lesson_catalog = d.pop("lessonCatalog", UNSET)
+        lesson_catalog: list[PlatformLearningContextV1LessonCatalogItem] | Unset = UNSET
+        if _lesson_catalog is not UNSET:
+            lesson_catalog = []
+            for lesson_catalog_item_data in _lesson_catalog:
+                lesson_catalog_item = PlatformLearningContextV1LessonCatalogItem.from_dict(lesson_catalog_item_data)
+
+
+
+                lesson_catalog.append(lesson_catalog_item)
+
+
         _lessons = d.pop("lessons", UNSET)
         lessons: list[PlatformLearningContextV1LessonsItem] | Unset = UNSET
         if _lessons is not UNSET:
@@ -199,6 +237,16 @@ class PlatformLearningContextV1:
                 lessons.append(lessons_item)
 
 
+        def _parse_selected_lesson_id(data: object) -> None | str | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(None | str | Unset, data)
+
+        selected_lesson_id = _parse_selected_lesson_id(d.pop("selectedLessonId", UNSET))
+
+
         platform_learning_context_v1 = cls(
             course_id=course_id,
             knowledge_package=knowledge_package,
@@ -208,7 +256,9 @@ class PlatformLearningContextV1:
             classroom=classroom,
             course_title=course_title,
             grounding=grounding,
+            lesson_catalog=lesson_catalog,
             lessons=lessons,
+            selected_lesson_id=selected_lesson_id,
         )
 
 

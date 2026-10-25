@@ -67,7 +67,7 @@ class GeneratedPythonTests(unittest.TestCase):
         self.assertEqual(result.parsed['future'], {'enabled': True})
 
     def test_context_fixture_keeps_missing_empty_and_unknown_fields(self):
-        original = json.loads((ROOT / 'student_agent/tests/fixtures/platform-learning-context-v1.json').read_text(encoding='utf-8'))
+        original = json.loads((ROOT / 'contracts/fixtures/platform-learning-context-v1.json').read_text(encoding='utf-8'))
         for lessons in (UNSET, []):
             payload = copy.deepcopy(original)
             payload.pop('lessons', None)

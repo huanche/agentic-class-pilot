@@ -46,6 +46,7 @@
     "python/student_platform_api/models/platform_learning_context_v1_knowledge_package_entries_item_scope.py",
     "python/student_platform_api/models/platform_learning_context_v1_knowledge_package_rubric.py",
     "python/student_platform_api/models/platform_learning_context_v1_knowledge_package_rubric_knowledge_points_item.py",
+    "python/student_platform_api/models/platform_learning_context_v1_lesson_catalog_item.py",
     "python/student_platform_api/models/platform_learning_context_v1_lessons_item.py",
     "python/student_platform_api/models/platform_learning_context_v1_publication.py",
     "python/student_platform_api/models/platform_learning_context_v1_schema_version.py",
@@ -80,11 +81,11 @@
     "@hey-api/openapi-ts": "0.99.0",
     "openapi-python-client": "0.27.1"
   },
-  "learningContextSchema": "2aa611a09cf927cd05cdae9de56fcf9af01d5f0057996f54d786fc142898dbf1",
+  "learningContextSchema": "acf6ffc891de4aec64f308a9201aba63996f2eb3f1ec51f1497903b3e5c77b99",
   "nodeToolLock": "d90658ede303e68bac7cfdbf2e830a6f4437b5854cc50cf7d306cac8cf3c36ca",
   "pythonToolLock": "d87e65a8676d18843d4fe27da803b69d80ad3bdec02e57c69835dc81a315933d",
   "sources": {
-    "internal-student-api.yaml": "0ef340ebeef6cc56fbdbb608cf3c262ed6b19c8b8a6fb2388f2f966cc8488546",
+    "internal-student-api.yaml": "706351d04a490789d3e25ed475af050431c6bc89a9a3a79b2e815deeb25102a5",
     "internal-teacher-api.yaml": "2884735edeba01ee9dbf1b3950953ad79cbe3a8630739c627b9e1e01e3d81b77",
     "teacher-service-api.yaml": "3e203c0a8fd707b748499290f3b2d77d55b7579fec5598487572464a00dbca9c"
   }

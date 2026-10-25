@@ -11,7 +11,7 @@ function extractErrorMessage(err: Error): string {
     }
     return err.message
   }
-  return "Something went wrong."
+  return err.message || "操作失败，请稍后重试"
 }
 
 export const handleError = function (this: (msg: string) => void, err: Error) {

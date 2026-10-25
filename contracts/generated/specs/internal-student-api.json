@@ -87,6 +87,53 @@
             },
             "type": "object"
           },
+          "lessonCatalog": {
+            "items": {
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "lessonNumber": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "order": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "segmentCount": {
+                  "type": "integer"
+                },
+                "teachingHours": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "title": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "week": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "id"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
           "lessons": {
             "items": {
               "properties": {
@@ -156,6 +203,12 @@
               1
             ],
             "type": "integer"
+          },
+          "selectedLessonId": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "userId": {
             "format": "uuid",
@@ -354,7 +407,7 @@
     },
     "/internal/student/learning-context": {
       "post": {
-        "description": "学生端启动课堂会话时调用。返回教师端已发布内容的完整投影： 知识包、课堂场景、课时结构与引用素材。客户端必须校验 schemaVersion；只加字段不改语义，破坏性变更升版本。\n",
+        "description": "学生端先不传 lesson_id 取得已发布课时目录；选定课时后再传 lesson_id，仅返回该课时已发布的课堂正文、材料与知识点。 知识包、课堂场景、课时结构与引用素材。客户端必须校验 schemaVersion；只加字段不改语义，破坏性变更升版本。\n",
         "operationId": "getStudentLearningContext",
         "requestBody": {
           "content": {
@@ -363,6 +416,13 @@
                 "properties": {
                   "launch_token": {
                     "type": "string"
+                  },
+                  "lesson_id": {
+                    "description": "可选；选定的已发布课时 ID",
+                    "type": [
+                      "string",
+                      "null"
+                    ]
                   }
                 },
                 "required": [

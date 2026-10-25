@@ -2,7 +2,7 @@
 # 平台暴露给学生端的内部接口约定（唯一来源）
 # =====================================================================
 # 实现位置：platform/backend/app/api/routes/student_bridge.py、user_model_config.py
-# 调用方：student_agent/apps/integration/platform_client.py、launch_context.py
+# 调用方：student_agent/backend/main.py
 # 变更规则：只允许新增字段；修改/删除已有字段属于破坏性变更，必须评审并升版本。
 #   学习上下文（learning-context）自带 schemaVersion 字段，为全系统第一个
 #   版本化契约；其余端点本次起纳入同一套变更规则。
@@ -55,7 +55,8 @@ paths:
       operationId: getStudentLearningContext
       summary: 课堂学习上下文（版本化数据面，schemaVersion = 1）
       description: >
-        学生端启动课堂会话时调用。返回教师端已发布内容的完整投影：
+        学生端先不传 lesson_id 取得已发布课时目录；选定课时后再传
+        lesson_id，仅返回该课时已发布的课堂正文、材料与知识点。
         知识包、课堂场景、课时结构与引用素材。客户端必须校验
         schemaVersion；只加字段不改语义，破坏性变更升版本。
       security: [{ studentServiceKey: [] }]
@@ -68,6 +69,7 @@ paths:
               required: [launch_token]
               properties:
                 launch_token: { type: string }
+                lesson_id: { type: [string, "null"], description: 可选；选定的已发布课时 ID }
       responses:
         "200":
           description: 学习上下文

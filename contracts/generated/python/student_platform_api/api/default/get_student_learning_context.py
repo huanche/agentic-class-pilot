@@ -91,7 +91,8 @@ def sync_detailed(
 ) -> Response[Any | PlatformLearningContextV1]:
     """ 课堂学习上下文（版本化数据面，schemaVersion = 1）
 
-     学生端启动课堂会话时调用。返回教师端已发布内容的完整投影： 知识包、课堂场景、课时结构与引用素材。客户端必须校验 schemaVersion；只加字段不改语义，破坏性变更升版本。
+     学生端先不传 lesson_id 取得已发布课时目录；选定课时后再传 lesson_id，仅返回该课时已发布的课堂正文、材料与知识点。 知识包、课堂场景、课时结构与引用素材。客户端必须校验
+    schemaVersion；只加字段不改语义，破坏性变更升版本。
 
     Args:
         body (GetStudentLearningContextBody):
@@ -124,7 +125,8 @@ def sync(
 ) -> Any | PlatformLearningContextV1 | None:
     """ 课堂学习上下文（版本化数据面，schemaVersion = 1）
 
-     学生端启动课堂会话时调用。返回教师端已发布内容的完整投影： 知识包、课堂场景、课时结构与引用素材。客户端必须校验 schemaVersion；只加字段不改语义，破坏性变更升版本。
+     学生端先不传 lesson_id 取得已发布课时目录；选定课时后再传 lesson_id，仅返回该课时已发布的课堂正文、材料与知识点。 知识包、课堂场景、课时结构与引用素材。客户端必须校验
+    schemaVersion；只加字段不改语义，破坏性变更升版本。
 
     Args:
         body (GetStudentLearningContextBody):
@@ -152,7 +154,8 @@ async def asyncio_detailed(
 ) -> Response[Any | PlatformLearningContextV1]:
     """ 课堂学习上下文（版本化数据面，schemaVersion = 1）
 
-     学生端启动课堂会话时调用。返回教师端已发布内容的完整投影： 知识包、课堂场景、课时结构与引用素材。客户端必须校验 schemaVersion；只加字段不改语义，破坏性变更升版本。
+     学生端先不传 lesson_id 取得已发布课时目录；选定课时后再传 lesson_id，仅返回该课时已发布的课堂正文、材料与知识点。 知识包、课堂场景、课时结构与引用素材。客户端必须校验
+    schemaVersion；只加字段不改语义，破坏性变更升版本。
 
     Args:
         body (GetStudentLearningContextBody):
@@ -185,7 +188,8 @@ async def asyncio(
 ) -> Any | PlatformLearningContextV1 | None:
     """ 课堂学习上下文（版本化数据面，schemaVersion = 1）
 
-     学生端启动课堂会话时调用。返回教师端已发布内容的完整投影： 知识包、课堂场景、课时结构与引用素材。客户端必须校验 schemaVersion；只加字段不改语义，破坏性变更升版本。
+     学生端先不传 lesson_id 取得已发布课时目录；选定课时后再传 lesson_id，仅返回该课时已发布的课堂正文、材料与知识点。 知识包、课堂场景、课时结构与引用素材。客户端必须校验
+    schemaVersion；只加字段不改语义，破坏性变更升版本。
 
     Args:
         body (GetStudentLearningContextBody):

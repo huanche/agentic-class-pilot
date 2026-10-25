@@ -1,3 +1,4 @@
+import { HOJO_40M_MODEL, HOJO_80M_MODEL, HOJO_DEFAULT_VOICE, HOJO_VOICES } from './hojo';
 /**
  * Audio Provider Constants
  *
@@ -1024,6 +1025,20 @@ export const TTS_PROVIDERS: Record<BuiltInTTSProviderId, TTSProviderConfig> = {
     supportedFormats: ['wav'],
     speedRange: { min: 0.25, max: 4.0, default: 1.0 },
   },
+  'hojo-tts': {
+    id: 'hojo-tts',
+    name: 'Hojo TTS（本地）',
+    requiresApiKey: false,
+    defaultBaseUrl: 'http://127.0.0.1:13306/v1',
+    models: [
+      { id: HOJO_40M_MODEL, name: 'Hojo-TTS-Light-40M · 固定音色' },
+      { id: HOJO_80M_MODEL, name: 'Hojo-TTS-Light-80M · 声音克隆' },
+    ],
+    defaultModelId: HOJO_40M_MODEL,
+    voices: HOJO_VOICES,
+    supportedFormats: ['wav'],
+    speedRange: { min: 1, max: 1, default: 1 },
+  },
 };
 
 /**
@@ -1300,6 +1315,7 @@ export const DEFAULT_TTS_VOICES: Record<BuiltInTTSProviderId, string> = {
   'elevenlabs-tts': 'EXAVITQu4vr4xnSDxMaL',
   'minimax-tts': 'female-yujie',
   'lemonade-tts': 'zf_xiaoyi',
+  'hojo-tts': HOJO_DEFAULT_VOICE,
   'browser-native-tts': 'default',
 };
 
@@ -1313,6 +1329,7 @@ export const DEFAULT_TTS_MODELS: Record<BuiltInTTSProviderId, string> = {
   'elevenlabs-tts': 'eleven_multilingual_v2',
   'minimax-tts': 'speech-2.8-hd',
   'lemonade-tts': 'kokoro-v1',
+  'hojo-tts': HOJO_40M_MODEL,
   'browser-native-tts': '',
 };
 

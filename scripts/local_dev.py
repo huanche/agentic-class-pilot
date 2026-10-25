@@ -30,7 +30,7 @@ PUBLIC_URL = "http://localhost:8088"
 SERVICES = {
     "platform": (8080, "/api/v1/utils/health-check/"),
     "teacher": (3200, "/api/health"),
-    "student": (8000, "/api/session/health"),
+    "student": (8001, "/api/session/health"),
     "gateway": (8088, "/api/v1/utils/health-check/"),
 }
 HTTP = build_opener(ProxyHandler({}))
@@ -207,19 +207,15 @@ def prepare_frontends(skip_build: bool) -> None:
         stamp.write_text(expected, encoding="utf-8")
     frontend = STUDENT / "frontend"
     expected = fingerprint(frontend, ("package.json", "package-lock.json", "next.config.mjs"))
-    served = STUDENT / "apps/static/app"
-    stamp = served / ".build-fingerprint"
+    served = frontend / "out"
+    stamp = RUNTIME / "student-frontend.fingerprint"
     if not (served / "index.html").is_file() or not stamp.is_file() or stamp.read_text().strip() != expected:
         if skip_build:
             raise LocalError("Student frontend is stale or missing; run without --skip-build.")
         run([node, str(frontend / "node_modules/next/dist/bin/next"), "build"], frontend)
-        run([node, str(frontend / "scripts/write-build-fingerprint.mjs")], frontend)
-        if (frontend / "out/.build-fingerprint").read_text().strip() != expected:
-            raise LocalError("Student build fingerprint mismatch; not publishing stale files.")
-        # Keep the previous served bundle recoverable, including its fingerprint.
-        if served.exists():
-            served.rename(RUNTIME / f"student-frontend-backup-{time.time_ns()}")
-        shutil.copytree(frontend / "out", served)
+        if not (served / "index.html").is_file():
+            raise LocalError("Student build produced no frontend/out/index.html.")
+        stamp.write_text(expected, encoding="utf-8")
     print("[OK] current platform and student frontends", flush=True)
 
 
@@ -297,7 +293,7 @@ def worker(name: str, config: dict[str, str]) -> None:
     elif name == "teacher":
         command, cwd = [shutil.which("node"), str(TEACHER / "node_modules/next/dist/bin/next"), "dev", "--hostname", "127.0.0.1", "--port", "3200"], TEACHER
     elif name == "student":
-        command, cwd = [str(STUDENT / ".venv/Scripts/python.exe"), "apps/start.py", "--no-browser", "--host", "127.0.0.1", "--port", "8000"], STUDENT
+        command, cwd = [str(STUDENT / ".venv/Scripts/python.exe"), "apps/start.py", "--no-browser", "--host", "127.0.0.1", "--port", "8001"], STUDENT
     else:
         import yaml
         routing = yaml.safe_load((ROOT / "contracts/routing.yaml").read_text(encoding="utf-8"))

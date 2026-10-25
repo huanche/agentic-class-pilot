@@ -12,6 +12,7 @@ import type { TTSProviderId } from '@/lib/audio/types';
 export interface CoursewareVoiceSelection {
   providerId: TTSProviderId;
   voice: string;
+  modelId?: string;
 }
 
 /** Serializable, credential-free handoff after the teacher confirms the outline. */

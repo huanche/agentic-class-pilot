@@ -10,6 +10,26 @@ from app.core.config import settings
 BRIDGE_KEY = "student-bridge-test-key"
 
 
+def test_classroom_view_includes_visible_slide_text() -> None:
+    from app.api.routes.student_bridge import _classroom_view
+
+    class Result:
+        def first(self):
+            return ({"name": "课堂"}, [{"id": "scene-1", "order": 1,
+                    "content": {"canvas": {"elements": [
+                        {"type": "text", "content": "<p>电路交换 &amp; 分组交换</p>"},
+                        {"type": "image", "content": "ignore"},
+                    ]}}, "actions": [{"type": "speech", "text": "讲解"}]}])
+
+    class Session:
+        def execute(self, *_args, **_kwargs):
+            return Result()
+
+    classroom = _classroom_view(Session(), "room-1")
+    assert classroom["scenes"][0]["visibleText"] == ["电路交换 & 分组交换"]
+    assert classroom["scenes"][0]["actions"][0]["text"] == "讲解"
+
+
 @pytest.fixture(autouse=True)
 def bridge_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "STUDENT_SERVICE_KEY", BRIDGE_KEY)
@@ -146,9 +166,9 @@ def test_knowledge_artifact_rubric_picks_by_lesson() -> None:
     assert [p["title"] for p in rubric["knowledgePoints"]] == ["周二的要点"]
     assert rubric["knowledgePoints"][0]["expectedConcepts"] == ["要点乙（page:2）。"]
 
-    # 唯一一份且无课时归属匹配 → 仍可用
+    # 即使唯一一份，不属于所选课时也禁止使用。
     only = [entries[2]]
-    assert _knowledge_artifact_rubric(only, "L9") is not None
+    assert _knowledge_artifact_rubric(only, "L9") is None
     # 多份且都匹配不上 → None（宁缺毋滥，学生端明说没有）
     assert _knowledge_artifact_rubric(entries, "L9") is None
     # 没有 knowledge-points 工件 → None

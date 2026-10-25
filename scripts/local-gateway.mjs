@@ -5,7 +5,7 @@ import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const ports = { platform: 8080, teacher: 3200, student: 8000 };
+const ports = { platform: 8080, teacher: 3200, student: 8001 };
 
 export function routeFor(raw, routes, upstreamPorts = ports) {
   const url = new URL(raw, 'http://localhost:8088');

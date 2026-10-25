@@ -35,6 +35,7 @@ import {
   resolveTTSApiKey,
   resolveTTSBaseUrl,
   resolveTTSVoice,
+  resolveTTSModel,
 } from '@/lib/server/provider-config';
 import type { SceneOutline } from '@/lib/types/generation';
 import type { Scene } from '@/lib/types/stage';
@@ -384,6 +385,14 @@ export async function generateTTSForClassroom(
     resolveTTSVoice(providerId, selectedVoice || byokVoice) ||
     DEFAULT_TTS_VOICES[providerId as keyof typeof DEFAULT_TTS_VOICES] ||
     'default';
+  const selectedModel =
+    options?.voiceSelection?.providerId === providerId ? options.voiceSelection.modelId : undefined;
+  const modelId =
+    resolveTTSModel(providerId, byokModel || selectedModel) ||
+    DEFAULT_TTS_MODELS[providerId as keyof typeof DEFAULT_TTS_MODELS] ||
+    '';
+  if (providerId === 'hojo-tts' && !ttsProvider.models.some((model) => model.id === modelId))
+    throw new Error('不支持的 Hojo 模型，请重新选择语音模型');
   const format = ttsProvider?.supportedFormats?.[0] || 'mp3';
   if (providerId === VOXCPM_TTS_PROVIDER_ID && voice === VOXCPM_AUTO_VOICE_ID) {
     log.warn('VoxCPM Auto Voice requires agent context; skipping server-side TTS generation');
@@ -427,8 +436,7 @@ export async function generateTTSForClassroom(
         const result = await generateCachedTts(
           {
             providerId,
-            modelId:
-              byokModel || DEFAULT_TTS_MODELS[providerId as keyof typeof DEFAULT_TTS_MODELS] || '',
+            modelId,
             apiKey,
             baseUrl: ttsBaseUrl,
             voice,
@@ -464,10 +472,7 @@ export async function generateTTSForClassroom(
             identity: ttsAudioCacheKey(
               {
                 providerId,
-                modelId:
-                  byokModel ||
-                  DEFAULT_TTS_MODELS[providerId as keyof typeof DEFAULT_TTS_MODELS] ||
-                  '',
+                modelId,
                 apiKey,
                 baseUrl: ttsBaseUrl,
                 voice,

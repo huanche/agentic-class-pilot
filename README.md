@@ -30,7 +30,7 @@ agentic class pilot/
 | `http://localhost:8088` | 统一访问入口，日常使用此地址 |
 | `http://127.0.0.1:8080` | 平台后端及平台前端 |
 | `http://127.0.0.1:3200` | 教师 Agent 内部开发地址 |
-| `http://127.0.0.1:8000` | 学生 Agent 内部开发地址 |
+| `http://127.0.0.1:8001` | 学生 Agent 本机开发地址（服务器沿用 8000） |
 | `http://127.0.0.1:59001` | MinIO 管理界面 |
 | `http://127.0.0.1:58025` | Mailpit 本地邮件界面 |
 
@@ -71,10 +71,12 @@ Copy-Item ".env.example" ".env.local" -ErrorAction SilentlyContinue
 ### 3. 安装学生 Agent 依赖
 
 ```powershell
-Set-Location "..\student_agent"
+Set-Location "..\student_agent\frontend"
+npm ci
+npm run build
+Set-Location ".."
 python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-Copy-Item ".env.local.example" ".env.local" -ErrorAction SilentlyContinue
+.\.venv\Scripts\python.exe -m pip install -r backend\requirements.txt
 ```
 
 如需启用学生 Agent 的大模型对话，在 `student_agent/.env.local` 中配置 `AGENT_LLM_BASE_URL`、`AGENT_LLM_API_KEY` 和 `AGENT_LLM_MODEL`。
@@ -100,7 +102,7 @@ http://localhost:8088
 1. 检查本地配置、依赖和三个数据库角色的真实连接。
 2. 必要时启动本机 PostgreSQL、MinIO、Mailpit；核对已有数据库迁移版本，不自动修改数据库结构。
 3. 构建与当前源码对应的平台和学生前端。
-4. 顺序启动平台（8080）、教师端（3200）、学生端（8000），等待健康检查通过。
+4. 顺序启动平台（8080）、教师端（3200）、学生端（8001），等待健康检查通过。
 5. 启动仅监听本机的 8088 网关，路由读取 `contracts/routing.yaml`，统一三端公共地址。
 
 配置和数据库排障、检查/停止命令以及上传影响范围见 [完整平台本地启动说明](docs/local-full-stack.md)。日志位于 `.runtime/local-dev/`，失败时会显示对应日志路径。原有生产部署入口保持不变。
@@ -135,7 +137,7 @@ pnpm install --frozen-lockfile
 ### 端口已被占用
 
 ```powershell
-Get-NetTCPConnection -State Listen -LocalPort 8088,8080,3200,8000
+Get-NetTCPConnection -State Listen -LocalPort 8088,8080,3200,8001
 ```
 
 不要重复启动同一个服务。确认已有服务来自本项目后，可直接继续使用。
@@ -167,6 +169,7 @@ Get-NetTCPConnection -State Listen -LocalPort 8088,8080,3200,8000
 - `teacher_agent/README-zh.md`
 - `student_agent/README.md`
 - [学生端运行机制：输入、输出与数据更新](docs/student-runtime-mechanism.md)
+- [知识点文件模板 V1、提取规则与字段用途](docs/student-knowledge-point-contract.md)
 
 ## 开源说明
 

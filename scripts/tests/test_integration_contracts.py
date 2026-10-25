@@ -142,7 +142,7 @@ class ProviderPayloadTests(unittest.TestCase):
     def setUp(self):
         self.schema = json.loads((ROOT / "contracts/learning-context.schema.json").read_text())
         self.validator = Draft202012Validator(self.schema, format_checker=FormatChecker())
-        self.payload = json.loads((ROOT / "student_agent/tests/fixtures/platform-learning-context-v1.json").read_text(encoding="utf-8"))
+        self.payload = json.loads((ROOT / "contracts/fixtures/platform-learning-context-v1.json").read_text(encoding="utf-8"))
 
     def test_legacy_absent_lessons_and_explicit_empty_catalog_remain_distinct(self):
         self.validator.validate(self.payload)
@@ -206,7 +206,9 @@ class ProviderPayloadTests(unittest.TestCase):
                         "_grounding_context": lambda *_: {}, "_issue_playback_grant": lambda *_: "fixture-grant",
                     })
                 session = SimpleNamespace(execute=lambda *_: SimpleNamespace(first=lambda: ("Fixture course",)))
-                result = namespace["student_learning_context"](SimpleNamespace(launch_token="fixture"), session, "fixture-key")
+                result = namespace["student_learning_context"](
+                    SimpleNamespace(launch_token="fixture", lesson_id="fixture-lesson" if lessons else None),
+                    session, "fixture-key")
                 self.validator.validate(result)
                 self.assertEqual(bool(result["lessons"]), bool(lessons))
                 self.assertEqual(result["classroom"] is None, not lessons)
@@ -219,34 +221,34 @@ class ProviderPayloadTests(unittest.TestCase):
 
 
 class TokenCompatibilityTests(unittest.TestCase):
-    def namespaces(self, signing_key="fixture-signing", student_key="fixture-signing"):
+    def namespace(self, signing_key="fixture-signing"):
         settings = SimpleNamespace(STUDENT_TOKEN_SIGNING_KEY=signing_key,
                                    STUDENT_SERVICE_KEY="fixture-channel", STUDENT_LAUNCH_TOKEN_TTL_SECONDS=600)
         common = {"json": json, "base64": base64, "hmac": hmac, "hashlib": hashlib,
                   "time": time, "secrets": secrets, "uuid": uuid, "logging": logging, "__name__": __name__}
+        class TokenError(ValueError):
+            def __init__(self, status_code, detail):
+                super().__init__(detail)
+                self.status_code = status_code
         platform = load_functions(ROOT / "platform/backend/app/api/routes/student_bridge.py",
-            {"_token_signing_key", "_launch_signature", "issue_launch_token"}, dict(common, settings=settings))
-        class LaunchTokenError(ValueError):
-            pass
-        student = load_functions(ROOT / "student_agent/apps/integration/launch_context.py",
-            {"_signature", "verify_launch_token"}, dict(common, LaunchTokenError=LaunchTokenError,
-                token_signing_key=lambda: student_key))
-        return platform, student, settings
+            {"_token_signing_key", "_launch_signature", "issue_launch_token", "verify_launch_token"},
+            dict(common, settings=settings, HTTPException=TokenError))
+        return platform, settings
 
-    def test_existing_provider_and_consumer_accept_same_dedicated_key(self):
-        platform, student, _ = self.namespaces()
+    def test_platform_issues_and_verifies_with_dedicated_key(self):
+        platform, _ = self.namespace()
         user_id, course_id = uuid.uuid4(), uuid.uuid4()
         token = platform["issue_launch_token"](user_id, course_id, "fixture-room", {"publicationId": "fixture", "version": 1})
-        self.assertEqual(student["verify_launch_token"](token)["uid"], str(user_id))
+        self.assertEqual(platform["verify_launch_token"](token)["uid"], str(user_id))
 
     def test_legacy_fallback_still_works_and_mismatched_key_is_rejected(self):
-        platform, student, _ = self.namespaces("", "fixture-channel")
+        platform, _ = self.namespace("")
         with self.assertLogs(__name__, level="WARNING"):
             token = platform["issue_launch_token"](uuid.uuid4(), uuid.uuid4(), "fixture-room", {"version": 1})
-        student["verify_launch_token"](token)
-        _, wrong_student, _ = self.namespaces(student_key="different-key")
+        platform["verify_launch_token"](token)
+        wrong_platform, _ = self.namespace("different-key")
         with self.assertRaises(ValueError):
-            wrong_student["verify_launch_token"](token)
+            wrong_platform["verify_launch_token"](token)
 
 
 if __name__ == "__main__":

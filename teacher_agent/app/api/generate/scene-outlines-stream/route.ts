@@ -291,8 +291,11 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     let promptRequirements: UserRequirements | undefined;
     if (body.requirements) {
-      try { promptRequirements = withCourseDurationRequirement(body.requirements); }
-      catch (error) { return apiError('INVALID_REQUEST', 400, (error as Error).message); }
+      try {
+        promptRequirements = withCourseDurationRequirement(body.requirements);
+      } catch (error) {
+        return apiError('INVALID_REQUEST', 400, (error as Error).message);
+      }
     }
 
     // Get API configuration from request headers/body
@@ -404,6 +407,12 @@ export async function POST(req: NextRequest) {
     if (!prompts) {
       return apiError('INTERNAL_ERROR', 500, 'Prompt template not found');
     }
+    if (body.includeLessonOverview === true) {
+      prompts = {
+        ...prompts,
+        user: `${prompts.user}\n\nIn the same top-level JSON object, also return "lessonOverview": a concise 150–300 character overview in the course language, covering the lesson scope, key concepts and learning outcomes across ALL pages. Write for the teacher. Do not list laser/highlight/camera actions, timing budgets, page-generation instructions or implementation details. Keep the existing outlines/languageDirective/courseTitle fields unchanged.`,
+      };
+    }
 
     log.info(
       `Generating outlines: "${requirements.requirement.substring(0, 50)}" [model=${modelString}]`,
@@ -468,6 +477,7 @@ export async function POST(req: NextRequest) {
           let parsedOutlines: SceneOutline[] = [];
           let languageDirective: string | null = null;
           let courseTitle: string | null = null;
+          let lessonOverview: string | undefined;
           let lastError: string | undefined;
 
           for (let attempt = 1; attempt <= MAX_STREAM_RETRIES + 1; attempt++) {
@@ -477,6 +487,7 @@ export async function POST(req: NextRequest) {
               parsedOutlines = [];
               languageDirective = null;
               courseTitle = null;
+              lessonOverview = undefined;
               const usedOutlineIds = new Set<string>();
               const textStream = streamLLM(
                 streamParams,
@@ -555,6 +566,15 @@ export async function POST(req: NextRequest) {
 
               // Validate: got outlines?
               if (parsedOutlines.length > 0) {
+                const overviewMatch = fullText.match(/"lessonOverview"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+                if (overviewMatch) {
+                  try {
+                    lessonOverview =
+                      JSON.parse(`"${overviewMatch[1]}"`).trim().slice(0, 4000) || undefined;
+                  } catch {
+                    /* Overview is optional; valid outlines remain usable. */
+                  }
+                }
                 if (!courseTitle) {
                   // The head-bound streaming scan can miss a title the model
                   // placed after the outlines array or past the 8KB head window;
@@ -621,6 +641,7 @@ export async function POST(req: NextRequest) {
               outlines: uniquifiedOutlines,
               languageDirective: languageDirective || DEFAULT_LANGUAGE_DIRECTIVE,
               courseTitle: courseTitle || undefined,
+              lessonOverview,
               taskEngineMode,
             });
             controller.enqueue(encoder.encode(`data: ${doneEvent}\n\n`));

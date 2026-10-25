@@ -18,7 +18,7 @@ test('PPTX routing preserves ownership of the other services', () => {
     assert.deepEqual(target(path), {port: 8080, path});
   }
   for (const path of ['/app/course', '/api/session/current']) {
-    assert.deepEqual(target(path), {port: 8000, path});
+    assert.deepEqual(target(path), {port: 8001, path});
   }
   assert.deepEqual(target('/teacher/vendor/maic-importer/index.js'), {
     port: 3200, path: '/vendor/maic-importer/index.js',
@@ -32,9 +32,12 @@ for (const [file, upstream] of [
 ]) {
   test(`${file} serves the root importer path from the teacher`, () => {
     const config = readFileSync(new URL('../deployment/' + file, import.meta.url), 'utf8');
-    const route = config.match(/handle \/vendor\/maic-importer\/\*\s*\{([^}]+)\}/);
+    const imported = config.match(/import (generated\/gateway-routes-[\w-]+\.conf)/);
+    assert.ok(imported, 'Caddyfile must import the generated route table');
+    const routes = readFileSync(new URL('../deployment/' + imported[1], import.meta.url), 'utf8');
+    const route = routes.match(/handle \/vendor\/maic-importer\/\*\s*\{([^}]+)\}/);
     assert.ok(route, 'A root importer route must precede the platform SPA fallback');
     assert.ok(route[1].includes('reverse_proxy ' + upstream));
-    assert.ok(config.indexOf(route[0]) < config.lastIndexOf('handle {'));
+    assert.ok(routes.indexOf(route[0]) < routes.lastIndexOf('handle {'));
   });
 }

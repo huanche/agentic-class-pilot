@@ -39,6 +39,10 @@ export interface GenerationSessionState {
   languageDirective?: string;
   // Concise course title inferred from outline generation (used as the stage name)
   courseTitle?: string;
+  /** Editable teaching intent; outlineOverview is the version used by the current outline. */
+  lessonOverview?: string;
+  outlineOverview?: string;
+  outlineBaseRequirement?: string;
   // Server-effective vocational mode from the outline generation done event.
   taskEngineMode?: boolean;
   /** Conversion contract selected by the teacher before generation. */

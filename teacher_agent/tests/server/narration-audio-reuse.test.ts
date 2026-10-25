@@ -21,6 +21,7 @@ vi.mock('@/lib/server/provider-config', () => ({
   resolveTTSApiKey: () => '',
   resolveTTSBaseUrl: () => 'http://127.0.0.1:13305/v1',
   resolveTTSVoice: () => 'zf_xiaoyi',
+  resolveTTSModel: (_provider: string, model?: string) => model,
   resolveImageApiKey: () => '',
   resolveImageBaseUrl: () => '',
   resolveVideoApiKey: () => '',
@@ -80,7 +81,7 @@ it('synthesizes only changed text and keeps checkpoint audio readable after cand
       { id: 'b', type: 'speech', text: '第二段完整讲解。' },
       { id: 'c', type: 'speech', text: '第三段完整讲解。' },
     ],
-  };
+  } as unknown as Scene;
   const options = { isolateAudio: true, failFast: true, cacheScope: 'same-owner' };
   await generateTTSForClassroom([original], 'class', 'http://localhost', undefined, options);
   await finalizeClassroomTtsAudio(original, 'class', 'http://localhost');

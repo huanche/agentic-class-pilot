@@ -17,6 +17,7 @@ import secrets
 import base64
 import time
 import uuid
+from html import unescape
 from urllib.parse import quote
 
 import httpx
@@ -178,18 +179,18 @@ def _knowledge_points_from_markdown(content: str) -> list[dict]:
 def _knowledge_artifact_rubric(entries: list[dict], lesson_id: str | None) -> dict | None:
     """已发布条目里的「知识点」工件 → rubric（学生端知识点的唯一来源）。
 
-    优先取课时归属匹配 lesson_id 的那份；全课程只有一份时允许无归属匹配。
+    只取课时归属匹配 lesson_id 的文件，禁止跨课时或无归属兜底。
     没有 knowledge-points 工件 → None：学生端开场会明说「没有登记知识点」，
     按视频内容复习（2026-10-21 与用户对齐的决策：不做其他兜底）。
     """
+    if not lesson_id:
+        return None
     docs = [entry for entry in entries
             if entry.get("resourceType") == "knowledge-points"]
     if not docs:
         return None
     chosen = next((entry for entry in docs
                    if (entry.get("scope") or {}).get("lessonId") == lesson_id), None)
-    if chosen is None and len(docs) == 1:
-        chosen = docs[0]
     if chosen is None:
         return None
     points = _knowledge_points_from_markdown(str(chosen.get("content") or ""))
@@ -271,6 +272,7 @@ SCHEMA_VERSION = 1
 
 class LearningContextRequest(BaseModel):
     launch_token: str
+    lesson_id: str | None = None
 
 
 def _published_package_payload(session: SessionDep, course_id: uuid.UUID) -> dict | None:
@@ -310,7 +312,9 @@ def published_course_entries(session: SessionDep, course_id: uuid.UUID) -> list[
         if visible(item):
             entries.append({"id": item["id"], "title": item.get("title", ""),
                             "content": item.get("content", ""), "citations": item.get("citations", []),
-                            "scope": item.get("scope"), "kind": "artifact",
+                            "scope": ({"type": "lesson", "lessonId": item["publicationPlacement"]["lessonId"]}
+                                      if (item.get("publicationPlacement") or {}).get("lessonId")
+                                      else item.get("scope")), "kind": "artifact",
                             # 教师确认的类型保存在发布归属中，兼容旧版顶层字段。
                             "resourceType": (item.get("publicationPlacement") or {}).get("resourceType")
                                             or item.get("resourceType"),
@@ -343,13 +347,22 @@ def _classroom_view(session: SessionDep, classroom_id: str) -> dict:
         raise HTTPException(404, "课堂不存在或尚未发布")
     scenes = []
     for scene in (row[1] or []):
+        content = scene.get("content") or {}
+        canvas = (content.get("canvas") or {}) if isinstance(content, dict) else {}
+        visible_text = []
+        for element in canvas.get("elements") or []:
+            if isinstance(element, dict) and element.get("type") == "text":
+                value = unescape(re.sub(r"<[^>]*>", " ", str(element.get("content") or ""))).strip()
+                if value:
+                    visible_text.append(value)
         scenes.append({
             "id": scene.get("id"),
             "type": scene.get("type", "slide"),
             "order": int(scene.get("order") or 1),
             "title": scene.get("title", ""),
-            # speech texts only: the student agent segments need narration;
-            # canvas internals stay in the player's own data channel
+            "visibleText": visible_text,
+            # Text shown to the student and narration ground the new agent;
+            # media assets stay in the player's own data channel.
             "actions": [
                 {"id": action.get("id"), "type": action.get("type", "speech"),
                  "text": action.get("text")}
@@ -398,7 +411,7 @@ def _published_lessons(session: SessionDep, course_id: uuid.UUID,
         classroom = _classroom_view(session, artifact["classroomId"])
         classroom["playbackToken"] = _issue_playback_grant(user_id, course_id, artifact["classroomId"])
         selected[lesson_id] = {
-            "id": lesson_id, "title": lesson.get("title") or artifact.get("title"),
+            "id": lesson_id, "title": artifact.get("title") or lesson.get("title"),
             "order": lesson.get("order", 1), "week": placement.get("week") or lesson.get("week"),
             "lessonNumber": placement.get("lessonNumber") or lesson.get("lessonNumber"),
             "teachingHours": placement.get("teachingHours") or lesson.get("teachingHours"),
@@ -471,20 +484,39 @@ def student_learning_context(body: LearningContextRequest, session: SessionDep,
         if not package_payload:
             raise HTTPException(409, "课程尚未发布学习内容")
 
-        lessons = _published_lessons(session, course_id, user_id)
-        classroom_id = lessons[0]["classroom"]["id"] if lessons else None
+        published_lessons = _published_lessons(session, course_id, user_id)
+        # 目录只含摘要。未选课时不下发任何课堂正文、材料或知识点。
+        lesson_catalog = [
+            {**{key: lesson.get(key) for key in (
+                "id", "title", "order", "week", "lessonNumber", "teachingHours")},
+             "segmentCount": len(lesson["classroom"].get("scenes") or [])}
+            for lesson in published_lessons
+        ]
+        selected = next((lesson for lesson in published_lessons if lesson["id"] == body.lesson_id), None)
+        if body.lesson_id and selected is None:
+            raise HTTPException(404, "所选课时不存在或尚未发布")
+        lessons = [selected] if selected else []
+        classroom_id = selected["classroom"]["id"] if selected else None
+        entries = []
+        if selected:
+            for entry in package_payload.get("entries") or []:
+                scope = entry.get("scope") or {}
+                if (scope.get("lessonId") == selected["id"] or
+                        (scope.get("type") == "course" and not scope.get("lessonId")
+                         and entry.get("resourceType") != "knowledge-points")):
+                    entries.append(entry)
         knowledge_package = {
             "title": package_payload.get("title") or course[0],
             "summary": package_payload.get("summary") or "",
-            "entries": package_payload.get("entries") or [],
+            "entries": entries,
         }
         # 知识点只来自教师发布的「知识点」文件（markdown：末级标题=知识点，
         # 其下列表=应会要点），以 rubric 结构化下发（学生端 evaluation 优先读
         # rubric）。没有工件 → 不下发 rubric，学生端开场明说「没有登记知识
         # 点」，按视频内容复习——不做场景大纲/知识图谱等其他兜底
-        # （2026-10-21 与用户对齐的决策）。锚定课时与课堂选择同源（lessons[0]）。
+        # 知识点与所选课时严格同源，目录请求不解析知识点。
         rubric = _knowledge_artifact_rubric(
-            knowledge_package["entries"], lessons[0]["id"] if lessons else None)
+            entries, selected["id"]) if selected else None
         if rubric:
             knowledge_package["rubric"] = rubric
         context = {
@@ -494,9 +526,12 @@ def student_learning_context(body: LearningContextRequest, session: SessionDep,
             "courseTitle": course[0],
             "publication": {"id": package_payload.get("id"), "version": int(package_payload.get("version") or 1)},
             "knowledgePackage": knowledge_package,
-            "classroom": _classroom_view(session, classroom_id) if classroom_id else None,
+            "selectedLessonId": selected["id"] if selected else None,
+            "lessonCatalog": lesson_catalog,
+            "classroom": selected["classroom"] if selected else None,
             "lessons": lessons,
-            "grounding": _grounding_context(session, course_id),
+            # 课程级grounding尚未接入学生端，也不能夹带其他课时正文。
+            "grounding": {},
         }
         grant = _issue_playback_grant(user_id, course_id, classroom_id) if classroom_id else None
         if grant:

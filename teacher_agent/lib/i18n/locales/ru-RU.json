@@ -1350,6 +1350,7 @@
     "providerElevenLabsTTS": "ElevenLabs TTS",
     "providerMiniMaxTTS": "MiniMax TTS",
     "providerLemonadeTTS": "Lemonade TTS (Локальный)",
+    "providerHojoTTS": "Hojo TTS (Локальный)",
     "providerBrowserNativeTTS": "Встроенный TTS браузера",
     "voxcpmBackend": "Бэкенд",
     "voxcpmBaseUrlPending": "Введите Base URL, чтобы сформировать URL запроса",

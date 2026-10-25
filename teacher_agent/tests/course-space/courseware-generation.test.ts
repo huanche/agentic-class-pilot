@@ -8,6 +8,7 @@ import type {
   CourseMaterialRecord,
   CourseSpace,
 } from '@/lib/course-space';
+import { buildInitialCourseGovernance } from '@/lib/course-governance/governance';
 
 const material = (
   id: string,
@@ -150,6 +151,34 @@ describe('lesson courseware source selection and outline handoff', () => {
     expect(session.previewPhase).toBe('preparing');
     expect(session.sceneOutlines).toBeUndefined();
   });
+
+  it.each(['讲义.pdf', '旧课件.PPT', '资料.pptx'])(
+    'provides a source fingerprint for enhanced extracted material %s without a PPTX canvas',
+    async (name) => {
+      const input = options();
+      input.course.materials[1].name = name;
+      const session = await createCoursewareGenerationSession(input, read);
+      expect(session.sourceFingerprint?.sha256).toMatch(/^[a-f0-9]{64}$/);
+      const record = buildInitialCourseGovernance({
+        stageId: 'regression',
+        mode: session.conversionMode!,
+        source: session.sourceFingerprint!,
+        outlines: [
+          {
+            id: 'page',
+            title: '变量',
+            type: 'slide',
+            order: 1,
+            description: '区分变量类型',
+            keyPoints: [],
+          },
+        ],
+      });
+      expect(record.sceneReviews[0].sourceRefs[0].sourceSha256).toBe(
+        session.sourceFingerprint?.sha256,
+      );
+    },
+  );
 
   it('preserves a teacher-selected duration instead of replacing it with the default', async () => {
     const session = await createCoursewareGenerationSession(

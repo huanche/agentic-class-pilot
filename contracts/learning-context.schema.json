@@ -46,6 +46,21 @@
       }
     },
     "classroom": {"$ref": "#/$defs/classroom"},
+    "selectedLessonId": {"type": ["string", "null"]},
+    "lessonCatalog": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id"],
+        "properties": {
+          "id": {"type": "string"}, "title": {"type": ["string", "null"]},
+          "order": {"type": ["integer", "null"]}, "week": {"type": ["integer", "null"]},
+          "lessonNumber": {"type": ["integer", "null"]},
+          "teachingHours": {"type": ["number", "null"]},
+          "segmentCount": {"type": "integer"}
+        }
+      }
+    },
     "lessons": {
       "type": "array",
       "items": {

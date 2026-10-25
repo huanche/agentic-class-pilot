@@ -7,7 +7,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\start-local.ps1 -CheckOnly
 powershell -NoProfile -ExecutionPolicy Bypass -File .\start-local.ps1
 ```
 
-访问 `http://localhost:8088`。不要在 8080、3200、8000 上登录后再跳转，这些是内部地址。启动器只在子进程中统一公共 URL，不改写配置文件。
+访问 `http://localhost:8088`。不要在 8080、3200、8001 上登录后再跳转，这些是内部地址。启动器只在子进程中统一公共 URL，不改写配置文件。
 
 首次安装依赖、生成配置仍按根 README 执行。此入口用于已初始化的本地数据库；若迁移版本落后，会明确失败，请先审查并在 `platform/backend` 执行本地 `alembic upgrade head`。不会自动执行迁移、重置数据库卷、轮换密码或创建用户。
 

@@ -25,7 +25,7 @@ services:
     local: host.docker.internal:3200
     compose: teacher-agent:3200
   student:
-    local: host.docker.internal:8000
+    local: host.docker.internal:8001
 
 # ---------------------------------------------------------------------
 # 环境清单（每个环境一份路由表，顺序与现有 Caddyfile 完全一致）

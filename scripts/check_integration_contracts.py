@@ -300,7 +300,7 @@ def check(root: Path = ROOT) -> list[str]:
     if issues:
         return problems + issues
     Draft202012Validator.check_schema(schema)
-    fixture_path = root / "student_agent/tests/fixtures/platform-learning-context-v1.json"
+    fixture_path = root / "contracts/fixtures/platform-learning-context-v1.json"
     validator = Draft202012Validator(schema, format_checker=FormatChecker())
     for error in validator.iter_errors(json.loads(fixture_path.read_text(encoding="utf-8"))):
         problems.append(f"Legacy learning-context fixture: {error.json_path}: {error.message}")
