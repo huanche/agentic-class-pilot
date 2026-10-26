@@ -64,6 +64,7 @@ test("replay immediately after ending a lesson", async ({ page }) => {
   await page.getByRole("button", { name: /分组交换与帧中继基础/ }).click();
   await page.getByRole("button", { name: "开始或继续上课" }).click();
   await page.getByRole("button", { name: "进入复述与讨论 →" }).click();
+  await page.getByRole("button", { name: "确定进入复述与讨论" }).click();
   await page.getByRole("button", { name: "结束本课并查看反馈" }).click();
   await page.getByRole("button", { name: "回看视频" }).click();
   await expectReplay(page);
