@@ -70,6 +70,8 @@ export default function StudentApp() {
   const [busy, setBusy] = useState(false);
   const [replyPending, setReplyPending] = useState(false);
   const [error, setError] = useState("");
+  const [replayError, setReplayError] = useState("");
+  const [replayLoading, setReplayLoading] = useState(false);
   const [videoEnded, setVideoEnded] = useState(false);
   const [preparation, setPreparation] = useState("idle");
   const [preparationError, setPreparationError] = useState("");
@@ -78,6 +80,12 @@ export default function StudentApp() {
   const [feedback, setFeedback] = useState(null);
   const [agentStage, setAgentStage] = useState("");
   const [learningProgress, setLearningProgress] = useState(null);
+  const [videoUpdated, setVideoUpdated] = useState(false);
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [showEarlyEndWarning, setShowEarlyEndWarning] = useState(false);
+  const [showVideoAdvanceConfirm, setShowVideoAdvanceConfirm] = useState(false);
+  const [progressOpen, setProgressOpen] = useState(true);
+  const [conversationSize, setConversationSize] = useState(null);
   const sessionId = useRef("");
   const activeLessonId = useRef(null);
   const browserCourseKey = useRef("");
@@ -86,13 +94,21 @@ export default function StudentApp() {
   const playerSlot = useRef(null);
   const chatLog = useRef(null);
   const composerInput = useRef(null);
+  const conversationStage = useRef(null);
+  const conversationResize = useRef(null);
 
   function showSession(saved) {
+    setReplayError("");
+    setShowEarlyEndWarning(false);
+    setShowVideoAdvanceConfirm(false);
+    setConversationSize(null);
     sessionId.current = saved.sessionId;
     activeLessonId.current = saved.lessonId || null;
     if (saved.browserCourseKey) browserCourseKey.current = saved.browserCourseKey;
-    if (!saved.lessonId) catalogCourses.current = saved.courses || [];
-    const visibleCourses = catalogCourses.current || saved.courses || [];
+    const visibleCourses = saved.courses || catalogCourses.current || [];
+    catalogCourses.current = visibleCourses;
+    setVideoUpdated(Boolean(saved.videoUpdated));
+    setVideoEnded(false);
     setCourses(visibleCourses);
     setMessages(saved.messages || []);
     setPostclassMessages(saved.postclassMessages || []);
@@ -103,7 +119,11 @@ export default function StudentApp() {
     setPreparation(saved.preparation || "ready");
     setPreparationError(saved.preparationError || "");
     setPreparationRequestId(saved.preparationRequestId || "");
-    const selectedCourse = visibleCourses.find((item) => item.lessons.some((entry) => entry.id === saved.lessonId)) || visibleCourses[0];
+    // The catalog contains summaries only. Restore the active lesson from
+    // this session's course, keeping its player URL and classroom binding.
+    const restoredCourse = (saved.courses || []).find((item) => item.lessons.some((entry) => entry.id === saved.lessonId));
+    const selectedCourse = restoredCourse
+      || visibleCourses.find((item) => item.lessons.some((entry) => entry.id === saved.lessonId)) || visibleCourses[0];
     setCourse(selectedCourse || null);
     setLesson(selectedCourse?.lessons.find((entry) => entry.id === saved.lessonId) || null);
     setPhase(saved.phase === "idle" || saved.phase === "courses" ? "lessons" : saved.phase);
@@ -143,8 +163,9 @@ export default function StudentApp() {
       const savedId = localStorage.getItem(`student_browser_session:${resumeKey}`);
       const snapshot = localStorage.getItem(`student_browser_snapshot:${resumeKey}`);
       const resume = freshToken ? Promise.resolve(null) : entry.freshSessionMode && snapshot
-        ? api("/session/browser-restore", "POST", { snapshot, launch_token: token }).catch(() => null)
-        : savedId ? api(`/session/${savedId}`).catch(() => null) : Promise.resolve(null);
+        ? api("/session/browser-restore", "POST", { snapshot, launch_token: token })
+          .catch((err) => { if (err.status === 400 || err.status === 404) return null; throw err; })
+        : savedId ? api(`/session/${savedId}`).catch((err) => { if (err.status === 404) return null; throw err; }) : Promise.resolve(null);
       return resume.then((saved) => {
         if (saved) {
           showSession(saved);
@@ -162,16 +183,55 @@ export default function StudentApp() {
   }, []);
 
   useEffect(() => {
+    const resetOnViewportResize = () => setConversationSize(null);
+    window.addEventListener("resize", resetOnViewportResize);
+    return () => window.removeEventListener("resize", resetOnViewportResize);
+  }, []);
+
+  function startConversationResize(event, edge) {
+    const stage = conversationStage.current;
+    const panel = event.currentTarget.parentElement;
+    if (!stage || !panel) return;
+    const stageRect = stage.getBoundingClientRect();
+    const panelRect = panel.getBoundingClientRect();
+    const left = panelRect.left - stageRect.left;
+    conversationResize.current = { edge, startX: event.clientX, left, right: left + panelRect.width, stageWidth: stageRect.width };
+    event.currentTarget.setPointerCapture(event.pointerId);
+    event.preventDefault();
+  }
+
+  function moveConversationResize(event) {
+    const drag = conversationResize.current;
+    if (!drag) return;
+    const minLeft = window.matchMedia("(max-width: 780px)").matches ? 62 : 320;
+    const minWidth = Math.min(360, Math.max(120, drag.stageWidth - minLeft));
+    const delta = event.clientX - drag.startX;
+    const left = drag.edge === "left"
+      ? Math.min(Math.max(drag.left + delta, minLeft), drag.right - minWidth)
+      : drag.left;
+    const right = drag.edge === "right"
+      ? Math.max(Math.min(drag.right + delta, drag.stageWidth), drag.left + minWidth)
+      : drag.right;
+    setConversationSize({ left, width: right - left });
+  }
+
+  useEffect(() => {
     if ((phase !== "video" && phase !== "replay") || !lesson || !playerSlot.current) return;
     let handle;
+    function playerError(err) {
+      if (phase === "replay") {
+        setReplayError(err.message);
+        setPhase("done");
+      } else setError(err.message);
+    }
     try {
       handle = platformPlayerAdapter.mount(playerSlot.current, {
         lesson: lesson,
         replay: phase === "replay",
-        onEnded: () => setVideoEnded(true),
-        onError: (err) => setError(err.message),
+        onEnded: () => { setVideoEnded(true); setShowVideoAdvanceConfirm(false); },
+        onError: playerError,
       });
-    } catch (err) { setError(err.message); }
+    } catch (err) { playerError(err); }
     return () => { if (typeof handle === "function") handle(); };
   }, [phase, lesson]);
 
@@ -238,7 +298,7 @@ export default function StudentApp() {
   async function begin(selected) {
     if (busy) return;
     setBusy(true); setError("");
-    setVideoEnded(false);
+    setVideoEnded(false); setShowVideoAdvanceConfirm(false);
     setPreparation("pending"); setPreparationError("");
     try {
       const state = await api(`/session/${sessionId.current}/begin/${encodeURIComponent(selected.id)}`, "POST");
@@ -246,6 +306,7 @@ export default function StudentApp() {
       const playableLesson = selectedCourse?.lessons.find((candidate) => candidate.id === selected.id);
       if (!playableLesson?.playerUrl) throw new Error("该课时没有可播放的视频");
       sessionId.current = state.sessionId;
+      setVideoUpdated(Boolean(state.videoUpdated));
       activeLessonId.current = selected.id;
       setCourses(state.courses); setCourse(selectedCourse); setLesson(playableLesson);
       setMessages(state.messages); setPhase(state.phase);
@@ -271,6 +332,7 @@ export default function StudentApp() {
   }
 
   async function goDiscussion() {
+    setShowVideoAdvanceConfirm(false);
     setBusy(true); setError("");
     try {
       const state = await api(`/session/${sessionId.current}/discussion`, "POST");
@@ -281,6 +343,12 @@ export default function StudentApp() {
       setPreparationRequestId(state.preparationRequestId || "");
     } catch (err) { setError(err.message); }
     finally { setBusy(false); }
+  }
+
+  function requestDiscussion() {
+    if (busy || preparation === "pending") return;
+    if (videoEnded) goDiscussion();
+    else setShowVideoAdvanceConfirm(true);
   }
 
   async function send(event) {
@@ -319,11 +387,31 @@ export default function StudentApp() {
     setBusy(true); setError("");
     try {
       const state = await api(`/session/${sessionId.current}/end`, "POST");
-      setFeedback(state.feedback); setPhase(state.phase);
+      setFeedback(state.feedback); setPhase(state.phase); setShowEarlyEndWarning(false);
       setAgentStage(state.agentStage); setLearningProgress(state.learningProgress || null);
     }
     catch (err) { setError(err.message); }
     finally { setBusy(false); }
+  }
+
+  async function openReplay(refresh = false) {
+    if (busy) return;
+    setBusy(true); setReplayLoading(true); setError(""); setReplayError("");
+    try {
+      let playableLesson = lesson;
+      if (refresh || !playableLesson?.playerUrl) {
+        const playback = await api(`/session/${sessionId.current}/playback`, "POST",
+          { launch_token: launchToken.current });
+        playableLesson = playback.lesson;
+        if (playback.courseId !== course?.id || playableLesson?.id !== activeLessonId.current
+            || (lesson?.classroomId && playableLesson?.classroomId !== lesson.classroomId)) {
+          throw new Error("播放信息与当前课时不匹配，请从平台重新进入课程");
+        }
+      }
+      if (!playableLesson?.playerUrl) throw new Error("本课时暂时没有可播放的视频，请稍后重试或联系教师");
+      setLesson(playableLesson); setVideoEnded(false); setPhase("replay");
+    } catch (err) { setReplayError(err.message); }
+    finally { setBusy(false); setReplayLoading(false); }
   }
 
   async function openPostclass() {
@@ -337,7 +425,34 @@ export default function StudentApp() {
     finally { setBusy(false); }
   }
 
+  async function resetLesson() {
+    if (busy || !lesson) return;
+    const lessonId = lesson.id;
+    const courseKey = browserCourseKey.current;
+    setBusy(true); setError("");
+    try {
+      const fresh = await api(`/session/${sessionId.current}/reset`, "POST",
+        { launch_token: launchToken.current });
+      try {
+        const lessonKey = `${courseKey}:${lessonId}`;
+        localStorage.removeItem(`student_browser_snapshot:${lessonKey}`);
+        localStorage.removeItem(`student_browser_session:${lessonKey}`);
+        const legacyKey = `student_browser_snapshot:${courseKey}`;
+        if (snapshotState(localStorage.getItem(legacyKey))?.lessonId === lessonId) {
+          localStorage.removeItem(legacyKey);
+          localStorage.removeItem(`student_browser_session:${courseKey}`);
+        }
+      } catch {
+        // The server has already removed the lesson; old snapshots fail recovery.
+      }
+      setShowResetConfirm(false);
+      showSession(fresh);
+    } catch (err) { setError(err.message); }
+    finally { setBusy(false); }
+  }
+
   return <main className="app">
+    {videoUpdated && <p role="status">教师已更新本课教学视频，旧学习记录已清除，请从新版视频重新开始学习。</p>}
     {phase === "loading" && <section className="view"><p>正在载入课堂…</p></section>}
     {phase === "auth" && <section className="view"><div className="lesson"><h1 className="lesson__title">从课程平台进入课堂</h1><p className="lesson__summary">登录平台后，选择已发布课时开始学习。</p>{error && <p role="alert">{error}</p>}<a className="btn btn--primary" href={`${platformUrl || "http://localhost:8088"}/login`}>前往平台登录</a></div></section>}
     {phase === "error" && <section className="view"><h1>暂时无法进入课堂</h1><p>{error}</p></section>}
@@ -360,13 +475,19 @@ export default function StudentApp() {
       {!course?.lessons.length && <p>本课程暂无已开放课时。</p>}
     </section>}
     {phase === "lesson" && <section className="view"><header className="view__header"><button className="back" onClick={() => setPhase("lessons")}>← 返回课时</button><h2 className="view__title">{lesson?.title}</h2></header><div className="view__body"><div className="lesson"><p className="lesson__eyebrow">{course?.title} · 第 {lesson?.week} 周</p><h3 className="lesson__title">{lesson?.title}</h3><p className="lesson__summary">{lesson?.summary || "准备好后开始本节课。"}</p><button className="btn btn--primary" onClick={() => begin(lesson)} disabled={busy}>开始或继续上课</button></div></div></section>}
-    {(phase === "video" || phase === "discussion" || phase === "done" || phase === "replay" || phase === "postclass") && <section className="view classroom-view"><header className="view__header"><h2 className="view__title">{lesson?.title || "课堂"}</h2><span className="view__badge">{phase === "video" ? "教学视频" : phase === "discussion" ? STAGE_TITLES[agentStage] || "复述与讨论" : phase === "replay" ? "课后回看" : phase === "postclass" ? "课后对话" : "已结束"}</span></header><div className="classroom-layout">
-      <LessonProgress phase={phase} agentStage={agentStage} progress={learningProgress} postclassStage={postclassStage} />
+    {(phase === "video" || phase === "discussion" || phase === "done" || phase === "replay" || phase === "postclass") && <section className="view classroom-view"><header className="view__header"><h2 className="view__title">{lesson?.title || "课堂"}</h2><span className="view__badge">{phase === "video" ? "教学视频" : phase === "discussion" ? STAGE_TITLES[agentStage] || "复述与讨论" : phase === "replay" ? "课后回看" : phase === "postclass" ? "课后对话" : "已结束"}</span></header><div className={`classroom-layout${progressOpen ? "" : " classroom-layout--progress-hidden"}${phase === "video" || phase === "replay" ? " classroom-layout--video" : ""}${phase === "discussion" || phase === "postclass" ? " classroom-layout--conversation" : ""}`}>
+      <nav className="classroom-tools" aria-label="课堂工具"><ul className="classroom-tools__list"><li><button className={`classroom-tools__button${progressOpen ? " is-active" : ""}`} type="button" title={progressOpen ? "收起课堂进程" : "打开课堂进程"} aria-label={progressOpen ? "收起课堂进程" : "打开课堂进程"} aria-controls="lesson-progress-panel" aria-expanded={progressOpen} onClick={() => setProgressOpen((open) => !open)}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3" /><path d="M9 9h7M9 12h7M9 15h5" /></svg></button></li></ul></nav>
+      <div className="classroom-progress-slot" hidden={!progressOpen}>
+        <LessonProgress id="lesson-progress-panel" phase={phase} agentStage={agentStage} progress={learningProgress} postclassStage={postclassStage} />
+        <button className="classroom-progress-close" type="button" aria-label="收起课堂进程" title="收起课堂进程" onClick={() => setProgressOpen(false)}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m14 5-7 7 7 7" /></svg></button>
+      </div>
       <div className="view__body classroom-content">
-      {phase === "video" && <div className="stage stage--video"><div className="video"><div className="video-player-slot" ref={playerSlot} aria-label="视频播放器挂载区域" /><div className="video-player-actions"><p className="video-player-status">{videoEnded ? "视频播放完毕，可以进入复述与讨论。" : "观看视频后，点击按钮进入下一阶段。"}</p><button className="btn btn--primary" type="button" disabled={busy || preparation === "pending"} onClick={preparation === "error" ? retryPreparation : goDiscussion}>{preparation === "pending" ? "复述与讨论准备中…" : preparation === "error" ? "重试准备复述与讨论" : "进入复述与讨论 →"}</button>{preparation === "error" && preparationError && <p role="alert">{preparationError}{preparationRequestId && `（问题编号：${preparationRequestId}）`}</p>}</div></div></div>}
+      {phase === "video" && <div className="stage stage--video"><div className="video"><div className="video-player-slot" ref={playerSlot} aria-label="视频播放器挂载区域" /><div className="video-player-actions"><p className="video-player-status">{videoEnded ? "视频播放完毕，可以进入复述与讨论。" : "视频尚未播放完，提前进入下一阶段时会再次确认。"}</p><button className="btn btn--primary" type="button" disabled={busy || preparation === "pending"} onClick={preparation === "error" ? retryPreparation : requestDiscussion}>{preparation === "pending" ? "复述与讨论准备中…" : preparation === "error" ? "重试准备复述与讨论" : "进入复述与讨论 →"}</button>{preparation === "error" && preparationError && <p role="alert">{preparationError}{preparationRequestId && `（问题编号：${preparationRequestId}）`}</p>}</div>{showVideoAdvanceConfirm && !videoEnded && <div className="video-advance-confirm" role="alert"><strong>视频还没有播放完</strong><p>现在进入复述与讨论会跳过剩余的视频内容，是否确定进入下一阶段？</p><div className="video-advance-confirm__actions"><button className="btn btn--ghost" type="button" disabled={busy} onClick={() => setShowVideoAdvanceConfirm(false)}>继续观看视频</button><button className="btn btn--primary" type="button" disabled={busy} onClick={goDiscussion}>{busy ? "正在进入…" : "确定进入复述与讨论"}</button></div></div>}</div></div>}
       {phase === "replay" && <div className="stage stage--video"><div className="video"><div className="video-player-slot" ref={playerSlot} aria-label="课后视频播放器" /><div className="video-player-actions"><p className="video-player-status">可以按自己的节奏回看本节课。</p><button className="btn btn--primary" type="button" onClick={() => setPhase("done")}>返回学习反馈</button></div></div></div>}
-      {(phase === "discussion" || phase === "postclass") && <div className="stage stage--summary">
-        <div className="conversation-panel">
+      {(phase === "discussion" || phase === "postclass") && <div className="stage stage--summary" ref={conversationStage}>
+        <div className="conversation-panel" style={conversationSize ? { width: conversationSize.width, marginLeft: conversationSize.left, marginRight: 0 } : undefined}>
+          <div className="conversation-resize-handle conversation-resize-handle--left" role="separator" aria-label="拖动调整对话框左边缘" aria-orientation="vertical" onPointerDown={(event) => startConversationResize(event, "left")} onPointerMove={moveConversationResize} onPointerUp={() => { conversationResize.current = null; }} onPointerCancel={() => { conversationResize.current = null; }} />
+          <div className="conversation-resize-handle conversation-resize-handle--right" role="separator" aria-label="拖动调整对话框右边缘" aria-orientation="vertical" onPointerDown={(event) => startConversationResize(event, "right")} onPointerMove={moveConversationResize} onPointerUp={() => { conversationResize.current = null; }} onPointerCancel={() => { conversationResize.current = null; }} />
           <div className="conversation-heading">
             <h3 className="new-stage-title">{phase === "postclass"
               ? postclassStage === "remediation" ? "继续未完成的学习" : "全部完成 · 自由提问"
@@ -391,11 +512,12 @@ export default function StudentApp() {
             </form>}
           <div className="conversation-actions">
             {phase === "postclass" ? <button className="btn btn--primary" type="button" disabled={busy} onClick={() => setPhase("done")}>返回学习反馈</button>
-              : <><span className="conversation-end-hint">{agentStage === "wrapup" ? "学习反馈已准备好生成" : "也可以提前结束，未掌握内容会记录在反馈中"}</span><button className={`btn ${agentStage === "wrapup" ? "btn--primary" : "btn--ghost"}`} type="button" disabled={busy} onClick={end}>{busy && !replyPending ? "正在保存…" : agentStage === "wrapup" ? "结束本课并查看反馈" : "提前结束本课"}</button></>}
+              : <><span className="conversation-end-hint">{agentStage === "wrapup" ? "学习反馈已准备好生成" : "提前结束仅供测试使用"}</span><button className={`btn ${agentStage === "wrapup" ? "btn--primary" : "btn--ghost"}`} type="button" disabled={busy} onClick={agentStage === "wrapup" ? end : () => setShowEarlyEndWarning(true)}>{busy && !replyPending ? "正在保存…" : agentStage === "wrapup" ? "结束本课并查看反馈" : "提前结束本课"}</button></>}
           </div>
+          {phase === "discussion" && agentStage !== "wrapup" && showEarlyEndWarning && <div className="early-end-warning" role="alert"><strong>提前结束仅限测试使用</strong><p>学生请勿使用此按钮。确认后将跳过正常学习阶段，直接结束本课；尚未完成的复述和讨论会记录为未完成。</p><div className="early-end-warning__actions"><button className="btn btn--ghost" type="button" disabled={busy} onClick={() => setShowEarlyEndWarning(false)}>取消，继续学习</button><button className="btn btn--reset-confirm" type="button" disabled={busy} onClick={end}>{busy ? "正在结束…" : "确认提前结束（仅测试）"}</button></div></div>}
         </div>
       </div>}
-      {phase === "done" && <div className="stage stage--done"><div className="done done--feedback"><span className="done__check" aria-hidden="true">✓</span><p>第 {lesson?.week} 周 · 第 {lesson?.lessonNumber} 次课</p><h3 className="done__title">本节课结束</h3><LessonFeedback feedback={feedback} /><div className="postclass-actions"><button className="btn btn--primary" type="button" onClick={() => { setVideoEnded(false); setPhase("replay"); }}>回看视频</button><button className="btn btn--primary" type="button" disabled={busy} onClick={openPostclass}>{postclassStage === "open" ? "与 AI 自由提问" : "继续未完成的学习"}</button><button className="btn btn--ghost" type="button" onClick={() => setPhase("lessons")}>返回课时列表</button><a className="btn btn--ghost" href={`${platformUrl || "http://localhost:8088"}/student`}>返回首页</a></div></div></div>}
+      {phase === "done" && <div className="stage stage--done"><div className="done done--feedback"><span className="done__check" aria-hidden="true">✓</span><p>第 {lesson?.week} 周 · 第 {lesson?.lessonNumber} 次课</p><h3 className="done__title">本节课结束</h3><LessonFeedback feedback={feedback} />{replayError && <p className="replay-error" role="alert">暂时无法回看：{replayError}</p>}<div className="postclass-actions"><button className="btn btn--primary" type="button" disabled={busy} onClick={() => openReplay(Boolean(replayError))}>{replayLoading ? "正在获取播放信息…" : replayError ? "重试回看" : "回看视频"}</button><button className="btn btn--primary" type="button" disabled={busy} onClick={openPostclass}>{postclassStage === "open" ? "与 AI 自由提问" : "继续未完成的学习"}</button><button className="btn btn--ghost" type="button" disabled={busy} onClick={() => setPhase("lessons")}>返回课时列表</button><a className="btn btn--ghost" href={`${platformUrl || "http://localhost:8088"}/student`}>返回首页</a></div><div className="lesson-reset"><button className="btn btn--reset" type="button" disabled={busy} onClick={() => setShowResetConfirm(true)}>重置本课学习进度</button>{showResetConfirm && <div className="lesson-reset__confirm" role="group" aria-label="确认重置本课学习进度"><p>确定重新学习「{lesson?.title}」吗？本课的对话、知识点掌握情况和反馈将被删除，其他课时不受影响。此操作无法撤销。</p><div><button className="btn btn--ghost" type="button" disabled={busy} onClick={() => setShowResetConfirm(false)}>取消</button><button className="btn btn--reset-confirm" type="button" disabled={busy} onClick={resetLesson}>{busy ? "正在重置…" : "确认重置本课"}</button></div></div>}</div></div></div>}
     </div></div></section>}
     {error && phase !== "error" && <p className="new-error" role="alert">{error}</p>}
   </main>;

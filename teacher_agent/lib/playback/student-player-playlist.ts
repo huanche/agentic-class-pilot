@@ -7,6 +7,15 @@ export function isAutoPlayedStudentScene(scene: PlaylistScene): boolean {
   return scene.type === 'slide';
 }
 
+/** A completion belongs only to the scene whose playback actually finished. */
+export function isCompletedStudentScene(
+  activeSceneId: string | null | undefined,
+  completedSceneId: string | null | undefined,
+  playbackCompleted: boolean,
+): boolean {
+  return Boolean(playbackCompleted && activeSceneId && activeSceneId === completedSceneId);
+}
+
 /** Return the next scene in the complete student lesson. */
 export function nextStudentPlaybackSlide(
   scenes: readonly PlaylistScene[],

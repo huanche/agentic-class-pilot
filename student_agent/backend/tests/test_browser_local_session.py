@@ -4,7 +4,7 @@ from pathlib import Path
 from threading import Lock
 
 import pytest
-from fastapi import HTTPException
+from fastapi import BackgroundTasks, HTTPException
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from backend import main
@@ -26,7 +26,7 @@ def test_signed_browser_snapshot_restores_after_memory_reset(monkeypatch):
     assert main.state(session)["browserKey"] == "demo:demo-lesson"
     monkeypatch.setattr(main.persistence, "restore", lambda *_: pytest.fail("must not read database"))
     main.sessions.clear()
-    restored = main.browser_restore(main.BrowserRestoreRequest(snapshot=snapshot))
+    restored = main.browser_restore(main.BrowserRestoreRequest(snapshot=snapshot), BackgroundTasks())
     assert restored["sessionId"] == session["id"]
     assert restored["messages"] == session["messages"]
     assert restored["feedback"] == session["feedback"]
@@ -38,7 +38,7 @@ def test_modified_browser_snapshot_is_rejected(monkeypatch):
     monkeypatch.setenv("STUDENT_FRESH_SESSION_MODE", "1")
     monkeypatch.setenv("STUDENT_SERVICE_KEY", "local-test-key")
     with pytest.raises(HTTPException) as captured:
-        main.browser_restore(main.BrowserRestoreRequest(snapshot="abc.def"))
+        main.browser_restore(main.BrowserRestoreRequest(snapshot="abc.def"), BackgroundTasks())
     assert captured.value.status_code == 400
 
 

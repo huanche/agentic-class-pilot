@@ -8,10 +8,10 @@ const STEPS = [
 
 export const STAGE_TITLES = Object.fromEntries(STEPS.map(({ id, title }) => [id, title]));
 
-export default function LessonProgress({ phase, agentStage, progress, postclassStage }) {
+export default function LessonProgress({ id, phase, agentStage, progress, postclassStage }) {
   const finished = ["done", "replay", "postclass"].includes(phase);
   const current = phase === "video" ? 0 : Math.max(1, STEPS.findIndex((step) => step.id === agentStage));
-  return <aside className="lesson-progress" aria-label="课堂阶段进度">
+  return <aside id={id} className="lesson-progress" aria-label="课堂阶段进度">
     <p className="lesson-progress__eyebrow">本课学习进度</p>
     <ol className="lesson-progress__steps">
       {STEPS.map((step, index) => {

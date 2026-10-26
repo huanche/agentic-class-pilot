@@ -43,6 +43,7 @@ import { formatPlaybackDuration, getCourseDurationSeconds } from '@/lib/playback
 import { usePagePlaybackTiming } from '@/lib/hooks/use-page-playback-timing';
 import {
   isAutoPlayedStudentScene,
+  isCompletedStudentScene,
   isFinalStudentPlaybackSlide,
   nextStudentPlaybackSlide,
 } from '@/lib/playback/student-player-playlist';
@@ -137,9 +138,11 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
     const [lectureSpeech, setLectureSpeech] = useState<string | null>(null); // From PlaybackEngine (lecture)
     const [currentPlaybackActionIndex, setCurrentPlaybackActionIndex] = useState<number | null>(0);
     const emittedCompletionRef = useRef<string | null>(null);
+    const completedSceneIdRef = useRef<string | null>(null);
 
     useEffect(() => {
-      if (!playbackCompleted || !currentScene || !isAutoPlayedStudentScene(currentScene)) return;
+      if (!currentScene || !isAutoPlayedStudentScene(currentScene) ||
+          !isCompletedStudentScene(currentScene.id, completedSceneIdRef.current, playbackCompleted)) return;
       const completionKey = `${currentScene.id}:${currentPlaybackActionIndex ?? -1}`;
       if (emittedCompletionRef.current === completionKey) return;
       emittedCompletionRef.current = completionKey;
@@ -397,6 +400,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
     const resetSceneState = useCallback(
       (initial?: { actionIndex?: number | null; lectureSpeech?: string | null }) => {
         resetLiveState();
+        completedSceneIdRef.current = null;
         setPlaybackCompleted(false);
         setLectureSpeech(initial?.lectureSpeech ?? null);
         updateCurrentPlaybackActionIndex(initial?.actionIndex ?? 0);
@@ -844,6 +848,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
             // If all actions are exhausted (discussion was the last action), mark
             // playback as completed so the bubble shows reset instead of play.
             if (engineRef.current?.isExhausted()) {
+              completedSceneIdRef.current = currentScene.id;
               setPlaybackCompleted(true);
             }
           },
@@ -862,6 +867,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
             // effect handles the reset.
             updateCurrentPlaybackActionIndex(currentScene.actions?.length ?? 0);
             clearSceneResumePosition(currentScene.id);
+            completedSceneIdRef.current = currentScene.id;
             setPlaybackCompleted(true);
 
             // End lecture session on playback complete
