@@ -772,6 +772,18 @@ body::before {
   font-size: 13px;
   color: var(--text-2);
 }
+.video-advance-confirm {
+  width: min(100%, 600px);
+  margin: 14px auto 0;
+  padding: 18px 20px;
+  border: 1px solid #efc4a7;
+  border-radius: 16px;
+  background: #fff7ed;
+  color: #8a431f;
+}
+.video-advance-confirm strong { display: block; font-size: 16px; }
+.video-advance-confirm p { margin: 8px 0 0; font-size: 14px; line-height: 1.6; }
+.video-advance-confirm__actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; margin-top: 16px; }
 
 /* ═══════════ 图标与提示 ═════════════════════════════════════ */
 
@@ -1684,13 +1696,39 @@ body::before { background: none; }
 .login__switch-btn:hover:not(:disabled) { color: var(--brand-strong); }
 .login__switch-btn:disabled { opacity: .5; cursor: default; }
 
-/* Keep the active lesson and its stage progress close to the lesson heading. */
-.view.classroom-view { max-width: 1480px; gap: 16px; padding: 24px 32px; }
-.classroom-layout { display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 24px; align-items: start; }
+/* The classroom tool rail can grow with future tools; progress is its first panel. */
+.view.classroom-view { max-width: none; width: 100%; gap: 16px; padding: 24px clamp(16px, 2vw, 40px); }
+.classroom-view > .view__header { margin-left: 90px; }
+.classroom-layout { position: relative; display: grid; grid-template-columns: 58px 230px minmax(0, 1fr); gap: 16px; align-items: start; }
+.classroom-layout--progress-hidden { grid-template-columns: 58px minmax(0, 1fr); }
+.classroom-layout--video .classroom-content { grid-column: 1 / -1; grid-row: 1; }
+.classroom-layout--video .classroom-tools { grid-column: 1; grid-row: 1; z-index: 2; }
+.classroom-layout--video .classroom-progress-slot { grid-column: 2; grid-row: 1; z-index: 2; }
+.classroom-layout--conversation .classroom-content { grid-column: 1 / -1; grid-row: 1; }
+.classroom-layout--conversation .classroom-tools { grid-column: 1; grid-row: 1; z-index: 2; }
+.classroom-layout--conversation .classroom-progress-slot { grid-column: 2; grid-row: 1; z-index: 2; }
+.classroom-layout--video .video { width: min(960px, calc(100% - 640px)); margin-inline: auto; }
+.classroom-layout--video .video-player-slot,
+.classroom-layout--video .video-player-actions { width: 100%; max-width: none; }
+.classroom-tools { position: sticky; top: 24px; min-height: calc(100dvh - 140px); border: 1px solid var(--surface-border); border-radius: 18px; background: var(--surface-solid); }
+.classroom-tools__list { list-style: none; margin: 0; padding: 0; }
+.classroom-tools__list li { display: grid; place-items: center; min-height: 58px; border-bottom: 1px solid var(--hairline); }
+.classroom-tools__button { display: grid; place-items: center; width: 42px; height: 42px; padding: 0; border: 0; border-radius: 12px; background: transparent; color: var(--text-2); cursor: pointer; }
+.classroom-tools__button:hover, .classroom-tools__button.is-active { background: var(--brand-soft); color: var(--brand); }
+.classroom-tools__button svg { width: 23px; height: 23px; }
+.classroom-progress-slot { position: sticky; top: 24px; min-width: 0; }
+.classroom-progress-slot[hidden] { display: none; }
+.classroom-progress-close { position: absolute; right: -13px; top: 36%; z-index: 2; display: grid; place-items: center; width: 28px; height: 48px; padding: 0; border: 1px solid var(--surface-border); border-radius: 10px; background: var(--surface-solid); color: var(--brand); box-shadow: var(--shadow-rest); cursor: pointer; }
+.classroom-progress-close:hover { background: var(--brand-soft); }
+.classroom-progress-close svg { width: 20px; height: 20px; }
 .classroom-content { min-width: 0; }
 .classroom-content .stage--summary { justify-content: flex-start; }
-.classroom-content .conversation-panel { width: 100%; height: clamp(500px, calc(100dvh - 130px), 1000px); margin: 0; }
-.conversation-heading { padding: 18px 24px 14px; border-bottom: 1px solid var(--hairline); flex-shrink: 0; }
+.classroom-content .conversation-panel { position: relative; width: min(1040px, calc(100% - 640px)); height: clamp(500px, calc(100dvh - 130px), 1000px); margin-inline: auto; }
+.conversation-resize-handle { position: absolute; top: 0; bottom: 0; z-index: 3; width: 12px; cursor: ew-resize; touch-action: none; }
+.conversation-resize-handle--left { left: 0; }
+.conversation-resize-handle--right { right: 0; }
+.conversation-resize-handle:hover, .conversation-resize-handle:active { background: rgba(176, 0, 85, .12); }
+.conversation-heading { position: relative; padding: 18px 24px 14px; border-bottom: 1px solid var(--hairline); flex-shrink: 0; }
 .conversation-heading .new-stage-title { padding: 0; }
 .conversation-stage { margin: 6px 0 0; font-size: 14px; color: var(--brand); overflow-wrap: anywhere; }
 .conversation-log > *:first-child { margin-top: 0; }
@@ -1700,7 +1738,7 @@ body::before { background: none; }
 .conversation-complete p { margin: 5px 0 0; font-size: 14px; color: var(--text-2); }
 .conversation-actions { flex-wrap: wrap; align-items: center; justify-content: space-between; flex-shrink: 0; }
 .conversation-end-hint { font-size: 12px; color: var(--text-2); }
-.lesson-progress { position: sticky; top: 24px; padding: 22px 16px; background: var(--surface-solid); border: 1px solid var(--surface-border); border-radius: 22px; }
+.lesson-progress { padding: 22px 16px; background: var(--surface-solid); border: 1px solid var(--surface-border); border-radius: 22px; }
 .lesson-progress__eyebrow { margin: 0 0 24px; font-size: 14px; font-weight: 700; }
 .lesson-progress__steps { list-style: none; margin: 0; padding: 0; }
 .lesson-progress__step { position: relative; display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 10px; padding-bottom: 25px; color: var(--text-3); }
@@ -1715,16 +1753,23 @@ body::before { background: none; }
 .lesson-progress__step.is-past { color: var(--text-2); }
 .lesson-progress__step.is-past .lesson-progress__marker { color: var(--brand); background: var(--brand-soft); border-color: var(--brand-border); }
 .lesson-progress__note { border-top: 1px solid var(--hairline); padding-top: 14px; margin: 0; font-size: 12px; color: var(--text-2); }
+@media (min-width: 781px) and (max-width: 1100px) {
+  .classroom-content .conversation-panel { width: calc(100% - 336px); margin-left: 320px; margin-right: 16px; }
+}
 @media (max-width: 780px) {
   .view.classroom-view { padding: 16px 12px 24px; gap: 12px; }
-  .classroom-layout { grid-template-columns: minmax(0, 1fr); gap: 12px; }
-  .lesson-progress { position: static; padding: 14px 8px; border-radius: 16px; }
-  .lesson-progress__eyebrow, .lesson-progress__note, .lesson-progress__step p { display: none; }
-  .lesson-progress__steps { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; }
-  .lesson-progress__step { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 8px; padding: 0; }
-  .lesson-progress__step strong { font-size: 12px; }
-  .lesson-progress__step:not(:last-child)::after { left: calc(50% + 18px); top: 13px; bottom: auto; width: calc(100% - 32px); height: 2px; }
-  .classroom-content .conversation-panel { height: max(440px, calc(100dvh - 236px)); border-radius: 16px; }
+  .classroom-view > .view__header { margin-left: 62px; }
+  .classroom-layout, .classroom-layout--progress-hidden { grid-template-columns: 52px minmax(0, 1fr); gap: 10px; }
+  .classroom-tools { top: 16px; min-height: calc(100dvh - 112px); border-radius: 14px; }
+  .classroom-tools__list li { min-height: 52px; }
+  .classroom-progress-slot { position: absolute; top: 0; left: 62px; width: min(250px, calc(100% - 76px)); z-index: 5; filter: drop-shadow(0 12px 22px rgba(31, 18, 28, .12)); }
+  .classroom-content { grid-column: 2; }
+  .classroom-layout--video .classroom-content { grid-column: 1 / -1; }
+  .classroom-layout--conversation .classroom-content { grid-column: 1 / -1; }
+  .classroom-layout--video .video { width: min(100%, 960px); }
+  .lesson-progress { padding: 20px 16px; border-radius: 16px; }
+  .classroom-progress-close { top: 28%; }
+  .classroom-content .conversation-panel { width: calc(100% - 62px); height: max(440px, calc(100dvh - 236px)); margin-left: 62px; margin-right: 0; border-radius: 16px; }
   .conversation-heading { padding: 16px; }
   .conversation-actions { justify-content: center; gap: 8px; }
   .conversation-end-hint { width: 100%; text-align: center; }

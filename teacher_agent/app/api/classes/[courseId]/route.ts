@@ -37,6 +37,11 @@ export async function GET(request: Request, context: { params: Promise<{ courseI
       }
     }
   }
+  let studentRosterError: string | undefined;
+  const members = await platformCourseMembers(request as NextRequest, courseId).catch((error: unknown) => {
+    studentRosterError = error instanceof Error ? error.message : '读取学生名单失败';
+    return undefined;
+  });
   return apiSuccess({
     course: {
       id: course.id,
@@ -103,11 +108,24 @@ export async function GET(request: Request, context: { params: Promise<{ courseI
     ].sort((a, b) => (b.activatedAt ?? 0) - (a.activatedAt ?? 0)),
     // Platform enrollment is the roster source of truth. The local field only
     // remains as a standalone/demo fallback until student progress is migrated.
-    students: (await platformCourseMembers(request as NextRequest, courseId).catch(() => undefined))?.map((member) => {
-      // 平台学情同步（PUT students）写入的 classStudents 优先于空白名单状态，
-      // 否则授课管理永远显示「未开始 0%」。
+    studentRosterError,
+    students: members?.map((member) => {
+      // The platform roster reads persisted student learning data directly, so
+      // historical progress is visible even if an earlier push was missed.
       const synced = (course.classStudents ?? []).find((item) => item.studentId === member.studentId);
-      return synced ?? {
+      return member.progress !== undefined ? {
+        studentId: member.studentId,
+        name: member.name,
+        status: member.status ?? 'not-started',
+        progress: member.progress,
+        completedResourceIds: synced?.completedResourceIds ?? [],
+        lastActiveAt: member.lastActiveAt ?? (member.enrolledAt ? Date.parse(member.enrolledAt) : 0),
+        learnedLessons: member.learnedLessons,
+        totalLessons: member.totalLessons,
+        sessionCount: member.sessionCount,
+        endedCount: member.endedCount,
+        stars: member.stars,
+      } : synced ?? {
         studentId: member.studentId,
         name: member.name,
         status: 'not-started' as const,

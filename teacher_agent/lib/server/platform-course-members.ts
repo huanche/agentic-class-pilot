@@ -6,6 +6,14 @@ type PlatformMember = {
   name: string;
   email?: string;
   enrolledAt?: string;
+  status?: 'not-started' | 'learning' | 'completed';
+  progress?: number;
+  learnedLessons?: number;
+  totalLessons?: number;
+  sessionCount?: number;
+  endedCount?: number;
+  lastActiveAt?: number | null;
+  stars?: number;
 };
 
 /** Read the authoritative platform enrollment roster. Never persist a copy. */
