@@ -49,7 +49,6 @@ type Detail = {
   };
   resources: ClassResource[];
   students: CourseStudentLearningState[];
-  studentRosterError?: string;
 };
 
 const statusLabel: Record<CourseStudentLearningState['status'], string> = {
@@ -306,11 +305,7 @@ export default function ClassDetailPage() {
               {detail.students.length} 人
             </span>
           </div>
-          {detail.studentRosterError ? (
-            <div className="mt-6 rounded-2xl border border-red-200 bg-red-50 p-6 text-sm text-red-700">
-              学生名单读取失败：{detail.studentRosterError}
-            </div>
-          ) : detail.students.length === 0 ? (
+          {detail.students.length === 0 ? (
             <div className="mt-6 rounded-2xl border border-dashed p-10 text-center">
               <Bot className="mx-auto size-10 text-slate-300" />
               <h3 className="mt-3 font-medium">尚未同步学生名单</h3>

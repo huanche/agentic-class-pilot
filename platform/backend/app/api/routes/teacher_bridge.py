@@ -44,21 +44,9 @@ TEACHER_GENERATION_POST_PATHS = {
 
 
 def teacher_write_origins() -> set[str]:
-    """Allow configured entry points and their loopback aliases in local development."""
+    """FRONTEND_HOST plus locally configured teacher service origins."""
     extra = {origin.strip() for origin in settings.TEACHER_ALLOWED_ORIGINS.split(",") if origin.strip()}
-    origins = {settings.FRONTEND_HOST.rstrip("/")} | extra
-    if (settings.ENVIRONMENT == "development"
-            and urlsplit(settings.FRONTEND_HOST).hostname in {"localhost", "127.0.0.1"}):
-        teacher_origin = settings.TEACHER_PUBLIC_URL.rstrip("/")
-        if urlsplit(teacher_origin).hostname in {"localhost", "127.0.0.1"}:
-            origins.add(teacher_origin)
-        for origin in tuple(origins):
-            parsed = urlsplit(origin)
-            if parsed.hostname in {"localhost", "127.0.0.1"} and parsed.scheme in {"http", "https"}:
-                alias = "127.0.0.1" if parsed.hostname == "localhost" else "localhost"
-                port = f":{parsed.port}" if parsed.port else ""
-                origins.add(f"{parsed.scheme}://{alias}{port}")
-    return origins
+    return {settings.FRONTEND_HOST} | extra
 
 
 class TeacherAuthorization(BaseModel):
@@ -424,43 +412,11 @@ def teacher_course_members(
         WHERE e.course_id=:course_id
         ORDER BY e.created_at DESC
     """), {"course_id": course_uuid}).all()
-    total_row = session.execute(text("""
-        SELECT count(DISTINCT a.payload->>'classroomId')
-        FROM teacher.mentra_course_artifacts a
-        JOIN teacher_course_link l ON l.external_course_id=a.course_id
-        WHERE l.course_id=:course_id AND a.status='published'
-          AND a.payload->>'classroomId' IS NOT NULL
-    """), {"course_id": course_uuid}).first()
-    total_lessons = int(total_row[0]) if total_row else 0
-    session_rows = session.execute(text("""
-        SELECT user_id, count(DISTINCT classroom_id), count(*),
-               count(*) FILTER (WHERE ended_at IS NOT NULL), max(last_active_at)
-        FROM student.student_sessions WHERE course_id=:course_id GROUP BY user_id
-    """), {"course_id": str(course_uuid)}).all()
-    learning = {str(row[0]): row for row in session_rows}
-    star_rows = session.execute(text("""
-        SELECT user_id, coalesce(sum(stars),0)
-        FROM student.knowledge_mastery WHERE course_id=:course_id GROUP BY user_id
-    """), {"course_id": str(course_uuid)}).all()
-    stars = {str(row[0]): int(row[1]) for row in star_rows}
-    def member_state(row):
-        student_id = str(row[0])
-        record = learning.get(student_id)
-        learned = int(record[1]) if record else 0
-        active = record[4] if record else None
-        return {
-            "studentId": student_id, "name": row[1] or row[2],
-            "email": row[2], "enrolledAt": row[3].isoformat() if row[3] else None,
-            "status": ("completed" if total_lessons and learned >= total_lessons
-                       else "learning" if record else "not-started"),
-            "progress": min(100, round(learned / total_lessons * 100)) if total_lessons else 0,
-            "learnedLessons": learned, "totalLessons": total_lessons,
-            "sessionCount": int(record[2]) if record else 0,
-            "endedCount": int(record[3]) if record else 0,
-            "lastActiveAt": int(active.timestamp() * 1000) if active else None,
-            "stars": stars.get(student_id, 0),
-        }
     return {
         "courseId": str(course_uuid),
-        "members": [member_state(row) for row in rows],
+        "members": [
+            {"studentId": str(row[0]), "name": row[1] or row[2],
+             "email": row[2], "enrolledAt": row[3].isoformat() if row[3] else None}
+            for row in rows
+        ],
     }

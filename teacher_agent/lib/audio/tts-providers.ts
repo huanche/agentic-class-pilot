@@ -755,7 +755,7 @@ async function generateQwenTTS(config: TTSModelConfig, text: string): Promise<TT
       /* Non-JSON upstream error. */
     }
     throwIfQwenAccountUnavailable(code, response.status);
-    throw new Error(`Qwen TTS API error (HTTP ${response.status}): ${errorText || response.statusText || 'empty response'}`);
+    throw new Error(`Qwen TTS API error: ${errorText}`);
   }
 
   const data = await response.json();
