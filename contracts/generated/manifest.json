@@ -3,12 +3,15 @@
     "python/platform_teacher_api/__init__.py",
     "python/platform_teacher_api/api/__init__.py",
     "python/platform_teacher_api/api/default/__init__.py",
+    "python/platform_teacher_api/api/default/get_teacher_publication_verdict.py",
     "python/platform_teacher_api/api/default/get_teacher_service_health.py",
     "python/platform_teacher_api/api/default/provision_teacher_course.py",
     "python/platform_teacher_api/api/default/update_teacher_student_state.py",
     "python/platform_teacher_api/client.py",
     "python/platform_teacher_api/errors.py",
     "python/platform_teacher_api/models/__init__.py",
+    "python/platform_teacher_api/models/get_teacher_publication_verdict_response_200.py",
+    "python/platform_teacher_api/models/get_teacher_publication_verdict_response_200_publication_type_1.py",
     "python/platform_teacher_api/models/get_teacher_service_health_response_200.py",
     "python/platform_teacher_api/models/get_teacher_service_health_response_200_capabilities.py",
     "python/platform_teacher_api/models/provision_teacher_course_body.py",
@@ -87,6 +90,6 @@
   "sources": {
     "internal-student-api.yaml": "706351d04a490789d3e25ed475af050431c6bc89a9a3a79b2e815deeb25102a5",
     "internal-teacher-api.yaml": "2884735edeba01ee9dbf1b3950953ad79cbe3a8630739c627b9e1e01e3d81b77",
-    "teacher-service-api.yaml": "3e203c0a8fd707b748499290f3b2d77d55b7579fec5598487572464a00dbca9c"
+    "teacher-service-api.yaml": "4ee2e9d20b804114f32a6cd5e0360758d381a56a903b03bf11ab2d9379a4346e"
   }
 }

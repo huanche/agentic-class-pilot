@@ -29,6 +29,19 @@ for (const [endpoint, operations] of Object.entries(spec.paths)) {
           explicitStatuses.add(status.text);
         }
       }
+      if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) &&
+          node.expression.expression.getText(ast) === 'NextResponse' && node.expression.name.text === 'json') {
+        const options = node.arguments[1];
+        const status = options && ts.isObjectLiteralExpression(options)
+          ? options.properties.find(property => ts.isPropertyAssignment(property) &&
+              property.name.getText(ast) === 'status') : undefined;
+        if (status && ts.isPropertyAssignment(status)) {
+          assert.ok(ts.isNumericLiteral(status.initializer), 'Extend checker for dynamic response status');
+          if (Number(status.initializer.text) < 400) explicitStatuses.add(status.initializer.text);
+        } else {
+          explicitStatuses.add('200');
+        }
+      }
       ts.forEachChild(node, visit);
     }
     visit(handler.body);

@@ -76,7 +76,7 @@
     }
   },
   "info": {
-    "description": "Existing platform-to-teacher calls only. No runtime handlers are changed by this contract.",
+    "description": "Platform-to-teacher service calls. Publication verdict is additive and does not switch existing platform reads.",
     "title": "Teacher Service API",
     "version": "1.0.0"
   },
@@ -316,6 +316,81 @@
           }
         },
         "security": []
+      }
+    },
+    "/api/internal/platform/courses/{courseId}/publication": {
+      "get": {
+        "description": "A negative verdict includes inactive courses and withdrawn knowledge packages. The platform remains responsible for enrollment and identity checks.",
+        "operationId": "getTeacherPublicationVerdict",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "courseId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "publication": {
+                      "oneOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "properties": {
+                            "publicationId": {
+                              "type": "string"
+                            },
+                            "version": {
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "publicationId",
+                            "version"
+                          ],
+                          "type": "object"
+                        }
+                      ]
+                    },
+                    "published": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "published",
+                    "publication"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Current teacher publication verdict"
+          },
+          "401": {
+            "description": "Invalid delegated identity"
+          },
+          "403": {
+            "description": "Service delegation missing or denied"
+          },
+          "503": {
+            "description": "Platform authorization or course storage unavailable"
+          }
+        },
+        "security": [
+          {
+            "platformServiceKey": [],
+            "platformSubject": []
+          }
+        ],
+        "summary": "Resolve the teacher-owned current publication for a platform course alias"
       }
     }
   },
