@@ -12,6 +12,7 @@ import time
 import traceback
 import urllib.error
 import urllib.request
+from contextlib import ExitStack
 from pathlib import Path
 from threading import Lock
 
@@ -50,6 +51,10 @@ class BrowserRestoreRequest(BaseModel):
     launch_token: str = ""
 
 
+class ResetLessonRequest(BaseModel):
+    launch_token: str = ""
+
+
 def _browser_snapshot(session: dict) -> str:
     payload = {key: value for key, value in session.items()
                if key not in {"lock", "launchToken"}}
@@ -80,7 +85,7 @@ def _restore_browser_snapshot(value: str) -> dict:
     return restored
 
 
-def platform_context(token: str, lesson_id: str | None = None) -> dict:
+def platform_context(token: str, lesson_id: str | None = None, refresh_session: bool = False) -> dict:
     base = os.environ.get("PLATFORM_AUTH_URL", "").rstrip("/")
     key = os.environ.get("STUDENT_SERVICE_KEY", "")
     if not base or not key:
@@ -91,7 +96,8 @@ def platform_context(token: str, lesson_id: str | None = None) -> dict:
         base += "/api/v1"
     request = urllib.request.Request(
         base + "/internal/student/learning-context",
-        data=json.dumps({"launch_token": token, "lesson_id": lesson_id}).encode(),
+        data=json.dumps({"launch_token": token, "lesson_id": lesson_id,
+                         "refresh_session": refresh_session}).encode(),
         headers={"Content-Type": "application/json", "X-Student-Service-Key": key},
         method="POST",
     )
@@ -102,6 +108,43 @@ def platform_context(token: str, lesson_id: str | None = None) -> dict:
         raise HTTPException(error.code, "平台课堂读取失败或启动令牌已过期") from error
     except (urllib.error.URLError, TimeoutError) as error:
         raise HTTPException(503, "平台服务暂不可用") from error
+
+
+def report_learning_progress(session: dict, event: str) -> None:
+    """Sync persisted lesson progress to the teacher roster without blocking class."""
+    context = session.get("context") or {}
+    if not all((context.get("userId"), context.get("courseId"), session.get("classroomId"))):
+        return
+    base = os.environ.get("PLATFORM_AUTH_URL", "").rstrip("/")
+    key = os.environ.get("STUDENT_SERVICE_KEY", "")
+    if not base or not key:
+        logger.warning("Learning progress sync skipped: platform connection is unconfigured")
+        return
+    if not base.endswith("/api/v1"):
+        base += "/api/v1"
+    payload = {"user_id": context["userId"], "course_id": context["courseId"],
+               "session_key": session["id"], "classroom_id": session["classroomId"],
+               "event": event}
+    request = urllib.request.Request(
+        base + "/internal/student/learning-progress",
+        data=json.dumps(payload).encode(),
+        headers={"Content-Type": "application/json", "X-Student-Service-Key": key},
+        method="POST",
+    )
+    try:
+        with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(request, timeout=8) as response:
+            result = json.load(response)
+            if not result.get("pushedToTeacher"):
+                logger.warning("Learning progress saved but teacher sync failed: course=%s student=%s",
+                               context["courseId"], context["userId"])
+    except Exception:
+        logger.exception("Learning progress sync failed: course=%s student=%s event=%s",
+                         context["courseId"], context["userId"], event)
+
+
+def schedule_progress_sync(session: dict, event: str, tasks: BackgroundTasks) -> None:
+    if session.get("context") and session.get("classroomId"):
+        tasks.add_task(report_learning_progress, dict(session), event)
 
 
 def catalog(context: dict) -> list[dict]:
@@ -125,11 +168,70 @@ def catalog(context: dict) -> list[dict]:
     return [{"id": course_id, "title": context.get("courseTitle") or "我的课程", "lessons": lessons}]
 
 
-def get_session(sid: str) -> dict:
+def video_revision(context: dict, lesson_id: str) -> str | None:
+    lesson = next((item for item in context.get("lessons") or []
+                   if str(item.get("id")) == lesson_id), None)
+    if not lesson:
+        return None
+    classroom = lesson.get("classroom") or {}
+    # Playback grants change on every request; only published video data counts.
+    payload = [classroom.get("id"), lesson.get("publishedAt"), classroom.get("scenes")]
+    return hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+
+
+def refresh_lesson(session: dict, current: dict | None = None) -> bool:
+    """Caller holds the session lock. Replace stale video progress atomically."""
+    original = session.get("context")
+    lesson_id = session.get("lessonId")
+    if not original or not lesson_id:
+        return False
+    token = session.get("launchToken")
+    if not token:
+        raise HTTPException(401, "请从平台重新进入课程以检查最新教学视频")
+    current = current or platform_context(token, lesson_id, True)
+    if any(str(current.get(key)) != str(original.get(key)) for key in ("userId", "courseId")):
+        raise HTTPException(403, "学习记录与当前用户或课程不匹配")
+    if str(current.get("selectedLessonId")) != lesson_id or len(current.get("lessons") or []) != 1:
+        raise HTTPException(409, "当前课时尚未发布")
+    courses = catalog(current)
+    lesson = next(item for course in courses for item in course["lessons"] if item["id"] == lesson_id)
+    if not lesson.get("playerUrl"):
+        raise HTTPException(409, "当前课时没有已发布的教学视频")
+    revision = video_revision(current, lesson_id)
+    previous = session.get("videoRevision") or video_revision(original, lesson_id)
+    if previous:
+        changed = previous != revision
+    else:
+        # Old database snapshots have only the catalog, not classroom scenes.
+        old = next((item for course in session["courses"] for item in course["lessons"]
+                    if item["id"] == lesson_id), {})
+        changed = (old.get("classroomId"), old.get("publishedAt")) != (lesson.get("classroomId"), lesson.get("publishedAt"))
+    if not changed:
+        session.update(context=current, courses=courses, videoRevision=revision)
+        return False
+    replacement = {"id": session["id"], "context": current, "courses": courses,
+                   "launchToken": token, "lessonId": lesson_id,
+                   "classroomId": lesson["classroomId"], "phase": "video", "messages": [],
+                   "dialogue": None, "preparation": "pending",
+                   "preparationMaterials": lesson_points(current, lesson_id),
+                   "videoRevision": revision, "videoUpdated": True,
+                   "contentGeneration": session.get("contentGeneration", 0) + 1}
+    try:
+        persistence.discard_lesson_session(session, replacement)
+    except Exception as error:
+        logger.exception("Failed to reset outdated lesson session")
+        raise HTTPException(503, "新版课堂进度初始化失败，请稍后重试") from error
+    lock = session["lock"]
+    session.clear()
+    session.update(replacement, lock=lock)
+    return True
+
+
+def get_session(sid: str, *, allow_database: bool = False) -> dict:
     with session_lock:
         session = sessions.get(sid)
     if session is None:
-        if persistence.fresh_session_mode():
+        if persistence.fresh_session_mode() and not allow_database:
             raise HTTPException(404, "浏览器学习会话已结束，请重新打开课程")
         try:
             session = persistence.restore(sid)
@@ -156,6 +258,8 @@ def state(session: dict) -> dict:
             "agentStage": (dialogue or {}).get("stage"),
             "learningProgress": progress(dialogue) if dialogue else None,
             "postclassStage": session.get("postclassStage"),
+            "videoRevision": session.get("videoRevision"),
+            "videoUpdated": session.get("videoUpdated", False),
             "postclassMessages": [item for item in session["messages"]
                                   if str(item.get("phase") or "").startswith("postclass-")]}
     if persistence.fresh_session_mode():
@@ -175,6 +279,8 @@ def current_feedback(session: dict) -> dict | None:
 
 
 def commit(session: dict, changed: dict) -> None:
+    if session.get("reset"):
+        raise HTTPException(410, "本课学习记录已重置，请重新选择课时")
     old_count = len(session["messages"])
     draft = {key: value for key, value in session.items() if key != "lock"}
     draft.update(changed)
@@ -223,6 +329,7 @@ def current_materials(session: dict) -> list[dict]:
 def prepare_in_background(session: dict) -> None:
     request_id = secrets.token_hex(8)
     started = time.monotonic()
+    generation = session.get("contentGeneration", 0)
     try:
         # The model must never hold the session lock while a video is playing.
         materials = current_materials(session)
@@ -231,6 +338,8 @@ def prepare_in_background(session: dict) -> None:
                     request_id, int((time.monotonic() - started) * 1000),
                     coverage["acceptedCount"], coverage["rejectedCount"], coverage["repairAttempted"])
         with session["lock"]:
+            if generation != session.get("contentGeneration", 0):
+                return
             commit(session, {"dialogue": dialogue,
                              "preparation": "partial" if coverage["partial"] else "ready",
                              "preparationMaterials": materials,
@@ -239,6 +348,8 @@ def prepare_in_background(session: dict) -> None:
     except Exception as error:
         code, message = _safe_failure(error, request_id, time.monotonic() - started)
         with session["lock"]:
+            if generation != session.get("contentGeneration", 0):
+                return
             had_partial = bool(session.get("dialogue") and
                                (session.get("preparationCoverage") or {}).get("partial"))
             changed = {"preparation": "partial" if had_partial else "error",
@@ -311,16 +422,53 @@ def start(body: StartRequest) -> dict:
 
 
 @app.post("/api/session/browser-restore")
-def browser_restore(body: BrowserRestoreRequest) -> dict:
+def browser_restore(body: BrowserRestoreRequest, background_tasks: BackgroundTasks) -> dict:
     if not persistence.fresh_session_mode():
         raise HTTPException(404, "浏览器学习记录恢复未启用")
     restored = _restore_browser_snapshot(body.snapshot)
+    current = None
+    saved = None
+    lesson_id = restored.get("lessonId")
+    if restored.get("context") and lesson_id:
+        if not body.launch_token:
+            raise HTTPException(401, "请从平台重新进入课程以恢复学习记录")
+        current = platform_context(body.launch_token, lesson_id, True)
+        original = restored["context"]
+        if any(str(current.get(key)) != str(original.get(key)) for key in ("userId", "courseId")):
+            raise HTTPException(403, "学习记录与当前用户或课程不匹配")
+        if str(current.get("selectedLessonId")) != lesson_id or len(current.get("lessons") or []) != 1:
+            raise HTTPException(409, "当前课时尚未发布")
+        classroom_id = str((current["lessons"][0].get("classroom") or {}).get("id") or "")
+        publication = current.get("publication") or {}
+        try:
+            latest_id = persistence.latest_session_key(
+                str(current["userId"]), str(current["courseId"]),
+                str(publication["id"]), int(publication["version"]),
+                lesson_id, classroom_id,
+            )
+            saved = persistence.restore(latest_id or restored["id"])
+        except Exception as error:
+            logger.exception("Failed to restore browser lesson from database")
+            raise HTTPException(503, "读取学习记录失败，请稍后重试") from error
+        if not saved:
+            raise HTTPException(404, "本课学习记录已重置，请重新选择课时")
+        saved_context = saved.get("context") or {}
+        if (str(saved_context.get("userId")) != str(current["userId"])
+                or str(saved_context.get("courseId")) != str(current["courseId"])
+                or saved.get("lessonId") != lesson_id):
+            raise HTTPException(409, "数据库学习记录与当前课时不匹配")
+        restored = saved
     restored["launchToken"] = body.launch_token or None
     with session_lock:
         session = sessions.setdefault(restored["id"], restored)
-    if body.launch_token:
-        with session["lock"]:
+    with session["lock"]:
+        if saved and session is not restored:
+            session.update({key: value for key, value in restored.items()
+                            if key not in {"lock", "launchToken"}})
+        if body.launch_token:
             session["launchToken"] = body.launch_token
+        refresh_lesson(session, current)
+        schedule_progress_sync(session, "ended" if session["phase"] == "done" else "started", background_tasks)
     return state(session)
 
 
@@ -379,19 +527,16 @@ def begin(sid: str, lesson_id: str, background_tasks: BackgroundTasks) -> dict:
         original = session["context"]
         if (str(selected_context.get("userId")) != str(original.get("userId"))
                 or str(selected_context.get("courseId")) != str(original.get("courseId"))
-                or str((selected_context.get("publication") or {}).get("id"))
-                != str((original.get("publication") or {}).get("id"))
-                or (selected_context.get("publication") or {}).get("version")
-                != (original.get("publication") or {}).get("version")
                 or str(selected_context.get("selectedLessonId")) != lesson_id
                 or len(selected_context.get("lessons") or []) != 1):
             raise HTTPException(409, "所选课时与课程不匹配，请重新进入课程")
         selected_courses = catalog(selected_context)
+        original = selected_context
         lesson = next((item for item in selected_courses[0]["lessons"] if item["id"] == lesson_id), None)
         if not lesson or not lesson.get("playerUrl"):
             raise HTTPException(409, "所选课时没有已发布的播放器")
         try:
-            old_id = None if persistence.fresh_session_mode() else persistence.latest_session_key(
+            old_id = persistence.latest_session_key(
                 str(original["userId"]), str(original["courseId"]),
                 str((original.get("publication") or {})["id"]),
                 int((original.get("publication") or {})["version"]),
@@ -401,7 +546,9 @@ def begin(sid: str, lesson_id: str, background_tasks: BackgroundTasks) -> dict:
             logger.exception("Failed to find previous student lesson session")
             raise HTTPException(503, "读取上次课堂失败，请稍后重试") from error
         if old_id:
-            resumed = get_session(old_id)
+            # Only a selected lesson with a freshly verified platform launch
+            # may recover a database session when this browser has no snapshot.
+            resumed = get_session(old_id, allow_database=True)
             saved_context = resumed.get("context") or {}
             if (str(saved_context.get("userId")) == str(original["userId"])
                     and str(saved_context.get("courseId")) == str(original["courseId"])
@@ -413,24 +560,28 @@ def begin(sid: str, lesson_id: str, background_tasks: BackgroundTasks) -> dict:
                     and resumed.get("classroomId") == lesson["classroomId"]
                     and resumed.get("phase") in {"video", "discussion", "done"}):
                 with resumed["lock"]:
-                    resumed["context"] = selected_context
-                    resumed["courses"] = selected_courses
+                    resumed["launchToken"] = token
+                    refresh_lesson(resumed, selected_context)
                     schedule_preparation(resumed, background_tasks)
                     restored_state = state(resumed)
                 with session_lock:
                     sessions.pop(sid, None)
+                schedule_progress_sync(resumed, "ended" if resumed["phase"] == "done" else "started", background_tasks)
                 return restored_state
     with session["lock"]:
         if session["phase"] != "idle":
             if session["lessonId"] != lesson_id:
                 raise HTTPException(409, "请结束当前课时后再开始其他课时")
+            refresh_lesson(session)
             schedule_preparation(session, background_tasks)
+            schedule_progress_sync(session, "ended" if session["phase"] == "done" else "started", background_tasks)
             return state(session)
         context = selected_context or session["context"]
         materials = lesson_points(context, lesson_id) if context else [
             {"id": "demo", "title": lesson["title"], "content": lesson.get("summary") or lesson["title"],
              "source": "demo"}]
         commit(session, {"context": context, "courses": selected_courses or session["courses"],
+                         "videoRevision": video_revision(context, lesson_id) if context else None,
                          "lessonId": lesson_id, "classroomId": lesson.get("classroomId"),
                          "phase": "video", "dialogue": None,
                          "preparation": "pending", "preparationError": "",
@@ -438,6 +589,7 @@ def begin(sid: str, lesson_id: str, background_tasks: BackgroundTasks) -> dict:
                          "preparationCoverage": None,
                          "preparationMaterials": materials})
         schedule_preparation(session, background_tasks)
+        schedule_progress_sync(session, "started", background_tasks)
     return state(session)
 
 
@@ -543,7 +695,7 @@ def message(sid: str, body: MessageRequest) -> dict:
 
 
 @app.post("/api/session/{sid}/end")
-def end(sid: str) -> dict:
+def end(sid: str, background_tasks: BackgroundTasks) -> dict:
     session = get_session(sid)
     with session["lock"]:
         if session["phase"] == "done" and session.get("feedback"):
@@ -556,7 +708,69 @@ def end(sid: str) -> dict:
             dialogue["ended_at_stage"] = dialogue["stage"]
         feedback = lesson_feedback(dict(session, dialogue=dialogue))
         commit(session, {"phase": "done", "dialogue": dialogue, "feedback": feedback})
+        schedule_progress_sync(session, "ended", background_tasks)
     return state(session)
+
+
+@app.post("/api/session/{sid}/reset")
+def reset_lesson(sid: str, body: ResetLessonRequest, background_tasks: BackgroundTasks) -> dict:
+    session = get_session(sid)
+    context = session.get("context") or {}
+    lesson_id = session.get("lessonId")
+    if not lesson_id:
+        raise HTTPException(409, "当前没有可重置的课时")
+    token = body.launch_token or session.get("launchToken")
+    current = None
+    if context:
+        if not token:
+            raise HTTPException(401, "请从平台重新进入课程以重置学习记录")
+        current = platform_context(token, lesson_id, True)
+        if (str(current.get("userId")) != str(context.get("userId"))
+                or str(current.get("courseId")) != str(context.get("courseId"))):
+            raise HTTPException(403, "学习记录与当前用户或课程不匹配")
+        if str(current.get("selectedLessonId")) != lesson_id:
+            raise HTTPException(409, "当前课时尚未发布")
+    with session_lock:
+        related = [item for item in sessions.values()
+                   if item.get("lessonId") == lesson_id
+                   and (item.get("context") or {}).get("userId") == context.get("userId")
+                   and (item.get("context") or {}).get("courseId") == context.get("courseId")]
+    if all(item is not session for item in related):
+        related.append(session)
+    with ExitStack() as locks:
+        for item in sorted(related, key=lambda value: value["id"]):
+            locks.enter_context(item["lock"])
+        if session["phase"] != "done":
+            raise HTTPException(409, "请在本课结束页面重置学习进度")
+        if context:
+            try:
+                deleted = persistence.reset_lesson(
+                    str(context["userId"]), str(context["courseId"]), lesson_id, sid,
+                    [item["id"] for item in related])
+            except Exception as error:
+                logger.exception("Failed to reset student lesson progress: session=%s", sid)
+                raise HTTPException(503, "重置本课学习进度失败，请稍后重试") from error
+        else:
+            deleted = [sid]
+        for item in related:
+            if item["id"] in deleted:
+                item["reset"] = True
+                item["contentGeneration"] = item.get("contentGeneration", 0) + 1
+        with session_lock:
+            for key in deleted:
+                sessions.pop(key, None)
+    fresh_context = dict(current, selectedLessonId=None, lessons=[]) if current else None
+    new_id = secrets.token_urlsafe(24)
+    fresh = {"id": new_id, "context": fresh_context,
+             "courses": catalog(fresh_context) if fresh_context else session["courses"],
+             "launchToken": token if fresh_context else None,
+             "phase": "idle", "lessonId": None, "messages": [],
+             "dialogue": None, "lock": Lock()}
+    with session_lock:
+        sessions[new_id] = fresh
+    if context:
+        schedule_progress_sync(session, "reset", background_tasks)
+    return state(fresh)
 
 
 @app.get("/api/session/{sid}/feedback")

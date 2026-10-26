@@ -12,7 +12,7 @@ from app.api.routes import student_bridge as bridge
 @pytest.fixture
 def context_setup(monkeypatch):
     monkeypatch.setattr(bridge, "check_student_service_key", lambda key: None)
-    monkeypatch.setattr(bridge, "verify_launch_token", lambda token: {
+    monkeypatch.setattr(bridge, "verify_launch_token", lambda token, **kwargs: {
         "uid": "00000000-0000-0000-0000-000000000001",
         "cid": "00000000-0000-0000-0000-000000000002"})
     monkeypatch.setattr(bridge, "_resolve_launch_context", lambda session, payload: None)
@@ -35,6 +35,17 @@ def context_setup(monkeypatch):
     session = Mock()
     session.execute.return_value = SimpleNamespace(first=lambda: ("Course",))
     return session
+
+
+def test_refresh_still_rechecks_enrollment(context_setup, monkeypatch):
+    def revoked(*args):
+        raise HTTPException(403, "enrollment revoked")
+    monkeypatch.setattr(bridge, "_resolve_launch_context", revoked)
+    with pytest.raises(HTTPException) as error:
+        bridge.student_learning_context(
+            bridge.LearningContextRequest(launch_token="token", lesson_id="L2", refresh_session=True),
+            context_setup)
+    assert error.value.status_code == 403
 
 
 def test_second_lesson_returns_only_selected_resources(context_setup):

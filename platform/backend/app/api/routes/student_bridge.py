@@ -62,7 +62,7 @@ def issue_launch_token(user_id: uuid.UUID, course_id: uuid.UUID, classroom_id: s
     return f"{encoded}.{_launch_signature(payload_json)}"
 
 
-def verify_launch_token(token: str) -> dict:
+def verify_launch_token(token: str, *, refresh_session: bool = False) -> dict:
     """Validate signature and expiry; raise 401 on any mismatch."""
     encoded, _, signature = token.partition(".")
     if not signature:
@@ -75,7 +75,7 @@ def verify_launch_token(token: str) -> dict:
         raise HTTPException(401, "Invalid launch token") from error
     if not hmac.compare_digest(signature, _launch_signature(payload_json)):
         raise HTTPException(401, "Invalid launch token")
-    if int(payload.get("exp", 0)) < time.time():
+    if not refresh_session and int(payload.get("exp", 0)) < time.time():
         raise HTTPException(401, "Launch token expired")
     return payload
 
@@ -259,6 +259,9 @@ SCHEMA_VERSION = 1
 class LearningContextRequest(BaseModel):
     launch_token: str
     lesson_id: str | None = None
+    # Only the authenticated student service may refresh an already established
+    # session. Signature and current enrollment are still checked below.
+    refresh_session: bool = False
 
 
 def _published_package_payload(session: SessionDep, course_id: uuid.UUID) -> dict | None:
@@ -456,7 +459,7 @@ def student_learning_context(body: LearningContextRequest, session: SessionDep,
     """
     check_student_service_key(x_student_service_key)
     try:
-        payload = verify_launch_token(body.launch_token)
+        payload = verify_launch_token(body.launch_token, refresh_session=body.refresh_session)
         _resolve_launch_context(session, payload)  # enrollment re-check
         user_id = uuid.UUID(payload["uid"])
         course_id = uuid.UUID(payload["cid"])
@@ -574,7 +577,7 @@ def course_learning_data(course_id: uuid.UUID, session: SessionDep, user: Curren
         params[f"u{i}"] = value
 
     published_row = session.execute(
-        text("SELECT count(*) FROM teacher.mentra_course_artifacts a "
+        text("SELECT count(DISTINCT a.payload->>'classroomId') FROM teacher.mentra_course_artifacts a "
              "JOIN teacher_course_link l ON l.external_course_id = a.course_id "
              "WHERE l.course_id=:course AND a.status='published' "
              "AND a.payload->>'classroomId' IS NOT NULL"),
@@ -632,7 +635,7 @@ class LearningProgressReport(BaseModel):
     course_id: uuid.UUID
     session_key: str | None = None
     classroom_id: str | None = None
-    event: str  # "started" | "ended"
+    event: str  # "started" | "ended" | "reset"
 
 
 def _course_learning_progress(session, user_id: uuid.UUID, course_id: uuid.UUID) -> dict:
@@ -724,8 +727,8 @@ async def report_learning_progress(body: LearningProgressReport,
                                    x_student_service_key: str | None = Header(default=None)):
     """学生端上报课堂进度事件；平台计算真实进度并同步到教师端授课管理。"""
     check_student_service_key(x_student_service_key)
-    if body.event not in ("started", "ended"):
-        raise HTTPException(400, "event 仅支持 started / ended")
+    if body.event not in ("started", "ended", "reset"):
+        raise HTTPException(400, "event 仅支持 started / ended / reset")
     from app.models import User
     student = session.get(User, body.user_id)
     if not student:
@@ -734,8 +737,9 @@ async def report_learning_progress(body: LearningProgressReport,
     state = {
         "studentId": str(student.id),
         "name": student.full_name or student.email,
-        "status": "completed" if (progress["totalLessons"] and
-                                  progress["learnedLessons"] >= progress["totalLessons"]) else "learning",
+        "status": ("completed" if (progress["totalLessons"] and
+                                   progress["learnedLessons"] >= progress["totalLessons"])
+                   else "learning" if progress["sessionCount"] else "not-started"),
         "progress": progress["percent"],
         "completedResourceIds": [],
         "lastActiveAt": int(time.time() * 1000),

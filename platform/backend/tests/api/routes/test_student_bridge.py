@@ -55,6 +55,24 @@ def test_launch_token_roundtrip() -> None:
     assert payload["pub"] == {"publicationId": "pkg-1", "version": 3}
 
 
+def test_launch_token_refresh_requires_valid_signature() -> None:
+    token = _token(-10)
+    with pytest.raises(Exception):
+        verify_launch_token(token)
+    assert verify_launch_token(token, refresh_session=True)["rid"] == "cls-1"
+    with pytest.raises(Exception):
+        verify_launch_token(token[:-2] + "zz", refresh_session=True)
+
+
+def test_launch_token_refresh_requires_service_key() -> None:
+    from app.api.routes.student_bridge import student_learning_context, LearningContextRequest
+    from fastapi import HTTPException
+    with pytest.raises(HTTPException) as error:
+        student_learning_context(LearningContextRequest(launch_token=_token(-10), refresh_session=True),
+                                 None, x_student_service_key="wrong-key")
+    assert error.value.status_code == 403
+
+
 def test_launch_token_tamper_rejected() -> None:
     token = _token()
     with pytest.raises(Exception):
