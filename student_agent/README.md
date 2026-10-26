@@ -39,3 +39,9 @@
 构建时前端会输出到 `frontend/out`，由 FastAPI 同源挂载到 `/app`。演示模式无平台身份，仅使用进程内会话，不写入正式学习数据库。
 
 服务器现有 `agentic-student` 服务可继续通过 `apps/server.py` 或 `apps/start.py` 入口运行新后端（生产端口 8000）；本机启动脚本使用 8001。这两个入口只负责加载配置和启动，不包含旧学生端的教学逻辑。GitHub 的学生端部署工作流会安装 `backend/requirements.txt`、构建 `frontend/out` 并检查新服务健康状态。
+
+## 回看验证
+
+恢复课时时，课时列表使用目录摘要，当前课时使用恢复记录里的完整播放信息。如果回看地址缺失或播放器报错，可通过 `POST /api/session/{sid}/playback` 重新获取当前课时的播放信息；该接口校验学生、课程、发布版本和课堂绑定，不重启学习，也不修改反馈或对话。
+
+后端验证：`python -m pytest -q student_agent/backend/tests`。浏览器回归验证在 `frontend/` 中运行 `npm ci`、`npx playwright install chromium --only-shell` 和 `npm run test:e2e`。浏览器用例使用模拟接口，覆盖直接回看、返回列表后恢复、从平台重新进入、缺失地址、失败重试及反馈与课后对话保留，不连接正式数据库。

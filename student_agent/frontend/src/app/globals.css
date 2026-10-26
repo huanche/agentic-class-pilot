@@ -902,6 +902,7 @@ body::before {
 .lesson-feedback__item p:last-child { margin-bottom: 0; }
 .postclass-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; margin-top: 26px; }
 .postclass-actions .btn { padding: 13px 26px; font-size: 15px; }
+.replay-error { margin: 20px 0 0; color: #9d251a; overflow-wrap: anywhere; }
 
 .conversation-actions {
   display: flex;

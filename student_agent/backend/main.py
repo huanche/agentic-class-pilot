@@ -441,6 +441,46 @@ def begin(sid: str, lesson_id: str, background_tasks: BackgroundTasks) -> dict:
     return state(session)
 
 
+@app.post("/api/session/{sid}/playback")
+def replay_playback(sid: str, body: StartRequest) -> dict:
+    """Resolve playback without changing the saved feedback or learning phase."""
+    session = get_session(sid)
+    with session["lock"]:
+        lesson_id = session.get("lessonId")
+        if not lesson_id or session["phase"] not in {"done", "replay", "postclass"}:
+            raise HTTPException(409, "请先结束本课，再回看视频")
+        original = session.get("context")
+        classroom_id = session.get("classroomId")
+        token = body.launch_token or session.get("launchToken")
+        if not original:
+            course = next((item for item in session["courses"]
+                           if any(lesson["id"] == lesson_id for lesson in item["lessons"])), None)
+            lesson = next((item for item in (course or {}).get("lessons", [])
+                           if item["id"] == lesson_id), None)
+            if not lesson or not lesson.get("playerUrl"):
+                raise HTTPException(409, "本课时暂时没有可播放的视频，请从课时列表重新进入")
+            return {"courseId": course["id"], "lesson": lesson}
+    if not token:
+        raise HTTPException(409, "启动令牌已失效，请从平台重新进入课程后回看")
+    # The platform rechecks enrollment and publication. No /begin call or
+    # persistence write is needed to recover a missing player URL.
+    context = platform_context(token, lesson_id)
+    if (str(context.get("userId")) != str(original.get("userId"))
+            or str(context.get("courseId")) != str(original.get("courseId"))
+            or (context.get("publication") or {}) != (original.get("publication") or {})
+            or str(context.get("selectedLessonId")) != lesson_id
+            or len(context.get("lessons") or []) != 1
+            or str(context["lessons"][0].get("id")) != lesson_id):
+        raise HTTPException(409, "播放信息与当前课时不匹配，请从平台重新进入课程")
+    course = catalog(context)[0]
+    lesson = next((item for item in course["lessons"] if item["id"] == lesson_id), None)
+    if not lesson or not lesson.get("playerUrl"):
+        raise HTTPException(409, "本课时暂时没有已发布的播放器，请稍后重试或联系教师")
+    if classroom_id and lesson.get("classroomId") != classroom_id:
+        raise HTTPException(409, "本课时的课堂内容已更新，暂时无法回看原课堂，请联系教师")
+    return {"courseId": course["id"], "lesson": lesson}
+
+
 @app.post("/api/session/{sid}/prepare")
 def retry_preparation(sid: str, background_tasks: BackgroundTasks) -> dict:
     session = get_session(sid)

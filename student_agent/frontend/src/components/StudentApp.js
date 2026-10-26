@@ -70,6 +70,8 @@ export default function StudentApp() {
   const [busy, setBusy] = useState(false);
   const [replyPending, setReplyPending] = useState(false);
   const [error, setError] = useState("");
+  const [replayError, setReplayError] = useState("");
+  const [replayLoading, setReplayLoading] = useState(false);
   const [videoEnded, setVideoEnded] = useState(false);
   const [preparation, setPreparation] = useState("idle");
   const [preparationError, setPreparationError] = useState("");
@@ -88,6 +90,7 @@ export default function StudentApp() {
   const composerInput = useRef(null);
 
   function showSession(saved) {
+    setReplayError("");
     sessionId.current = saved.sessionId;
     activeLessonId.current = saved.lessonId || null;
     if (saved.browserCourseKey) browserCourseKey.current = saved.browserCourseKey;
@@ -103,7 +106,11 @@ export default function StudentApp() {
     setPreparation(saved.preparation || "ready");
     setPreparationError(saved.preparationError || "");
     setPreparationRequestId(saved.preparationRequestId || "");
-    const selectedCourse = visibleCourses.find((item) => item.lessons.some((entry) => entry.id === saved.lessonId)) || visibleCourses[0];
+    // The catalog contains summaries only. Restore the active lesson from
+    // this session's course, keeping its player URL and classroom binding.
+    const restoredCourse = (saved.courses || []).find((item) => item.lessons.some((entry) => entry.id === saved.lessonId));
+    const selectedCourse = restoredCourse
+      || visibleCourses.find((item) => item.lessons.some((entry) => entry.id === saved.lessonId)) || visibleCourses[0];
     setCourse(selectedCourse || null);
     setLesson(selectedCourse?.lessons.find((entry) => entry.id === saved.lessonId) || null);
     setPhase(saved.phase === "idle" || saved.phase === "courses" ? "lessons" : saved.phase);
@@ -164,14 +171,20 @@ export default function StudentApp() {
   useEffect(() => {
     if ((phase !== "video" && phase !== "replay") || !lesson || !playerSlot.current) return;
     let handle;
+    function playerError(err) {
+      if (phase === "replay") {
+        setReplayError(err.message);
+        setPhase("done");
+      } else setError(err.message);
+    }
     try {
       handle = platformPlayerAdapter.mount(playerSlot.current, {
         lesson: lesson,
         replay: phase === "replay",
         onEnded: () => setVideoEnded(true),
-        onError: (err) => setError(err.message),
+        onError: playerError,
       });
-    } catch (err) { setError(err.message); }
+    } catch (err) { playerError(err); }
     return () => { if (typeof handle === "function") handle(); };
   }, [phase, lesson]);
 
@@ -326,6 +339,26 @@ export default function StudentApp() {
     finally { setBusy(false); }
   }
 
+  async function openReplay(refresh = false) {
+    if (busy) return;
+    setBusy(true); setReplayLoading(true); setError(""); setReplayError("");
+    try {
+      let playableLesson = lesson;
+      if (refresh || !playableLesson?.playerUrl) {
+        const playback = await api(`/session/${sessionId.current}/playback`, "POST",
+          { launch_token: launchToken.current });
+        playableLesson = playback.lesson;
+        if (playback.courseId !== course?.id || playableLesson?.id !== activeLessonId.current
+            || (lesson?.classroomId && playableLesson?.classroomId !== lesson.classroomId)) {
+          throw new Error("播放信息与当前课时不匹配，请从平台重新进入课程");
+        }
+      }
+      if (!playableLesson?.playerUrl) throw new Error("本课时暂时没有可播放的视频，请稍后重试或联系教师");
+      setLesson(playableLesson); setVideoEnded(false); setPhase("replay");
+    } catch (err) { setReplayError(err.message); }
+    finally { setBusy(false); setReplayLoading(false); }
+  }
+
   async function openPostclass() {
     setBusy(true); setError("");
     try {
@@ -395,7 +428,7 @@ export default function StudentApp() {
           </div>
         </div>
       </div>}
-      {phase === "done" && <div className="stage stage--done"><div className="done done--feedback"><span className="done__check" aria-hidden="true">✓</span><p>第 {lesson?.week} 周 · 第 {lesson?.lessonNumber} 次课</p><h3 className="done__title">本节课结束</h3><LessonFeedback feedback={feedback} /><div className="postclass-actions"><button className="btn btn--primary" type="button" onClick={() => { setVideoEnded(false); setPhase("replay"); }}>回看视频</button><button className="btn btn--primary" type="button" disabled={busy} onClick={openPostclass}>{postclassStage === "open" ? "与 AI 自由提问" : "继续未完成的学习"}</button><button className="btn btn--ghost" type="button" onClick={() => setPhase("lessons")}>返回课时列表</button><a className="btn btn--ghost" href={`${platformUrl || "http://localhost:8088"}/student`}>返回首页</a></div></div></div>}
+      {phase === "done" && <div className="stage stage--done"><div className="done done--feedback"><span className="done__check" aria-hidden="true">✓</span><p>第 {lesson?.week} 周 · 第 {lesson?.lessonNumber} 次课</p><h3 className="done__title">本节课结束</h3><LessonFeedback feedback={feedback} />{replayError && <p className="replay-error" role="alert">暂时无法回看：{replayError}</p>}<div className="postclass-actions"><button className="btn btn--primary" type="button" disabled={busy} onClick={() => openReplay(Boolean(replayError))}>{replayLoading ? "正在获取播放信息…" : replayError ? "重试回看" : "回看视频"}</button><button className="btn btn--primary" type="button" disabled={busy} onClick={openPostclass}>{postclassStage === "open" ? "与 AI 自由提问" : "继续未完成的学习"}</button><button className="btn btn--ghost" type="button" disabled={busy} onClick={() => setPhase("lessons")}>返回课时列表</button><a className="btn btn--ghost" href={`${platformUrl || "http://localhost:8088"}/student`}>返回首页</a></div></div></div>}
     </div></div></section>}
     {error && phase !== "error" && <p className="new-error" role="alert">{error}</p>}
   </main>;
