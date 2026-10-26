@@ -18,6 +18,11 @@ from app.models import Course
 from app.api.routes.student_bridge import _published_classroom, _published_package_payload
 from app.services.browser_sessions import user_for_cookie
 from app.services.course_access import get_accessible_course, get_owned_course
+from app.services.teacher_course_client import (
+    TeacherCourseConflict,
+    TeacherCourseUnavailable,
+    provision_teacher_course,
+)
 
 router = APIRouter(tags=["teacher-bridge"])
 
@@ -133,8 +138,6 @@ def resolve_course_alias(
     under the legacy id instead of failing with 404.
     """
     check_service_key(x_teacher_service_key)
-    if session.execute(text("SELECT 1 FROM teacher.mentra_courses WHERE id=:id"), {"id": course_id}).first():
-        return {"platformCourseId": course_id, "legacyCourseId": None}
     link = session.execute(
         text("SELECT course_id::text, external_course_id FROM teacher_course_link "
              "WHERE course_id::text=:pid OR external_course_id=:ext"),
@@ -143,10 +146,6 @@ def resolve_course_alias(
     if not link:
         raise HTTPException(404, "课程映射不存在")
     platform_id, legacy_id = str(link[0]), str(link[1])
-    if not session.execute(
-        text("SELECT 1 FROM teacher.mentra_courses WHERE id=:id"), {"id": legacy_id}
-    ).first():
-        raise HTTPException(404, "课程尚未同步到教师服务")
     return {
         "platformCourseId": platform_id,
         "legacyCourseId": legacy_id if legacy_id != course_id else None,
@@ -321,21 +320,37 @@ async def open_teacher_workspace(course_id: uuid.UUID, session: SessionDep, user
     # Serialize workspace provisioning per course across workers.
     session.execute(text("SELECT pg_advisory_xact_lock(hashtext(:id))"), {"id": str(course_id)})
     row = session.execute(text("SELECT external_course_id FROM teacher_course_link WHERE course_id=:id"), {"id": course_id}).first()
-    if row and session.execute(text("SELECT 1 FROM teacher.mentra_courses WHERE id=:id AND teacher_id=:owner"), {"id": row[0], "owner": str(course.owner_id)}).first():
-        external_id = row[0]
-    else:
-        existing = session.execute(text("SELECT teacher_id FROM teacher.mentra_courses WHERE id=:id"), {"id": str(course.id)}).first()
-        if existing and existing[0] != str(course.owner_id):
-            raise HTTPException(409, "课程归属不一致，请联系管理员修复")
-        async with httpx.AsyncClient(timeout=30, trust_env=False) as client:
-            try:
-                response = await client.post(f"{settings.TEACHER_URL}/api/course-space", json={"id": str(course.id), "title": course.title, "description": course.description},
-                    headers={"X-Platform-Service-Key": settings.TEACHER_SERVICE_KEY, "X-Platform-Subject": str(course.owner_id)})
-                response.raise_for_status()
-                external_id = response.json()["course"]["id"]
-            except (httpx.HTTPError, KeyError, ValueError) as error:
-                session.rollback()
-                raise HTTPException(502, "教师服务暂不可用，请稍后重试") from error
+    if settings.TEACHER_COURSE_PROVISION_MODE == "legacy":
+        if row and session.execute(text("SELECT 1 FROM teacher.mentra_courses WHERE id=:id AND teacher_id=:owner"), {"id": row[0], "owner": str(course.owner_id)}).first():
+            external_id = row[0]
+        else:
+            existing = session.execute(text("SELECT teacher_id FROM teacher.mentra_courses WHERE id=:id"), {"id": str(course.id)}).first()
+            if existing and existing[0] != str(course.owner_id):
+                raise HTTPException(409, "课程归属不一致，请联系管理员修复")
+            async with httpx.AsyncClient(timeout=30, trust_env=False) as client:
+                try:
+                    response = await client.post(f"{settings.TEACHER_URL}/api/course-space", json={"id": str(course.id), "title": course.title, "description": course.description},
+                        headers={"X-Platform-Service-Key": settings.TEACHER_SERVICE_KEY, "X-Platform-Subject": str(course.owner_id)})
+                    response.raise_for_status()
+                    external_id = response.json()["course"]["id"]
+                except (httpx.HTTPError, KeyError, ValueError) as error:
+                    session.rollback()
+                    raise HTTPException(502, "教师服务暂不可用，请稍后重试") from error
+            session.execute(text("INSERT INTO teacher_course_link(course_id,external_course_id) VALUES (:id,:external) ON CONFLICT (course_id) DO UPDATE SET external_course_id=EXCLUDED.external_course_id"), {"id": course_id, "external": external_id})
+            session.commit()
+        return {"url": f"{settings.TEACHER_PUBLIC_URL.rstrip('/')}/teacher-workspace?workspace={external_id}"}
+    requested_id = str(row[0]) if row else str(course.id)
+    try:
+        external_id = await provision_teacher_course(
+            requested_id, course.owner_id, course.title, course.description
+        )
+    except TeacherCourseConflict as error:
+        session.rollback()
+        raise HTTPException(409, "课程归属不一致，请联系管理员修复") from error
+    except TeacherCourseUnavailable as error:
+        session.rollback()
+        raise HTTPException(502, "教师服务暂不可用，请稍后重试") from error
+    if not row:
         session.execute(text("INSERT INTO teacher_course_link(course_id,external_course_id) VALUES (:id,:external) ON CONFLICT (course_id) DO UPDATE SET external_course_id=EXCLUDED.external_course_id"), {"id": course_id, "external": external_id})
         session.commit()
     return {"url": f"{settings.TEACHER_PUBLIC_URL.rstrip('/')}/teacher-workspace?workspace={external_id}"}

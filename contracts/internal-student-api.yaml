@@ -70,6 +70,7 @@ paths:
               properties:
                 launch_token: { type: string }
                 lesson_id: { type: [string, "null"], description: 可选；选定的已发布课时 ID }
+                refresh_session: { type: boolean, default: false, description: 已建立会话刷新；仍须校验签名与当前选课状态 }
       responses:
         "200":
           description: 学习上下文

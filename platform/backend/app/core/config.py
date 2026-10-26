@@ -39,6 +39,10 @@ class Settings(BaseSettings):
     TEACHER_SERVICE_KEY: str = ""
     TEACHER_URL: str = "http://127.0.0.1:3200"
     TEACHER_PUBLIC_URL: str = "http://localhost:3200"
+    # legacy: existing query; shadow: compare teacher API without changing the result;
+    # api: use the teacher-owned verdict and fail closed when it is unavailable.
+    TEACHER_PUBLICATION_READ_MODE: Literal["legacy", "shadow", "api"] = "legacy"
+    TEACHER_COURSE_PROVISION_MODE: Literal["legacy", "api"] = "legacy"
     # Extra browser origins (teacher service dev ports, e.g. "http://localhost:3200")
     # accepted for non-GET teacher requests, in addition to FRONTEND_HOST.
     TEACHER_ALLOWED_ORIGINS: str = ""

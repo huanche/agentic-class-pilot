@@ -19,6 +19,21 @@ on:
       - 'platform/backend/app/api/main.py'
       - 'platform/backend/app/api/routes/teacher_bridge.py'
       - 'platform/backend/app/api/routes/student_bridge.py'
+      - 'platform/backend/app/services/course_publication.py'
+      - 'platform/backend/app/services/teacher_publication_client.py'
+      - 'platform/backend/app/services/teacher_course_client.py'
+      - 'platform/backend/app/core/config.py'
+      - 'platform/.env.example'
+      - 'platform/backend/app/generated/**'
+      - 'platform/backend/tests/unit/test_teacher_publication_client.py'
+      - 'platform/backend/pyproject.toml'
+      - 'platform/uv.lock'
+      - 'student_agent/agent/platform_client.py'
+      - 'student_agent/backend/main.py'
+      - 'student_agent/backend/tests/test_platform_generated_client.py'
+      - 'student_agent/backend/requirements.txt'
+      - 'student_agent/generated/**'
+      - 'student_agent/start-platform.ps1'
       - 'platform/backend/app/api/routes/user_model_config.py'
       - 'platform/scripts/gen_routing.py'
       - 'platform/deployment/**'
@@ -40,6 +55,21 @@ on:
       - 'scripts/local-gateway.mjs'
       - 'teacher_agent/app/api/**/route.ts'
       - 'platform/backend/app/api/**'
+      - 'platform/backend/app/services/course_publication.py'
+      - 'platform/backend/app/services/teacher_publication_client.py'
+      - 'platform/backend/app/services/teacher_course_client.py'
+      - 'platform/backend/app/core/config.py'
+      - 'platform/.env.example'
+      - 'platform/backend/app/generated/**'
+      - 'platform/backend/tests/unit/test_teacher_publication_client.py'
+      - 'platform/backend/pyproject.toml'
+      - 'platform/uv.lock'
+      - 'student_agent/agent/platform_client.py'
+      - 'student_agent/backend/main.py'
+      - 'student_agent/backend/tests/test_platform_generated_client.py'
+      - 'student_agent/backend/requirements.txt'
+      - 'student_agent/generated/**'
+      - 'student_agent/start-platform.ps1'
       - 'platform/scripts/gen_routing.py'
       - 'platform/deployment/**'
       - 'student_agent/tests/fixtures/**'
@@ -124,3 +154,28 @@ jobs:
         run: python -m pip install -r contracts/tooling/requirements-client-tests.txt
       - name: Exercise generated Python with mock transport only
         run: python -m unittest discover -s scripts/tests -p test_generated_clients.py -v
+
+  platform-publication-adapter:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14.4'
+      - name: Install locked platform test dependencies
+        run: |
+          python -m pip install uv==0.12.15
+          cd platform && uv sync --frozen --package app --group dev
+      - name: Check generated publication adapter without a database
+        working-directory: platform/backend
+        env:
+          SECRET_KEY: local-ci-only
+          PROJECT_NAME: test
+          FIRST_SUPERUSER: test@example.com
+          FIRST_SUPERUSER_PASSWORD: local-ci-only
+          DATABASE_URL: postgresql://test:test@localhost:1/app_test
+        run: ../.venv/bin/python -m pytest -p no:cacheprovider --confcutdir=tests/unit tests/unit/test_teacher_publication_client.py -q
+      - name: Check generated student platform adapter without a database
+        working-directory: student_agent
+        run: ../platform/.venv/bin/python -m pytest -p no:cacheprovider backend/tests/test_platform_generated_client.py -q

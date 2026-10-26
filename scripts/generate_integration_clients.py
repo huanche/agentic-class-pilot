@@ -1,7 +1,7 @@
-"""Generate optional SDK artifacts without changing any service entry point.
+"""Generate SDK artifacts and mirror the Python clients into service packages.
 
 Run --check to regenerate into an ignored temporary directory and reject drift.
-Only contracts/generated is managed; stale generated files are backed up first.
+Stale managed files are backed up first; adapters and entry points are untouched.
 """
 from __future__ import annotations
 
@@ -21,6 +21,8 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACTS = ROOT / 'contracts'
 GENERATED = CONTRACTS / 'generated'
+PLATFORM_TEACHER_RUNTIME = ROOT / 'platform/backend/app/generated/platform_teacher_api'
+STUDENT_PLATFORM_RUNTIME = ROOT / 'student_agent/generated/student_platform_api'
 TOOLING = CONTRACTS / 'tooling'
 RUNTIME = ROOT / '.runtime'
 GENERATOR_PYTHON = '3.14.4'
@@ -147,9 +149,23 @@ def main() -> int:
         generate(output)
         expected, current = snapshot(output), snapshot(GENERATED)
         drift = sorted(path for path in set(expected) | set(current) if expected.get(path) != current.get(path))
+        runtime_clients = {
+            'platform': (output / 'python/platform_teacher_api', PLATFORM_TEACHER_RUNTIME),
+            'student': (output / 'python/student_platform_api', STUDENT_PLATFORM_RUNTIME),
+        }
+        runtime_snapshots = {
+            name: (snapshot(source), snapshot(target))
+            for name, (source, target) in runtime_clients.items()
+        }
+        runtime_drift = [
+            f'{name} runtime: {path}'
+            for name, (source, target) in runtime_snapshots.items()
+            for path in sorted(set(source) | set(target))
+            if source.get(path) != target.get(path)
+        ]
         if args.check:
-            if drift:
-                print('Generated clients drifted:\n' + '\n'.join(drift))
+            if drift or runtime_drift:
+                print('Generated clients drifted:\n' + '\n'.join(drift + runtime_drift))
                 return 1
             print('Generated clients are reproducible and current.')
             return 0
@@ -163,7 +179,20 @@ def main() -> int:
             target = safe_destination(relative)
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(content)
-        print(f'Generated {len(expected)} files under contracts/generated; runtime callers unchanged.')
+        # Deployable services do not include contracts/ on their import path.
+        # Both runtime packages must match the canonical generated SDK bytes.
+        for name, (runtime_expected, runtime_current) in runtime_snapshots.items():
+            destination = runtime_clients[name][1]
+            for relative in set(runtime_current) - set(runtime_expected):
+                source = destination / relative
+                backup = RUNTIME / 'generated-client-backups' / str(time.time_ns()) / f'{name}-runtime' / relative
+                backup.parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(source, backup)
+            for relative, content in runtime_expected.items():
+                target = destination / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(content)
+        print(f'Generated {len(expected)} files under contracts/generated and mirrored both runtime clients.')
     return 0
 
 

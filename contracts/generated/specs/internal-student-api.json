@@ -423,6 +423,11 @@
                       "string",
                       "null"
                     ]
+                  },
+                  "refresh_session": {
+                    "default": false,
+                    "description": "已建立会话刷新；仍须校验签名与当前选课状态",
+                    "type": "boolean"
                   }
                 },
                 "required": [

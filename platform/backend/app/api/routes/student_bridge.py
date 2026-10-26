@@ -97,15 +97,9 @@ def verify_launch_token(token: str, *, refresh_session: bool = False) -> dict:
 # --- published-content resolution (read-only cross-schema queries) ------------
 
 def _latest_publication(session: SessionDep, course_id: uuid.UUID) -> dict | None:
-    row = session.execute(
-        text("SELECT p.payload->>'version', p.payload->>'id' FROM teacher.mentra_knowledge_packages p "
-             "JOIN teacher_course_link l ON l.external_course_id = p.course_id "
-             "JOIN teacher.mentra_courses c ON c.id=p.course_id AND c.status='active' "
-             "WHERE l.course_id=:id AND p.status='published' ORDER BY p.version DESC LIMIT 1"),
-        {"id": course_id}).first()
-    if not row:
-        return None
-    return {"publicationId": row[1], "version": int(row[0])}
+    from app.services.course_publication import latest_publication
+
+    return latest_publication(session, course_id)
 
 
 def _published_classroom(session: SessionDep, course_id: uuid.UUID) -> str | None:

@@ -93,6 +93,10 @@ def _restore_browser_snapshot(value: str) -> dict:
 
 
 def platform_context(token: str, lesson_id: str | None = None, refresh_session: bool = False) -> dict:
+    if os.environ.get("STUDENT_PLATFORM_CLIENT_MODE", "legacy") == "generated":
+        from agent.platform_client import learning_context
+
+        return learning_context(token, lesson_id, refresh_session)
     base = os.environ.get("PLATFORM_AUTH_URL", "").rstrip("/")
     key = os.environ.get("STUDENT_SERVICE_KEY", "")
     if not base or not key:

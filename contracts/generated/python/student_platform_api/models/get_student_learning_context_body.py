@@ -26,10 +26,12 @@ class GetStudentLearningContextBody:
         Attributes:
             launch_token (str):
             lesson_id (None | str | Unset): 可选；选定的已发布课时 ID
+            refresh_session (bool | Unset): 已建立会话刷新；仍须校验签名与当前选课状态 Default: False.
      """
 
     launch_token: str
     lesson_id: None | str | Unset = UNSET
+    refresh_session: bool | Unset = False
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
 
@@ -45,6 +47,8 @@ class GetStudentLearningContextBody:
         else:
             lesson_id = self.lesson_id
 
+        refresh_session = self.refresh_session
+
 
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
@@ -53,6 +57,8 @@ class GetStudentLearningContextBody:
         })
         if lesson_id is not UNSET:
             field_dict["lesson_id"] = lesson_id
+        if refresh_session is not UNSET:
+            field_dict["refresh_session"] = refresh_session
 
         return field_dict
 
@@ -73,9 +79,12 @@ class GetStudentLearningContextBody:
         lesson_id = _parse_lesson_id(d.pop("lesson_id", UNSET))
 
 
+        refresh_session = d.pop("refresh_session", UNSET)
+
         get_student_learning_context_body = cls(
             launch_token=launch_token,
             lesson_id=lesson_id,
+            refresh_session=refresh_session,
         )
 
 
