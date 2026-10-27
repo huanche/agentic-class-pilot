@@ -9,6 +9,7 @@ import type { CourseArtifactJob, CourseSpace } from '@/lib/course-space';
 import { useCourseGenerationTask } from '@/lib/store/course-generation-task';
 import {
   isCoursewareTaskRunning,
+  reconcileCoursewareTaskSnapshot,
   resolveCoursewareTaskProgress,
 } from '@/lib/course-space/courseware-task-progress';
 
@@ -34,6 +35,7 @@ export function CoursewareGenerationButton({
   const active = Boolean(view && isCoursewareTaskRunning(view.status));
   const [open, setOpen] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+  const [retrying, setRetrying] = useState(false);
   const [error, setError] = useState('');
   const [completedId, setCompletedId] = useState<string>();
   const previous = useRef<{ id: string; active: boolean } | null>(null);
@@ -122,6 +124,32 @@ export function CoursewareGenerationButton({
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
       setCancelling(false);
+    }
+  };
+  const retry = async () => {
+    if (!job?.backgroundGeneration || retrying || generationLocked || course.status === 'archived')
+      return;
+    setRetrying(true);
+    setError('');
+    try {
+      const response = await fetch(`/api/course-space/jobs/${encodeURIComponent(job.id)}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'retry' }),
+      });
+      const data = await response.json();
+      if (!response.ok || data.success === false) throw new Error(data.error || '重试失败');
+      const current = useCourseGenerationTask.getState().task;
+      if (current?.serverJobId === job.id) {
+        const updated = reconcileCoursewareTaskSnapshot(current, [data.job]);
+        if (updated) useCourseGenerationTask.getState().setTask(updated);
+      }
+      await onRefresh();
+      setOpen(false);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setRetrying(false);
     }
   };
   return (
@@ -227,7 +255,16 @@ export function CoursewareGenerationButton({
                 {active ? '查看已生成页面' : '查看课件'}
               </Button>
             )}
-            {failed && lessonId && (
+            {failed && job?.backgroundGeneration && (
+              <Button
+                size="sm"
+                disabled={retrying || generationLocked || course.status === 'archived'}
+                onClick={() => void retry()}
+              >
+                {retrying ? '正在提交重试…' : '重试未完成页面'}
+              </Button>
+            )}
+            {failed && !job?.backgroundGeneration && lessonId && (
               <Button
                 size="sm"
                 disabled={generationLocked || course.status === 'archived'}
@@ -236,7 +273,7 @@ export function CoursewareGenerationButton({
                   onGenerate(lessonId);
                 }}
               >
-                重新生成
+                新建课件
               </Button>
             )}
             {detailUrl && (
@@ -247,8 +284,8 @@ export function CoursewareGenerationButton({
               </Button>
             )}
           </div>
-          {failed && lessonId && (
-            <p className="mt-2 text-xs text-slate-500">重新生成会创建新课件，已生成页面仍保留。</p>
+          {failed && job?.backgroundGeneration && (
+            <p className="mt-2 text-xs text-slate-500">沿用原大纲和设置，已完成页面不重复生成。</p>
           )}
         </PopoverContent>
       )}
