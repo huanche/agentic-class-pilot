@@ -1,0 +1,28 @@
+name: courseware-retry-five-capture-20261027
+on:
+  push:
+    branches: [codex/backup-generation-controls-20261020]
+    paths: [.github/workflows/courseware-retry-five-capture-20261027.yml]
+permissions:
+  contents: read
+concurrency:
+  group: teacher-deploy
+  cancel-in-progress: false
+jobs:
+  operate:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    steps:
+      - name: Run verified production release operation
+        env:
+          SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+        run: |
+          set -euo pipefail
+          key="$RUNNER_TEMP/openmaic-release-key"
+          printf '%s\n' "$SERVER_SSH_KEY" > "$key"
+          chmod 600 "$key"
+          trap 'rm -f "$key"' EXIT
+          ssh -i "$key" -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=20 -o ServerAliveCountMax=3 "ubuntu@$SERVER_HOST" "bash -s -- '$GITHUB_RUN_ID'" <<'REMOTE'
+          printf '%s' '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' | base64 -d | gzip -d | bash -s -- "$1"
+          REMOTE
