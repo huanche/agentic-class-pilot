@@ -1,0 +1,28 @@
+name: courseware-retry-five-inspect-20261027
+on:
+  push:
+    branches: [codex/backup-generation-controls-20261020]
+    paths: [.github/workflows/courseware-retry-five-inspect-20261027.yml]
+permissions:
+  contents: read
+concurrency:
+  group: teacher-retry-test-inspect
+  cancel-in-progress: false
+jobs:
+  operate:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    steps:
+      - name: Run verified production release operation
+        env:
+          SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+        run: |
+          set -euo pipefail
+          key="$RUNNER_TEMP/openmaic-release-key"
+          printf '%s\n' "$SERVER_SSH_KEY" > "$key"
+          chmod 600 "$key"
+          trap 'rm -f "$key"' EXIT
+          ssh -i "$key" -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=20 -o ServerAliveCountMax=3 "ubuntu@$SERVER_HOST" "bash -s -- '$GITHUB_RUN_ID'" <<'REMOTE'
+          printf '%s' 'H4sIADVd4GoC/31UbW/bNhD+7l9xA4JK6iTZCdC9JPUML1HaDE1dyM6GIshURjrZTGhRJam4ruv/viMtOyoG9Iuge7977uFpNBBhI6HmNZaMi14h80dUgF8wh4gDm2NleB4ZZPkCVVQrWUAlC4TXr733k4vE6/lMr6sc/ACGf8CmB5DLShsoNQxB4eeGK/S9UvcpdMk1ai8IoWZm0TVb2eo38EFKAdvvbHMvODukLbgio9dndd0vmGH9XMimiIziTOidkCk0av0qOxmc/HI8OPmVec/h2jCDlOCv6eR9XDOl0Wcrxm27sUJWXHKBvu0mfpC88qlaCJ4Lih+0rGyPXmPK37yg05MmaJaMstKIOWodY/UUn09u0mmSXYxn4z/H9DM9f5tcj0cxdbr0XTAvwW9DX7yAn/r/3rLoa3Znv4Po9+zu5VE/NqhN6xQEYBZKrqDCFSRKSeV7V9UTE7xoO+jiVFsch87XQupvrL7C3HBZTamHan76w3Zv0nfw7dt3Ll1b2Ek340uUjbnmQnB9Cq8Gg0FIfQDEcbwfcESrlbX1Jo9PUQ4amcoXmYV6eLTZeW3DurkXPP9EBDiFzTaArZuItumItZ/tQd7TaO3i7KDx5wbV2vemybvkfEbsWgvJCrhMJ9ewJAIrljFleMlyk1Gwhn/eJmkCvBgeHXsh3LYLlvdXxV0QxASyvh3cjeI20dmhthQYCzn3vb+T9OryY5Yms/RjNkums2w6G8+SoQc/77ilHca8XBPyLvEpdKpY+Boi37N6L5NFMK2VlMuO8Vm1QxacoSEsKd0o3gkhzao1vdhW20ohoCVLq3T/tvyyFmiwaNX3LH+cK9lUxRusUDG7qVF88PpAefS+tJGGiR/GOY9dDKBgtcbimnq9sLNUckWnImono6+i/GNDN2HBNO4ndsK+YMkaYVJcyic8QOJ09GSdMoSVVI+6ZjneKLF36eqISY5KWyh5xYQgQkGHP1gV9CZh29sGfhDnzOQL3yHlbtph9bh7df9ffpKmk9Qt37nsoaeUhwf0hZtzezeHcHzmeG2vZ+8/AW+/A4EFAAA=' | base64 -d | gzip -d | bash -s -- "$1"
+          REMOTE
