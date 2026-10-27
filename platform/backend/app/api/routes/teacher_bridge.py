@@ -15,11 +15,45 @@ from sqlalchemy import text
 from app.api.deps import CurrentUser, SessionDep, TeacherUser
 from app.core.config import settings
 from app.models import Course
-from app.api.routes.student_bridge import _published_classroom, _published_package_payload
+from app.api.routes.student_bridge import (_classroom_view, _published_classroom,
+    _published_package_payload, ensure_published_knowledge_job)
 from app.services.browser_sessions import user_for_cookie
 from app.services.course_access import get_accessible_course, get_owned_course
 
 router = APIRouter(tags=["teacher-bridge"])
+
+
+class PublishedLessonPreparation(BaseModel):
+    course_id: str
+    artifact_id: str
+
+
+@router.post("/internal/teacher/published-lesson-knowledge")
+def enqueue_published_lesson_knowledge(
+    body: PublishedLessonPreparation, session: SessionDep,
+    x_teacher_service_key: str | None = Header(default=None),
+):
+    """Record the verified published video; student workers do the model work."""
+    check_service_key(x_teacher_service_key)
+    row = session.execute(text(
+        "SELECT l.course_id, a.payload FROM teacher.mentra_course_artifacts a "
+        "JOIN teacher_course_link l ON l.external_course_id=a.course_id "
+        "WHERE a.id=:artifact AND a.course_id=:course AND a.status='published' "
+        "AND a.payload->>'classVisible'='true' "
+        "AND a.payload->>'classPublicationId' IS NOT NULL"
+    ), {"artifact": body.artifact_id, "course": body.course_id}).first()
+    if not row:
+        raise HTTPException(409, "未找到已发布的教学视频")
+    course_id, artifact = row
+    placement = artifact.get("publicationPlacement") or {}
+    lesson_id = placement.get("lessonId")
+    classroom_id = artifact.get("classroomId")
+    if not lesson_id or not classroom_id:
+        raise HTTPException(409, "已发布内容不是课时教学视频")
+    classroom = _classroom_view(session, classroom_id)
+    revision = ensure_published_knowledge_job(
+        session, course_id, lesson_id, classroom, artifact.get("classPublishedAt"))
+    return {"lessonId": lesson_id, "videoRevision": revision}
 
 # API prefixes a teacher (not only an admin) may call on the teacher service.
 # Each of them carries an explicit scope check (course or classroom ownership)
