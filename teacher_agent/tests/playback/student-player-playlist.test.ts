@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  isCompletedStudentScene,
   isAutoPlayedStudentScene,
   isFinalStudentPlaybackSlide,
   nextStudentPlaybackSlide,
@@ -36,5 +37,11 @@ describe('student player playlist', () => {
     expect(isFinalStudentPlaybackSlide(scenes, 'slide-1')).toBe(false);
     expect(isFinalStudentPlaybackSlide(scenes, 'slide-2')).toBe(false);
     expect(isFinalStudentPlaybackSlide(scenes, 'pbl-1')).toBe(true);
+  });
+
+  it('does not carry the previous scene completion into the next scene', () => {
+    expect(isCompletedStudentScene('slide-1', 'slide-1', true)).toBe(true);
+    expect(isCompletedStudentScene('slide-2', 'slide-1', true)).toBe(false);
+    expect(isCompletedStudentScene('slide-2', 'slide-2', true)).toBe(true);
   });
 });

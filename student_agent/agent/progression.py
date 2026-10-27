@@ -25,6 +25,34 @@ def reinforce_round_limit() -> int:
 def normalize(state: dict) -> dict:
     result = copy.deepcopy(state)
     result.setdefault("discussion_turns", 0)
+    if result.get("flow_version") == FLOW_VERSION:
+        for point in result["points"]:
+            history = point.get("assessment_history") or []
+            last_discussion = next((item for item in reversed(history)
+                                    if item.get("stage") == "discuss"), None)
+            last_concept = next((item for item in reversed(history)
+                                 if item.get("stage") in {"recall", "reinforce", "postclass"}), None)
+            if (last_discussion and last_concept
+                    and last_concept.get("result") == "mastered"
+                    and point.get("status") == last_discussion.get("result")
+                    and point.get("excluded_from_discussion")):
+                # Older flows replaced the mastered concept verdict with a
+                # failed discussion answer. Restore the two separate results.
+                point["status"] = "mastered"
+                point["evidence"] = last_concept.get("evidence") or point.get("evidence")
+                point["excluded_from_discussion"] = False
+                point["discussion_result"] = last_discussion.get("result")
+                point["discussion_evidence"] = last_discussion.get("evidence")
+            # Repair late mastery in an active recall/reinforcement session saved by
+            # the earlier flow, which marked reinforcement complete immediately.
+            if (result.get("stage") in {"recall", "reinforce"}
+                    and point.get("mastered_in") == "recall"
+                    and point.get("recall_attempts", 0) > 5
+                    and not point.get("reinforce_attempts", 0)):
+                point["reinforce_done"] = False
+                point["reinforcement_required"] = True
+            point.setdefault("reinforcement_required", bool(
+                point.get("recall_done") and not point.get("reinforce_done")))
     if result.get("stage") == "discuss":
         # Older sessions had a global discussion counter, but no per-point queue.
         # Give every eligible point its own question when they resume.
@@ -46,6 +74,7 @@ def normalize(state: dict) -> dict:
             reinforce_attempts=0,
             recall_done=mastered or result["stage"] != "recall" or attempts >= result["recall_round_limit"],
             reinforce_done=mastered,
+            reinforcement_required=not mastered and result["stage"] != "recall",
             mastered_in="previous" if mastered else None,
             excluded_from_discussion=False,
             assessment_history=[],
@@ -58,13 +87,15 @@ def normalize(state: dict) -> dict:
 def next_stage(points: list[dict]) -> str:
     if any(not p["recall_done"] for p in points):
         return "recall"
-    if any(p["status"] != "mastered" and not p["reinforce_done"] for p in points):
+    if any(p.get("reinforcement_required") and not p["reinforce_done"] for p in points):
         return "reinforce"
     return "discuss" if eligible_points(points) else "wrapup"
 
 
 def eligible_points(points: list[dict]) -> list[dict]:
-    return [p for p in points if p.get("status") == "mastered" and not p.get("excluded_from_discussion", False)]
+    return [p for p in points if p.get("status") == "mastered"
+            and not (p.get("reinforcement_required") and not p.get("reinforce_done"))
+            and not p.get("excluded_from_discussion", False)]
 
 
 def current_point(state: dict) -> dict | None:
@@ -73,7 +104,7 @@ def current_point(state: dict) -> dict | None:
         return next((p for p in state["points"] if not p["recall_done"]), None)
     if stage == "reinforce":
         return next((p for p in state["points"]
-                     if p["status"] != "mastered" and not p["reinforce_done"]), None)
+                     if p.get("reinforcement_required") and not p["reinforce_done"]), None)
     if stage == "discuss":
         ids = state.get("discussion_point_ids") or []
         index = state.get("discussion_index", 0)
@@ -106,43 +137,62 @@ def advance(state: dict) -> dict:
             point[counter] += 1
             point["attempts"] = point["recall_attempts"] + point["reinforce_attempts"]
         point["assessment_history"].append({
-            "stage": stage, "round": point[counter] if stage in {"recall", "reinforce"} else result["discussion_index"] + 1,
+            "stage": stage, "round": point[counter] if stage in {"recall", "reinforce"} else
+            sum(item.get("stage") == "discuss" for item in point["assessment_history"]) + 1,
             "result": outcome, "evidence": evidence,
             "studentText": result.get("student_text", ""),
         })
-        point["evidence"] = evidence
-        if outcome in {"mastered", "partial", "misconception", "unanswered"}:
+        if stage == "discuss":
+            # Discussion checks application of an already learned concept. Keep
+            # its result separate from the recall/reinforcement mastery verdict.
+            point["discussion_result"] = outcome
+            point["discussion_evidence"] = evidence
+        else:
+            point["evidence"] = evidence
+        if stage != "discuss" and outcome in {"mastered", "partial", "misconception", "unanswered"}:
             point["status"] = outcome
+        elif stage == "reinforce" and point["status"] == "mastered":
+            # An unanswered confirmation must not retain the old mastery verdict.
+            point["status"] = "unclear"
         elif point["status"] == "unseen":
             point["status"] = "unclear"
         if stage in {"recall", "reinforce"}:
             if outcome == "mastered":
                 point["mastered_in"] = stage
-                point["recall_done"] = point["reinforce_done"] = True
+                point["recall_done"] = True
+                if stage == "recall":
+                    point["reinforcement_required"] = point["recall_attempts"] > 5
+                    point["reinforce_done"] = not point["reinforcement_required"]
+                else:
+                    point["reinforce_done"] = True
                 result["transition"] = "mastered_next"
             elif point[counter] >= result["recall_round_limit" if stage == "recall" else "reinforce_round_limit"]:
                 point["recall_done" if stage == "recall" else "reinforce_done"] = True
+                if stage == "recall":
+                    point["reinforcement_required"] = True
                 point["excluded_from_discussion"] = stage == "reinforce"
                 result["transition"] = "defer" if stage == "recall" else "record_gap"
             else:
                 result["strategy"] = "hint"
-        elif assessment and outcome != "mastered":
-            # An actual difficulty found in discussion belongs in final feedback too.
-            point["excluded_from_discussion"] = True
         point["extended_reinforcement"] = (
             point["recall_attempts"] > 5 and point["status"] != "mastered"
         )
         if outcome == "misconception" and result["transition"] == "continue":
             result["strategy"] = "correct"
     if stage == "discuss":
-        # A clarification question does not consume this point's discussion question.
-        if active and active["id"] in evaluations:
-            result["discussion_index"] += 1
+        # Only a mastered answer completes this question. Other answers keep
+        # the same focus and let the tutor help with the original question.
+        assessment = evaluations.get(active["id"]) if active else None
+        if assessment:
             result["discussion_turns"] += 1
+        if assessment and assessment["result"] == "mastered":
+            result["discussion_index"] += 1
             if result["discussion_index"] < len(result["discussion_point_ids"]):
                 result["transition"] = "next_discussion_point"
         elif result["evaluation"].get("intent") == "question":
             result["strategy"] = "answer_question"
+        elif assessment:
+            result["strategy"] = "correct" if assessment["result"] == "misconception" else "hint"
         else:
             result["strategy"] = "clarify"
         if result["discussion_index"] >= len(result["discussion_point_ids"]):

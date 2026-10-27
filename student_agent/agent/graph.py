@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 from typing import TypedDict
@@ -12,8 +13,12 @@ from langgraph.graph import END, START, StateGraph
 from .progression import advance, normalize, current_point, eligible_points
 from .prompts import (
     EVALUATION_PROMPT, TUTOR_PROMPT, STAGE_PROMPTS, STRATEGY_PROMPTS,
+    DISCUSSION_QUESTION_HELP_PROMPT, DISCUSSION_RETRY_PROMPT,
+    FINAL_DISCUSSION_FEEDBACK_PROMPT,
     opening_message,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class DialogueState(TypedDict):
@@ -93,13 +98,42 @@ def route(state: DialogueState) -> dict:
     return advance(state)
 
 
+def _last_discussion_feedback(state: DialogueState) -> str:
+    """Respond to the final discussion answer before closing the classroom."""
+    point_id = state.get("last_point_id")
+    point = next((p for p in state["points"] if p["id"] == point_id), None)
+    assessment = next((a for a in state["evaluation"].get("assessments", [])
+                       if a["id"] == point_id), None)
+    if not point or not assessment:
+        return ""
+    context = {"point": {key: point.get(key) for key in ("title", "content", "description")},
+               "studentAnswer": state.get("student_text", ""), "assessment": assessment}
+    try:
+        feedback = _completion(FINAL_DISCUSSION_FEEDBACK_PROMPT,
+                               json.dumps(context, ensure_ascii=False)).strip()
+        if feedback:
+            return feedback
+    except Exception:
+        logger.exception("生成最后一道深入讨论题的反馈失败")
+    evidence = str(assessment.get("evidence") or "").strip()
+    if assessment["result"] == "mastered":
+        return f"关于「{point['title']}」，你刚才的回答讲清了要点。{evidence}"
+    source = str(point.get("content") or point.get("description") or "").strip()
+    reference = f" 请对照本课内容再核对：{source[:180]}" if source else ""
+    return (f"关于「{point['title']}」，刚才的回答还有需要纠正或补充的地方。"
+            f"{evidence}{reference}")
+
+
 def respond(state: DialogueState) -> dict:
     stage = state["stage"]
     if stage == "wrapup":
+        final_feedback = (_last_discussion_feedback(state)
+                          if state.get("completion_reason") == "all_points_discussed" else "")
         reason = ("每个已掌握知识点的深入讨论都已完成，刚才的回答和需要巩固的内容都已记录。"
                   if state.get("completion_reason") == "all_points_discussed" else
                   "本次复述与讨论已告一段落。需要巩固的内容已经记录，目前没有适合继续出题的知识点。")
-        return {"reply": "现在进入【课堂总结】。\n\n" + reason +
+        return {"reply": (final_feedback + "\n\n" if final_feedback else "") +
+                "现在进入【课堂总结】。\n\n" + reason +
                 "\n\n请点击“结束本课并查看反馈”，查看本次学习情况。"
                 "结束后还可以回看视频、补完未掌握的内容或继续课后提问。"}
     points = eligible_points(state["points"]) if stage == "discuss" else state["points"]
@@ -107,7 +141,9 @@ def respond(state: DialogueState) -> dict:
     focus = [active] if active else points
     strategy_prompt = STRATEGY_PROMPTS.get(state["strategy"], "")
     if stage == "discuss" and state["strategy"] == "answer_question":
-        strategy_prompt = "先回答学生对当前题目的疑问，再请学生继续回答原题；不要另出一道新题。"
+        strategy_prompt = DISCUSSION_QUESTION_HELP_PROMPT
+    elif stage == "discuss" and state["strategy"] in {"hint", "correct"}:
+        strategy_prompt = "\n\n".join((strategy_prompt, DISCUSSION_RETRY_PROMPT))
     system = "\n\n".join((TUTOR_PROMPT, STAGE_PROMPTS[stage], strategy_prompt))
     user = json.dumps({"focus": focus, "allPoints": points,
                        "transition": state.get("transition"),
@@ -117,6 +153,9 @@ def respond(state: DialogueState) -> dict:
                                       else None),
                        "excludedTitles": [p["title"] for p in state["points"] if p["excluded_from_discussion"]],
                        "extendedReinforcement": bool(active and active.get("extended_reinforcement")),
+                       "reinforcementConfirmation": bool(stage == "reinforce" and active and
+                                                         active.get("status") == "mastered" and
+                                                         active.get("reinforcement_required")),
                        "recentMessages": state["messages"][-10:],
                        "studentText": state["student_text"]}, ensure_ascii=False)
     reply = _completion(system, user).strip()
@@ -124,7 +163,7 @@ def respond(state: DialogueState) -> dict:
         raise ValueError("课堂导师没有返回内容")
     notices = {
         "enter_recall": "现在进入【初始复述】，我们按知识点逐个回顾。",
-        "enter_reinforce": "现在进入【加强复述】，我们一起补强刚才还没讲清的内容。",
+        "enter_reinforce": "现在进入【加强复述】，我们再巩固并确认需要加强的知识点。",
         "enter_discuss": ("现在进入【深入讨论】。每个已掌握的知识点各讨论一个问题，"
                           "全部完成后进入课堂总结。"),
     }

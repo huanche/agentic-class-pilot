@@ -12,6 +12,7 @@ export default function LessonFeedback({ feedback }) {
         </div>
         <p className="lesson-feedback__rounds">首轮复述 {point.recallRounds} 次 · 加强复述 {point.reinforceRounds} 次{point.postclassRounds > 0 && ` · 课后补完 ${point.postclassRounds} 次`}</p>
         {point.evidence && <p className="lesson-feedback__evidence"><strong>判断依据：</strong>{point.evidence}</p>}
+        {point.discussionNeedsReview && point.discussionEvidence && <p className="lesson-feedback__evidence"><strong>深入讨论：</strong>{point.discussionEvidence}</p>}
         {point.suggestion && !(point.category === "mastered" && point.suggestion === "可以用自己的话总结，并尝试举一个应用例子。") && <p>{point.suggestion}</p>}
         {point.excludedFromDiscussion && <p className="lesson-feedback__note">这个知识点仍需巩固，可在课后与 AI 继续复述。</p>}
       </article>)}

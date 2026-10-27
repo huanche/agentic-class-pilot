@@ -8,6 +8,11 @@ from uuid import uuid4
 from . import database
 
 
+def fresh_session_mode() -> bool:
+    """Prefer signed browser snapshots while keeping lesson-scoped DB recovery."""
+    return os.environ.get("STUDENT_FRESH_SESSION_MODE", "1").strip().lower() not in {"0", "false", "off"}
+
+
 def _bind_database() -> None:
     os.environ.setdefault("STUDENT_DATABASE_URL", os.environ.get("DATABASE_URL", ""))
     if not os.environ.get("STUDENT_DATABASE_URL") and not os.environ.get("STUDENT_DEMO_MODE"):
@@ -19,6 +24,53 @@ def _ids(session: dict) -> dict:
     return {"session_key": session["id"], "user_id": str(context["userId"]),
             "course_id": str(context["courseId"]),
             "publication_id": str(context["publication"]["id"])}
+
+
+def discard_lesson_session(session: dict, replacement: dict) -> None:
+    """Remove this session's obsolete records and store its new video atomically."""
+    _bind_database()
+    context = replacement["context"]
+    scope = (session["id"], str(context["userId"]), str(context["courseId"]))
+    snapshot = {key: value for key, value in replacement.items() if key not in {"lock", "launchToken"}}
+    with database._db() as connection:
+        for table in ("student_messages", "learning_events", "playback_progress",
+                      "knowledge_mastery", "task_submissions", "after_class_reports", "student_sessions"):
+            connection.execute(f"DELETE FROM student.{table} WHERE session_key=%s AND user_id=%s AND course_id=%s", scope)
+        connection.execute(
+            "INSERT INTO student.student_sessions "
+            "(session_key,user_id,course_id,publication_id,publication_version,classroom_id) VALUES (%s,%s,%s,%s,%s,%s)",
+            (*scope, str(context["publication"]["id"]), int(context["publication"].get("version") or 1), replacement["classroomId"]))
+        connection.execute(
+            "INSERT INTO student.learning_events "
+            "(session_key,user_id,course_id,publication_id,classroom_id,event_type,event_id,payload) "
+            "VALUES (%s,%s,%s,%s,%s,'agent_state',%s,%s)",
+            (*scope, str(context["publication"]["id"]), replacement["classroomId"],
+             f"video-reset:{uuid4().hex}", json.dumps(snapshot, ensure_ascii=False)))
+        connection.commit()
+
+
+def reset_lesson(user_id: str, course_id: str, lesson_id: str,
+                 current_session_key: str, active_session_keys: list[str] | None = None) -> list[str]:
+    """Delete only this student's sessions and learning data for one lesson."""
+    _bind_database()
+    with database._db() as connection:
+        rows = connection.execute(
+            "SELECT DISTINCT session_key FROM student.learning_events "
+            "WHERE user_id=%s AND course_id=%s AND event_type='agent_state' "
+            "AND payload->>'lessonId'=%s",
+            (user_id, course_id, lesson_id),
+        ).fetchall()
+        keys = list(dict.fromkeys([current_session_key, *(active_session_keys or []),
+                                   *(str(row[0]) for row in rows)]))
+        for table in ("student_messages", "learning_events", "playback_progress",
+                      "knowledge_mastery", "task_submissions", "after_class_reports", "student_sessions"):
+            connection.execute(
+                f"DELETE FROM student.{table} "
+                "WHERE session_key = ANY(%s) AND user_id=%s AND course_id=%s",
+                (keys, user_id, course_id),
+            )
+        connection.commit()
+    return keys
 
 
 def save(session: dict, old_count: int) -> None:
@@ -36,7 +88,8 @@ def save(session: dict, old_count: int) -> None:
             phase=item.get("phase"), content=item["text"])
     mastery = {"mastered": (4, "掌握"), "verify": (3, "待独立验证"),
                "partial": (2, "部分理解"), "misconception": (1, "存在误区")}
-    previous = database.read_mastery(ids["user_id"], ids["course_id"], ids["publication_id"])
+    previous = ({} if fresh_session_mode() else
+                database.read_mastery(ids["user_id"], ids["course_id"], ids["publication_id"]))
     for point in (session.get("dialogue") or {}).get("points") or []:
         if point.get("status") in mastery:
             stars, status = mastery[point["status"]]
@@ -52,10 +105,16 @@ def save(session: dict, old_count: int) -> None:
                 "messages": session["messages"], "dialogue": session.get("dialogue"),
                 "preparation": session.get("preparation", "ready"),
                 "preparationError": session.get("preparationError", ""),
+                "preparationErrorCode": session.get("preparationErrorCode", ""),
+                "preparationRequestId": session.get("preparationRequestId", ""),
+                "preparationCoverage": session.get("preparationCoverage"),
                 "preparationMaterials": session.get("preparationMaterials", []),
                 "feedback": session.get("feedback"),
                 "classroomFeedback": session.get("classroomFeedback"),
                 "postclassStage": session.get("postclassStage"),
+                "videoRevision": session.get("videoRevision"),
+                "videoUpdated": session.get("videoUpdated", False),
+                "contentGeneration": session.get("contentGeneration", 0),
                 "version": len(session["messages"])}
     if session["phase"] == "done" and session.get("feedback"):
         # These three writes form one completion. A failure cannot leave a

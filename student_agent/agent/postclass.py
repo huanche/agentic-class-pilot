@@ -8,10 +8,46 @@ from typing import TypedDict
 from langgraph.graph import START, END, StateGraph
 
 from .graph import _completion, _json_object
+from .prompts import POSTCLASS_ASSESS_PROMPT as ASSESS_PROMPT, POSTCLASS_REMEDIATION_PROMPT as REMEDIATION_PROMPT, POSTCLASS_OPEN_PROMPT as OPEN_PROMPT
+
+
+def pending_kind(point: dict) -> str | None:
+    if point.get("status") != "mastered":
+        return "concept"
+    if point.get("reinforcement_required") and not point.get("reinforce_done"):
+        return "confirmation"
+    if point.get("discussion_required") and point.get("discussion_result") != "mastered":
+        return "discussion"
+    return None
+
+
+def prepare_points(dialogue: dict, messages: list[dict]) -> list[dict]:
+    points = copy.deepcopy(dialogue["points"])
+    remaining = (dialogue.get("discussion_point_ids") or [])[dialogue.get("discussion_index", 0):]
+    for point in points:
+        if (point["id"] in remaining
+                or point.get("discussion_result") in {"partial", "misconception", "unanswered"}
+                or (dialogue.get("completion_reason") == "student_ended_early"
+                    and not point.get("excluded_from_discussion"))):
+            point["discussion_required"] = True
+            point.setdefault("discussion_context", [m for m in messages if m.get("phase") == "discuss"][-10:]
+                             if (remaining and point["id"] == remaining[0]) or point.get("discussion_result") else [])
+    return points
 
 
 def pending_points(points: list[dict]) -> list[dict]:
-    return [point for point in points if point.get("status") != "mastered"]
+    return [point for point in points if pending_kind(point)]
+
+
+def opening_task(point: dict) -> str:
+    kind = pending_kind(point)
+    if kind == "discussion":
+        if not point.get("discussion_context"):
+            return f"我们继续「{point['title']}」的讨论：请结合一个具体例子，解释它如何发挥作用。"
+        return f"我们继续「{point['title']}」尚未完成的讨论。请继续回答之前的讨论题；如果不记得题目，可以请我提示。"
+    if kind == "confirmation":
+        return f"「{point['title']}」已在首轮掌握，还需要一次加强确认。请用自己的话再解释它的核心含义或关键关系。"
+    return f"我们先继续「{point['title']}」的概念复述：请用自己的话说说你的理解，不记得可以请我提示。"
 
 
 def postclass_stage(points: list[dict]) -> str:
@@ -24,37 +60,23 @@ def apply_assessment(points: list[dict], point_id: str, assessment: dict | None,
     current = next((point for point in pending_points(result) if point["id"] == point_id), None)
     if current is None or pending_points(result)[0]["id"] != point_id:
         raise ValueError("只能评估当前课后补完的知识点")
+    kind = pending_kind(current)
     current["postclass_rounds"] = int(current.get("postclass_rounds") or 0) + 1
     outcome = (assessment or {}).get("result", "unclear")
     evidence = str((assessment or {}).get("evidence") or student_text)[:1000]
     current.setdefault("assessment_history", []).append({
-        "stage": "postclass", "round": current["postclass_rounds"],
+        "stage": "postclass_discuss" if kind == "discussion" else "postclass", "taskType": kind, "round": current["postclass_rounds"],
         "result": outcome, "evidence": evidence, "studentText": student_text,
     })
+    if kind == "discussion":
+        current.update(discussion_result=outcome, discussion_evidence=evidence)
+        return result
     if outcome == "mastered":
         current.update(status="mastered", mastered_in="postclass",
-                       excluded_from_discussion=False, evidence=evidence)
+                       excluded_from_discussion=False, evidence=evidence, recall_done=True, reinforce_done=True)
     elif outcome in {"partial", "misconception"}:
         current.update(status=outcome, evidence=evidence)
     return result
-
-
-ASSESS_PROMPT = """你是课后复述评估员，只评估 focus 这一个知识点。学生问题或“懂了”等确认不能判掌握；
-只有学生独立、准确地用自己的话解释视频中这个概念的核心含义，才能判 mastered。
-只输出 JSON：{"result":"mastered|partial|misconception|unanswered|unclear","evidence":"学生表达中的具体依据"}。
-学生问问题时返回 unclear；只重复 AI 刚给出的答案不能判掌握。"""
-
-REMEDIATION_PROMPT = """你是课后课堂导师。先回应学生刚说的话或问题，再帮助他复述 focus。
-focus.content 是当前视频的原文依据，不要编造视频没讲的结论。若 assessment 显示仍未掌握，
-给出一点具体提示，并只问一个下一步问题；不要直接代替学生完成复述。
-若 transition 为 next，肯定刚掌握的内容，再引导复述 nextFocus。
-若 transition 为 open，说明课堂未掌握的知识点已补完，可以自由提问其他问题。
-不要透露内部评分或状态名。用自然、简洁的中文回答。"""
-
-OPEN_PROMPT = """你是学生的课后 AI 学习伙伴。课堂知识点已经补完，学生可以自由提问。
-结合最近对话回答；课堂内容可作为背景，但也可以解答其他合理的学习问题。
-若超出视频内容，明确区分一般解释与视频实际讲解。不要编造视频原文。
-用自然、准确、简洁的中文回答。"""
 
 
 class PostclassState(TypedDict):
@@ -72,7 +94,7 @@ def evaluate(state: PostclassState) -> dict:
         return {"assessment": {}}
     focus = pending_points(state["points"])[0]
     raw = _completion(ASSESS_PROMPT, json.dumps({
-        "focus": focus, "recentMessages": state["messages"][-8:],
+        "focus": focus, "taskType": pending_kind(focus), "classroomDiscussion": focus.get("discussion_context", []), "recentMessages": state["messages"][-8:],
         "studentText": state["student_text"]}, ensure_ascii=False))
     value = _json_object(raw)
     if value.get("result") not in {"mastered", "partial", "misconception", "unanswered", "unclear"}:
@@ -84,19 +106,20 @@ def advance(state: PostclassState) -> dict:
     if state["stage"] == "open":
         return {"transition": "open"}
     focus = pending_points(state["points"])[0]
+    old_kind = pending_kind(focus)
     points = apply_assessment(state["points"], focus["id"], state["assessment"], state["student_text"])
     stage = postclass_stage(points)
-    transition = "open" if stage == "open" else "next" if pending_points(points)[0]["id"] != focus["id"] else "continue"
+    transition = "open" if stage == "open" else "next" if (pending_points(points)[0]["id"] != focus["id"] or pending_kind(pending_points(points)[0]) != old_kind) else "continue"
     return {"points": points, "stage": stage, "transition": transition}
 
 
 def respond(state: PostclassState) -> dict:
     if state["transition"] == "open" and state["assessment"]:
-        return {"reply": "这部分已经能用自己的话讲清楚了。课堂上未掌握的知识点都已补完；现在可以自由向我提问其他问题。"}
+        return {"reply": "这部分已经能用自己的话讲清楚了。课堂未完成的学习任务都已补完；现在可以自由向我提问其他问题。"}
     focus = pending_points(state["points"])[0] if state["stage"] == "remediation" else None
     system = REMEDIATION_PROMPT if state["stage"] == "remediation" else OPEN_PROMPT
     raw = _completion(system, json.dumps({
-        "focus": focus, "nextFocus": focus if state["transition"] == "next" else None,
+        "focus": focus, "taskType": pending_kind(focus) if focus else None, "classroomDiscussion": (focus or {}).get("discussion_context", []), "nextFocus": focus if state["transition"] == "next" else None,
         "assessment": state["assessment"], "transition": state["transition"],
         "recentMessages": state["messages"][-10:], "studentText": state["student_text"],
     }, ensure_ascii=False)).strip()

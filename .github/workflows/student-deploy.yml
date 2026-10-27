@@ -49,10 +49,16 @@ jobs:
           cache: npm
           cache-dependency-path: student_agent/frontend/package-lock.json
 
-      - name: Build frontend (static export)
+      - name: Test student replay flows
         working-directory: student_agent/frontend
         run: |
           npm ci
+          npx playwright install --with-deps chromium --only-shell
+          npm run test:e2e
+
+      - name: Build frontend (static export)
+        working-directory: student_agent/frontend
+        run: |
           npm run build
 
       - name: Package frontend bundle
