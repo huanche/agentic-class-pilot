@@ -236,7 +236,7 @@ export default function StudentApp() {
   }, [phase, lesson]);
 
   useEffect(() => {
-    if (phase !== "video" || preparation !== "pending" || busy) return;
+    if (phase !== "video" || !["pending", "error"].includes(preparation) || busy) return;
     let cancelled = false;
     let timer;
     async function poll() {
@@ -247,11 +247,11 @@ export default function StudentApp() {
         setLearningProgress(current.learningProgress || null);
         setPreparationError(current.preparationError || "");
         setPreparationRequestId(current.preparationRequestId || "");
-        if (current.preparation !== "pending") return;
+        if (!["pending", "error"].includes(current.preparation)) return;
       } catch {
         // A temporary network failure must not interrupt the video.
       }
-      if (!cancelled) timer = setTimeout(poll, 2000);
+      if (!cancelled) timer = setTimeout(poll, 5000);
     }
     poll();
     return () => { cancelled = true; clearTimeout(timer); };

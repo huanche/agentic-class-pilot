@@ -18,6 +18,7 @@ def lesson_session(monkeypatch):
     monkeypatch.setattr(main.persistence, "save", lambda *args: None)
     monkeypatch.setattr(main.persistence, "latest_session_key", lambda *args: None)
     monkeypatch.setattr(main.persistence, "restore", lambda sid: main.sessions.get(sid))
+    monkeypatch.setattr(main.published_knowledge, "read", lambda *args: None)
     deleted = []
     monkeypatch.setattr(main.persistence, "discard_lesson_session", lambda s, replacement: deleted.append(s["id"]), raising=False)
     sid = main.start(main.StartRequest(launch_token="ticket"))["sessionId"]
