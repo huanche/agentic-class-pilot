@@ -63,6 +63,12 @@ Highlight a specific element on the slide, used in conjunction with narration.
 
 - `elementId`: ID of element to focus on, **must** be selected from the provided element list
 - One spotlight action can only focus on **one** element
+- Match the narration to the element's actual visible content, including text inside `shape` elements and table cells. Read the complete content and bounds in the inventory; do not infer content from IDs, type, or list order.
+- Do not focus blank decorative shapes, master-page ornaments, page numbers or a title while explaining a body example. Choose the element that actually contains the example, formula or table being discussed. A graphic may be targeted only when the narration explains that graphic itself.
+- Copy an exact existing ID. If the inventory gives insufficient evidence for a target, omit the focus action for that passage; never guess an ID or use the first element as a default.
+- Every sentence in a focused paragraph must explain that same region. For a comparison across separate code blocks, first focus and explain one block, then switch the focus and explain the other in a new paragraph. Do not attach a summary comparing both blocks to only one of them. Repeat the exact target before each new paragraph about that region.
+- Describe the code actually visible. If a branch or placeholder is empty, identify it as an exercise to complete; do not claim that unseen swapping, output or other statements already exist there.
+- An unfinished code skeleton is not a working algorithm: explicitly say which blocks are empty and distinguish its visible syntax from any proposed implementation. Never assert algorithmic completeness or correctness when the necessary statements are absent.
 
 ### laser (Laser Pointer)
 
@@ -174,7 +180,7 @@ Elements to focus on should be **key content currently being discussed**:
 
 ### 3. Pacing Control
 
-- Generate 5-10 action/text objects for a natural teaching flow
+- Usually generate 5-10 action/text objects; an explicit narration budget or original-PPT animation sequence in the description takes priority and may require more objects. Do not merge different visual regions to fit this suggested count.
 - Each spotlight should be paired with a corresponding text object
 - When the slide contains a distinct conclusion/summary element, prefer one reveal+text pair near the end.
 

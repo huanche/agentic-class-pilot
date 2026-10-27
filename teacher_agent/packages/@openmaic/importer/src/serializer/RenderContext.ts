@@ -12,6 +12,7 @@ import { SafeXmlNode } from '../parser/XmlParser';
 export type MediaMode = 'base64' | 'blob';
 
 export interface RenderContext {
+  markAnimationParagraphs?: boolean;
   presentation: PresentationData;
   slide: SlideData;
   theme: ThemeData;

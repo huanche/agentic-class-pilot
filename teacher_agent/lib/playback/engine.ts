@@ -47,6 +47,7 @@ import { isSpeakableSpeechText } from '@/lib/audio/tts-utils';
 import { isTTSProviderEnabled } from '@/lib/audio/provider-enablement';
 import { createLogger } from '@/lib/logger';
 import { focusSpeechIndex } from '@/lib/choreography/timeline';
+import { initialPlaybackHiddenElements } from '@/lib/import/pptx-animations';
 
 const log = createLogger('PlaybackEngine');
 
@@ -162,6 +163,9 @@ export class PlaybackEngine {
         : (Date.now() - this.actionClockStartedAt) * this.actionClockRate);
     let audioDurationMs: number | null = null;
     let speechRemainingMs: number | null = null;
+    if (action?.type === 'reveal' && action.pptxStep) {
+      elapsedMs = this.actionEngine.getSourceAnimationElapsedMs?.() ?? elapsedMs;
+    }
     if (action?.type === 'speech') {
       if (this.audioPlayer.hasActiveAudio()) {
         elapsedMs = this.audioPlayer.getCurrentTime();
@@ -190,6 +194,7 @@ export class PlaybackEngine {
    * AudioPlayer's playbackRate is synchronized separately by the UI. */
   setPlaybackSpeed(speed: number): void {
     if (!Number.isFinite(speed) || speed <= 0) return;
+    this.actionEngine.setSourceAnimationRate?.(speed);
     const action =
       this.activeActionIndex === null
         ? null
@@ -287,9 +292,7 @@ export class PlaybackEngine {
     this.savedActionIndex = null;
     this.currentTopicState = null;
     this.currentTrigger = null;
-    this.actionEngine.resetPlaybackVisualState(
-      actions.filter((action) => action.type === 'reveal').map((action) => action.elementId),
-    );
+    this.actionEngine.resetPlaybackVisualState(initialPlaybackHiddenElements(actions));
 
     for (let i = 0; i < actionIndex; i++) {
       if (!this.isCurrentGeneration(generation)) return false;
@@ -319,6 +322,7 @@ export class PlaybackEngine {
   /** playing → paused | live → paused (abort SSE, truncate, topic pending) */
   pause(): void {
     if (this.mode === 'playing') {
+      this.actionEngine.pauseSourceAnimation?.();
       this.invalidatePlaybackGeneration();
       // Pausing while parked on a blocked line: step back so resume() replays
       // that line instead of silently skipping past it.
@@ -380,6 +384,15 @@ export class PlaybackEngine {
     } else {
       // Resume lecture
       this.setMode('playing');
+      const sourceAnimation = this.actionEngine.resumeSourceAnimation?.();
+      if (sourceAnimation) {
+        const generation = this.playbackGeneration;
+        void sourceAnimation.then(() => {
+          if (this.isCurrentGeneration(generation) && this.mode === 'playing')
+            this.processNext(generation);
+        });
+        return;
+      }
       if (this.browserTTSPausedChunks.length > 0) {
         // Browser TTS was paused via cancel — re-speak remaining chunks
         this.browserTTSActive = true;
@@ -408,6 +421,7 @@ export class PlaybackEngine {
   /** → idle */
   stop(): void {
     this.invalidatePlaybackGeneration();
+    this.actionEngine.cancelSourceAnimation?.();
     if (this.audioBlocked) {
       this.audioBlocked = false;
       this.callbacks.onAudioUnblocked?.();
@@ -597,6 +611,7 @@ export class PlaybackEngine {
   }
 
   private cancelActivePlaybackWork(): void {
+    this.actionEngine.cancelSourceAnimation?.();
     this.audioPlayer.stop();
     this.cancelBrowserTTS();
     this.actionEngine.clearEffects();
@@ -718,6 +733,12 @@ export class PlaybackEngine {
     // Check for scene boundary (fire scene change callback at start of each new scene)
     if (this.actionIndex === 0 && this.sceneIndex < this.scenes.length) {
       const scene = this.scenes[this.sceneIndex];
+      if (scene.actions?.some((action) => action.type === 'reveal' && action.pptxStep)) {
+        useCanvasStore
+          .getState()
+          .setHiddenElementIdList(initialPlaybackHiddenElements(scene.actions));
+        useCanvasStore.getState().setRevealedElementIdList([]);
+      }
       this.actionEngine.clearEffects();
       this.callbacks.onSceneChange?.(scene.id);
       this.callbacks.onSpeakerChange?.('teacher');
@@ -858,6 +879,11 @@ export class PlaybackEngine {
       }
 
       case 'reveal':
+        this.actionEngine.setSourceAnimationRate?.(this.callbacks.getPlaybackSpeed?.() || 1);
+        await this.actionEngine.execute(action);
+        if (this.isCurrentGeneration(generation) && this.mode === 'playing')
+          this.processNext(generation);
+        break;
       case 'play_video':
       case 'wb_open':
       case 'wb_draw_text':

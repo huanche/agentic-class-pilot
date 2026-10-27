@@ -12,6 +12,7 @@ import type { Slide } from '@openmaic/dsl';
 import type * as MaicImport from '@openmaic/importer';
 import { fingerprintCoursewareFile } from '@/lib/course-governance/fingerprint';
 import type { CourseSourceFingerprint } from '@/lib/course-governance/contracts';
+import { PPTX_IMPORTER_URL } from './importer-url';
 
 const log = createLogger('ImportPptx');
 
@@ -61,7 +62,7 @@ export function useImportPptx(options: UseImportPptxOptions = {}) {
         // Static URL → bundler never sees the import target.
         // `scripts/sync-maic-importer.mjs` copies the prebuilt dist into
         // `public/vendor/` after every `pnpm install`.
-        const url = '/vendor/maic-importer/index.js';
+        const url = PPTX_IMPORTER_URL;
 
         // Runtime guard: the bundle is a gitignored artifact synced into
         // public/vendor during postinstall. If a deploy skipped that step the

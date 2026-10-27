@@ -16,6 +16,7 @@
  */
 
 import type { AssetRef } from './storage.js';
+import type { PptxAnimationStep } from './slides.js';
 
 // ==================== Base ====================
 
@@ -47,6 +48,8 @@ export interface RevealAction extends ActionBase {
   elementId: string;
   effect?: 'fade-up' | 'fade' | 'scale';
   duration?: number;
+  /** Imported, deterministic animation group; replaces the generic reveal effect. */
+  pptxStep?: PptxAnimationStep;
 }
 
 // ==================== Synchronous actions ====================

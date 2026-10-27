@@ -40,6 +40,10 @@ import { resolveModelFromRequest } from '@/lib/server/resolve-model';
 import { alignActionsToPptNarration } from '@/lib/import/ppt-narration';
 import { withEnhancedChoreographyContract } from '@/lib/learning-skills/enhanced-courseware-quality';
 import { withNarrationDuration, type DurationFeedback } from '@/lib/generation/course-duration';
+import {
+  bindPptxAnimationsToActions,
+  pptxAnimationNarrationContract,
+} from '@/lib/import/pptx-animations';
 
 const log = createLogger('Scene Actions API');
 
@@ -224,7 +228,10 @@ export async function POST(req: NextRequest) {
           ...outline,
           description: `${outline.description}\n\n【高保真 PPT 讲解约束】\n${narrationScript}\n请参考 OpenMAIC 的逐页讲解方式：先理解本页视觉内容，再用自然口语解释“为什么、如何理解或如何应用”，不要逐字朗读页面。选择一个最有帮助的例子、类比或观察提示，并用一句短过渡承接上一页或引出下一页。所有内容必须以本页材料为依据，不得混入其他页面。\n${narrationContract}`,
         }
-      : outline;
+      : { ...outline };
+    narrationAwareOutline.description += pptxAnimationNarrationContract(
+      importedSlideContent?.canvas,
+    );
     const actionOutline = withNarrationDuration(
       withEnhancedChoreographyContract({
         ...narrationAwareOutline,
@@ -264,7 +271,12 @@ export async function POST(req: NextRequest) {
     log.info(`Generated ${actions.length} actions for: "${outline.title}"`);
 
     // ── Build complete scene ──
-    const builtScene = buildCompleteScene(outline, generationContent, actions, stageId);
+    const builtScene = buildCompleteScene(
+      outline,
+      generationContent,
+      bindPptxAnimationsToActions(actions, importedSlideContent?.canvas),
+      stageId,
+    );
     const scene =
       builtScene?.type === 'slide' && importedSlideContent
         ? {

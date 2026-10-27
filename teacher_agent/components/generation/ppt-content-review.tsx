@@ -154,6 +154,19 @@ export function PptContentReview({
 
           {selected && (
             <Card className="space-y-5 p-5 md:p-8">
+              {!!selected.animationWarnings?.length && (
+                <div
+                  role="status"
+                  className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+                >
+                  <p className="font-medium">部分原 PPT 动画暂不能还原</p>
+                  <ul className="mt-1 list-inside list-disc">
+                    {selected.animationWarnings.map((warning) => (
+                      <li key={warning}>{warning}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <p className="text-xs uppercase tracking-widest text-muted-foreground">
