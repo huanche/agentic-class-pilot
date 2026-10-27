@@ -17,6 +17,8 @@ import { useRef, useMemo } from 'react';
 import { AnimatePresence } from 'motion/react';
 import { isPlaybackRendererEnabled } from '@/lib/config/feature-flags';
 import { withContentAwareViewport } from '@/lib/import/content-aware-slide';
+import { pptxAnimatedElementIds } from '@/lib/import/pptx-animations';
+import { usePptxParagraphVisibility } from '../use-pptx-paragraph-visibility';
 
 export function ScreenCanvas() {
   const canvasScale = useCanvasStore.use.canvasScale();
@@ -25,7 +27,9 @@ export function ScreenCanvas() {
   );
   const slide = useMemo(() => withContentAwareViewport(sourceSlide), [sourceSlide]);
   const elements: PPTElement[] = slide.elements;
+  const nativeTargets = new Set(pptxAnimatedElementIds(slide));
   const canvasRef = useRef<HTMLDivElement>(null);
+  usePptxParagraphVisibility(canvasRef, slide.id);
 
   // Viewport size and positioning
   const { viewportStyles } = useViewportSize(canvasRef, {
@@ -70,6 +74,7 @@ export function ScreenCanvas() {
   return (
     <div className="relative h-full w-full overflow-hidden select-none" ref={canvasRef}>
       <div
+        id={`screen-element-${slide.id}`}
         className="absolute shadow-[0_0_0_1px_rgba(0,0,0,0.01),0_0_12px_0_rgba(0,0,0,0.1)] rounded-lg overflow-hidden transition-transform duration-700"
         style={{
           width: `${viewportStyles.width * canvasScale}px`,
@@ -100,8 +105,13 @@ export function ScreenCanvas() {
           }}
         >
           {elements.map((element, index) =>
-            hiddenElementIdList.includes(element.id) ? null : (
-              <ScreenElement key={element.id} elementInfo={element} elementIndex={index + 1} />
+            hiddenElementIdList.includes(element.id) && !nativeTargets.has(element.id) ? null : (
+              <ScreenElement
+                key={element.id}
+                elementInfo={element}
+                elementIndex={index + 1}
+                hidden={hiddenElementIdList.includes(element.id)}
+              />
             ),
           )}
 

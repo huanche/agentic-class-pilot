@@ -2,6 +2,7 @@ import type { SceneOutline, UserRequirements } from '@/lib/types/generation';
 import type { Scene } from '@/lib/types/stage';
 import { WIDGET_MS } from '@/lib/choreography/timing';
 import type { NarrationPace } from './narration-budget';
+import { pptxStepDurationMs } from '@/lib/import/pptx-animations';
 
 export const DEFAULT_TARGET_MINUTES = 28;
 export const DURATION_TOLERANCE = 0.05;
@@ -163,7 +164,10 @@ export function measureScenePlaybackSeconds(
         break;
       }
       case 'reveal':
-        seconds += Math.max(120, Math.min(action.duration ?? 520, 2000)) / 1000;
+        seconds +=
+          (action.pptxStep
+            ? pptxStepDurationMs(action.pptxStep)
+            : Math.max(120, Math.min(action.duration ?? 520, 2000))) / 1000;
         break;
       case 'widget_highlight':
       case 'widget_setState':

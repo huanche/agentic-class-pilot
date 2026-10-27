@@ -73,6 +73,8 @@ export interface SlideCanvasProps {
   dragOffsets?: ReadonlyMap<string, { x: number; y: number }>;
   /** Element ids omitted from rendering and effect targeting. */
   hiddenElementIds?: readonly string[];
+  /** Keep imported animation targets mounted, so their native timeline can animate them. */
+  retainedHiddenElementIds?: readonly string[];
   /** Newly revealed element ids that should play an entrance animation on mount. */
   entranceAnimatedElementIds?: readonly string[];
   /** Inline style on the outer container. */
@@ -116,8 +118,9 @@ export function SlideCanvas(props: SlideCanvasProps) {
   const visibleElements = useMemo(() => {
     if (!props.hiddenElementIds?.length) return elements;
     const hidden = new Set(props.hiddenElementIds);
-    return elements.filter((element) => !hidden.has(element.id));
-  }, [elements, props.hiddenElementIds]);
+    const retained = new Set(props.retainedHiddenElementIds);
+    return elements.filter((element) => !hidden.has(element.id) || retained.has(element.id));
+  }, [elements, props.hiddenElementIds, props.retainedHiddenElementIds]);
   const elementIndexById = useMemo(
     () => new Map(elements.map((element, index) => [element.id, index + 1])),
     [elements],
@@ -171,6 +174,7 @@ export function SlideCanvas(props: SlideCanvasProps) {
     >
       <style dangerouslySetInnerHTML={{ __html: SLIDE_RENDERER_STYLES }} />
       <div
+        id={slide.pptxAnimation ? `${elementIdPrefix}${slide.id}` : undefined}
         style={{
           position: 'absolute',
           ...(chrome
@@ -231,6 +235,7 @@ export function SlideCanvas(props: SlideCanvasProps) {
               idPrefix={elementIdPrefix}
               dragOffset={dragOffsets?.get(element.id)}
               entranceAnimate={props.entranceAnimatedElementIds?.includes(element.id)}
+              hidden={props.hiddenElementIds?.includes(element.id)}
             />
           ))}
 

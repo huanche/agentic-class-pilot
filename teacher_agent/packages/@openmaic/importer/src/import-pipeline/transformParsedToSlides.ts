@@ -25,6 +25,7 @@ import type {
   ChartOptions,
   Gradient,
   ImageElementFilters,
+  PptxAnimationTimeline,
 } from '@openmaic/dsl';
 import { SHAPE_PATH_FORMULAS } from '../openmaic/configs/shapes';
 import { getSvgPathRange } from '../openmaic/utils/svgPathParser';
@@ -447,10 +448,13 @@ export async function transformParsedToSlides(
       script: item.note || '',
     };
 
-    const parseElements = async (elements: Element[]) => {
+    const sourceElements = new Map<string, string[]>();
+
+    const parseElements = async (elements: Element[], fromSlide = true) => {
       const sortedElements = elements.sort((a, b) => a.order - b.order);
 
       for (const el of sortedElements) {
+        const firstElement = slide.elements.length;
         const originWidth = el.width || 1;
         const originHeight = el.height || 1;
         const originLeft = el.left;
@@ -1354,21 +1358,54 @@ export async function transformParsedToSlides(
           });
           if (el.isFlipH) elements = flipGroupElements(elements, 'y');
           if (el.isFlipV) elements = flipGroupElements(elements, 'x');
-          await parseElements(elements);
+          await parseElements(elements, fromSlide);
         } else if (el.type === 'diagram') {
           const elements = el.elements.map((_el) => ({
             ..._el,
             left: _el.left + originLeft,
             top: _el.top + originTop,
           }));
-          await parseElements(elements);
+          await parseElements(elements, fromSlide);
+        }
+        const shapeId = (el as Element & { sourceShapeId?: string }).sourceShapeId;
+        if (fromSlide && shapeId) {
+          sourceElements.set(
+            shapeId,
+            slide.elements.slice(firstElement).map((element) => element.id),
+          );
         }
       }
     };
     // layoutElements 先渲染（z-index 小），slide elements 后渲染（z-index 大）
     // 与 PPTX 分层规则一致：slide 层永远在 layout 层上方
-    await parseElements(item.layoutElements);
+    await parseElements(item.layoutElements, false);
     await parseElements(item.elements);
+    const imported = item as typeof item & {
+      pptxAnimation?: PptxAnimationTimeline;
+      transition?: { type: string };
+    };
+    if (imported.pptxAnimation) {
+      const warnings = [...imported.pptxAnimation.warnings];
+      slide.pptxAnimation = {
+        version: 1,
+        warnings,
+        steps: imported.pptxAnimation.steps
+          .map((step) => ({
+            ...step,
+            effects: step.effects.flatMap((effect) => {
+              if (effect.scope === 'slide') return [{ ...effect, elementIds: [slide.id] }];
+              const ids = effect.elementIds.flatMap((id) => sourceElements.get(id) ?? []);
+              if (effect.elementIds.some((id) => !sourceElements.get(id)?.length)) {
+                warnings.push(`${step.id} 的原始对象未能完整导入，该效果保留静态显示。`);
+                return [];
+              }
+              return [{ ...effect, elementIds: [...new Set(ids)] }];
+            }),
+          }))
+          .filter((step) => step.effects.length),
+      };
+    }
+    if (imported.transition?.type === 'fade') slide.turningMode = 'fade';
     slides.push(slide);
   }
 

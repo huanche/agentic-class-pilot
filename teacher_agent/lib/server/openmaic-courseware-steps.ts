@@ -22,6 +22,10 @@ import { generatePBLV2Project } from '@/lib/pbl/v2/agents/planner';
 import { sanitizeEnhancedGeneratedContent } from '@/lib/learning-skills/enhanced-courseware-quality';
 import { alignActionsToPptNarration } from '@/lib/import/ppt-narration';
 import { withSceneContentDuration } from '@/lib/generation/course-duration';
+import {
+  bindPptxAnimationsToActions,
+  pptxAnimationNarrationContract,
+} from '@/lib/import/pptx-animations';
 
 export type OpenmaicContent = GeneratedSceneContent | SlideContent;
 const log = createLogger('OpenMAIC courseware');
@@ -133,12 +137,16 @@ export function createOpenmaicCoursewareSteps(
         : (content as GeneratedSceneContent);
       // A target guides the first draft. This path never rewrites speech after TTS to fit a stopwatch.
       const seconds = outline.durationBudget?.targetSeconds;
-      const actionOutline = seconds
+      let actionOutline = seconds
         ? {
             ...outline,
             description: `${outline.description}\n讲解目标约 ${seconds} 秒，可参考中文约 ${Math.round(seconds * 3.5)} 字或英文约 ${Math.round((seconds / 60) * 135)} 词。按教学内容合理组织原理、例子与步骤，不重复凑字数，不调整语速或插入等待凑时长。实际播放时长以配音为准。`,
           }
         : outline;
+      actionOutline = {
+        ...actionOutline,
+        description: actionOutline.description + pptxAnimationNarrationContract(imported?.canvas),
+      };
       const actions = await generateSceneActions(
         actionOutline,
         generated,
@@ -165,7 +173,12 @@ export function createOpenmaicCoursewareSteps(
         'elements' in generated ? generated.elements : [],
         { preserveGeneratedLength: !!outline.durationBudget },
       );
-      const built = buildCompleteScene(outline, generated, aligned, input.stage.id);
+      const built = buildCompleteScene(
+        outline,
+        generated,
+        bindPptxAnimationsToActions(aligned, imported?.canvas),
+        input.stage.id,
+      );
       if (!built) throw new Error(`无法组装页面：${outline.title}`);
       const scene = { ...built, ...(imported ? { content: imported } : {}) } as Scene;
       const validation = validateScene(scene);

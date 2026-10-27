@@ -1,4 +1,5 @@
 'use client';
+import { initialPlaybackHiddenElements } from '@/lib/import/pptx-animations';
 import { CourseDurationSummary } from '@/components/generation/course-duration-summary';
 
 import {
@@ -713,9 +714,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
           return;
         }
 
-        const revealTargets = (currentScene.actions ?? [])
-          .filter((action) => action.type === 'reveal')
-          .map((action) => action.elementId);
+        const revealTargets = initialPlaybackHiddenElements(currentScene.actions ?? []);
         useCanvasStore.getState().setHiddenElementIdList(revealTargets);
         useCanvasStore.getState().setRevealedElementIdList([]);
 

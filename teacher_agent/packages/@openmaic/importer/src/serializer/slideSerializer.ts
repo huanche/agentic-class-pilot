@@ -23,6 +23,7 @@ import { groupToElement, type NodeToElement } from './groupSerializer';
 import type { Slide, Element } from '../adapter/types';
 import { parseXml } from '../parser/XmlParser';
 import { resolveRelTarget } from '../parser/RelParser';
+import { parsePptxAnimations } from './timingSerializer';
 
 /**
  * Check whether a shape node is a placeholder (has p:ph in nvPr).
@@ -99,6 +100,15 @@ function parseTemplateShapes(spTree: SafeXmlNode): SlideNode[] {
  * Dispatch a slide node to the appropriate serializer and return Element.
  */
 async function nodeToElement(
+  node: SlideNode,
+  ctx: ReturnType<typeof createRenderContext>,
+  order: number,
+  files?: PptxFiles,
+): Promise<Element> {
+  return { ...(await serializeNode(node, ctx, order, files)), sourceShapeId: node.id };
+}
+
+async function serializeNode(
   node: SlideNode,
   ctx: ReturnType<typeof createRenderContext>,
   order: number,
@@ -198,6 +208,12 @@ export async function slideToSlide(
 ): Promise<Slide> {
   // Create render context (resolves slide -> layout -> master -> theme chain)
   const ctx = createRenderContext(presentation, slide, undefined, mediaMode);
+  const sourceAnimation = parsePptxAnimations(
+    parseXml(files.slides.get(slide.slidePath) || '<sld/>'),
+  );
+  ctx.markAnimationParagraphs = sourceAnimation?.steps.some((step) =>
+    step.effects.some((effect) => effect.paragraphRange),
+  );
 
   // Render background
   const fill = await resolveSlideFill(ctx);
@@ -253,12 +269,34 @@ export async function slideToSlide(
     }
   }
 
+  const transition = getTransitionForSlide(slide, files);
+  let pptxAnimation = sourceAnimation;
+  if (transition && transition.type !== 'none') {
+    pptxAnimation ??= { version: 1, steps: [], warnings: [] };
+    if (transition.type === 'fade') {
+      pptxAnimation.steps.unshift({
+        id: 'pptx-slide-transition',
+        trigger: 'auto',
+        effects: [
+          {
+            scope: 'slide',
+            elementIds: [],
+            effect: 'fade',
+            phase: 'in',
+            delayMs: 0,
+            durationMs: transition.duration,
+          },
+        ],
+      });
+    } else pptxAnimation.warnings.push(`翻页效果 ${transition.type} 暂不支持，保留直接翻页。`);
+  }
   return {
     fill,
     elements,
     layoutElements,
     note: getNoteForSlide(slide, files),
-    transition: getTransitionForSlide(slide, files),
+    transition,
+    pptxAnimation,
   };
 }
 

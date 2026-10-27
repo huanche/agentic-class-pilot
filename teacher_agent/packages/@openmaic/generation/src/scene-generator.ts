@@ -1778,25 +1778,41 @@ function generateDefaultPBLActions(_outline: SceneOutline): Action[] {
  * Format element list for AI to select elementId
  */
 function formatElementsForPrompt(elements: PPTElement[]): string {
+  const plainText = (html: string) =>
+    html
+      .replace(/<\/(?:p|div|li|tr)>|<br\s*\/?>/gi, '\n')
+      .replace(/<[^>]*>/g, '')
+      .replace(
+        /&(nbsp|lt|gt|amp|quot|apos|#39);/g,
+        (_, entity: string) =>
+          ({ nbsp: ' ', lt: '<', gt: '>', amp: '&', quot: '"', apos: "'", '#39': "'" })[entity]!,
+      )
+      .trim();
   return elements
     .map((el) => {
       let summary = '';
-      if (el.type === 'text' && 'content' in el) {
-        // Extract text content summary (strip HTML tags)
-        const textContent = ((el.content as string) || '').replace(/<[^>]*>/g, '').substring(0, 50);
-        summary = `Content summary: "${textContent}${textContent.length >= 50 ? '...' : ''}"`;
-      } else if (el.type === 'chart' && 'chartType' in el) {
-        summary = `Chart type: ${el.chartType}`;
+      if (el.type === 'text' || el.type === 'shape') {
+        // Faithful PPT imports store most labels/code inside shape.text.content.
+        // Omitting that content makes every teaching region look like anonymous geometry.
+        const text = plainText(el.type === 'shape' ? el.text?.content || '' : el.content || '');
+        summary = text
+          ? `Visible content:\n${text}`
+          : 'No visible text (graphic/decorative geometry; do not infer a teaching topic from its ID).';
+      } else if (el.type === 'table') {
+        summary = `Table content:\n${el.data.map((row) => row.map((cell) => plainText(cell.text || '')).join(' | ')).join('\n')}`;
+      } else if (el.type === 'chart') {
+        summary = `Chart type: ${el.chartType}; data: ${JSON.stringify(el.data)}`;
       } else if (el.type === 'image') {
         summary = 'Image element';
-      } else if (el.type === 'shape' && 'shapeName' in el) {
-        summary = `Shape: ${el.shapeName || 'unknown'}`;
-      } else if (el.type === 'latex' && 'latex' in el) {
-        summary = `Formula: ${((el.latex as string) || '').substring(0, 30)}`;
+      } else if (el.type === 'latex') {
+        summary = `Formula: ${el.latex || ''}`;
+      } else if (el.type === 'code') {
+        summary = `Code:\n${el.lines.map((line) => line.content).join('\n')}`;
       } else {
         summary = `${el.type} element`;
       }
-      return `- id: "${el.id}", type: "${el.type}", ${summary}`;
+      const height = 'height' in el ? el.height : 0;
+      return `- id: "${el.id}", type: "${el.type}", bounds: [${el.left}, ${el.top}, ${el.width}, ${height}], ${summary}`;
     })
     .join('\n');
 }
@@ -1829,68 +1845,53 @@ function processActions(
   const studentAgents = agents?.filter((a) => a.role === 'student') || [];
   const nonTeacherAgents = agents?.filter((a) => a.role !== 'teacher') || [];
 
-  return actions.map((action) => {
-    // Ensure each action has an ID
-    const processedAction: Action = {
-      ...action,
-      id: action.id || `action_${nanoid(8)}`,
-    };
+  return actions
+    .filter((action) => {
+      if (
+        (action.type === 'spotlight' || action.type === 'laser' || action.type === 'reveal') &&
+        (!action.elementId || !elementIds.has(action.elementId))
+      ) {
+        log.warn(
+          `Skipping ${action.type} with unknown elementId: ${action.elementId || '(missing)'}`,
+        );
+        return false;
+      }
+      return true;
+    })
+    .map((action) => {
+      // Ensure each action has an ID
+      const processedAction: Action = {
+        ...action,
+        id: action.id || `action_${nanoid(8)}`,
+      };
 
-    // Validate element-targeted slide actions.
-    if (
-      processedAction.type === 'spotlight' ||
-      processedAction.type === 'laser' ||
-      processedAction.type === 'reveal'
-    ) {
-      const spotlightAction = processedAction;
-      if (!spotlightAction.elementId || !elementIds.has(spotlightAction.elementId)) {
-        // If elementId is invalid, try selecting the first element
-        if (elements.length > 0) {
-          spotlightAction.elementId = elements[0].id;
-          log.warn(
-            `Invalid elementId, falling back to first element: ${spotlightAction.elementId}`,
-          );
+      // Validate/fill discussion agentId
+      if (processedAction.type === 'discussion' && agents && agents.length > 0) {
+        if (processedAction.agentId && agentIds.has(processedAction.agentId)) {
+          // agentId valid — keep it
+        } else {
+          // agentId missing or invalid — pick a random student, or non-teacher, or skip
+          const pool = studentAgents.length > 0 ? studentAgents : nonTeacherAgents;
+          if (pool.length > 0) {
+            const picked = pool[Math.floor(Math.random() * pool.length)];
+            log.warn(
+              `Discussion agentId "${processedAction.agentId || '(none)'}" invalid, assigned: ${picked.id} (${picked.name})`,
+            );
+            processedAction.agentId = picked.id;
+          }
         }
       }
-    }
 
-    // Validate/fill discussion agentId
-    if (processedAction.type === 'discussion' && agents && agents.length > 0) {
-      if (processedAction.agentId && agentIds.has(processedAction.agentId)) {
-        // agentId valid — keep it
-      } else {
-        // agentId missing or invalid — pick a random student, or non-teacher, or skip
-        const pool = studentAgents.length > 0 ? studentAgents : nonTeacherAgents;
-        if (pool.length > 0) {
-          const picked = pool[Math.floor(Math.random() * pool.length)];
-          log.warn(
-            `Discussion agentId "${processedAction.agentId || '(none)'}" invalid, assigned: ${picked.id} (${picked.name})`,
-          );
-          processedAction.agentId = picked.id;
-        }
-      }
-    }
-
-    return processedAction;
-  });
+      return processedAction;
+    });
 }
 
 /**
  * Generate default slide Actions (fallback)
  */
-function generateDefaultSlideActions(outline: SceneOutline, elements: PPTElement[]): Action[] {
+function generateDefaultSlideActions(outline: SceneOutline, _elements: PPTElement[]): Action[] {
   const actions: Action[] = [];
-
-  // Add spotlight for text elements
-  const textElements = elements.filter((el) => el.type === 'text');
-  if (textElements.length > 0) {
-    actions.push({
-      id: `action_${nanoid(8)}`,
-      type: 'spotlight',
-      title: '聚焦重点',
-      elementId: textElements[0].id,
-    });
-  }
+  // A fallback overview has no verified binding to an individual teaching region.
 
   // Add opening speech based on key points
   const speechText = outline.keyPoints?.length
