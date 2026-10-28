@@ -28,7 +28,7 @@ from sqlmodel import select
 
 from app.api.deps import CurrentUser, SessionDep
 from app.core.config import settings
-from app.models import Enrollment
+from app.models import Course, Enrollment
 from app.services.browser_sessions import user_for_cookie
 from app.services.course_access import get_accessible_course
 from app.services.course_publication import require_published_course
@@ -598,7 +598,7 @@ def course_learning_data(course_id: uuid.UUID, session: SessionDep, user: Curren
 
     Real persisted rows only — no fabricated aggregates. Students see their
     own rows; teachers see rows for their enrolled students."""
-    get_accessible_course(session, user, course_id)
+    course = get_accessible_course(session, user, course_id)
     if user.role == "student" and not user.is_superuser:
         learner = str(user.id)
     else:
@@ -613,19 +613,40 @@ def course_learning_data(course_id: uuid.UUID, session: SessionDep, user: Curren
     if not enrolled_ids:
         return {"sessions": [], "mastery": [], "events": []}
 
+    if settings.TEACHER_ANALYTICS_READ_MODE == "api":
+        from app.services.teacher_analytics_client import (
+            TeacherAnalyticsUnavailable, get_teacher_publication_counts,
+        )
+        try:
+            published_lessons = get_teacher_publication_counts(
+                course_id, course.owner_id,
+            )["distinctClassrooms"]
+        except TeacherAnalyticsUnavailable as error:
+            raise HTTPException(503, "教师发布统计暂不可用，请稍后重试") from error
+    else:
+        published_row = session.execute(
+            text("SELECT count(DISTINCT a.payload->>'classroomId') FROM teacher.mentra_course_artifacts a "
+                 "JOIN teacher_course_link l ON l.external_course_id = a.course_id "
+                 "WHERE l.course_id=:course AND a.status='published' "
+                 "AND a.payload->>'classroomId' IS NOT NULL"),
+            {"course": course_id}).first()
+        published_lessons = int(published_row[0]) if published_row else 0
+
+    if settings.STUDENT_ANALYTICS_READ_MODE == "api":
+        from app.services.student_analytics_client import (
+            StudentAnalyticsUnavailable, get_course_learning_data,
+        )
+        try:
+            data = get_course_learning_data(course_id, enrolled_ids)
+        except StudentAnalyticsUnavailable as error:
+            raise HTTPException(503, "学生学情服务暂不可用，请稍后重试") from error
+        return {"publishedLessons": published_lessons, **data}
+
     id_list = tuple(enrolled_ids)
     placeholders = ", ".join(f":u{i}" for i in range(len(id_list)))
     params = {"course": course_id}
     for i, value in enumerate(id_list):
         params[f"u{i}"] = value
-
-    published_row = session.execute(
-        text("SELECT count(DISTINCT a.payload->>'classroomId') FROM teacher.mentra_course_artifacts a "
-             "JOIN teacher_course_link l ON l.external_course_id = a.course_id "
-             "WHERE l.course_id=:course AND a.status='published' "
-             "AND a.payload->>'classroomId' IS NOT NULL"),
-        {"course": course_id}).first()
-    published_lessons = int(published_row[0]) if published_row else 0
 
     sessions = session.execute(
         text(f"SELECT session_key, user_id, publication_version, classroom_id, "
@@ -683,13 +704,41 @@ class LearningProgressReport(BaseModel):
 
 def _course_learning_progress(session, user_id: uuid.UUID, course_id: uuid.UUID) -> dict:
     """Real per-course classroom progress from the student schema only."""
-    total_row = session.execute(
-        text("SELECT count(*) FROM teacher.mentra_course_artifacts a "
-             "JOIN teacher_course_link l ON l.external_course_id = a.course_id "
-             "WHERE l.course_id=:id AND a.status='published' "
-             "AND a.payload->>'classroomId' IS NOT NULL"),
-        {"id": str(course_id)}).first()
-    total = int(total_row[0]) if total_row else 0
+    if settings.TEACHER_ANALYTICS_READ_MODE == "api":
+        from app.services.teacher_analytics_client import (
+            TeacherAnalyticsUnavailable, get_teacher_publication_counts,
+        )
+        course = session.get(Course, course_id)
+        if course is None:
+            raise HTTPException(404, "课程不存在")
+        try:
+            total = get_teacher_publication_counts(
+                course_id, course.owner_id,
+            )["publishedArtifactsWithClassroom"]
+        except TeacherAnalyticsUnavailable as error:
+            raise HTTPException(503, "教师发布统计暂不可用，请稍后重试") from error
+    else:
+        total_row = session.execute(
+            text("SELECT count(*) FROM teacher.mentra_course_artifacts a "
+                 "JOIN teacher_course_link l ON l.external_course_id = a.course_id "
+                 "WHERE l.course_id=:id AND a.status='published' "
+                 "AND a.payload->>'classroomId' IS NOT NULL"),
+            {"id": str(course_id)}).first()
+        total = int(total_row[0]) if total_row else 0
+    if settings.STUDENT_ANALYTICS_READ_MODE == "api":
+        from app.services.student_analytics_client import (
+            StudentAnalyticsUnavailable, get_user_course_progress,
+        )
+        try:
+            student_metrics = get_user_course_progress(course_id, user_id)
+        except StudentAnalyticsUnavailable as error:
+            raise HTTPException(503, "学生学情服务暂不可用，请稍后重试") from error
+        learned = student_metrics["learnedLessons"]
+        return {
+            "totalLessons": total,
+            **student_metrics,
+            "percent": min(100, round(learned / total * 100)) if total else 0,
+        }
     learned_row = session.execute(
         text("SELECT count(DISTINCT classroom_id), max(last_active_at), count(*) "
              "FROM student.student_sessions "
@@ -721,11 +770,6 @@ def _course_learning_progress(session, user_id: uuid.UUID, course_id: uuid.UUID)
 
 
 def _teacher_course_owner(session, course_id: uuid.UUID) -> str | None:
-    row = session.execute(
-        text("SELECT teacher_id FROM teacher.mentra_courses WHERE id=:id"),
-        {"id": str(course_id)}).first()
-    if row:
-        return str(row[0])
     row = session.execute(
         text("SELECT owner_id FROM course WHERE id=:id"),
         {"id": str(course_id)}).first()

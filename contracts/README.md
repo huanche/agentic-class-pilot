@@ -9,7 +9,7 @@
 | `internal-teacher-api.yaml` | 教师侧使用的 6 个平台端点，包括共享模型配置 |
 | `internal-student-api.yaml` | 学生侧使用的 4 个平台端点，包括共享模型配置 |
 | `teacher-service-api.yaml` | 平台调用教师端的健康检查、课程开通、学情上报及发布判定（平台调用子集） |
-| `student-service-api.yaml` | 平台调用学生端的发布课时知识准备登记（学生端持有任务表） |
+| `student-service-api.yaml` | 平台调用学生端的发布课时知识准备登记与学情读取（学生端持有对应数据表） |
 | `learning-context.schema.json` | 已有 `schemaVersion=1` 的学习上下文，允许新增可选字段 |
 | `routing.yaml` | 网关路由清单，生成三份 Caddy 路由片段 |
 

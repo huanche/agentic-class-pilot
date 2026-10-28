@@ -392,6 +392,64 @@
         ],
         "summary": "Resolve the teacher-owned current publication for a platform course alias"
       }
+    },
+    "/api/internal/platform/courses/{courseId}/publication-counts": {
+      "get": {
+        "description": "Counts published artifacts with a classroom ID, including archived course history, matching the platform's existing analytics queries.",
+        "operationId": "getTeacherPublicationCounts",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "courseId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "distinctClassrooms": {
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "publishedArtifactsWithClassroom": {
+                      "minimum": 0,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "distinctClassrooms",
+                    "publishedArtifactsWithClassroom"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Counts under the course"
+          },
+          "403": {
+            "description": "Invalid service delegation"
+          },
+          "404": {
+            "description": "Teacher course not found"
+          },
+          "503": {
+            "description": "Teacher storage unavailable"
+          }
+        },
+        "security": [
+          {
+            "platformServiceKey": [],
+            "platformSubject": []
+          }
+        ],
+        "summary": "Teacher-owned published classroom and artifact counts"
+      }
     }
   },
   "servers": [

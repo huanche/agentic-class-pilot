@@ -6,6 +6,63 @@ info:
 servers:
   - url: http://127.0.0.1:8001
 paths:
+  /api/internal/platform/courses/{course_id}/learning-data:
+    post:
+      operationId: getStudentCourseLearningData
+      summary: Bounded student-owned rows for an authorized platform course view
+      security: [{ studentServiceKey: [] }]
+      parameters:
+        - { name: course_id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [userIds]
+              properties:
+                userIds:
+                  type: array
+                  maxItems: 10000
+                  items: { type: string }
+      responses:
+        '200':
+          description: Bounded sessions, mastery rows and event counts for the supplied users
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [sessions, mastery, eventSummary]
+                properties:
+                  sessions: { type: array, items: { type: object } }
+                  mastery: { type: array, items: { type: object } }
+                  eventSummary: { type: object, additionalProperties: { type: integer } }
+        '403': { description: Invalid service credentials }
+        '503': { description: Student data unavailable }
+  /api/internal/platform/courses/{course_id}/users/{user_id}/progress:
+    get:
+      operationId: getStudentCourseProgress
+      summary: Student-owned metrics for one user in one course
+      security: [{ studentServiceKey: [] }]
+      parameters:
+        - { name: course_id, in: path, required: true, schema: { type: string } }
+        - { name: user_id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Raw student-owned progress metrics without teacher publication count
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [learnedLessons, lastActiveAt, sessionCount, endedSessions, stars]
+                properties:
+                  learnedLessons: { type: integer }
+                  lastActiveAt: { type: [string, 'null'] }
+                  sessionCount: { type: integer }
+                  endedSessions: { type: integer }
+                  stars: { type: integer }
+        '403': { description: Invalid service credentials }
+        '503': { description: Student data unavailable }
   /api/internal/platform/published-lesson-knowledge:
     post:
       operationId: enqueuePublishedLessonKnowledgeAtStudent

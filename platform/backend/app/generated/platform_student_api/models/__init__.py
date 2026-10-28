@@ -3,9 +3,21 @@
 from .enqueue_published_lesson_knowledge_at_student_body import EnqueuePublishedLessonKnowledgeAtStudentBody
 from .enqueue_published_lesson_knowledge_at_student_body_scenes_item import EnqueuePublishedLessonKnowledgeAtStudentBodyScenesItem
 from .enqueue_published_lesson_knowledge_at_student_response_200 import EnqueuePublishedLessonKnowledgeAtStudentResponse200
+from .get_student_course_learning_data_body import GetStudentCourseLearningDataBody
+from .get_student_course_learning_data_response_200 import GetStudentCourseLearningDataResponse200
+from .get_student_course_learning_data_response_200_event_summary import GetStudentCourseLearningDataResponse200EventSummary
+from .get_student_course_learning_data_response_200_mastery_item import GetStudentCourseLearningDataResponse200MasteryItem
+from .get_student_course_learning_data_response_200_sessions_item import GetStudentCourseLearningDataResponse200SessionsItem
+from .get_student_course_progress_response_200 import GetStudentCourseProgressResponse200
 
 __all__ = (
     "EnqueuePublishedLessonKnowledgeAtStudentBody",
     "EnqueuePublishedLessonKnowledgeAtStudentBodyScenesItem",
     "EnqueuePublishedLessonKnowledgeAtStudentResponse200",
+    "GetStudentCourseLearningDataBody",
+    "GetStudentCourseLearningDataResponse200",
+    "GetStudentCourseLearningDataResponse200EventSummary",
+    "GetStudentCourseLearningDataResponse200MasteryItem",
+    "GetStudentCourseLearningDataResponse200SessionsItem",
+    "GetStudentCourseProgressResponse200",
 )

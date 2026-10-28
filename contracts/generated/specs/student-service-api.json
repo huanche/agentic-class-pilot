@@ -16,6 +16,166 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/internal/platform/courses/{course_id}/learning-data": {
+      "post": {
+        "operationId": "getStudentCourseLearningData",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "course_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "userIds": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "maxItems": 10000,
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "userIds"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "eventSummary": {
+                      "additionalProperties": {
+                        "type": "integer"
+                      },
+                      "type": "object"
+                    },
+                    "mastery": {
+                      "items": {
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "sessions": {
+                      "items": {
+                        "type": "object"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "sessions",
+                    "mastery",
+                    "eventSummary"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Bounded sessions, mastery rows and event counts for the supplied users"
+          },
+          "403": {
+            "description": "Invalid service credentials"
+          },
+          "503": {
+            "description": "Student data unavailable"
+          }
+        },
+        "security": [
+          {
+            "studentServiceKey": []
+          }
+        ],
+        "summary": "Bounded student-owned rows for an authorized platform course view"
+      }
+    },
+    "/api/internal/platform/courses/{course_id}/users/{user_id}/progress": {
+      "get": {
+        "operationId": "getStudentCourseProgress",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "course_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "endedSessions": {
+                      "type": "integer"
+                    },
+                    "lastActiveAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "learnedLessons": {
+                      "type": "integer"
+                    },
+                    "sessionCount": {
+                      "type": "integer"
+                    },
+                    "stars": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "learnedLessons",
+                    "lastActiveAt",
+                    "sessionCount",
+                    "endedSessions",
+                    "stars"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Raw student-owned progress metrics without teacher publication count"
+          },
+          "403": {
+            "description": "Invalid service credentials"
+          },
+          "503": {
+            "description": "Student data unavailable"
+          }
+        },
+        "security": [
+          {
+            "studentServiceKey": []
+          }
+        ],
+        "summary": "Student-owned metrics for one user in one course"
+      }
+    },
     "/api/internal/platform/published-lesson-knowledge": {
       "post": {
         "description": "The platform verifies publication and supplies the teacher-owned snapshot; the student service owns the durable job table.",
