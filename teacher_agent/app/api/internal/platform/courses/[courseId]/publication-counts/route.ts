@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from 'next/server';
-import { listCourseArtifacts, readServerCourse } from '@/lib/server/course-space-storage';
+import { listStoredCourseArtifacts, readServerCourse } from '@/lib/server/course-space-storage';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,7 +15,7 @@ export async function GET(
   const { courseId } = await context.params;
   const course = await readServerCourse(courseId);
   if (!course) return NextResponse.json({ error: 'Course not found' }, { status: 404 });
-  const artifacts = await listCourseArtifacts(course.id);
+  const artifacts = await listStoredCourseArtifacts(course.id);
   const publishedWithClassroom = artifacts.filter(
     (artifact) => artifact.status === 'published' && Boolean(artifact.classroomId),
   );

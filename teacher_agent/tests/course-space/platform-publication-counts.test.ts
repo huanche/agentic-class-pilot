@@ -3,7 +3,7 @@ import { NextRequest } from 'next/server';
 
 const storage = vi.hoisted(() => ({
   readServerCourse: vi.fn(),
-  listCourseArtifacts: vi.fn(),
+  listStoredCourseArtifacts: vi.fn(),
 }));
 vi.mock('@/lib/server/course-space-storage', () => storage);
 
@@ -19,7 +19,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   vi.stubEnv('PLATFORM_AUTH_ENABLED', 'true');
   storage.readServerCourse.mockResolvedValue({ id: 'canonical-id', status: 'active' });
-  storage.listCourseArtifacts.mockResolvedValue([
+  storage.listStoredCourseArtifacts.mockResolvedValue([
     { status: 'published', classroomId: 'room-1' },
     { status: 'published', classroomId: 'room-1' },
     { status: 'published', classroomId: 'room-2' },
@@ -40,6 +40,6 @@ describe('platform publication counts', () => {
       distinctClassrooms: 2,
       publishedArtifactsWithClassroom: 3,
     });
-    expect(storage.listCourseArtifacts).toHaveBeenCalledWith('canonical-id');
+    expect(storage.listStoredCourseArtifacts).toHaveBeenCalledWith('canonical-id');
   });
 });
