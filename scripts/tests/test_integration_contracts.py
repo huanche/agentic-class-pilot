@@ -200,14 +200,16 @@ class ProviderPayloadTests(unittest.TestCase):
                         "uuid": uuid, "SCHEMA_VERSION": 1, "text": lambda sql: sql,
                         "re": re, "hashlib": hashlib,
                         "check_student_service_key": lambda _: None,
-                        "verify_launch_token": lambda _: identity, "_resolve_launch_context": lambda *_: None,
+                        "verify_launch_token": lambda _, **__: identity, "_resolve_launch_context": lambda *_: None,
                         "_published_package_payload": lambda *_: {"id": "fixture-publication", "version": 1, "entries": entries},
                         "_published_lessons": lambda *_: lessons, "_classroom_view": lambda *_: copy.deepcopy(classroom),
+                        "ensure_published_knowledge_job": lambda *_: None,
                         "_grounding_context": lambda *_: {}, "_issue_playback_grant": lambda *_: "fixture-grant",
                     })
                 session = SimpleNamespace(execute=lambda *_: SimpleNamespace(first=lambda: ("Fixture course",)))
                 result = namespace["student_learning_context"](
-                    SimpleNamespace(launch_token="fixture", lesson_id="fixture-lesson" if lessons else None),
+                    SimpleNamespace(launch_token="fixture", refresh_session=False,
+                                    lesson_id="fixture-lesson" if lessons else None),
                     session, "fixture-key")
                 self.validator.validate(result)
                 self.assertEqual(bool(result["lessons"]), bool(lessons))
