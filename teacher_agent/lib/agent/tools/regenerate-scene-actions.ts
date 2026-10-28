@@ -34,6 +34,10 @@ import type {
 import type { SceneContent } from '@/lib/types/stage';
 import type { LlmStage } from '@/lib/server/model-routes';
 import { normalizeLegacyPBLContent } from '@/lib/pbl/legacy/read';
+import {
+  bindPptxAnimationsToActions,
+  pptxAnimationNarrationContract,
+} from '@/lib/import/pptx-animations';
 
 // ── Scene context shape (client-sourced, injected via deps) ──────────────────
 
@@ -229,7 +233,14 @@ export function makeRegenerateSceneActionsTool(
 
       let actions: Action[];
       try {
-        actions = await generateSceneActions(outline, generationContent, aiCallFn, {
+        const actionOutline =
+          content.type === 'slide'
+            ? {
+                ...outline,
+                description: outline.description + pptxAnimationNarrationContract(content.canvas),
+              }
+            : outline;
+        actions = await generateSceneActions(actionOutline, generationContent, aiCallFn, {
           ctx,
           agents,
           userProfile,
@@ -259,6 +270,8 @@ export function makeRegenerateSceneActionsTool(
           isError: true,
         };
       }
+
+      if (content.type === 'slide') actions = bindPptxAnimationsToActions(actions, content.canvas);
 
       return {
         content: [

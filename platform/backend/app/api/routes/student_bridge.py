@@ -376,6 +376,27 @@ def _classroom_view(session: SessionDep, classroom_id: str) -> dict:
     }
 
 
+def ensure_published_knowledge_job(session: SessionDep, course_id: uuid.UUID,
+                                   lesson_id: str, classroom: dict,
+                                   published_at: int | None) -> str:
+    """Idempotent publication job, also backfilling lessons published earlier."""
+    scenes = classroom.get("scenes") or []
+    revision = hashlib.sha256(json.dumps(
+        [classroom["id"], published_at, scenes],
+        sort_keys=True, ensure_ascii=False,
+    ).encode()).hexdigest()
+    session.execute(text(
+        "INSERT INTO student.published_lesson_knowledge "
+        "(course_id, lesson_id, video_revision, classroom_id, scenes) "
+        "VALUES (:course, :lesson, :revision, :classroom, CAST(:scenes AS jsonb)) "
+        "ON CONFLICT (course_id, lesson_id, video_revision) DO NOTHING"
+    ), {"course": str(course_id), "lesson": lesson_id,
+        "revision": revision, "classroom": classroom["id"],
+        "scenes": json.dumps(scenes, ensure_ascii=False)})
+    session.commit()
+    return revision
+
+
 def _published_lessons(session: SessionDep, course_id: uuid.UUID,
                        user_id: uuid.UUID) -> list[dict]:
     """Read explicit lesson bindings; never use another lesson's classroom."""
@@ -492,6 +513,9 @@ def student_learning_context(body: LearningContextRequest, session: SessionDep,
         selected = next((lesson for lesson in published_lessons if lesson["id"] == body.lesson_id), None)
         if body.lesson_id and selected is None:
             raise HTTPException(404, "所选课时不存在或尚未发布")
+        if selected:
+            ensure_published_knowledge_job(session, course_id, selected["id"],
+                                           selected["classroom"], selected.get("publishedAt"))
         lessons = [selected] if selected else []
         classroom_id = selected["classroom"]["id"] if selected else None
         entries = []

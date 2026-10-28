@@ -14,6 +14,8 @@ import { useI18n } from '@/lib/hooks/use-i18n';
 import { createLogger } from '@/lib/logger';
 import { mediaResolutionCanRetry, type MediaResolution } from '@/lib/media/resolve-media-ref';
 import { withContentAwareViewport } from '@/lib/import/content-aware-slide';
+import { pptxAnimatedElementIds } from '@/lib/import/pptx-animations';
+import { usePptxParagraphVisibility } from '../use-pptx-paragraph-visibility';
 
 const log = createLogger('RendererScreenCanvas');
 
@@ -297,6 +299,8 @@ export function RendererScreenCanvas() {
   );
   const slide = useMemo(() => withContentAwareViewport(sourceSlide), [sourceSlide]);
   const resolved = useResolvedSlideMedia(slide);
+  const nativeCanvasRef = useRef<HTMLDivElement>(null);
+  usePptxParagraphVisibility(nativeCanvasRef, slide.id);
 
   const canvasPercentage = useCanvasStore.use.canvasPercentage();
   const setCanvasScale = useCanvasStore.use.setCanvasScale();
@@ -354,33 +358,36 @@ export function RendererScreenCanvas() {
   ]);
 
   return (
-    <SlideCanvas
-      slide={resolved.slide}
-      canvasPercentage={canvasPercentage}
-      onScaleChange={handleScaleChange}
-      effects={effects}
-      hiddenElementIds={hiddenElementIdList}
-      entranceAnimatedElementIds={revealedElementIdList}
-      elementIdPrefix="screen-element-"
-      renderImage={(element, _src, defaultContent) => (
-        <PlaybackImageContent
-          element={element}
-          defaultContent={defaultContent}
-          media={resolved.byElementId[element.id]}
-          sceneId={sceneId}
-          slideId={slide.id}
-        />
-      )}
-      renderVideo={(element) => (
-        <PlaybackVideoContent
-          element={element}
-          media={resolved.byElementId[element.id]}
-          sceneId={sceneId}
-          slideId={slide.id}
-        />
-      )}
-      videoInteractive
-      chrome
-    />
+    <div ref={nativeCanvasRef} className="h-full w-full">
+      <SlideCanvas
+        slide={resolved.slide}
+        canvasPercentage={canvasPercentage}
+        onScaleChange={handleScaleChange}
+        effects={effects}
+        hiddenElementIds={hiddenElementIdList}
+        retainedHiddenElementIds={pptxAnimatedElementIds(slide)}
+        entranceAnimatedElementIds={revealedElementIdList}
+        elementIdPrefix="screen-element-"
+        renderImage={(element, _src, defaultContent) => (
+          <PlaybackImageContent
+            element={element}
+            defaultContent={defaultContent}
+            media={resolved.byElementId[element.id]}
+            sceneId={sceneId}
+            slideId={slide.id}
+          />
+        )}
+        renderVideo={(element) => (
+          <PlaybackVideoContent
+            element={element}
+            media={resolved.byElementId[element.id]}
+            sceneId={sceneId}
+            slideId={slide.id}
+          />
+        )}
+        videoInteractive
+        chrome
+      />
+    </div>
   );
 }

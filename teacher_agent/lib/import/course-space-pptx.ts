@@ -5,6 +5,7 @@ import type { GenerationSessionState } from '@/app/generation-preview/types';
 import type { CourseMaterialRecord } from '@/lib/course-space';
 import { fingerprintCoursewareFile } from '@/lib/course-governance/fingerprint';
 import { buildFaithfulCoursewareRequirement } from '@/lib/learning-skills/courseware-mode';
+import { PPTX_IMPORTER_URL } from './importer-url';
 import {
   buildImportedPptDraft,
   removeImportedPptSlides,
@@ -25,7 +26,7 @@ export async function prepareCourseSpacePptx(
     type: material.mimeType,
     lastModified: material.updatedAt,
   });
-  const parserUrl = '/vendor/maic-importer/index.js';
+  const parserUrl = PPTX_IMPORTER_URL;
   if (!(await fetch(parserUrl, { method: 'HEAD' })).ok) throw new Error('PPTX 解析器尚未部署');
   const importer = (await import(
     /* webpackIgnore: true */

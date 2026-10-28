@@ -128,7 +128,10 @@ function symbolFontCharToUnicode(char: string, fontName: string): string {
   else if (font === 'symbol') table = SYMBOL;
 
   if (table && table[code]) return table[code];
-  return '•';
+  // Legacy PPT conversion may attach a:sym to an entire ordinary Unicode run.
+  // Only private-use symbol codes need a glyph fallback; preserve its real text.
+  const original = char.codePointAt(0) ?? 0;
+  return original >= 0xf000 && original <= 0xf0ff ? '•' : char;
 }
 
 // ---------------------------------------------------------------------------
@@ -1274,9 +1277,10 @@ export function renderTextBody(
       const useLineWrappers = !!(merged.lineHeightAbsolute && merged.lineHeight);
 
       const paraCss = paraCssParts.join(';');
+      const marker = ctx.markAnimationParagraphs ? ` data-pptx-paragraph="${paraIdx - 1}"` : '';
       const openTag = useLineWrappers
-        ? `<div${paraCss ? ` style="${paraCss};"` : ''}>`
-        : `<p${paraCss ? ` style="${paraCss};"` : ''}>`;
+        ? `<div${marker}${paraCss ? ` style="${paraCss};"` : ''}>`
+        : `<p${marker}${paraCss ? ` style="${paraCss};"` : ''}>`;
       const closeTag = useLineWrappers ? '</div>' : '</p>';
       html += openTag;
 

@@ -18,6 +18,7 @@
  *
  * Pure, no runtime dependencies beyond `@openmaic/dsl`.
  */
+import { pptxStepDurationMs } from './timing';
 import type {
   Action,
   SceneCore,
@@ -207,7 +208,9 @@ function actionDurationMs(action: Action, opts: ResolveTimelineOptions): number 
     case 'laser':
       return EFFECT_AUTO_CLEAR_MS;
     case 'reveal':
-      return revealDurationMs(action.duration);
+      return action.pptxStep
+        ? pptxStepDurationMs(action.pptxStep) / (opts.playbackSpeed ?? 1)
+        : revealDurationMs(action.duration);
     case 'discussion': {
       // A discussion the engine skips outright — already consumed, or its agent
       // isn't selected — contributes no dwell (`processNext` recurses with no

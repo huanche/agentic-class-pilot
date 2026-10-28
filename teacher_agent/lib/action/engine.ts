@@ -57,6 +57,7 @@ import {
 } from '@/lib/choreography';
 import katex from 'katex';
 import { createLogger } from '@/lib/logger';
+import { PptxAnimationPlayer } from './pptx-animation-player';
 
 const log = createLogger('ActionEngine');
 
@@ -168,6 +169,23 @@ export interface ActionExecutionOptions {
 }
 
 export class ActionEngine {
+  private readonly pptxAnimationPlayer = new PptxAnimationPlayer();
+
+  pauseSourceAnimation(): void {
+    this.pptxAnimationPlayer.pause();
+  }
+  resumeSourceAnimation(): Promise<void> | undefined {
+    return this.pptxAnimationPlayer.resume();
+  }
+  cancelSourceAnimation(): void {
+    this.pptxAnimationPlayer.cancel();
+  }
+  setSourceAnimationRate(rate: number): void {
+    this.pptxAnimationPlayer.setRate(rate);
+  }
+  getSourceAnimationElapsedMs(): number | undefined {
+    return this.pptxAnimationPlayer.active ? this.pptxAnimationPlayer.elapsedMs : undefined;
+  }
   private stageStore: StageStore;
   private stageAPI: ReturnType<typeof createStageAPI>;
   private audioPlayer: AudioPlayer | null;
@@ -192,6 +210,7 @@ export class ActionEngine {
 
   /** Clean up timers when the engine is no longer needed */
   dispose(): void {
+    this.cancelSourceAnimation();
     if (this.effectTimer) {
       clearTimeout(this.effectTimer);
       this.effectTimer = null;
@@ -230,7 +249,7 @@ export class ActionEngine {
         this.executeLaser(action, options.persistEffects);
         return;
       case 'reveal':
-        return this.executeReveal(action as RevealAction);
+        return this.executeReveal(action as RevealAction, options.silent);
       // Synchronous — Video
       case 'play_video':
         return this.executePlayVideo(action as PlayVideoAction, options);
@@ -288,6 +307,7 @@ export class ActionEngine {
   }
 
   resetPlaybackVisualState(revealTargets: string[] = []): void {
+    this.cancelSourceAnimation();
     this.clearEffects();
     useCanvasStore.getState().setHiddenElementIdList(revealTargets);
     useCanvasStore.getState().setRevealedElementIdList([]);
@@ -300,7 +320,8 @@ export class ActionEngine {
     }
   }
 
-  private async executeReveal(action: RevealAction): Promise<void> {
+  private async executeReveal(action: RevealAction, silent = false): Promise<void> {
+    if (action.pptxStep) return this.pptxAnimationPlayer.play(action.pptxStep, silent);
     useCanvasStore.getState().revealElement(action.elementId);
     await delay(revealDurationMs(action.duration));
   }

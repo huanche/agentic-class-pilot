@@ -19,9 +19,10 @@ interface ScreenElementProps {
   readonly elementInfo: PPTElement;
   readonly elementIndex: number;
   readonly animate?: boolean;
+  readonly hidden?: boolean;
 }
 
-export function ScreenElement({ elementInfo, elementIndex, animate }: ScreenElementProps) {
+export function ScreenElement({ elementInfo, elementIndex, animate, hidden }: ScreenElementProps) {
   const CurrentElementComponent = useMemo(() => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- element components have varying prop signatures
     const elementTypeMap: Record<string, any> = {
@@ -64,6 +65,7 @@ export function ScreenElement({ elementInfo, elementIndex, animate }: ScreenElem
         zIndex: elementIndex,
         color: theme.fontColor,
         fontFamily: theme.fontName,
+        visibility: hidden ? 'hidden' : undefined,
       }}
     >
       <CurrentElementComponent elementInfo={elementInfo} animate={animate} />

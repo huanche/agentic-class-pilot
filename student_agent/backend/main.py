@@ -12,7 +12,7 @@ import time
 import traceback
 import urllib.error
 import urllib.request
-from contextlib import ExitStack
+from contextlib import ExitStack, asynccontextmanager
 from pathlib import Path
 from threading import Lock
 
@@ -28,10 +28,22 @@ from agent.progression import normalize, progress
 from agent.feedback import lesson_feedback
 from agent.postclass import pending_points, postclass_graph, postclass_stage, prepare_points, opening_task
 from agent import persistence
+from agent import published_knowledge
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "frontend" / "out"
-app = FastAPI(title="Student Agent")
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    published_knowledge.start_worker()
+    try:
+        yield
+    finally:
+        published_knowledge.stop_worker()
+
+
+app = FastAPI(title="Student Agent", lifespan=lifespan)
 logger = logging.getLogger(__name__)
 sessions: dict[str, dict] = {}
 session_lock = Lock()
@@ -376,6 +388,8 @@ def prepare_in_background(session: dict) -> None:
 
 
 def schedule_preparation(session: dict, tasks: BackgroundTasks) -> None:
+    if session.get("context"):
+        return  # Published lessons are prepared by the durable publication worker.
     if session.get("preparation") != "pending":
         return
     with session_lock:
@@ -385,10 +399,41 @@ def schedule_preparation(session: dict, tasks: BackgroundTasks) -> None:
     tasks.add_task(prepare_in_background, session)
 
 
+def sync_published_preparation(session: dict) -> None:
+    """Populate only this student's dialogue from the published shared result."""
+    context = session.get("context") or {}
+    if not context or session.get("phase") != "video" or session.get("dialogue"):
+        return
+    lesson_id, revision = session.get("lessonId"), session.get("videoRevision")
+    if not lesson_id or not revision:
+        return
+    result = published_knowledge.read(str(context["courseId"]), str(lesson_id), revision)
+    if result and result["status"] == "ready" and result["points"]:
+        commit(session, {"dialogue": dict(initial_state(result["points"]),
+                                           curriculum_version=CURRICULUM_VERSION),
+                         "preparation": "ready", "preparationCoverage": result["coverage"],
+                         "preparationError": "", "preparationErrorCode": ""})
+    elif result and result["status"] == "failed":
+        session.update(preparation="error", preparationError="知识点整理失败，可点击重试",
+                       preparationErrorCode="published_extraction_failed")
+    else:
+        session.update(preparation="pending", preparationError="", preparationErrorCode="")
+
+
 def upgrade_curriculum(session: dict) -> None:
     """Rebuild old saved sessions from the exact classroom shown by the player."""
     previous = session.get("dialogue") or {}
     if previous.get("curriculum_version") == CURRICULUM_VERSION:
+        return
+    if session.get("context"):
+        context = session["context"]
+        result = published_knowledge.read(str(context["courseId"]),
+                                          str(session["lessonId"]), str(session["videoRevision"]))
+        if not result or result["status"] != "ready":
+            raise HTTPException(409, "本课知识点正在整理，请稍后重试")
+        dialogue = dict(initial_state(result["points"]), curriculum_version=CURRICULUM_VERSION)
+        commit(session, {"dialogue": dialogue, "preparation": "ready",
+                         "preparationCoverage": result["coverage"]})
         return
     materials = current_materials(session)
     try:
@@ -517,6 +562,7 @@ def demo_player():
 def read(sid: str, background_tasks: BackgroundTasks) -> dict:
     session = get_session(sid)
     with session["lock"]:
+        sync_published_preparation(session)
         schedule_preparation(session, background_tasks)
         return state(session)
 
@@ -600,6 +646,7 @@ def begin(sid: str, lesson_id: str, background_tasks: BackgroundTasks) -> dict:
                          "preparationCoverage": None,
                          "preparationMaterials": materials})
         schedule_preparation(session, background_tasks)
+        sync_published_preparation(session)
         schedule_progress_sync(session, "started", background_tasks)
     return state(session)
 
@@ -650,6 +697,15 @@ def retry_preparation(sid: str, background_tasks: BackgroundTasks) -> dict:
     with session["lock"]:
         if session["phase"] != "video":
             raise HTTPException(409, "当前不在视频阶段")
+        if session.get("context"):
+            context = session["context"]
+            scope = (str(context["courseId"]), str(session["lessonId"]),
+                     str(session["videoRevision"]))
+            if not published_knowledge.retry(*scope) and published_knowledge.read(*scope) is None:
+                raise HTTPException(409, "当前课时尚未登记知识点准备任务，请从平台重新进入课程")
+            session.update(preparation="pending", preparationError="", preparationErrorCode="")
+            sync_published_preparation(session)
+            return state(session)
         if session.get("preparation") in {"error", "partial"}:
             commit(session, {"preparation": "pending", "preparationError": "",
                              "preparationErrorCode": ""})
@@ -662,6 +718,7 @@ def discussion(sid: str, background_tasks: BackgroundTasks) -> dict:
     session = get_session(sid)
     with session["lock"]:
         if session["phase"] == "video":
+            sync_published_preparation(session)
             if session.get("preparation") == "pending":
                 schedule_preparation(session, background_tasks)
                 return state(session)

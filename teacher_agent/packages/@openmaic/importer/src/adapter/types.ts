@@ -315,7 +315,7 @@ export interface Group {
   isFlipV: boolean;
 }
 
-export type Element = BaseElement | Group;
+export type Element = (BaseElement | Group) & { sourceShapeId?: string };
 
 export interface SlideTransition {
   type: string;
@@ -329,6 +329,7 @@ export interface Slide {
   layoutElements: Element[];
   note: string;
   transition?: SlideTransition | null;
+  pptxAnimation?: import('@openmaic/dsl').PptxAnimationTimeline;
 }
 
 export interface Options {

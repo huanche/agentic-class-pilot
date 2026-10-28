@@ -50,6 +50,7 @@ export interface SlideElementProps {
   /** Compositor-only offset used by the editing surface during a move gesture. */
   dragOffset?: { x: number; y: number };
   entranceAnimate?: boolean;
+  hidden?: boolean;
 }
 
 type SlideElementContentProps = Pick<
@@ -158,6 +159,7 @@ export const SlideElement = memo(function SlideElement({
   idPrefix = 'slide-element-',
   dragOffset,
   entranceAnimate,
+  hidden,
 }: SlideElementProps) {
   const fontColor = theme?.fontColor ?? DEFAULT_THEME.fontColor;
   const fontName = theme?.fontName ?? DEFAULT_THEME.fontName;
@@ -173,6 +175,7 @@ export const SlideElement = memo(function SlideElement({
         color: fontColor,
         fontFamily: fontName,
         pointerEvents: 'none',
+        visibility: hidden ? 'hidden' : undefined,
         animation: entranceAnimate
           ? 'openmaic-element-reveal 520ms cubic-bezier(0.16, 1, 0.3, 1) both'
           : undefined,

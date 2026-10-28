@@ -65,8 +65,12 @@ export function buildImportedPptDraft(slides: Slide[]): PptContentDraft {
         content: texts.slice(1).join('\n'),
         speakerNotes: slide.script?.trim() || '',
         include: true,
+        animationWarnings: slide.pptxAnimation?.warnings,
         formulas,
-        generationStrategy: formulas.length ? 'ai-formula-enhanced' : 'faithful',
+        generationStrategy:
+          formulas.length && !slide.pptxAnimation?.steps.length
+            ? 'ai-formula-enhanced'
+            : 'faithful',
         imageOcr:
           !texts.length && !formulas.length && slide.elements.some((item) => item.type === 'image')
             ? 'pending'

@@ -57,6 +57,12 @@ export const WB_CLOSE_MS = 700;
 /** widget_* interactions (highlight/setState/annotation/reveal). */
 export const WIDGET_MS = 300;
 
+import type { PptxAnimationStep } from '@openmaic/dsl';
+
+export function pptxStepDurationMs(step: PptxAnimationStep): number {
+  return Math.max(0, ...step.effects.map((effect) => effect.delayMs + effect.durationMs));
+}
+
 /** The same bounded reveal animation is used by playback and its timeline. */
 export function revealDurationMs(duration?: number): number {
   return Math.max(120, Math.min(duration ?? 520, 2000));

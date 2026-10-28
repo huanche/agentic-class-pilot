@@ -53,6 +53,7 @@ export function toRuntimeSlideContent(
       // Every new element has a brand-new id, so nothing survives a filter;
       // clear the array.
       animations: [],
+      pptxAnimation: undefined,
       // Only override background when defined — a regen that omits background
       // must not wipe the scene's existing background.
       ...(gen.background !== undefined ? { background: gen.background } : {}),

@@ -9,6 +9,19 @@ import {
   updateCourseJobIfPresent,
 } from './course-space-storage';
 import { publishCourseChannel } from './course-channel-publication';
+
+async function queuePublishedVideo(courseId: string, artifactId: string, classroomId?: string) {
+  if (!classroomId || process.env.PLATFORM_AUTH_ENABLED !== 'true') return;
+  const response = await fetch(
+    `${process.env.PLATFORM_AUTH_URL}/api/v1/internal/teacher/published-lesson-knowledge`,
+    { method: 'POST', headers: {
+      'Content-Type': 'application/json',
+      'X-Teacher-Service-Key': process.env.PLATFORM_SERVICE_KEY || '',
+    }, body: JSON.stringify({ course_id: courseId, artifact_id: artifactId }),
+      cache: 'no-store', signal: AbortSignal.timeout(10000) },
+  );
+  if (!response.ok) throw new Error('视频已发布，但知识点准备任务登记失败，请再次点击发布重试');
+}
 export type PublicationRequest = Omit<CoursePublicationPlacement, 'confirmedAt'> & {
   newLessonTitle?: string;
 };
@@ -110,6 +123,7 @@ export async function publishCourseResource(
     // Retry initialization if a previous publish saved the resource but failed
     // before creating the student package. Preserve the original publication id.
     await ensureStudentPublication();
+    if (artifact) await queuePublishedVideo(course.id, artifact.id, artifact.classroomId);
     return resource;
   }
   const now = Date.now();
@@ -218,6 +232,7 @@ export async function publishCourseResource(
       message: '教师已确认课时归属并发布',
     });
     await ensureStudentPublication();
+    await queuePublishedVideo(course.id, saved.id, saved.classroomId);
     return saved;
   }
   await ensureStudentPublication();

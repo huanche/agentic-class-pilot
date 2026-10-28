@@ -95,6 +95,42 @@ describe('regenerate_scene_actions', () => {
     expect(Array.isArray((res.details as { actions: unknown[] }).actions)).toBe(true);
   });
 
+  it('keeps imported native animations when regenerating narration and focus', async () => {
+    vi.stubEnv('COURSEWARE_GENERATION_ENGINE', 'openmaic');
+    try {
+      const content = structuredClone(stubSlideContent);
+      content.canvas.pptxAnimation = {
+        version: 1,
+        warnings: [],
+        steps: [
+          {
+            id: 'source-click',
+            trigger: 'click',
+            effects: [
+              {
+                elementIds: ['el1'],
+                effect: 'fade',
+                phase: 'in',
+                delayMs: 0,
+                durationMs: 500,
+              },
+            ],
+          },
+        ],
+      };
+      const tool = makeRegenerateSceneActionsTool(makeDeps('s1', { content }));
+      const res = await tool.execute('tc-native-focus', { sceneId: 's1' });
+      expect(mockGen.mock.calls[0][0].description).toContain('原 PPT 动画顺序');
+      expect(res.details?.actions[0]).toMatchObject({
+        type: 'reveal',
+        pptxStep: { id: 'source-click' },
+      });
+      expect(res.details?.actions[1]).toMatchObject({ type: 'speech', text: 'hi' });
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   // ── Bug 1 regression: SlideContent shape conversion ──────────────────────────
   // The runtime scene stores SlideContent = { type:'slide', canvas: Slide }
   // but generateSceneActions expects GeneratedSlideContent = { elements, background? }.

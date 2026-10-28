@@ -65,6 +65,7 @@ def test_catalog_then_selected_lesson(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(main, "platform_context", fake_platform_context)
     monkeypatch.setattr(main.persistence, "save", lambda *args: None)
     monkeypatch.setattr(main.persistence, "latest_session_key", lambda *args: None)
+    monkeypatch.setattr(main.published_knowledge, "read", lambda *args: None)
     started = main.start(main.StartRequest(launch_token="ticket"))
     sid = started["sessionId"]
     try:
