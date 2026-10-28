@@ -4,13 +4,15 @@ import hashlib
 import json
 from pathlib import Path
 import uuid
+from types import SimpleNamespace
 
 SOURCE = Path(__file__).parents[2] / "app/api/routes/student_bridge.py"
 function = next(node for node in ast.parse(SOURCE.read_text(encoding="utf-8")).body
                 if isinstance(node, ast.FunctionDef)
                 and node.name == "ensure_published_knowledge_job")
 namespace = {"SessionDep": object, "uuid": uuid, "hashlib": hashlib, "json": json,
-             "text": lambda sql: sql}
+             "text": lambda sql: sql,
+             "settings": SimpleNamespace(STUDENT_KNOWLEDGE_ENQUEUE_MODE="legacy")}
 exec(compile(ast.Module(body=[function], type_ignores=[]), str(SOURCE), "exec"), namespace)
 
 

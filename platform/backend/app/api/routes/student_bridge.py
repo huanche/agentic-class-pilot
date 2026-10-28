@@ -385,6 +385,17 @@ def ensure_published_knowledge_job(session: SessionDep, course_id: uuid.UUID,
         [classroom["id"], published_at, scenes],
         sort_keys=True, ensure_ascii=False,
     ).encode()).hexdigest()
+    if settings.STUDENT_KNOWLEDGE_ENQUEUE_MODE == "api":
+        from app.services.student_knowledge_client import (
+            StudentKnowledgeUnavailable, enqueue_student_knowledge,
+        )
+        try:
+            enqueue_student_knowledge(
+                str(course_id), lesson_id, revision, classroom["id"], scenes,
+            )
+        except StudentKnowledgeUnavailable as error:
+            raise HTTPException(503, "学生知识准备服务暂不可用，请稍后重试") from error
+        return revision
     session.execute(text(
         "INSERT INTO student.published_lesson_knowledge "
         "(course_id, lesson_id, video_revision, classroom_id, scenes) "

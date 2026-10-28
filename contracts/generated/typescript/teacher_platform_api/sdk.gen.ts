@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { AuthorizeTeacherRequestData, AuthorizeTeacherRequestErrors, AuthorizeTeacherRequestResponses, GetTeacherCourseEnrollmentData, GetTeacherCourseEnrollmentErrors, GetTeacherCourseEnrollmentResponses, GetTeacherCourseMembersData, GetTeacherCourseMembersErrors, GetTeacherCourseMembersResponses, GetUserModelConfigData, GetUserModelConfigErrors, GetUserModelConfigResponses, RegisterTeacherCourseData, RegisterTeacherCourseErrors, RegisterTeacherCourseResponses, ResolveTeacherCourseAliasData, ResolveTeacherCourseAliasErrors, ResolveTeacherCourseAliasResponses } from './types.gen';
+import type { AuthorizeTeacherRequestData, AuthorizeTeacherRequestErrors, AuthorizeTeacherRequestResponses, EnqueuePublishedLessonKnowledgeData, EnqueuePublishedLessonKnowledgeErrors, EnqueuePublishedLessonKnowledgeResponses, GetTeacherCourseEnrollmentData, GetTeacherCourseEnrollmentErrors, GetTeacherCourseEnrollmentResponses, GetTeacherCourseMembersData, GetTeacherCourseMembersErrors, GetTeacherCourseMembersResponses, GetUserModelConfigData, GetUserModelConfigErrors, GetUserModelConfigResponses, RegisterTeacherCourseData, RegisterTeacherCourseErrors, RegisterTeacherCourseResponses, ResolveTeacherCourseAliasData, ResolveTeacherCourseAliasErrors, ResolveTeacherCourseAliasResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -74,6 +74,21 @@ export const getTeacherCourseMembers = <ThrowOnError extends boolean = false>(op
     security: [{ name: 'X-Platform-Subject', type: 'apiKey' }, { name: 'X-Teacher-Service-Key', type: 'apiKey' }],
     url: '/internal/teacher/courses/{course_id}/members',
     ...options
+});
+
+/**
+ * 验证已发布的教学视频并登记学生端知识准备任务
+ *
+ * 重复发布同一视频版本时按课程、课时和视频版本幂等登记。
+ */
+export const enqueuePublishedLessonKnowledge = <ThrowOnError extends boolean = false>(options: Options<EnqueuePublishedLessonKnowledgeData, ThrowOnError>): RequestResult<EnqueuePublishedLessonKnowledgeResponses, EnqueuePublishedLessonKnowledgeErrors, ThrowOnError> => (options.client ?? client).post<EnqueuePublishedLessonKnowledgeResponses, EnqueuePublishedLessonKnowledgeErrors, ThrowOnError>({
+    security: [{ name: 'X-Teacher-Service-Key', type: 'apiKey' }],
+    url: '/internal/teacher/published-lesson-knowledge',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
 });
 
 /**

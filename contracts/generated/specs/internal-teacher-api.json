@@ -400,6 +400,73 @@
         "summary": "课程花名册只读投影（选课关系归平台所有，教师端不落副本）"
       }
     },
+    "/internal/teacher/published-lesson-knowledge": {
+      "post": {
+        "description": "重复发布同一视频版本时按课程、课时和视频版本幂等登记。",
+        "operationId": "enqueuePublishedLessonKnowledge",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "artifact_id": {
+                    "type": "string"
+                  },
+                  "course_id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "course_id",
+                  "artifact_id"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "lessonId": {
+                      "type": "string"
+                    },
+                    "videoRevision": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "lessonId",
+                    "videoRevision"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "已登记或已有相同版本任务"
+          },
+          "403": {
+            "description": "教师服务密钥无效"
+          },
+          "409": {
+            "description": "内容不是有效的已发布课时视频"
+          },
+          "503": {
+            "description": "数据库或学生任务服务暂不可用"
+          }
+        },
+        "security": [
+          {
+            "serviceKey": []
+          }
+        ],
+        "summary": "验证已发布的教学视频并登记学生端知识准备任务"
+      }
+    },
     "/internal/user/{user_id}/model-config": {
       "get": {
         "description": "教师端与学生端各自的服务密钥任一匹配即可。返回为按提供方组织的 解密后配置对象（键由用户保存时决定），无记录时返回空对象。\n",

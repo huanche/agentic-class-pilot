@@ -1,0 +1,50 @@
+openapi: 3.1.0
+info:
+  title: Student Service API
+  version: 1.0.0
+  description: Platform-to-student backend operations owned by the student service.
+servers:
+  - url: http://127.0.0.1:8001
+paths:
+  /api/internal/platform/published-lesson-knowledge:
+    post:
+      operationId: enqueuePublishedLessonKnowledgeAtStudent
+      summary: Idempotently queue preparation for one verified published lesson revision
+      description: The platform verifies publication and supplies the teacher-owned snapshot; the student service owns the durable job table.
+      security: [{ studentServiceKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [courseId, lessonId, videoRevision, classroomId, scenes]
+              properties:
+                courseId: { type: string, minLength: 1, maxLength: 128 }
+                lessonId: { type: string, minLength: 1, maxLength: 128 }
+                videoRevision: { type: string, pattern: '^[0-9a-f]{64}$' }
+                classroomId: { type: string, minLength: 1, maxLength: 128 }
+                scenes:
+                  type: array
+                  maxItems: 1000
+                  items: { type: object }
+      responses:
+        '200':
+          description: Queued or already present
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [courseId, lessonId, videoRevision]
+                properties:
+                  courseId: { type: string }
+                  lessonId: { type: string }
+                  videoRevision: { type: string }
+        '403': { description: Invalid service credentials }
+        '503': { description: Student job storage unavailable }
+components:
+  securitySchemes:
+    studentServiceKey:
+      type: apiKey
+      in: header
+      name: X-Student-Service-Key

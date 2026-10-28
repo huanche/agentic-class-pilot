@@ -1,0 +1,116 @@
+{
+  "components": {
+    "schemas": {},
+    "securitySchemes": {
+      "studentServiceKey": {
+        "in": "header",
+        "name": "X-Student-Service-Key",
+        "type": "apiKey"
+      }
+    }
+  },
+  "info": {
+    "description": "Platform-to-student backend operations owned by the student service.",
+    "title": "Student Service API",
+    "version": "1.0.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/internal/platform/published-lesson-knowledge": {
+      "post": {
+        "description": "The platform verifies publication and supplies the teacher-owned snapshot; the student service owns the durable job table.",
+        "operationId": "enqueuePublishedLessonKnowledgeAtStudent",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "classroomId": {
+                    "maxLength": 128,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "courseId": {
+                    "maxLength": 128,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "lessonId": {
+                    "maxLength": 128,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "scenes": {
+                    "items": {
+                      "type": "object"
+                    },
+                    "maxItems": 1000,
+                    "type": "array"
+                  },
+                  "videoRevision": {
+                    "pattern": "^[0-9a-f]{64}$",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "courseId",
+                  "lessonId",
+                  "videoRevision",
+                  "classroomId",
+                  "scenes"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "courseId": {
+                      "type": "string"
+                    },
+                    "lessonId": {
+                      "type": "string"
+                    },
+                    "videoRevision": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "courseId",
+                    "lessonId",
+                    "videoRevision"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Queued or already present"
+          },
+          "403": {
+            "description": "Invalid service credentials"
+          },
+          "503": {
+            "description": "Student job storage unavailable"
+          }
+        },
+        "security": [
+          {
+            "studentServiceKey": []
+          }
+        ],
+        "summary": "Idempotently queue preparation for one verified published lesson revision"
+      }
+    }
+  },
+  "servers": [
+    {
+      "url": "http://127.0.0.1:8001"
+    }
+  ]
+}

@@ -22,6 +22,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CONTRACTS = ROOT / 'contracts'
 GENERATED = CONTRACTS / 'generated'
 PLATFORM_TEACHER_RUNTIME = ROOT / 'platform/backend/app/generated/platform_teacher_api'
+PLATFORM_STUDENT_RUNTIME = ROOT / 'platform/backend/app/generated/platform_student_api'
 STUDENT_PLATFORM_RUNTIME = ROOT / 'student_agent/generated/student_platform_api'
 TOOLING = CONTRACTS / 'tooling'
 RUNTIME = ROOT / '.runtime'
@@ -29,6 +30,7 @@ GENERATOR_PYTHON = '3.14.4'
 PYTHON_CLIENTS = {
     'student_platform_api': 'internal-student-api.yaml',
     'platform_teacher_api': 'teacher-service-api.yaml',
+    'platform_student_api': 'student-service-api.yaml',
 }
 
 
@@ -151,6 +153,7 @@ def main() -> int:
         drift = sorted(path for path in set(expected) | set(current) if expected.get(path) != current.get(path))
         runtime_clients = {
             'platform': (output / 'python/platform_teacher_api', PLATFORM_TEACHER_RUNTIME),
+            'platform-student': (output / 'python/platform_student_api', PLATFORM_STUDENT_RUNTIME),
             'student': (output / 'python/student_platform_api', STUDENT_PLATFORM_RUNTIME),
         }
         runtime_snapshots = {
@@ -180,7 +183,7 @@ def main() -> int:
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(content)
         # Deployable services do not include contracts/ on their import path.
-        # Both runtime packages must match the canonical generated SDK bytes.
+        # Runtime packages must match the canonical generated SDK bytes.
         for name, (runtime_expected, runtime_current) in runtime_snapshots.items():
             destination = runtime_clients[name][1]
             for relative in set(runtime_current) - set(runtime_expected):
@@ -192,7 +195,7 @@ def main() -> int:
                 target = destination / relative
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_bytes(content)
-        print(f'Generated {len(expected)} files under contracts/generated and mirrored both runtime clients.')
+        print(f'Generated {len(expected)} files under contracts/generated and mirrored runtime clients.')
     return 0
 
 

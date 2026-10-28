@@ -9,6 +9,7 @@
 | `internal-teacher-api.yaml` | 教师侧使用的 6 个平台端点，包括共享模型配置 |
 | `internal-student-api.yaml` | 学生侧使用的 4 个平台端点，包括共享模型配置 |
 | `teacher-service-api.yaml` | 平台调用教师端的健康检查、课程开通、学情上报及发布判定（平台调用子集） |
+| `student-service-api.yaml` | 平台调用学生端的发布课时知识准备登记（学生端持有任务表） |
 | `learning-context.schema.json` | 已有 `schemaVersion=1` 的学习上下文，允许新增可选字段 |
 | `routing.yaml` | 网关路由清单，生成三份 Caddy 路由片段 |
 
@@ -55,7 +56,7 @@ uv pip install --python .\platform\.venv\Scripts\python.exe --target .\.runtime\
 
 ## 生成客户端（已接入部分可选路径）
 
-产物提交在 `generated/`：教师端 TypeScript、学生端 Python、平台调用教师端的 Python。生成器同时把两个 Python 包镜像到平台、学生的运行包，`--check` 校验镜像与规范产物逐字节一致；业务适配层和配置仍需人工设计与维护。
+产物提交在 `generated/`：教师端 TypeScript、学生端调用平台的 Python、平台调用教师和学生端的 Python。生成器同时把三个 Python 包镜像到相应服务运行包，`--check` 校验镜像与规范产物逐字节一致；业务适配层和配置仍需人工设计与维护。
 
 工具与运行环境隔离：Node 24、uv 0.12.15、生成器解释器 Python 3.14.4；Python 产物另外验证兼容学生端 Python 3.10。生成器锁定 `openapi-python-client==0.27.1`（新版本输出含 Python 3.11 才支持的类型）、`@hey-api/openapi-ts==0.99.0`、间接依赖和哈希种子。不要求把生成器安装进应用虚拟环境。
 

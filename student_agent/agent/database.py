@@ -1,7 +1,7 @@
 """Database operations for the student classroom.
 
-The platform owns the student schema. This module only reads and writes its
-existing tables so the classroom no longer imports the retired student app.
+The student service owns learning records in the student schema. This module
+keeps its database access local to the service.
 """
 from __future__ import annotations
 

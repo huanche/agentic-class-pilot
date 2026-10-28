@@ -17,6 +17,36 @@ info:
 servers:
   - url: http://127.0.0.1:8080/api/v1
 paths:
+  /internal/teacher/published-lesson-knowledge:
+    post:
+      operationId: enqueuePublishedLessonKnowledge
+      summary: 验证已发布的教学视频并登记学生端知识准备任务
+      description: 重复发布同一视频版本时按课程、课时和视频版本幂等登记。
+      security: [{ serviceKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [course_id, artifact_id]
+              properties:
+                course_id: { type: string }
+                artifact_id: { type: string }
+      responses:
+        "200":
+          description: 已登记或已有相同版本任务
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [lessonId, videoRevision]
+                properties:
+                  lessonId: { type: string }
+                  videoRevision: { type: string }
+        "403": { description: 教师服务密钥无效 }
+        "409": { description: 内容不是有效的已发布课时视频 }
+        "503": { description: 数据库或学生任务服务暂不可用 }
   /internal/teacher/authorize:
     post:
       operationId: authorizeTeacherRequest

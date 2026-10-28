@@ -213,6 +213,43 @@ export type GetTeacherCourseMembersResponses = {
 
 export type GetTeacherCourseMembersResponse = GetTeacherCourseMembersResponses[keyof GetTeacherCourseMembersResponses];
 
+export type EnqueuePublishedLessonKnowledgeData = {
+    body: {
+        artifact_id: string;
+        course_id: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/internal/teacher/published-lesson-knowledge';
+};
+
+export type EnqueuePublishedLessonKnowledgeErrors = {
+    /**
+     * 教师服务密钥无效
+     */
+    403: unknown;
+    /**
+     * 内容不是有效的已发布课时视频
+     */
+    409: unknown;
+    /**
+     * 数据库或学生任务服务暂不可用
+     */
+    503: unknown;
+};
+
+export type EnqueuePublishedLessonKnowledgeResponses = {
+    /**
+     * 已登记或已有相同版本任务
+     */
+    200: {
+        lessonId: string;
+        videoRevision: string;
+    };
+};
+
+export type EnqueuePublishedLessonKnowledgeResponse = EnqueuePublishedLessonKnowledgeResponses[keyof EnqueuePublishedLessonKnowledgeResponses];
+
 export type GetUserModelConfigData = {
     body?: never;
     path: {

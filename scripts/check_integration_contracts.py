@@ -47,9 +47,12 @@ def arguments(function: ast.FunctionDef | ast.AsyncFunctionDef):
 
 
 def type_schema(node: ast.AST) -> dict:
+    if isinstance(node, ast.Subscript) and function_name(node.value) == "list":
+        return {"type": "array", "items": type_schema(node.slice)}
     if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
         left, right = type_schema(node.left), type_schema(node.right)
-        kinds = lambda schema: schema["type"] if isinstance(schema["type"], list) else [schema["type"]]
+        def kinds(schema: dict) -> list[str]:
+            return schema["type"] if isinstance(schema["type"], list) else [schema["type"]]
         return {**left, **{k: v for k, v in right.items() if k != "type"},
                 "type": list(dict.fromkeys(kinds(left) + kinds(right)))}
     if isinstance(node, ast.Constant) and node.value is None:
@@ -78,7 +81,10 @@ def model_schema(model: ast.ClassDef) -> dict:
                 is_required = isinstance(default.args[0], ast.Constant) and default.args[0].value is Ellipsis
             for python_name, json_name in CONSTRAINTS.items():
                 if python_name in keywords:
-                    schema[json_name] = ast.literal_eval(keywords[python_name])
+                    field_name = "maxItems" if json_name == "maxLength" and schema["type"] == "array" else json_name
+                    schema[field_name] = ast.literal_eval(keywords[python_name])
+            if "pattern" in keywords:
+                schema["pattern"] = ast.literal_eval(keywords["pattern"])
         properties[field.target.id] = schema
         if is_required:
             required.append(field.target.id)
@@ -125,6 +131,35 @@ def provider_routes(root: Path) -> tuple[dict[tuple[str, str], Route], list[str]
                 if key in result:
                     problems.append(f"Duplicate provider route: {key}")
                 result[key] = Route(*key, function, functions, models, source)
+    student_path = root / "student_agent/backend/internal_platform.py"
+    if student_path.is_file():
+        main = ast.parse((root / "student_agent/backend/main.py").read_text(encoding="utf-8-sig"))
+        registered_student = any(
+            isinstance(node, ast.Call) and function_name(node.func) == "include_router"
+            and node.args and function_name(node.args[0]) == "internal_platform_router"
+            for node in ast.walk(main)
+        )
+        if not registered_student:
+            problems.append("student internal platform router is not registered")
+        module = ast.parse(student_path.read_text(encoding="utf-8-sig"))
+        functions = {node.name: node for node in module.body
+                     if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))}
+        models = {node.name: node for node in module.body if isinstance(node, ast.ClassDef)
+                  and any(function_name(base) == "BaseModel" for base in node.bases)}
+        for function in functions.values():
+            for decorator in function.decorator_list:
+                if not (isinstance(decorator, ast.Call) and isinstance(decorator.func, ast.Attribute)
+                        and isinstance(decorator.func.value, ast.Name)
+                        and decorator.func.value.id == "router"
+                        and decorator.func.attr in METHODS and decorator.args):
+                    continue
+                endpoint = ast.literal_eval(decorator.args[0])
+                if not endpoint.startswith("/api/internal/"):
+                    continue
+                key = decorator.func.attr, endpoint
+                if key in result:
+                    problems.append(f"Duplicate provider route: {key}")
+                result[key] = Route(*key, function, functions, models, "student_internal_platform")
     return result, problems
 
 

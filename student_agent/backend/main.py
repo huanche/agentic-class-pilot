@@ -29,6 +29,7 @@ from agent.feedback import lesson_feedback
 from agent.postclass import pending_points, postclass_graph, postclass_stage, prepare_points, opening_task
 from agent import persistence
 from agent import published_knowledge
+from backend.internal_platform import router as internal_platform_router
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "frontend" / "out"
@@ -44,6 +45,7 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(title="Student Agent", lifespan=lifespan)
+app.include_router(internal_platform_router)
 logger = logging.getLogger(__name__)
 sessions: dict[str, dict] = {}
 session_lock = Lock()
