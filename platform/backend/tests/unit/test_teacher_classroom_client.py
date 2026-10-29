@@ -44,6 +44,18 @@ def test_shadow_keeps_legacy_result_on_mismatch(monkeypatch):
     assert session.queries == 1
 
 
+def test_shadow_keeps_legacy_result_during_teacher_outage(monkeypatch):
+    monkeypatch.setattr(student_bridge.settings, "TEACHER_CLASSROOM_READ_MODE", "shadow")
+
+    def unavailable(*_args):
+        raise teacher_classroom_client.TeacherClassroomUnavailable()
+
+    monkeypatch.setattr(teacher_classroom_client, "get_latest_classroom", unavailable)
+    session = Session()
+    assert student_bridge._published_classroom(session, COURSE_ID) == "old-room"
+    assert session.queries == 1
+
+
 def test_api_mode_fails_closed_when_teacher_unavailable(monkeypatch):
     monkeypatch.setattr(student_bridge.settings, "TEACHER_CLASSROOM_READ_MODE", "api")
 
