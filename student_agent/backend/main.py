@@ -147,6 +147,21 @@ def report_learning_progress(session: dict, event: str) -> None:
         return
     if not base.endswith("/api/v1"):
         base += "/api/v1"
+    if os.environ.get("STUDENT_PLATFORM_CLIENT_MODE", "legacy") == "generated":
+        try:
+            from agent.platform_client import report_learning_progress as send_progress
+
+            pushed = send_progress(
+                str(context["userId"]), str(context["courseId"]),
+                str(session["id"]), str(session["classroomId"]), event,
+            )
+            if not pushed:
+                logger.warning("Learning progress saved but teacher sync failed: course=%s student=%s",
+                               context["courseId"], context["userId"])
+        except Exception:
+            logger.exception("Learning progress sync failed: course=%s student=%s event=%s",
+                             context["courseId"], context["userId"], event)
+        return
     payload = {"user_id": context["userId"], "course_id": context["courseId"],
                "session_key": session["id"], "classroom_id": session["classroomId"],
                "event": event}
