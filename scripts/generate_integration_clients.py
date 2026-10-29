@@ -24,6 +24,7 @@ GENERATED = CONTRACTS / 'generated'
 PLATFORM_TEACHER_RUNTIME = ROOT / 'platform/backend/app/generated/platform_teacher_api'
 PLATFORM_STUDENT_RUNTIME = ROOT / 'platform/backend/app/generated/platform_student_api'
 STUDENT_PLATFORM_RUNTIME = ROOT / 'student_agent/generated/student_platform_api'
+TEACHER_PLATFORM_RUNTIME = ROOT / 'teacher_agent/generated/teacher_platform_api'
 TOOLING = CONTRACTS / 'tooling'
 RUNTIME = ROOT / '.runtime'
 GENERATOR_PYTHON = '3.14.4'
@@ -155,6 +156,7 @@ def main() -> int:
             'platform': (output / 'python/platform_teacher_api', PLATFORM_TEACHER_RUNTIME),
             'platform-student': (output / 'python/platform_student_api', PLATFORM_STUDENT_RUNTIME),
             'student': (output / 'python/student_platform_api', STUDENT_PLATFORM_RUNTIME),
+            'teacher': (output / 'typescript/teacher_platform_api', TEACHER_PLATFORM_RUNTIME),
         }
         runtime_snapshots = {
             name: (snapshot(source), snapshot(target))
