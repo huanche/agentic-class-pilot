@@ -57,7 +57,7 @@ jobs:
           pnpm install --frozen-lockfile
       - name: Check teacher authorization and publication boundaries
         working-directory: teacher_agent
-        run: pnpm exec vitest run tests/server/platform-auth.test.ts tests/course-space/student-publication-lifecycle.test.ts
+        run: pnpm exec vitest run tests/server/platform-auth.test.ts tests/course-space/student-publication-lifecycle.test.ts tests/course-space/platform-publication-api.test.ts tests/course-space/platform-latest-classroom.test.ts
 
   build:
     runs-on: ubuntu-latest
