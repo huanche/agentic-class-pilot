@@ -251,7 +251,7 @@ jobs:
       EMBEDDED_AGENTS_ENABLED: 'true'
       OPENAI_API_KEY: isolated-ci-only
       LLM_API_KEY: isolated-ci-only
-      TIKTOKEN_CACHE_DIR: ${{ runner.temp }}/tiktoken-cache
+      TIKTOKEN_CACHE_DIR: /tmp/tiktoken-cache
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
