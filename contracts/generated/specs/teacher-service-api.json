@@ -318,6 +318,58 @@
         "security": []
       }
     },
+    "/api/internal/platform/courses/{courseId}/latest-classroom": {
+      "get": {
+        "description": "Returns null for an inactive course or when no published visible artifact references an existing classroom. The platform remains responsible for enrollment.",
+        "operationId": "getTeacherLatestClassroom",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "courseId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "classroomId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "classroomId"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Current published classroom identity, if any"
+          },
+          "403": {
+            "description": "Invalid service delegation"
+          },
+          "503": {
+            "description": "Teacher or platform authorization unavailable"
+          }
+        },
+        "security": [
+          {
+            "platformServiceKey": [],
+            "platformSubject": []
+          }
+        ],
+        "summary": "Current visible published classroom for student launch"
+      }
+    },
     "/api/internal/platform/courses/{courseId}/publication": {
       "get": {
         "description": "A negative verdict includes inactive courses and withdrawn knowledge packages. The platform remains responsible for enrollment and identity checks.",

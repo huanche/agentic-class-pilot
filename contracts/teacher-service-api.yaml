@@ -6,6 +6,26 @@ info:
 servers:
   - url: http://127.0.0.1:3200
 paths:
+  /api/internal/platform/courses/{courseId}/latest-classroom:
+    get:
+      operationId: getTeacherLatestClassroom
+      summary: Current visible published classroom for student launch
+      description: Returns null for an inactive course or when no published visible artifact references an existing classroom. The platform remains responsible for enrollment.
+      security: [{ platformServiceKey: [], platformSubject: [] }]
+      parameters:
+        - { name: courseId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Current published classroom identity, if any
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [classroomId]
+                properties:
+                  classroomId: { type: [string, 'null'] }
+        '403': { description: Invalid service delegation }
+        '503': { description: Teacher or platform authorization unavailable }
   /api/internal/platform/courses/{courseId}/publication-counts:
     get:
       operationId: getTeacherPublicationCounts

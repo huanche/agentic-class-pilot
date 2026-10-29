@@ -25,13 +25,16 @@ on:
       - 'platform/backend/app/services/student_knowledge_client.py'
       - 'platform/backend/app/services/student_analytics_client.py'
       - 'platform/backend/app/services/teacher_analytics_client.py'
+      - 'platform/backend/app/services/teacher_classroom_client.py'
       - 'platform/backend/app/core/config.py'
       - 'platform/.env.example'
       - 'platform/backend/app/generated/**'
       - 'platform/backend/tests/unit/test_teacher_publication_client.py'
       - 'platform/backend/tests/unit/test_student_knowledge_client.py'
       - 'platform/backend/tests/unit/test_student_analytics_client.py'
+      - 'platform/backend/tests/unit/test_teacher_classroom_client.py'
       - 'teacher_agent/tests/course-space/platform-publication-counts.test.ts'
+      - 'teacher_agent/tests/course-space/platform-latest-classroom.test.ts'
       - 'student_agent/backend/internal_platform.py'
       - 'student_agent/backend/tests/test_internal_platform_knowledge.py'
       - 'student_agent/backend/tests/test_internal_platform_analytics_db.py'
@@ -71,13 +74,16 @@ on:
       - 'platform/backend/app/services/student_knowledge_client.py'
       - 'platform/backend/app/services/student_analytics_client.py'
       - 'platform/backend/app/services/teacher_analytics_client.py'
+      - 'platform/backend/app/services/teacher_classroom_client.py'
       - 'platform/backend/app/core/config.py'
       - 'platform/.env.example'
       - 'platform/backend/app/generated/**'
       - 'platform/backend/tests/unit/test_teacher_publication_client.py'
       - 'platform/backend/tests/unit/test_student_knowledge_client.py'
       - 'platform/backend/tests/unit/test_student_analytics_client.py'
+      - 'platform/backend/tests/unit/test_teacher_classroom_client.py'
       - 'teacher_agent/tests/course-space/platform-publication-counts.test.ts'
+      - 'teacher_agent/tests/course-space/platform-latest-classroom.test.ts'
       - 'student_agent/backend/internal_platform.py'
       - 'student_agent/backend/tests/test_internal_platform_knowledge.py'
       - 'student_agent/backend/tests/test_internal_platform_analytics_db.py'
@@ -195,7 +201,7 @@ jobs:
           FIRST_SUPERUSER: test@example.com
           FIRST_SUPERUSER_PASSWORD: local-ci-only
           DATABASE_URL: postgresql://test:test@localhost:1/app_test
-        run: ../.venv/bin/python -m pytest -p no:cacheprovider --confcutdir=tests/unit tests/unit/test_teacher_publication_client.py tests/unit/test_student_knowledge_client.py tests/unit/test_student_analytics_client.py tests/unit/test_published_knowledge_job.py -q
+        run: ../.venv/bin/python -m pytest -p no:cacheprovider --confcutdir=tests/unit tests/unit/test_teacher_publication_client.py tests/unit/test_teacher_classroom_client.py tests/unit/test_student_knowledge_client.py tests/unit/test_student_analytics_client.py tests/unit/test_published_knowledge_job.py -q
       - name: Check generated student platform adapter without a database
         working-directory: student_agent
         run: ../platform/.venv/bin/python -m pytest -p no:cacheprovider backend/tests/test_platform_generated_client.py backend/tests/test_internal_platform_knowledge.py -q

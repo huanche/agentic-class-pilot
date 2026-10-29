@@ -44,6 +44,7 @@ class Settings(BaseSettings):
     TEACHER_PUBLICATION_READ_MODE: Literal["legacy", "shadow", "api"] = "legacy"
     TEACHER_COURSE_PROVISION_MODE: Literal["legacy", "api"] = "legacy"
     TEACHER_ANALYTICS_READ_MODE: Literal["legacy", "api"] = "legacy"
+    TEACHER_CLASSROOM_READ_MODE: Literal["legacy", "shadow", "api"] = "legacy"
     # Extra browser origins (teacher service dev ports, e.g. "http://localhost:3200")
     # accepted for non-GET teacher requests, in addition to FRONTEND_HOST.
     TEACHER_ALLOWED_ORIGINS: str = ""

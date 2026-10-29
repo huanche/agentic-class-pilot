@@ -402,6 +402,23 @@ export async function readClassroomFromDatabase(id: string) {
   });
 }
 
+/** Read only the published classroom id; avoid loading every artifact and scene. */
+export async function latestPublishedClassroomIdFromDatabase(courseId: string) {
+  return withDatabase(async (client) => {
+    const result = await client.query(
+      `SELECT c.id FROM mentra_classrooms c
+       JOIN mentra_course_artifacts a ON a.payload->>'classroomId' = c.id
+       WHERE a.course_id=$1 AND a.status='published'
+         AND a.payload->>'classVisible'='true'
+         AND a.payload->>'classPublicationId' IS NOT NULL
+       ORDER BY (a.payload->>'classPublishedAt')::bigint DESC NULLS LAST
+       LIMIT 1`,
+      [courseId],
+    );
+    return (result.rows[0]?.id as string | undefined) ?? null;
+  });
+}
+
 export async function readClassroomBindingFromDatabase(id: string) {
   return withDatabase(async (client) => {
     const result = await client.query(

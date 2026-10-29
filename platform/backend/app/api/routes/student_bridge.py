@@ -102,7 +102,7 @@ def _latest_publication(session: SessionDep, course_id: uuid.UUID) -> dict | Non
     return latest_publication(session, course_id)
 
 
-def _published_classroom(session: SessionDep, course_id: uuid.UUID) -> str | None:
+def _legacy_published_classroom(session: SessionDep, course_id: uuid.UUID) -> str | None:
     row = session.execute(
         text("SELECT c.id FROM teacher.mentra_classrooms c "
              "JOIN teacher.mentra_course_artifacts a ON a.payload->>'classroomId' = c.id "
@@ -112,6 +112,33 @@ def _published_classroom(session: SessionDep, course_id: uuid.UUID) -> str | Non
              "ORDER BY (a.payload->>'classPublishedAt')::bigint DESC NULLS LAST LIMIT 1"),
         {"id": course_id}).first()
     return row[0] if row else None
+
+
+def _published_classroom(session: SessionDep, course_id: uuid.UUID) -> str | None:
+    mode = settings.TEACHER_CLASSROOM_READ_MODE
+    if mode == "legacy":
+        return _legacy_published_classroom(session, course_id)
+    course = session.get(Course, course_id)
+    if course is None:
+        return None
+    from app.services.teacher_classroom_client import (
+        TeacherClassroomUnavailable, get_latest_classroom,
+    )
+    if mode == "shadow":
+        existing = _legacy_published_classroom(session, course_id)
+        try:
+            proposed = get_latest_classroom(course_id, course.owner_id)
+            if proposed != existing:
+                logging.getLogger(__name__).warning(
+                    "Teacher classroom identity differs from legacy query")
+        except TeacherClassroomUnavailable:
+            logging.getLogger(__name__).warning(
+                "Teacher classroom shadow comparison unavailable")
+        return existing
+    try:
+        return get_latest_classroom(course_id, course.owner_id)
+    except TeacherClassroomUnavailable as error:
+        raise HTTPException(503, "教师课堂服务暂不可用，请稍后重试") from error
 
 
 def _knowledge_points_from_markdown(content: str) -> list[dict]:

@@ -1,5 +1,6 @@
 """ Contains all the data models used in inputs/outputs """
 
+from .get_teacher_latest_classroom_response_200 import GetTeacherLatestClassroomResponse200
 from .get_teacher_publication_counts_response_200 import GetTeacherPublicationCountsResponse200
 from .get_teacher_publication_verdict_response_200 import GetTeacherPublicationVerdictResponse200
 from .get_teacher_publication_verdict_response_200_publication_type_1 import GetTeacherPublicationVerdictResponse200PublicationType1
@@ -15,6 +16,7 @@ from .student_learning_state_status import StudentLearningStateStatus
 from .update_teacher_student_state_response_200 import UpdateTeacherStudentStateResponse200
 
 __all__ = (
+    "GetTeacherLatestClassroomResponse200",
     "GetTeacherPublicationCountsResponse200",
     "GetTeacherPublicationVerdictResponse200",
     "GetTeacherPublicationVerdictResponse200PublicationType1",
