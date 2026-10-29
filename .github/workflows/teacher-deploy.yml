@@ -40,6 +40,25 @@ env:
   IMAGE: zmzm1443/agentic-teacher
 
 jobs:
+  authorization-tests:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install locked teacher dependencies
+        working-directory: teacher_agent
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.28.0 --activate
+          pnpm install --frozen-lockfile
+      - name: Check teacher authorization and publication boundaries
+        working-directory: teacher_agent
+        run: pnpm exec vitest run tests/server/platform-auth.test.ts tests/course-space/student-publication-lifecycle.test.ts
+
   build:
     runs-on: ubuntu-latest
     steps:

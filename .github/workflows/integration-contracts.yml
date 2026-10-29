@@ -19,6 +19,12 @@ on:
       - 'platform/backend/app/api/main.py'
       - 'platform/backend/app/api/routes/teacher_bridge.py'
       - 'platform/backend/app/api/routes/student_bridge.py'
+      - 'platform/backend/app/alembic/**'
+      - 'platform/backend/tests/conftest.py'
+      - 'platform/backend/tests/api/routes/test_learning_context.py'
+      - 'platform/backend/tests/api/routes/test_student_lesson_context.py'
+      - 'platform/backend/tests/api/routes/test_teacher_bridge.py'
+      - 'platform/backend/tests/api/routes/test_student_bridge.py'
       - 'platform/backend/app/services/course_publication.py'
       - 'platform/backend/app/services/teacher_publication_client.py'
       - 'platform/backend/app/services/teacher_course_client.py'
@@ -33,6 +39,7 @@ on:
       - 'platform/backend/tests/unit/test_student_knowledge_client.py'
       - 'platform/backend/tests/unit/test_student_analytics_client.py'
       - 'platform/backend/tests/unit/test_teacher_classroom_client.py'
+      - 'platform/backend/tests/unit/test_student_token_purpose.py'
       - 'teacher_agent/tests/course-space/platform-publication-counts.test.ts'
       - 'teacher_agent/tests/course-space/platform-latest-classroom.test.ts'
       - 'student_agent/backend/internal_platform.py'
@@ -68,6 +75,12 @@ on:
       - 'scripts/local-gateway.mjs'
       - 'teacher_agent/app/api/**/route.ts'
       - 'platform/backend/app/api/**'
+      - 'platform/backend/app/alembic/**'
+      - 'platform/backend/tests/conftest.py'
+      - 'platform/backend/tests/api/routes/test_learning_context.py'
+      - 'platform/backend/tests/api/routes/test_student_lesson_context.py'
+      - 'platform/backend/tests/api/routes/test_teacher_bridge.py'
+      - 'platform/backend/tests/api/routes/test_student_bridge.py'
       - 'platform/backend/app/services/course_publication.py'
       - 'platform/backend/app/services/teacher_publication_client.py'
       - 'platform/backend/app/services/teacher_course_client.py'
@@ -82,6 +95,7 @@ on:
       - 'platform/backend/tests/unit/test_student_knowledge_client.py'
       - 'platform/backend/tests/unit/test_student_analytics_client.py'
       - 'platform/backend/tests/unit/test_teacher_classroom_client.py'
+      - 'platform/backend/tests/unit/test_student_token_purpose.py'
       - 'teacher_agent/tests/course-space/platform-publication-counts.test.ts'
       - 'teacher_agent/tests/course-space/platform-latest-classroom.test.ts'
       - 'student_agent/backend/internal_platform.py'
@@ -201,7 +215,58 @@ jobs:
           FIRST_SUPERUSER: test@example.com
           FIRST_SUPERUSER_PASSWORD: local-ci-only
           DATABASE_URL: postgresql://test:test@localhost:1/app_test
-        run: ../.venv/bin/python -m pytest -p no:cacheprovider --confcutdir=tests/unit tests/unit/test_teacher_publication_client.py tests/unit/test_teacher_classroom_client.py tests/unit/test_student_knowledge_client.py tests/unit/test_student_analytics_client.py tests/unit/test_published_knowledge_job.py -q
+        run: ../.venv/bin/python -m pytest -p no:cacheprovider --confcutdir=tests/unit tests/unit/test_teacher_publication_client.py tests/unit/test_teacher_classroom_client.py tests/unit/test_student_knowledge_client.py tests/unit/test_student_analytics_client.py tests/unit/test_published_knowledge_job.py tests/unit/test_student_token_purpose.py -q
       - name: Check generated student platform adapter without a database
         working-directory: student_agent
         run: ../platform/.venv/bin/python -m pytest -p no:cacheprovider backend/tests/test_platform_generated_client.py backend/tests/test_internal_platform_knowledge.py -q
+
+  platform-access-boundaries:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: platform
+          POSTGRES_PASSWORD: isolated-ci-only
+          POSTGRES_DB: app_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U platform -d app_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      SECRET_KEY: isolated-ci-only
+      PROJECT_NAME: isolated-test
+      FIRST_SUPERUSER: test@example.com
+      FIRST_SUPERUSER_PASSWORD: isolated-ci-only
+      TEST_DATABASE_URL: postgresql://platform:isolated-ci-only@127.0.0.1:5432/app_test
+      DATABASE_URL: postgresql://platform:isolated-ci-only@127.0.0.1:5432/app_test
+      STUDENT_SERVICE_KEY: isolated-student-key
+      TEACHER_SERVICE_KEY: isolated-teacher-key
+      STUDENT_TOKEN_SIGNING_KEY: isolated-signing-key
+      FASTAPI_ENV: development
+      EMBEDDED_AGENTS_ENABLED: 'true'
+      OPENAI_API_KEY: isolated-ci-only
+      LLM_API_KEY: isolated-ci-only
+      TIKTOKEN_CACHE_DIR: ${{ runner.temp }}/tiktoken-cache
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14.4'
+      - name: Install locked platform test dependencies
+        run: |
+          python -m pip install uv==0.12.15
+          cd platform && uv sync --frozen --package app --group dev
+      - name: Prepare tokenizer cache and migrate isolated test database
+        working-directory: platform/backend
+        run: |
+          mkdir -p "$TIKTOKEN_CACHE_DIR"
+          ../.venv/bin/python -c "import tiktoken; tiktoken.get_encoding('cl100k_base')"
+          ../.venv/bin/python -m alembic upgrade head
+      - name: Check course access and cross-service authorization
+        working-directory: platform/backend
+        run: ../.venv/bin/python -m pytest -p no:cacheprovider tests/api/routes/test_learning_context.py tests/api/routes/test_student_lesson_context.py tests/api/routes/test_teacher_bridge.py tests/api/routes/test_student_bridge.py -q

@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import text
 from sqlmodel import Session
 
-from app.api.routes.student_bridge import issue_launch_token
+from app.api.routes.student_bridge import _issue_playback_grant, issue_launch_token
 from app.core.db import engine
 
 BRIDGE_KEY = "student-bridge-test-key"
@@ -126,6 +126,16 @@ def test_full_context_with_classroom_and_playback_grant(client: TestClient, cont
     assert body["classroom"]["scenes"][0]["actions"][0]["text"] == "讲解一"
     assert body["classroom"]["playerUrl"].endswith(f"/classroom-player/{context_world['classroom_id']}")
     assert body["classroom"]["playbackToken"]
+
+
+def test_playback_grant_cannot_open_learning_context(client: TestClient, context_world) -> None:
+    token = _issue_playback_grant(
+        uuid.UUID(context_world["student_id"]),
+        uuid.UUID(context_world["course_full"]),
+        context_world["classroom_id"],
+    )
+    response = _fetch(client, token, context_world["lesson_id"])
+    assert response.status_code == 401
 
 
 def test_text_only_context_has_null_classroom(client: TestClient, context_world) -> None:

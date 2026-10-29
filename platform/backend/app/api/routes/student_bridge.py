@@ -89,6 +89,10 @@ def verify_launch_token(token: str, *, refresh_session: bool = False) -> dict:
         raise HTTPException(401, "Invalid launch token") from error
     if not hmac.compare_digest(signature, _launch_signature(payload_json)):
         raise HTTPException(401, "Invalid launch token")
+    # Previously issued launch tokens have no kind. A signed playback grant
+    # must not be accepted as a student-workspace launch credential.
+    if payload.get("kind") not in (None, "launch"):
+        raise HTTPException(401, "Invalid launch token purpose")
     if not refresh_session and int(payload.get("exp", 0)) < time.time():
         raise HTTPException(401, "Launch token expired")
     return payload
