@@ -126,14 +126,21 @@ def _published_classroom(session: SessionDep, course_id: uuid.UUID) -> str | Non
     )
     if mode == "shadow":
         existing = _legacy_published_classroom(session, course_id)
+        started = time.monotonic()
         try:
             proposed = get_latest_classroom(course_id, course.owner_id)
             if proposed != existing:
                 logging.getLogger(__name__).warning(
-                    "Teacher classroom identity differs from legacy query")
+                    "teacher_classroom_shadow_mismatch course_id=%s legacy=%s api=%s elapsed_ms=%d",
+                    course_id, existing, proposed, int((time.monotonic() - started) * 1000))
+            else:
+                logging.getLogger(__name__).debug(
+                    "teacher_classroom_shadow_match course_id=%s elapsed_ms=%d",
+                    course_id, int((time.monotonic() - started) * 1000))
         except TeacherClassroomUnavailable:
             logging.getLogger(__name__).warning(
-                "Teacher classroom shadow comparison unavailable")
+                "teacher_classroom_shadow_unavailable course_id=%s elapsed_ms=%d",
+                course_id, int((time.monotonic() - started) * 1000))
         return existing
     try:
         return get_latest_classroom(course_id, course.owner_id)
