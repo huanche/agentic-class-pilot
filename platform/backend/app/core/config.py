@@ -43,6 +43,9 @@ class Settings(BaseSettings):
     # api: use the teacher-owned verdict and fail closed when it is unavailable.
     TEACHER_PUBLICATION_READ_MODE: Literal["legacy", "shadow", "api"] = "legacy"
     TEACHER_COURSE_PROVISION_MODE: Literal["legacy", "api"] = "legacy"
+    # api: trust the authenticated teacher service's registration payload;
+    # legacy: cross-check teacher.mentra_courses in the shared database.
+    TEACHER_COURSE_REGISTRATION_MODE: Literal["legacy", "api"] = "legacy"
     TEACHER_ANALYTICS_READ_MODE: Literal["legacy", "api"] = "legacy"
     TEACHER_CLASSROOM_READ_MODE: Literal["legacy", "shadow", "api"] = "legacy"
     # Extra browser origins (teacher service dev ports, e.g. "http://localhost:3200")

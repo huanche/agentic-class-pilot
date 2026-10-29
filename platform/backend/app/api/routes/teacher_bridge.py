@@ -136,9 +136,17 @@ def register_teacher_course(
     """
     check_service_key(x_teacher_service_key)
     from app.models import User
-    source = session.execute(text("SELECT teacher_id,title,payload FROM teacher.mentra_courses WHERE id=:id"), {"id": str(body.course_id)}).first()
-    if not source or source[0] != str(body.teacher_id):
-        raise HTTPException(409, "Teacher course ownership mismatch")
+    if settings.TEACHER_COURSE_REGISTRATION_MODE == "legacy":
+        source = session.execute(text("SELECT teacher_id,title,payload FROM teacher.mentra_courses WHERE id=:id"), {"id": str(body.course_id)}).first()
+        if not source or source[0] != str(body.teacher_id):
+            raise HTTPException(409, "Teacher course ownership mismatch")
+        title = source[1]
+        description = source[2].get("description")
+    else:
+        # The service key authenticates the teacher service. Its registration
+        # request is the course snapshot; platform owns only the enrollment copy.
+        title = body.title
+        description = body.description
     teacher = session.get(User, body.teacher_id)
     if not teacher or not teacher.is_active or (teacher.role != "teacher" and not teacher.is_superuser):
         raise HTTPException(403, "Invalid teacher")
@@ -146,10 +154,14 @@ def register_teacher_course(
     if course and course.owner_id != body.teacher_id:
         raise HTTPException(409, "Course belongs to another teacher")
     if course:
-        course.title = source[1]
-        course.description = source[2].get("description")
+        course.title = title
+        if description is not None:
+            # A registration without a description refreshes the title only:
+            # teacher payloads may omit it, and wiping the platform copy would
+            # make a retried registration destroy existing metadata.
+            course.description = description
     else:
-        course = Course(id=body.course_id, owner_id=body.teacher_id, title=source[1], description=source[2].get("description"))
+        course = Course(id=body.course_id, owner_id=body.teacher_id, title=title, description=description)
         session.add(course)
     session.flush()
     session.execute(text("INSERT INTO teacher_course_link(course_id,external_course_id) VALUES (:id,:external) ON CONFLICT (course_id) DO UPDATE SET external_course_id=EXCLUDED.external_course_id"), {"id": body.course_id, "external": str(body.course_id)})
