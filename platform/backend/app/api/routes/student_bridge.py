@@ -510,8 +510,8 @@ def student_classroom_view(body: ClassroomViewRequest, session: SessionDep,
 def _issue_playback_grant(user_id: uuid.UUID, course_id: uuid.UUID, classroom_id: str) -> str:
     """Short-lived playback authorization bound to user+course+classroom.
 
-    The teacher-side authorize hook validates it (stage 5); students cannot
-    open other classrooms by editing URLs.
+    The current player does not consume this grant. Its requests are authorized
+    through the platform's teacher authorize endpoint instead.
     """
     import time as _time
     payload = {
