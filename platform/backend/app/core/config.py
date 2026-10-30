@@ -39,10 +39,6 @@ class Settings(BaseSettings):
     TEACHER_SERVICE_KEY: str = ""
     TEACHER_URL: str = "http://127.0.0.1:3200"
     TEACHER_PUBLIC_URL: str = "http://localhost:3200"
-    # api: authorize reads teacher-owned visibility via the teacher service and
-    # course ownership from the platform's own tables; shadow compares; legacy
-    # keeps the direct teacher-schema queries. Fails closed in api mode.
-    TEACHER_AUTHZ_READ_MODE: Literal["legacy", "shadow", "api"] = "legacy"
     # Extra browser origins (teacher service dev ports, e.g. "http://localhost:3200")
     # accepted for non-GET teacher requests, in addition to FRONTEND_HOST.
     TEACHER_ALLOWED_ORIGINS: str = ""

@@ -1,6 +1,5 @@
-"""Authorize decisions can avoid teacher-schema reads in api mode."""
+"""Authorize decisions never query teacher-owned tables."""
 
-import logging
 import uuid
 from types import SimpleNamespace
 
@@ -58,136 +57,122 @@ def user(uid=USER_ID, superuser=False):
     return SimpleNamespace(id=uid, is_superuser=superuser)
 
 
-def test_api_mode_material_allows_enrolled_visible(monkeypatch):
-    monkeypatch.setattr(teacher_bridge.settings, "TEACHER_AUTHZ_READ_MODE", "api")
+def test_material_allows_enrolled_visible(monkeypatch):
     seen = {}
     monkeypatch.setattr(teacher_authz_client, "material_visibility",
                         lambda ref, mid, owner: seen.update(ref=ref, mid=mid, owner=owner) or True)
     session = FakeSession()
-    teacher_bridge._student_material_allowed(session, COURSE_ID, "mat-1", user(), "api")
+    teacher_bridge._student_material_allowed(session, COURSE_ID, "mat-1", user())
     assert seen == {"ref": COURSE_ID, "mid": "mat-1", "owner": USER_ID}
 
 
-def test_api_mode_material_rejects_unenrolled_without_teacher_call(monkeypatch):
-    monkeypatch.setattr(teacher_bridge.settings, "TEACHER_AUTHZ_READ_MODE", "api")
+def test_material_rejects_unenrolled_without_teacher_call(monkeypatch):
     monkeypatch.setattr(teacher_authz_client, "material_visibility",
                         lambda *_: pytest.fail("teacher called for unenrolled student"))
     session = FakeSession(enrolled=False)
     with pytest.raises(HTTPException) as error:
-        teacher_bridge._student_material_allowed(session, COURSE_ID, "mat-1", user(), "api")
+        teacher_bridge._student_material_allowed(session, COURSE_ID, "mat-1", user())
     assert error.value.status_code == 403
-    assert not any("material_visibility" in s for s in [])
 
 
-def test_api_mode_material_rejects_hidden(monkeypatch):
-    monkeypatch.setattr(teacher_bridge.settings, "TEACHER_AUTHZ_READ_MODE", "api")
+def test_material_rejects_hidden(monkeypatch):
     monkeypatch.setattr(teacher_authz_client, "material_visibility", lambda *_: False)
     with pytest.raises(HTTPException) as error:
-        teacher_bridge._student_material_allowed(FakeSession(), COURSE_ID, "mat-1", user(), "api")
+        teacher_bridge._student_material_allowed(FakeSession(), COURSE_ID, "mat-1", user())
     assert error.value.status_code == 403
+
+
+def test_teacher_visibility_unavailable_returns_503(monkeypatch):
+    def unavailable(*_args):
+        raise teacher_authz_client.TeacherAuthzUnavailable("offline")
+
+    monkeypatch.setattr(teacher_authz_client, "material_visibility", unavailable)
+    with pytest.raises(HTTPException) as material_error:
+        teacher_bridge._student_material_allowed(FakeSession(), COURSE_ID, "mat-1", user())
+    assert material_error.value.status_code == 503
+
+    monkeypatch.setattr(teacher_authz_client, "classroom_visibility", unavailable)
+    with pytest.raises(HTTPException) as classroom_error:
+        teacher_bridge._student_classroom_allowed(FakeSession(), "room-1", user())
+    assert classroom_error.value.status_code == 503
+
+    with pytest.raises(HTTPException) as teacher_error:
+        teacher_bridge._classroom_course_scoped(FakeSession(), "room-1", user())
+    assert teacher_error.value.status_code == 503
 
 
 def test_api_mode_classroom_allows_enrolled_published(monkeypatch):
-    monkeypatch.setattr(teacher_bridge.settings, "TEACHER_AUTHZ_READ_MODE", "api")
     monkeypatch.setattr(teacher_authz_client, "classroom_visibility",
                         lambda cid, owner: (COURSE_ID, True))
     session = FakeSession()
-    teacher_bridge._student_classroom_allowed(session, "room-1", user(), "api")
+    teacher_bridge._student_classroom_allowed(session, "room-1", user())
 
 
 def test_api_mode_classroom_resolves_legacy_ref_via_link(monkeypatch):
-    monkeypatch.setattr(teacher_bridge.settings, "TEACHER_AUTHZ_READ_MODE", "api")
     monkeypatch.setattr(teacher_authz_client, "classroom_visibility",
                         lambda cid, owner: ("legacy-nano", True))
     session = FakeSession(link=COURSE_ID)
-    teacher_bridge._student_classroom_allowed(session, "room-1", user(), "api")
+    teacher_bridge._student_classroom_allowed(session, "room-1", user())
 
 
 def test_api_mode_classroom_unmapped_course_rejected(monkeypatch):
-    monkeypatch.setattr(teacher_bridge.settings, "TEACHER_AUTHZ_READ_MODE", "api")
     monkeypatch.setattr(teacher_authz_client, "classroom_visibility",
                         lambda cid, owner: ("legacy-nano", True))
     session = FakeSession(link=None)
     with pytest.raises(HTTPException) as error:
-        teacher_bridge._student_classroom_allowed(session, "room-1", user(), "api")
+        teacher_bridge._student_classroom_allowed(session, "room-1", user())
     assert error.value.status_code == 403
     assert error.value.detail == "Classroom course is not available to students"
 
 
 def test_api_mode_classroom_not_published_rejected(monkeypatch):
-    monkeypatch.setattr(teacher_bridge.settings, "TEACHER_AUTHZ_READ_MODE", "api")
     monkeypatch.setattr(teacher_authz_client, "classroom_visibility",
                         lambda cid, owner: (COURSE_ID, False))
     with pytest.raises(HTTPException) as error:
-        teacher_bridge._student_classroom_allowed(FakeSession(), "room-1", user(), "api")
+        teacher_bridge._student_classroom_allowed(FakeSession(), "room-1", user())
     assert error.value.detail == "Student may only view an enrolled published classroom"
 
 
 def test_api_mode_owner_allowed_from_platform_tables(monkeypatch):
-    monkeypatch.setattr(teacher_bridge.settings, "TEACHER_AUTHZ_READ_MODE", "api")
     session = FakeSession(owner=str(USER_ID))
-    teacher_bridge._teacher_course_owner_allowed(session, COURSE_ID, user(USER_ID), "api")
+    teacher_bridge._teacher_course_owner_allowed(session, COURSE_ID, user(USER_ID))
     assert any("owner_id" in sql for sql in session.sql)
 
 
 def test_api_mode_owner_uses_legacy_course_mapping(monkeypatch):
-    monkeypatch.setattr(teacher_bridge.settings, "TEACHER_AUTHZ_READ_MODE", "api")
     session = FakeSession(owner=str(USER_ID))
-    teacher_bridge._teacher_course_owner_allowed(session, "legacy-course", user(USER_ID), "api")
+    teacher_bridge._teacher_course_owner_allowed(session, "legacy-course", user(USER_ID))
     assert any("external_course_id=:ref" in sql for sql in session.sql)
 
 
 def test_api_mode_owner_mismatch_rejected(monkeypatch):
-    monkeypatch.setattr(teacher_bridge.settings, "TEACHER_AUTHZ_READ_MODE", "api")
     session = FakeSession(owner=str(OWNER_ID))
     with pytest.raises(HTTPException) as error:
-        teacher_bridge._teacher_course_owner_allowed(session, COURSE_ID, user(USER_ID), "api")
+        teacher_bridge._teacher_course_owner_allowed(session, COURSE_ID, user(USER_ID))
     assert error.value.status_code == 403
     assert error.value.detail == "无权访问该课程（课程属于其他教师）"
 
 
 def test_api_mode_unknown_course_404(monkeypatch):
-    monkeypatch.setattr(teacher_bridge.settings, "TEACHER_AUTHZ_READ_MODE", "api")
     session = FakeSession(course_exists=False)
     with pytest.raises(HTTPException) as error:
-        teacher_bridge._teacher_course_owner_allowed(session, COURSE_ID, user(USER_ID), "api")
+        teacher_bridge._teacher_course_owner_allowed(session, COURSE_ID, user(USER_ID))
     assert error.value.status_code == 404
     assert error.value.detail == "课程不存在或尚未同步到统一数据库"
 
 
 def test_api_mode_job_resolution(monkeypatch):
-    monkeypatch.setattr(teacher_bridge.settings, "TEACHER_AUTHZ_READ_MODE", "api")
     monkeypatch.setattr(teacher_authz_client, "job_course_ref",
                         lambda job, kind, owner: "course-9")
-    assert teacher_bridge._job_course_id(FakeSession(), "job-1", "artifact", user(), "api") == "course-9"
+    assert teacher_bridge._job_course_id(FakeSession(), "job-1", "artifact", user()) == "course-9"
 
     def missing(job, kind, owner):
         raise LookupError("Task not found")
 
     monkeypatch.setattr(teacher_authz_client, "job_course_ref", missing)
     with pytest.raises(HTTPException) as error:
-        teacher_bridge._job_course_id(FakeSession(), "job-1", "graph", user(), "api")
+        teacher_bridge._job_course_id(FakeSession(), "job-1", "graph", user())
     assert error.value.status_code == 404
-
-
-def test_shadow_mode_keeps_legacy_owner_verdict(monkeypatch):
-    monkeypatch.setattr(teacher_bridge.settings, "TEACHER_AUTHZ_READ_MODE", "shadow")
-    session = FakeSession(owner=str(OWNER_ID), allow_teacher_sql=True)
-    session.teacher_result = Row((str(OWNER_ID),))
-    monkeypatch.setattr(teacher_authz_client, "classroom_visibility",
-                        lambda *_: pytest.fail("api not consulted in this test"))
-    # legacy teacher row and platform row agree: owner passes either way.
-    teacher_bridge._teacher_course_owner_allowed(session, COURSE_ID, user(OWNER_ID), "shadow")
-
-
-def test_shadow_mode_logs_mismatch_but_keeps_legacy(monkeypatch, caplog):
-    monkeypatch.setattr(teacher_bridge.settings, "TEACHER_AUTHZ_READ_MODE", "shadow")
-    session = FakeSession(course_exists=False, allow_teacher_sql=True)
-    session.teacher_result = Row((str(OWNER_ID),))
-    # teacher table knows the course; the platform copy is missing: mismatch.
-    with caplog.at_level(logging.WARNING):
-        teacher_bridge._teacher_course_owner_allowed(session, COURSE_ID, user(OWNER_ID), "shadow")
-    assert any("teacher_authz_shadow_mismatch" in record.message for record in caplog.records)
 
 
 def test_client_classroom_visibility_maps_response(monkeypatch):

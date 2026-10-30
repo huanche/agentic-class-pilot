@@ -4,8 +4,6 @@ The teacher service asks this endpoint to validate each request. User supplied
 teacher IDs are never used as an authorization decision.
 """
 import hmac
-import logging
-import time
 import uuid
 from urllib.parse import parse_qs, unquote, urlsplit
 
@@ -115,20 +113,6 @@ def check_service_key(value: str | None) -> None:
         raise HTTPException(403, "Invalid service credentials")
 
 
-def classroom_course_id(session: SessionDep, classroom_id: str) -> str | None:
-    """Resolve a classroom to its course for ownership checks.
-
-    Standalone classrooms (persisted before being attached to a course) have no
-    course linkage yet; the caller treats them like unscoped resources.
-    """
-    row = session.execute(
-        text("SELECT course_id FROM teacher.mentra_classrooms WHERE id=:id"), {"id": classroom_id}
-    ).first()
-    if not row:
-        raise HTTPException(404, "Classroom not found")
-    return row[0]
-
-
 class TeacherCourseRegistration(BaseModel):
     course_id: uuid.UUID
     teacher_id: uuid.UUID
@@ -216,26 +200,6 @@ def authorize_teacher_request(body: TeacherAuthorization, session: SessionDep,
         raise HTTPException(503, "平台数据库暂不可用，请稍后重试") from error
 
 
-def _shadow_verdict(name: str, legacy, api_callable) -> None:
-    """Log a shadow comparison; the legacy verdict stays authoritative."""
-    started = time.monotonic()
-    try:
-        proposed = api_callable()
-    except Exception as error:  # noqa: BLE001 - shadow must never affect the verdict
-        logging.getLogger(__name__).warning(
-            "teacher_authz_shadow_unavailable check=%s error=%s elapsed_ms=%d",
-            name, type(error).__name__, int((time.monotonic() - started) * 1000))
-        return
-    if proposed != legacy:
-        logging.getLogger(__name__).warning(
-            "teacher_authz_shadow_mismatch check=%s legacy=%s api=%s elapsed_ms=%d",
-            name, legacy, proposed, int((time.monotonic() - started) * 1000))
-    else:
-        logging.getLogger(__name__).debug(
-            "teacher_authz_shadow_match check=%s elapsed_ms=%d",
-            name, int((time.monotonic() - started) * 1000))
-
-
 def _platform_course_id(session: SessionDep, ref: str) -> str | None:
     """Resolve a platform UUID or legacy teacher id to the platform course UUID.
 
@@ -264,81 +228,28 @@ def _platform_course_owner(session: SessionDep, ref: str) -> str | None:
     return str(row[0]) if row else None
 
 
-def _job_course_id(session: SessionDep, job_id: str, kind: str, user, mode: str) -> str:
-    """Resolve a background job to its owning course reference."""
-    if mode == "legacy":
-        table = ("teacher.mentra_course_graph_jobs" if kind == "graph"
-                 else "teacher.mentra_artifact_jobs")
-        row = session.execute(text(f"SELECT course_id FROM {table} WHERE id=:id"),
-                              {"id": job_id}).first()
-        if not row:
-            raise HTTPException(404, "Task not found")
-        return row[0]
+def _job_course_id(session: SessionDep, job_id: str, kind: str, user) -> str:
+    """Resolve a teacher-owned background job through the teacher API."""
     from app.services.teacher_authz_client import TeacherAuthzUnavailable, job_course_ref
-
-    def fetch():
-        try:
-            return job_course_ref(job_id, kind, user.id)
-        except LookupError as error:
-            raise HTTPException(404, "Task not found") from error
-
-    if mode == "shadow":
-        table = ("teacher.mentra_course_graph_jobs" if kind == "graph"
-                 else "teacher.mentra_artifact_jobs")
-        row = session.execute(text(f"SELECT course_id FROM {table} WHERE id=:id"),
-                              {"id": job_id}).first()
-        legacy = row[0] if row else None
-        _shadow_verdict(f"job_course:{kind}", legacy, lambda: fetch() if row else _noop_job(job_id, kind, user))
-        if not row:
-            raise HTTPException(404, "Task not found")
-        return legacy
     try:
-        return fetch()
-    except HTTPException:
-        raise
+        return job_course_ref(job_id, kind, user.id)
+    except LookupError as error:
+        raise HTTPException(404, "Task not found") from error
     except TeacherAuthzUnavailable as error:
         raise HTTPException(503, "教师服务暂不可用，请稍后重试") from error
 
 
-def _noop_job(job_id, kind, user):
-    from app.services.teacher_authz_client import TeacherAuthzUnavailable, job_course_ref
-    try:
-        return job_course_ref(job_id, kind, user.id)
-    except Exception as error:  # noqa: BLE001
-        raise RuntimeError("shadow probe failed") from error
-
-
 def _student_material_allowed(session: SessionDep, course_ref: str, material_id: str,
-                              user, mode: str) -> None:
+                              user) -> None:
     """Student may read only enrolled, explicitly published materials."""
-    def legacy_verdict():
-        row = session.execute(text(
-            "SELECT c.payload FROM teacher.mentra_courses c "
-            "JOIN teacher_course_link l ON l.external_course_id=c.id "
-            "JOIN enrollment e ON e.course_id=l.course_id "
-            "WHERE (c.id=:ref OR l.course_id::text=:ref) AND e.student_id=:uid AND c.status='active'"
-        ), {"ref": course_ref, "uid": user.id}).first()
-        material = next((m for m in (row[0].get("materials", []) if row else [])
-                         if m.get("id") == material_id), None)
-        return bool(material and material.get("classVisible") is True
-                    and material.get("classPublicationId"))
-
-    from app.services.teacher_authz_client import material_visibility
-
-    def api_verdict():
-        # Only ask the teacher service once enrolled; the enrollment check via
-        # the platform's own tables already rejects unenrolled students.
-        if not _enrolled(session, course_ref, user):
-            return False
-        return material_visibility(course_ref, material_id, user.id)
-
-    if mode == "shadow":
-        _shadow_verdict("student_material", legacy_verdict(), api_verdict)
-        if not legacy_verdict():
-            raise HTTPException(403, "Student may only read enrolled published materials")
-        return
-    verdict = legacy_verdict() if mode == "legacy" else api_verdict()
-    if not verdict:
+    if not _enrolled(session, course_ref, user):
+        raise HTTPException(403, "Student may only read enrolled published materials")
+    from app.services.teacher_authz_client import TeacherAuthzUnavailable, material_visibility
+    try:
+        visible = material_visibility(course_ref, material_id, user.id)
+    except TeacherAuthzUnavailable as error:
+        raise HTTPException(503, "教师服务暂不可用，请稍后重试") from error
+    if not visible:
         raise HTTPException(403, "Student may only read enrolled published materials")
 
 
@@ -353,137 +264,47 @@ def _enrolled(session: SessionDep, course_ref: str, user) -> bool:
     ).first())
 
 
-def _student_classroom_allowed(session: SessionDep, classroom_id: str, user,
-                               mode: str) -> None:
+def _student_classroom_allowed(session: SessionDep, classroom_id: str, user) -> None:
     """Student may view only the current published classroom of an enrolled course."""
-    def legacy_verdict():
-        course_id = classroom_course_id(session, classroom_id)
-        if not course_id:
-            return (False, "Classroom is not attached to a course")
-        try:
-            platform_course_id = uuid.UUID(course_id)
-        except ValueError:
-            # Legacy courses keep their nanoid in the teacher schema; the
-            # platform UUID comes from the mapping table.
-            link = session.execute(
-                text("SELECT course_id::text FROM teacher_course_link WHERE external_course_id=:external"),
-                {"external": course_id}).first()
-            if not link:
-                return (False, "Classroom course is not available to students")
-            platform_course_id = uuid.UUID(str(link[0]))
-        enrolled = session.execute(
-            text("SELECT 1 FROM enrollment WHERE course_id=:course AND student_id=:student"),
-            {"course": platform_course_id, "student": user.id},
-        ).first()
-        published = session.execute(text(
-            "SELECT 1 FROM teacher.mentra_course_artifacts a "
-            "JOIN teacher_course_link l ON l.external_course_id=a.course_id "
-            "JOIN teacher.mentra_courses c ON c.id=a.course_id "
-            "WHERE l.course_id=:cid AND c.status='active' AND a.status='published' "
-            "AND a.payload->>'classVisible'='true' AND a.payload->>'classPublicationId' IS NOT NULL "
-            "AND a.payload->>'classroomId'=:rid"
-        ), {"cid": platform_course_id, "rid": classroom_id}).first()
-        return (bool(enrolled and published),
-                "Student may only view an enrolled published classroom")
-
-    from app.services.teacher_authz_client import classroom_visibility
-
-    def api_verdict():
+    from app.services.teacher_authz_client import TeacherAuthzUnavailable, classroom_visibility
+    try:
         course_ref, published = classroom_visibility(classroom_id, user.id)
-        if not course_ref:
-            # The legacy query raised 404 for a missing classroom row and 403
-            # for a detached one; both now fail closed as 403.
-            return (False, "Classroom is not attached to a course")
-        try:
-            platform_course_id = uuid.UUID(course_ref)
-        except ValueError:
-            link = session.execute(
-                text("SELECT course_id::text FROM teacher_course_link WHERE external_course_id=:external"),
-                {"external": course_ref}).first()
-            if not link:
-                return (False, "Classroom course is not available to students")
-            platform_course_id = uuid.UUID(str(link[0]))
-        enrolled = session.execute(
-            text("SELECT 1 FROM enrollment WHERE course_id=:course AND student_id=:student"),
-            {"course": platform_course_id, "student": user.id},
+    except TeacherAuthzUnavailable as error:
+        raise HTTPException(503, "教师服务暂不可用，请稍后重试") from error
+    if not course_ref:
+        raise HTTPException(403, "Classroom is not attached to a course")
+    try:
+        platform_course_id = uuid.UUID(course_ref)
+    except ValueError:
+        link = session.execute(
+            text("SELECT course_id::text FROM teacher_course_link WHERE external_course_id=:external"),
+            {"external": course_ref},
         ).first()
-        return (bool(enrolled and published),
-                "Student may only view an enrolled published classroom")
-
-    if mode == "shadow":
-        legacy = legacy_verdict()
-        _shadow_verdict("student_classroom", legacy[0], lambda: api_verdict()[0])
-        if not legacy[0]:
-            raise HTTPException(403, legacy[1])
-        return
-    verdict = legacy_verdict() if mode == "legacy" else api_verdict()
-    if not verdict[0]:
-        raise HTTPException(403, verdict[1])
+        if not link:
+            raise HTTPException(403, "Classroom course is not available to students")
+        platform_course_id = uuid.UUID(str(link[0]))
+    enrolled = session.execute(
+        text("SELECT 1 FROM enrollment WHERE course_id=:course AND student_id=:student"),
+        {"course": platform_course_id, "student": user.id},
+    ).first()
+    if not enrolled or not published:
+        raise HTTPException(403, "Student may only view an enrolled published classroom")
 
 
-def _classroom_course_scoped(session: SessionDep, classroom_id: str, user,
-                             mode: str) -> str | None:
-    """Classroom→course mapping for teacher-side ownership checks.
-
-    Returns the teacher course reference (None when detached, like the legacy
-    lookup); raises 404 for a classroom that does not exist.
-    """
-    from app.services.teacher_authz_client import classroom_visibility
-
-    def legacy_ref():
-        row = session.execute(
-            text("SELECT course_id FROM teacher.mentra_classrooms WHERE id=:id"),
-            {"id": classroom_id}).first()
-        return row[0] if row else None
-
-    def api_ref():
+def _classroom_course_scoped(session: SessionDep, classroom_id: str, user) -> str | None:
+    """Resolve classroom ownership through the teacher API."""
+    from app.services.teacher_authz_client import TeacherAuthzUnavailable, classroom_visibility
+    try:
         course_ref, _published = classroom_visibility(classroom_id, user.id)
-        return course_ref
-
-    if mode == "api":
-        course_ref = api_ref()
-        if not course_ref:
-            raise HTTPException(404, "Classroom not found")
-        return course_ref
-    legacy = legacy_ref()
-    if mode == "shadow":
-        _shadow_verdict("classroom_course", legacy, api_ref)
-    if not legacy:
+    except TeacherAuthzUnavailable as error:
+        raise HTTPException(503, "教师服务暂不可用，请稍后重试") from error
+    if not course_ref:
         raise HTTPException(404, "Classroom not found")
-    return legacy
+    return course_ref
 
 
-def _teacher_course_owner_allowed(session: SessionDep, course_ref: str, user,
-                                  mode: str) -> None:
-    """Only the owning teacher (or a superuser) may touch a course.
-
-    api mode reads ownership from the platform's own ``course.owner_id``
-    recorded at registration; no teacher table is consulted.
-    """
-    if mode != "api":
-        row = session.execute(
-            text("SELECT teacher_id FROM teacher.mentra_courses WHERE id=:id"), {"id": course_ref}).first()
-        if not row:
-            # Platform entry points (建设概览, roster links) carry the platform
-            # UUID; pre-integration courses live under their legacy teacher-agent
-            # id, so resolve through the mapping table before rejecting.
-            link = session.execute(
-                text("SELECT external_course_id FROM teacher_course_link WHERE course_id::text=:pid"),
-                {"pid": course_ref},
-            ).first()
-            if link and link[0] != course_ref:
-                row = session.execute(
-                    text("SELECT teacher_id FROM teacher.mentra_courses WHERE id=:id"), {"id": link[0]}
-                ).first()
-        legacy_owner = row[0] if row else None
-        if mode == "shadow":
-            _shadow_verdict("course_owner", legacy_owner,
-                            lambda: _platform_course_owner(session, course_ref))
-        if legacy_owner is None:
-            raise HTTPException(404, "课程不存在或尚未同步到统一数据库")
-        if legacy_owner != str(user.id) and not user.is_superuser:
-            raise HTTPException(403, "无权访问该课程（课程属于其他教师）")
-        return
+def _teacher_course_owner_allowed(session: SessionDep, course_ref: str, user) -> None:
+    """Authorize a teacher against the platform-owned course record."""
     owner = _platform_course_owner(session, course_ref)
     if owner is None:
         raise HTTPException(404, "课程不存在或尚未同步到统一数据库")
@@ -509,14 +330,13 @@ def _authorize_teacher_request(body: TeacherAuthorization, session: SessionDep,
                 raise HTTPException(403, "Invalid request origin")
     split = urlsplit(body.path)
     parts = [unquote(p) for p in split.path.split('/') if p]
-    authz_mode = settings.TEACHER_AUTHZ_READ_MODE
     # Students may only read the published player belonging to a course in
     # which they are currently enrolled. All editing and generation routes
     # remain teacher-only below.
     if user.role == "student" and body.method in {"GET", "HEAD", "OPTIONS"}:
         # A resource URL is readable only after explicit publication in an enrolled active course.
         if parts[:2] == ["api", "course-space"] and len(parts) == 5 and parts[3] == "materials":
-            _student_material_allowed(session, parts[2], parts[4], user, authz_mode)
+            _student_material_allowed(session, parts[2], parts[4], user)
             return {"userId": str(user.id), "role": user.role, "isAdmin": False}
         classroom_id: str | None = None
         if parts[:1] in (["classroom-player"], ["classroom"]) and len(parts) > 1:
@@ -526,33 +346,33 @@ def _authorize_teacher_request(body: TeacherAuthorization, session: SessionDep,
         elif parts[:2] == ["api", "classroom"]:
             classroom_id = (parse_qs(split.query).get("id") or [None])[0]
         if classroom_id:
-            _student_classroom_allowed(session, classroom_id, user, authz_mode)
+            _student_classroom_allowed(session, classroom_id, user)
             return {"userId": str(user.id), "role": user.role, "isAdmin": False}
     if user.role != "teacher" and not user.is_superuser:
         raise HTTPException(403, "Teacher role required")
     course_id: str | None = None
     if parts[:2] == ["api", "course-space"] and len(parts) > 2:
         if parts[2] == "jobs" and len(parts) > 3:
-            course_id = _job_course_id(session, parts[3], "artifact", user, authz_mode)
+            course_id = _job_course_id(session, parts[3], "artifact", user)
         elif parts[2:4] == ["knowledge-graph", "jobs"] and len(parts) > 4:
-            course_id = _job_course_id(session, parts[4], "graph", user, authz_mode)
+            course_id = _job_course_id(session, parts[4], "graph", user)
         else:
             course_id = parts[2]
     elif parts[:2] == ["api", "classes"] and len(parts) > 2:
         course_id = parts[2]
     elif parts[:2] == ["api", "classroom-media"] and len(parts) > 2:
-        course_id = _classroom_course_scoped(session, parts[2], user, authz_mode)
+        course_id = _classroom_course_scoped(session, parts[2], user)
     elif parts[:2] == ["api", "classroom"]:
         # `GET /api/classroom?id=...` carries the classroom id in the query.
         query_id = (parse_qs(split.query).get("id") or [None])[0]
         if query_id:
-            course_id = _classroom_course_scoped(session, query_id, user, authz_mode)
+            course_id = _classroom_course_scoped(session, query_id, user)
     elif parts[:1] == ["course-space"] and len(parts) > 1:
         course_id = parts[1]
     elif parts[:1] in (["classroom-player"], ["classroom"]) and len(parts) > 1:
-        course_id = _classroom_course_scoped(session, parts[1], user, authz_mode)
+        course_id = _classroom_course_scoped(session, parts[1], user)
     if course_id:
-        _teacher_course_owner_allowed(session, course_id, user, authz_mode)
+        _teacher_course_owner_allowed(session, course_id, user)
     # Legacy unscoped classroom/editing APIs have no complete owner model yet.
     # They remain admin-only until their ownership migration is complete.
     if (
