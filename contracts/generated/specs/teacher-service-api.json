@@ -1,6 +1,231 @@
 {
   "components": {
     "schemas": {
+      "PublishedClassroomView": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "scenes": {
+            "items": {
+              "properties": {
+                "actions": {
+                  "items": {
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "text": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "type": {
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "order": {
+                  "type": "number"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string"
+                },
+                "visibleText": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "id",
+                "type",
+                "order",
+                "title",
+                "visibleText",
+                "actions"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "scenes"
+        ],
+        "type": "object"
+      },
+      "PublishedEntry": {
+        "properties": {
+          "citations": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "content": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "artifact",
+              "lesson-file",
+              "material"
+            ],
+            "type": "string"
+          },
+          "publicationId": {
+            "type": "string"
+          },
+          "resourceType": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "scope": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "additionalProperties": true,
+                "type": "object"
+              }
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "content",
+          "kind",
+          "publicationId"
+        ],
+        "type": "object"
+      },
+      "PublishedLearningContent": {
+        "properties": {
+          "course": {
+            "properties": {
+              "id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "type": "object"
+          },
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/PublishedEntry"
+            },
+            "type": "array"
+          },
+          "lessons": {
+            "items": {
+              "$ref": "#/components/schemas/PublishedLesson"
+            },
+            "type": "array"
+          },
+          "publication": {
+            "properties": {
+              "publicationId": {
+                "type": "string"
+              },
+              "version": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "publicationId",
+              "version"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "publication",
+          "course",
+          "entries",
+          "lessons"
+        ],
+        "type": "object"
+      },
+      "PublishedLesson": {
+        "properties": {
+          "classroom": {
+            "$ref": "#/components/schemas/PublishedClassroomView"
+          },
+          "id": {
+            "type": "string"
+          },
+          "lessonNumber": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "order": {
+            "type": "number"
+          },
+          "publishedAt": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "teachingHours": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "week": {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "order",
+          "classroom"
+        ],
+        "type": "object"
+      },
       "StudentLearningState": {
         "properties": {
           "className": {
@@ -501,6 +726,69 @@
           }
         ],
         "summary": "Teacher-owned published classroom and artifact counts"
+      }
+    },
+    "/api/internal/platform/courses/{courseId}/published-content": {
+      "get": {
+        "description": "Mirrors the platform's legacy published-content queries with identical filtering, ordering and error semantics. A 404 means a published lesson references a missing classroom snapshot (the platform surfaces the same failure its legacy SQL raised). The platform stays responsible for enrollment, playback grants and player URLs; draft content is never exposed.",
+        "operationId": "getTeacherPublishedContent",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "courseId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "content": {
+                      "oneOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "$ref": "#/components/schemas/PublishedLearningContent"
+                        }
+                      ]
+                    },
+                    "published": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "published",
+                    "content"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Published content snapshot, or published=false when nothing is published"
+          },
+          "403": {
+            "description": "Invalid service delegation"
+          },
+          "404": {
+            "description": "A published lesson references a missing classroom snapshot"
+          },
+          "503": {
+            "description": "Teacher storage unavailable"
+          }
+        },
+        "security": [
+          {
+            "platformServiceKey": [],
+            "platformSubject": []
+          }
+        ],
+        "summary": "One-shot read-only published learning content for the student learning context"
       }
     }
   },

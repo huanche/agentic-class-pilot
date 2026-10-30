@@ -25,6 +25,7 @@
     "python/platform_teacher_api/api/default/get_teacher_latest_classroom.py",
     "python/platform_teacher_api/api/default/get_teacher_publication_counts.py",
     "python/platform_teacher_api/api/default/get_teacher_publication_verdict.py",
+    "python/platform_teacher_api/api/default/get_teacher_published_content.py",
     "python/platform_teacher_api/api/default/get_teacher_service_health.py",
     "python/platform_teacher_api/api/default/provision_teacher_course.py",
     "python/platform_teacher_api/api/default/update_teacher_student_state.py",
@@ -35,6 +36,7 @@
     "python/platform_teacher_api/models/get_teacher_publication_counts_response_200.py",
     "python/platform_teacher_api/models/get_teacher_publication_verdict_response_200.py",
     "python/platform_teacher_api/models/get_teacher_publication_verdict_response_200_publication_type_1.py",
+    "python/platform_teacher_api/models/get_teacher_published_content_response_200.py",
     "python/platform_teacher_api/models/get_teacher_service_health_response_200.py",
     "python/platform_teacher_api/models/get_teacher_service_health_response_200_capabilities.py",
     "python/platform_teacher_api/models/provision_teacher_course_body.py",
@@ -42,6 +44,17 @@
     "python/platform_teacher_api/models/provision_teacher_course_response_200_course.py",
     "python/platform_teacher_api/models/provision_teacher_course_response_201.py",
     "python/platform_teacher_api/models/provision_teacher_course_response_201_course.py",
+    "python/platform_teacher_api/models/published_classroom_view.py",
+    "python/platform_teacher_api/models/published_classroom_view_scenes_item.py",
+    "python/platform_teacher_api/models/published_classroom_view_scenes_item_actions_item.py",
+    "python/platform_teacher_api/models/published_entry.py",
+    "python/platform_teacher_api/models/published_entry_citations_item.py",
+    "python/platform_teacher_api/models/published_entry_kind.py",
+    "python/platform_teacher_api/models/published_entry_scope_type_1.py",
+    "python/platform_teacher_api/models/published_learning_content.py",
+    "python/platform_teacher_api/models/published_learning_content_course.py",
+    "python/platform_teacher_api/models/published_learning_content_publication.py",
+    "python/platform_teacher_api/models/published_lesson.py",
     "python/platform_teacher_api/models/student_learning_state.py",
     "python/platform_teacher_api/models/student_learning_state_status.py",
     "python/platform_teacher_api/models/update_teacher_student_state_response_200.py",
@@ -115,6 +128,6 @@
     "internal-student-api.yaml": "d5a021d1504b052266554291f46f3055a142ffe650985378d66a5461c05fecfc",
     "internal-teacher-api.yaml": "cb4b52429051b51df5bf81c3440358b5314253397a6b6f231565452cc5ee4d98",
     "student-service-api.yaml": "4f3a34d687b5f94a6bef6c36fde0722edf93dea94dc6abfe42c0f6aadefc5920",
-    "teacher-service-api.yaml": "0c6c44a73d3451aa4c589cc6a86216b489d3201d09ec8b64460a7a3eafde82c0"
+    "teacher-service-api.yaml": "797da0a117ddf35b81042635ab548bac373e9553976020ef406b80335ba9c7ac"
   }
 }

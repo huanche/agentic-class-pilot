@@ -48,6 +48,9 @@ class Settings(BaseSettings):
     TEACHER_COURSE_REGISTRATION_MODE: Literal["legacy", "api"] = "legacy"
     TEACHER_ANALYTICS_READ_MODE: Literal["legacy", "api"] = "legacy"
     TEACHER_CLASSROOM_READ_MODE: Literal["legacy", "shadow", "api"] = "legacy"
+    # api: assemble the learning context from one teacher content snapshot;
+    # shadow: compare it against the legacy cross-schema reads; legacy: direct SQL.
+    TEACHER_LEARNING_CONTENT_READ_MODE: Literal["legacy", "shadow", "api"] = "legacy"
     # Extra browser origins (teacher service dev ports, e.g. "http://localhost:3200")
     # accepted for non-GET teacher requests, in addition to FRONTEND_HOST.
     TEACHER_ALLOWED_ORIGINS: str = ""

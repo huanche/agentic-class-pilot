@@ -77,6 +77,36 @@ paths:
         '401': { description: Invalid delegated identity }
         '403': { description: Service delegation missing or denied }
         '503': { description: Platform authorization or course storage unavailable }
+  /api/internal/platform/courses/{courseId}/published-content:
+    get:
+      operationId: getTeacherPublishedContent
+      summary: One-shot read-only published learning content for the student learning context
+      description: >-
+        Mirrors the platform's legacy published-content queries with identical
+        filtering, ordering and error semantics. A 404 means a published lesson
+        references a missing classroom snapshot (the platform surfaces the same
+        failure its legacy SQL raised). The platform stays responsible for
+        enrollment, playback grants and player URLs; draft content is never exposed.
+      security: [{ platformServiceKey: [], platformSubject: [] }]
+      parameters:
+        - { name: courseId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Published content snapshot, or published=false when nothing is published
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [published, content]
+                properties:
+                  published: { type: boolean }
+                  content:
+                    oneOf:
+                      - { type: 'null' }
+                      - $ref: '#/components/schemas/PublishedLearningContent'
+        '403': { description: Invalid service delegation }
+        '404': { description: A published lesson references a missing classroom snapshot }
+        '503': { description: Teacher storage unavailable }
   /api/health:
     get:
       operationId: getTeacherServiceHealth
@@ -181,6 +211,80 @@ components:
     platformServiceKey: { type: apiKey, in: header, name: X-Platform-Service-Key }
     platformSubject: { type: apiKey, in: header, name: X-Platform-Subject }
   schemas:
+    PublishedLearningContent:
+      type: object
+      required: [publication, course, entries, lessons]
+      properties:
+        publication:
+          type: object
+          required: [publicationId, version]
+          properties:
+            publicationId: { type: string }
+            version: { type: integer }
+        course:
+          type: object
+          required: [id]
+          properties:
+            id: { type: string }
+        entries:
+          type: array
+          items: { $ref: '#/components/schemas/PublishedEntry' }
+        lessons:
+          type: array
+          items: { $ref: '#/components/schemas/PublishedLesson' }
+    PublishedEntry:
+      type: object
+      required: [id, title, content, kind, publicationId]
+      properties:
+        id: { type: string }
+        title: { type: string }
+        content: { type: string }
+        citations: { type: array, items: { type: object, additionalProperties: true } }
+        scope:
+          oneOf:
+            - { type: 'null' }
+            - { type: object, additionalProperties: true }
+        kind: { type: string, enum: [artifact, lesson-file, material] }
+        resourceType: { type: [string, 'null'] }
+        publicationId: { type: string }
+        url: { type: string }
+    PublishedLesson:
+      type: object
+      required: [id, title, order, classroom]
+      properties:
+        id: { type: string }
+        title: { type: string }
+        order: { type: number }
+        week: { type: [number, 'null'] }
+        lessonNumber: { type: [number, 'null'] }
+        teachingHours: { type: [number, 'null'] }
+        publishedAt: { type: [number, 'null'] }
+        classroom: { $ref: '#/components/schemas/PublishedClassroomView' }
+    PublishedClassroomView:
+      type: object
+      required: [id, title, scenes]
+      properties:
+        id: { type: string }
+        title: { type: string }
+        scenes:
+          type: array
+          items:
+            type: object
+            required: [id, type, order, title, visibleText, actions]
+            properties:
+              id: { type: string }
+              type: { type: string }
+              order: { type: number }
+              title: { type: string }
+              visibleText: { type: array, items: { type: string } }
+              actions:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: { type: string }
+                    type: { type: string }
+                    text: { type: [string, 'null'] }
     StudentLearningState:
       type: object
       required: [studentId, name, status]

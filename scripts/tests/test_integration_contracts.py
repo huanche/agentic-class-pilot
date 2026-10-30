@@ -201,8 +201,8 @@ class ProviderPayloadTests(unittest.TestCase):
                         "re": re, "hashlib": hashlib,
                         "check_student_service_key": lambda _: None,
                         "verify_launch_token": lambda _, **__: identity, "_resolve_launch_context": lambda *_: None,
-                        "_published_package_payload": lambda *_: {"id": "fixture-publication", "version": 1, "entries": entries},
-                        "_published_lessons": lambda *_: lessons, "_classroom_view": lambda *_: copy.deepcopy(classroom),
+                        "_load_published_content": lambda *_: (
+                            {"id": "fixture-publication", "version": 1, "entries": entries}, lessons),
                         "ensure_published_knowledge_job": lambda *_: None,
                         "_grounding_context": lambda *_: {}, "_issue_playback_grant": lambda *_: "fixture-grant",
                     })

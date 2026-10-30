@@ -487,6 +487,153 @@ def _published_lessons(session: SessionDep, course_id: uuid.UUID,
     return sorted(selected.values(), key=lambda lesson: (lesson.get("week") or 1000, lesson.get("lessonNumber") or lesson["order"], lesson["id"]))
 
 
+def _content_from_teacher_snapshot(snapshot, user_id: uuid.UUID,
+                                   course_id: uuid.UUID) -> tuple[dict, list[dict]]:
+    """Project the teacher content snapshot into the legacy in-memory shapes.
+
+    Returns (package_payload, published_lessons). The platform keeps the parts
+    it owns: playback grants, player URLs and every enrollment decision.
+    """
+    from app.generated.platform_teacher_api.types import UNSET
+
+    def scope_of(entry):
+        if entry.scope is UNSET or entry.scope is None:
+            return None
+        return entry.scope.to_dict() if hasattr(entry.scope, "to_dict") else entry.scope
+
+    def citation_of(citation):
+        return citation.to_dict() if hasattr(citation, "to_dict") else citation
+
+    package = {
+        "id": snapshot.publication.publication_id,
+        "version": int(snapshot.publication.version),
+        "entries": [
+            {
+                "id": entry.id,
+                "title": entry.title,
+                "content": entry.content,
+                "citations": [citation_of(citation) for citation in entry.citations]
+                if entry.citations is not UNSET else [],
+                "scope": scope_of(entry),
+                "kind": str(entry.kind),
+                "resourceType": entry.resource_type
+                if entry.resource_type is not UNSET else None,
+                "publicationId": entry.publication_id,
+                **({"url": f"{settings.TEACHER_PUBLIC_URL.rstrip('/')}{entry.url}"}
+                   if entry.url is not UNSET else {}),
+            }
+            for entry in snapshot.entries
+        ],
+    }
+
+    teacher_base = settings.TEACHER_PUBLIC_URL.rstrip("/")
+    lessons = []
+    for item in snapshot.lessons:
+        classroom = item.classroom
+        classroom_view = {
+            "id": classroom.id,
+            "title": classroom.title,
+            "scenes": [
+                {
+                    "id": scene.id,
+                    "type": scene.type_,
+                    "order": int(scene.order),
+                    "title": scene.title,
+                    "visibleText": list(scene.visible_text),
+                    "actions": [
+                        {
+                            "id": action.id,
+                            "type": action.type_ if action.type_ is not UNSET else "speech",
+                            "text": action.text if action.text is not UNSET else None,
+                        }
+                        for action in scene.actions
+                    ],
+                }
+                for scene in classroom.scenes
+            ],
+            "playerUrl": f"{teacher_base}/classroom-player/{classroom.id}",
+        }
+        classroom_view["playbackToken"] = _issue_playback_grant(
+            user_id, course_id, classroom.id)
+        lessons.append({
+            "id": item.id,
+            "title": item.title,
+            "order": item.order,
+            "week": item.week if item.week is not UNSET else None,
+            "lessonNumber": item.lesson_number if item.lesson_number is not UNSET else None,
+            "teachingHours": item.teaching_hours if item.teaching_hours is not UNSET else None,
+            "publishedAt": item.published_at if item.published_at is not UNSET else None,
+            "classroom": classroom_view,
+        })
+    return package, lessons
+
+
+def _legacy_published_content(session: SessionDep, course_id: uuid.UUID,
+                              user_id: uuid.UUID) -> tuple[dict | None, list[dict]]:
+    package = _published_package_payload(session, course_id)
+    if package is None:
+        return None, []
+    return package, _published_lessons(session, course_id, user_id)
+
+
+def _log_content_shadow(course_id: uuid.UUID, legacy: tuple, proposed: tuple,
+                        started: float) -> None:
+    elapsed = int((time.monotonic() - started) * 1000)
+    legacy_key = (legacy[0].get("id") if legacy[0] else None,
+                  legacy[0].get("version") if legacy[0] else None,
+                  [lesson["id"] for lesson in legacy[1]])
+    proposed_key = (proposed[0].get("id") if proposed[0] else None,
+                    proposed[0].get("version") if proposed[0] else None,
+                    [lesson["id"] for lesson in proposed[1]])
+    if legacy_key != proposed_key:
+        logging.getLogger(__name__).warning(
+            "teacher_content_shadow_mismatch course_id=%s legacy=%s api=%s elapsed_ms=%d",
+            course_id, legacy_key, proposed_key, elapsed)
+    else:
+        logging.getLogger(__name__).debug(
+            "teacher_content_shadow_match course_id=%s elapsed_ms=%d", course_id, elapsed)
+
+
+def _load_published_content(session: SessionDep, course_id: uuid.UUID,
+                            user_id: uuid.UUID) -> tuple[dict | None, list[dict]]:
+    """Assemble (package_payload, published_lessons) via the configured read mode."""
+    mode = settings.TEACHER_LEARNING_CONTENT_READ_MODE
+    if mode == "legacy":
+        return _legacy_published_content(session, course_id, user_id)
+    course = session.get(Course, course_id)
+    if course is None:
+        return None, []
+    from app.services.teacher_learning_content_client import (
+        TeacherLearningContentMissing, TeacherLearningContentUnavailable,
+        get_teacher_published_content,
+    )
+
+    def fetch():
+        snapshot = get_teacher_published_content(course_id, course.owner_id)
+        if snapshot is None:
+            return None, []
+        return _content_from_teacher_snapshot(snapshot, user_id, course_id)
+
+    if mode == "shadow":
+        legacy = _legacy_published_content(session, course_id, user_id)
+        started = time.monotonic()
+        try:
+            proposed = fetch()
+            _log_content_shadow(course_id, legacy, proposed, started)
+        except (TeacherLearningContentUnavailable, TeacherLearningContentMissing) as error:
+            logging.getLogger(__name__).warning(
+                "teacher_content_shadow_unavailable course_id=%s elapsed_ms=%d error=%s",
+                course_id, int((time.monotonic() - started) * 1000),
+                type(error).__name__)
+        return legacy
+    try:
+        return fetch()
+    except TeacherLearningContentUnavailable as error:
+        raise HTTPException(503, "教师学习内容服务暂不可用，请稍后重试") from error
+    except TeacherLearningContentMissing as error:
+        raise HTTPException(404, "课堂不存在或尚未发布") from error
+
+
 def _grounding_context(session: SessionDep, course_id: uuid.UUID) -> dict:
     """Course grounding for better student guidance: material excerpts and
     published-graph knowledge points. Queries join teacher_course_link so
@@ -547,11 +694,10 @@ def student_learning_context(body: LearningContextRequest, session: SessionDep,
         ).first()
         if not course:
             raise HTTPException(404, "课程不存在")
-        package_payload = _published_package_payload(session, course_id)
+        package_payload, published_lessons = _load_published_content(
+            session, course_id, user_id)
         if not package_payload:
             raise HTTPException(409, "课程尚未发布学习内容")
-
-        published_lessons = _published_lessons(session, course_id, user_id)
         # 目录只含摘要。未选课时不下发任何课堂正文、材料或知识点。
         lesson_catalog = [
             {**{key: lesson.get(key) for key in (
