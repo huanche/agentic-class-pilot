@@ -54,4 +54,27 @@ describe('classroom media delivery', () => {
     const unversioned = await GET(new NextRequest(url), context);
     expect(unversioned.headers.get('Cache-Control')).toBe('private, no-cache');
   });
+
+  it('requires revalidation for video and returns 304 for unchanged media', async () => {
+    const { GET, context, url } = await routeFor('.mp4');
+    const first = await GET(new NextRequest(url), context);
+    expect(first.status).toBe(200);
+    expect(first.headers.get('Cache-Control')).toBe('private, no-cache');
+    const etag = first.headers.get('ETag');
+    expect(etag).toBeTruthy();
+    const second = await GET(new NextRequest(url, {
+      headers: { 'if-none-match': etag! },
+    }), context);
+    expect(second.status).toBe(304);
+    expect(second.headers.get('ETag')).toBe(etag);
+  });
+
+  it('sends the whole video if an If-Range validator is stale', async () => {
+    const { GET, context, url } = await routeFor('.mp4');
+    const response = await GET(new NextRequest(url, {
+      headers: { range: 'bytes=2-5', 'if-range': 'W/"stale"' },
+    }), context);
+    expect(response.status).toBe(200);
+    expect(Buffer.from(await response.arrayBuffer())).toEqual(Buffer.from([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]));
+  });
 });

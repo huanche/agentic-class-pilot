@@ -71,12 +71,20 @@ export async function GET(
     const ext = path.extname(realPath).toLowerCase();
     const contentType = MIME_TYPES[ext] || 'application/octet-stream';
     const isVideo = ext === '.mp4' || ext === '.webm';
-    const requestedRange = isVideo ? req.headers.get('range') : null;
+    const etag = `W/"${stat.size}-${stat.mtimeMs}-${stat.ctimeMs}"`;
+    const cacheHeaders = { 'Cache-Control': 'private, no-cache', ETag: etag };
+    const rangeHeader = isVideo ? req.headers.get('range') : null;
+    const requestedRange = rangeHeader &&
+      (!req.headers.has('if-range') || req.headers.get('if-range') === etag)
+      ? rangeHeader : null;
+    if (!requestedRange && req.headers.get('if-none-match') === etag) {
+      return new NextResponse(null, { status: 304, headers: cacheHeaders });
+    }
     const range = requestedRange ? parseByteRange(requestedRange, stat.size) : null;
     if (requestedRange && !range) {
       return new NextResponse(null, {
         status: 416,
-        headers: { 'Content-Range': `bytes */${stat.size}`, 'Accept-Ranges': 'bytes' },
+        headers: { ...cacheHeaders, 'Content-Range': `bytes */${stat.size}`, 'Accept-Ranges': 'bytes' },
       });
     }
 
@@ -89,12 +97,9 @@ export async function GET(
       headers: {
         'Content-Type': contentType,
         'Content-Length': String(range ? range.end - range.start + 1 : stat.size),
+        ...cacheHeaders,
         ...(isVideo ? { 'Accept-Ranges': 'bytes' } : {}),
         ...(range ? { 'Content-Range': `bytes ${range.start}-${range.end}/${stat.size}` } : {}),
-        // Audio may be regenerated and access may be revoked; revalidate it.
-        'Cache-Control': subDir === 'audio'
-          ? 'private, no-cache'
-          : 'public, max-age=86400, immutable',
       },
     });
   } catch (error) {
