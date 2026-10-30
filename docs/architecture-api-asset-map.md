@@ -71,6 +71,10 @@ rg --files platform/backend/tests teacher_agent/tests student_agent/backend/test
 3. **性能与可靠性**：直接 SQL 通常少一次网络跳转；HTTP API 让数据拥有方能够独立改内部表，但多一次序列化、网络及服务可用性依赖。比较 `p50/p95`、错误率、响应体大小、下架生效时间；不能只看单次成功或把 API 当作天然更快。
 4. **下一次验证顺序**：先在独立测试库做最近课堂 `shadow` 和真实三端 HTTP 对比；再核对学习上下文的输出语义与权限；之后处理鉴权依赖和旧会话；最后以受限数据库角色证明平台不再需要跨 schema 权限。每次只切一个读取点，保留可回退模式。当前不具备撤销跨表权限或合并生产 `main` 的证据。
 
+### 2026-10-30 隔离环境三服务验证与受限账号证明
+
+在独立 `app_test` 库（隔离端口 18080/18088/18000）以三服务真实 HTTP 完成验证：平台以 `platform_restricted` 受限账号运行（teacher/student schema 零权限，`platform` 账号仅用于迁移和 seed），六个开关全部 `api`。核心流程 22 项全过：发布内容摘要、进入学习签发、学习上下文（快照+选课复查+播放凭证）、学情（双 api）、authorize 四用例（教师归属/学生播放器/未选课拒绝）、回放场景、错误密钥 403、伪造 token 401。撤销与故障 9 项全过：撤销后课堂即时不可见（纯文本学习仍可用、包未下架语义保留）、恢复后立即可见、教师服务不可用时 published-content 与 authorize 均 fail-closed（503/403）。受限账号直接证据：读 `teacher.mentra_courses`、`student.student_sessions` 均被拒绝；全流程平台日志零权限错误。撤销模拟使用教师角色的等价 SQL（教师服务自身写路径的等价物）。浏览器端完整学习入口、并发与 p95 未测。验证脚本在 gitignored `.runtime/authz-validate/`。
+
 ### 2026-10-30 第二批：登记/首页/回放/学生表切换就绪
 
 四项收尾：①发布登记（published-lesson-knowledge）与②学生首页 published-content 均随 `TEACHER_LEARNING_CONTENT_READ_MODE` 支持教师快照（shadow 对比，legacy 权威，默认 legacy）；③学生旧会话回放新增 `STUDENT_REPLAY_SCENE_READ_MODE=api` 走平台 `/internal/student/classroom-view`，平台不可用回退空场景；④平台对学生 schema 的全部直接读写（知识登记、学情读取、进度计算）确认均已有 `STUDENT_KNOWLEDGE_ENQUEUE_MODE`/`STUDENT_ANALYTICS_READ_MODE` 开关覆盖，无未开关路径。离线验证：平台 71 项、教师端 22 项、学生端 4 项、契约 15 项通过；教师端两条新路由契约化并重新生成客户端。隔离环境真实 HTTP 验证与受限账号权限验证未做。
