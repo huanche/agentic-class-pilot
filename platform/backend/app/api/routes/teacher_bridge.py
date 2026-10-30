@@ -658,25 +658,6 @@ async def open_teacher_workspace(course_id: uuid.UUID, session: SessionDep, user
     # Serialize workspace provisioning per course across workers.
     session.execute(text("SELECT pg_advisory_xact_lock(hashtext(:id))"), {"id": str(course_id)})
     row = session.execute(text("SELECT external_course_id FROM teacher_course_link WHERE course_id=:id"), {"id": course_id}).first()
-    if settings.TEACHER_COURSE_PROVISION_MODE == "legacy":
-        if row and session.execute(text("SELECT 1 FROM teacher.mentra_courses WHERE id=:id AND teacher_id=:owner"), {"id": row[0], "owner": str(course.owner_id)}).first():
-            external_id = row[0]
-        else:
-            existing = session.execute(text("SELECT teacher_id FROM teacher.mentra_courses WHERE id=:id"), {"id": str(course.id)}).first()
-            if existing and existing[0] != str(course.owner_id):
-                raise HTTPException(409, "课程归属不一致，请联系管理员修复")
-            async with httpx.AsyncClient(timeout=30, trust_env=False) as client:
-                try:
-                    response = await client.post(f"{settings.TEACHER_URL}/api/course-space", json={"id": str(course.id), "title": course.title, "description": course.description},
-                        headers={"X-Platform-Service-Key": settings.TEACHER_SERVICE_KEY, "X-Platform-Subject": str(course.owner_id)})
-                    response.raise_for_status()
-                    external_id = response.json()["course"]["id"]
-                except (httpx.HTTPError, KeyError, ValueError) as error:
-                    session.rollback()
-                    raise HTTPException(502, "教师服务暂不可用，请稍后重试") from error
-            session.execute(text("INSERT INTO teacher_course_link(course_id,external_course_id) VALUES (:id,:external) ON CONFLICT (course_id) DO UPDATE SET external_course_id=EXCLUDED.external_course_id"), {"id": course_id, "external": external_id})
-            session.commit()
-        return {"url": f"{settings.TEACHER_PUBLIC_URL.rstrip('/')}/teacher-workspace?workspace={external_id}"}
     requested_id = str(row[0]) if row else str(course.id)
     try:
         external_id = await provision_teacher_course(

@@ -180,7 +180,6 @@ def test_generated_teacher_provisioning_keeps_owner_and_course_id(monkeypatch):
 
 
 def test_teacher_workspace_only_reads_platform_mapping(monkeypatch):
-    monkeypatch.setattr(teacher_bridge.settings, "TEACHER_COURSE_PROVISION_MODE", "api")
     monkeypatch.setattr(
         teacher_bridge,
         "get_owned_course",
@@ -212,40 +211,6 @@ def test_teacher_workspace_only_reads_platform_mapping(monkeypatch):
     assert calls == [("legacy-course", OWNER_ID, "课程", None)]
     assert len(session.statements) == 2
     assert all("teacher." not in statement for statement in session.statements)
-
-
-def test_teacher_workspace_legacy_mode_keeps_existing_path(monkeypatch):
-    monkeypatch.setattr(teacher_bridge.settings, "TEACHER_COURSE_PROVISION_MODE", "legacy")
-    monkeypatch.setattr(
-        teacher_bridge,
-        "get_owned_course",
-        lambda session, user, course_id: SimpleNamespace(id=COURSE_ID, owner_id=OWNER_ID),
-    )
-
-    async def unexpected_provision(*_args):
-        raise AssertionError("generated client must stay disabled by default")
-
-    monkeypatch.setattr(teacher_bridge, "provision_teacher_course", unexpected_provision)
-
-    class LegacySession:
-        def __init__(self):
-            self.statements = []
-
-        def execute(self, statement, params):
-            sql = str(statement)
-            self.statements.append(sql)
-            if "teacher_course_link" in sql:
-                return SimpleNamespace(first=lambda: ("legacy-course",))
-            if "teacher.mentra_courses" in sql:
-                return SimpleNamespace(first=lambda: (1,))
-            return SimpleNamespace(first=lambda: None)
-
-    session = LegacySession()
-    result = asyncio.run(teacher_bridge.open_teacher_workspace(
-        COURSE_ID, session, SimpleNamespace(id=OWNER_ID)
-    ))
-    assert "workspace=legacy-course" in result["url"]
-    assert any("teacher.mentra_courses" in sql for sql in session.statements)
 
 
 def test_teacher_provisioning_conflict_fails_closed(monkeypatch):
