@@ -610,30 +610,48 @@ def _teacher_course_owner(session, course_id: uuid.UUID) -> str | None:
 async def _push_student_state_to_teacher(session, course_id: uuid.UUID,
                                          state: dict) -> bool:
     """Best-effort: update 授课管理's 学生与学习状态 via the teacher service."""
+    from app.generated.platform_teacher_api import AuthenticatedClient
+    from app.generated.platform_teacher_api.api.default.update_teacher_student_state import (
+        asyncio_detailed,
+    )
+    from app.generated.platform_teacher_api.models import StudentLearningState
+
     owner = _teacher_course_owner(session, course_id)
-    headers = {
-        "x-platform-service-key": settings.TEACHER_SERVICE_KEY,
-        "x-platform-subject": owner or "",
-    }
     candidates = [str(course_id)]
     link = session.execute(
         text("SELECT external_course_id FROM teacher_course_link WHERE course_id=:id"),
         {"id": str(course_id)}).first()
     if link and str(link[0]) not in candidates:
         candidates.append(str(link[0]))
-    base = settings.TEACHER_URL.rstrip("/")
-    async with httpx.AsyncClient(timeout=5, trust_env=False) as client:
+    if not settings.TEACHER_SERVICE_KEY:
+        return False
+    try:
+        body = StudentLearningState.from_dict(state)
+    except (ValueError, KeyError, TypeError) as error:
+        print(f"[learning-progress] 无效的教师状态数据: {type(error).__name__}")
+        return False
+    async with AuthenticatedClient(
+        base_url=settings.TEACHER_URL.rstrip("/"),
+        token=settings.TEACHER_SERVICE_KEY,
+        prefix="",
+        auth_header_name="X-Platform-Service-Key",
+        headers={"X-Platform-Subject": owner or ""},
+        timeout=httpx.Timeout(5.0),
+        follow_redirects=False,
+        raise_on_unexpected_status=False,
+        httpx_args={"trust_env": False},
+    ) as client:
         for course_ref in candidates:
             try:
-                response = await client.put(
-                    f"{base}/api/classes/{course_ref}/students",
-                    json=state, headers=headers)
-                if response.status_code < 300:
+                response = await asyncio_detailed(
+                    course_ref, client=client, body=body,
+                )
+                if 200 <= response.status_code < 300:
                     return True
                 print(f"[learning-progress] 推送教师服务失败 "
                       f"course={course_ref} HTTP {response.status_code}: "
-                      f"{response.text[:120]}")
-            except httpx.HTTPError as error:
+                    f"{response.content[:120]!r}")
+            except (httpx.HTTPError, ValueError, KeyError, TypeError, AttributeError) as error:
                 print(f"[learning-progress] 推送教师服务异常 "
                       f"course={course_ref}: {type(error).__name__}: {error}")
     return False
