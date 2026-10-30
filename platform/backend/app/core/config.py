@@ -51,6 +51,10 @@ class Settings(BaseSettings):
     # api: assemble the learning context from one teacher content snapshot;
     # shadow: compare it against the legacy cross-schema reads; legacy: direct SQL.
     TEACHER_LEARNING_CONTENT_READ_MODE: Literal["legacy", "shadow", "api"] = "legacy"
+    # api: authorize reads teacher-owned visibility via the teacher service and
+    # course ownership from the platform's own tables; shadow compares; legacy
+    # keeps the direct teacher-schema queries. Fails closed in api mode.
+    TEACHER_AUTHZ_READ_MODE: Literal["legacy", "shadow", "api"] = "legacy"
     # Extra browser origins (teacher service dev ports, e.g. "http://localhost:3200")
     # accepted for non-GET teacher requests, in addition to FRONTEND_HOST.
     TEACHER_ALLOWED_ORIGINS: str = ""

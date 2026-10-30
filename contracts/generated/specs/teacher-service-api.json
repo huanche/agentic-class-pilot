@@ -543,6 +543,127 @@
         "security": []
       }
     },
+    "/api/internal/platform/classrooms/{classroomId}/visibility": {
+      "get": {
+        "description": "Teacher-owned half of the student player authorization. courseId is the teacher service's own course reference; the platform resolves it to the enrollment record. Classroom→course linkage requires the teacher course database, like the legacy authorize queries.",
+        "operationId": "getTeacherClassroomVisibility",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "classroomId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "courseId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "published": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "courseId",
+                    "published"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Visibility verdict"
+          },
+          "403": {
+            "description": "Invalid service delegation"
+          },
+          "503": {
+            "description": "Teacher storage unavailable"
+          }
+        },
+        "security": [
+          {
+            "platformServiceKey": [],
+            "platformSubject": []
+          }
+        ],
+        "summary": "Whether a classroom is the current published classroom of an active course"
+      }
+    },
+    "/api/internal/platform/course-space/jobs/{jobId}/course-ref": {
+      "get": {
+        "description": "Lets the platform scope job access without reading teacher job tables. kind selects the job family (artifact or graph).",
+        "operationId": "getTeacherJobCourseRef",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "jobId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "default": "artifact",
+              "enum": [
+                "artifact",
+                "graph"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "courseId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "courseId"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Owning course reference"
+          },
+          "403": {
+            "description": "Invalid service delegation"
+          },
+          "404": {
+            "description": "Task not found"
+          },
+          "503": {
+            "description": "Teacher storage unavailable"
+          }
+        },
+        "security": [
+          {
+            "platformServiceKey": [],
+            "platformSubject": []
+          }
+        ],
+        "summary": "Resolve a background job to its owning course"
+      }
+    },
     "/api/internal/platform/courses/{courseId}/latest-classroom": {
       "get": {
         "description": "Returns null for an inactive course or when no published visible artifact references an existing classroom. The platform remains responsible for enrollment.",
@@ -593,6 +714,63 @@
           }
         ],
         "summary": "Current visible published classroom for student launch"
+      }
+    },
+    "/api/internal/platform/courses/{courseId}/materials/{materialId}/visibility": {
+      "get": {
+        "description": "Teacher-owned half of the student material authorization. Missing course or material reports visible=false; the platform keeps the 403 its legacy query produced.",
+        "operationId": "getTeacherMaterialVisibility",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "courseId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "materialId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "visible": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "visible"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Visibility verdict"
+          },
+          "403": {
+            "description": "Invalid service delegation"
+          },
+          "503": {
+            "description": "Teacher storage unavailable"
+          }
+        },
+        "security": [
+          {
+            "platformServiceKey": [],
+            "platformSubject": []
+          }
+        ],
+        "summary": "Whether a course material is explicitly published and currently visible"
       }
     },
     "/api/internal/platform/courses/{courseId}/publication": {

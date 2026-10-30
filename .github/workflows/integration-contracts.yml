@@ -45,9 +45,11 @@ on:
       - 'platform/backend/tests/unit/test_student_token_purpose.py'
       - 'platform/backend/tests/unit/test_teacher_registration_boundary.py'
       - 'platform/backend/tests/unit/test_teacher_learning_content_client.py'
+      - 'platform/backend/tests/unit/test_teacher_authz_boundary.py'
       - 'teacher_agent/tests/course-space/platform-publication-counts.test.ts'
       - 'teacher_agent/tests/course-space/platform-latest-classroom.test.ts'
       - 'teacher_agent/tests/course-space/platform-published-content.test.ts'
+      - 'teacher_agent/tests/course-space/platform-authz-reads.test.ts'
       - 'student_agent/backend/internal_platform.py'
       - 'student_agent/backend/tests/test_internal_platform_knowledge.py'
       - 'student_agent/backend/tests/test_internal_platform_analytics_db.py'
@@ -107,9 +109,11 @@ on:
       - 'platform/backend/tests/unit/test_student_token_purpose.py'
       - 'platform/backend/tests/unit/test_teacher_registration_boundary.py'
       - 'platform/backend/tests/unit/test_teacher_learning_content_client.py'
+      - 'platform/backend/tests/unit/test_teacher_authz_boundary.py'
       - 'teacher_agent/tests/course-space/platform-publication-counts.test.ts'
       - 'teacher_agent/tests/course-space/platform-latest-classroom.test.ts'
       - 'teacher_agent/tests/course-space/platform-published-content.test.ts'
+      - 'teacher_agent/tests/course-space/platform-authz-reads.test.ts'
       - 'student_agent/backend/internal_platform.py'
       - 'student_agent/backend/tests/test_internal_platform_knowledge.py'
       - 'student_agent/backend/tests/test_internal_platform_analytics_db.py'
@@ -227,7 +231,7 @@ jobs:
           FIRST_SUPERUSER: test@example.com
           FIRST_SUPERUSER_PASSWORD: local-ci-only
           DATABASE_URL: postgresql://test:test@localhost:1/app_test
-        run: ../.venv/bin/python -m pytest -p no:cacheprovider --confcutdir=tests/unit tests/unit/test_teacher_publication_client.py tests/unit/test_teacher_classroom_client.py tests/unit/test_student_knowledge_client.py tests/unit/test_student_analytics_client.py tests/unit/test_published_knowledge_job.py tests/unit/test_student_token_purpose.py tests/unit/test_teacher_registration_boundary.py tests/unit/test_teacher_learning_content_client.py -q
+        run: ../.venv/bin/python -m pytest -p no:cacheprovider --confcutdir=tests/unit tests/unit/test_teacher_publication_client.py tests/unit/test_teacher_classroom_client.py tests/unit/test_student_knowledge_client.py tests/unit/test_student_analytics_client.py tests/unit/test_published_knowledge_job.py tests/unit/test_student_token_purpose.py tests/unit/test_teacher_registration_boundary.py tests/unit/test_teacher_learning_content_client.py tests/unit/test_teacher_authz_boundary.py -q
       - name: Check generated student platform adapter without a database
         working-directory: student_agent
         run: ../platform/.venv/bin/python -m pytest -p no:cacheprovider backend/tests/test_platform_generated_client.py backend/tests/test_internal_platform_knowledge.py -q
