@@ -248,6 +248,17 @@ def _platform_course_id(session: SessionDep, ref: str) -> str | None:
     return str(link[0]) if link else None
 
 
+def _platform_course_owner(session: SessionDep, ref: str) -> str | None:
+    """Resolve a teacher course reference to its owner in platform-owned data."""
+    row = session.execute(
+        text("SELECT c.owner_id::text FROM course c "
+             "LEFT JOIN teacher_course_link l ON l.course_id=c.id "
+             "WHERE c.id::text=:ref OR l.external_course_id=:ref LIMIT 1"),
+        {"ref": ref},
+    ).first()
+    return str(row[0]) if row else None
+
+
 def _job_course_id(session: SessionDep, job_id: str, kind: str, user, mode: str) -> str:
     """Resolve a background job to its owning course reference."""
     if mode == "legacy":
@@ -462,13 +473,13 @@ def _teacher_course_owner_allowed(session: SessionDep, course_ref: str, user,
         legacy_owner = row[0] if row else None
         if mode == "shadow":
             _shadow_verdict("course_owner", legacy_owner,
-                            lambda: _platform_course_id(session, course_ref))
+                            lambda: _platform_course_owner(session, course_ref))
         if legacy_owner is None:
             raise HTTPException(404, "课程不存在或尚未同步到统一数据库")
         if legacy_owner != str(user.id) and not user.is_superuser:
             raise HTTPException(403, "无权访问该课程（课程属于其他教师）")
         return
-    owner = _platform_course_id(session, course_ref)
+    owner = _platform_course_owner(session, course_ref)
     if owner is None:
         raise HTTPException(404, "课程不存在或尚未同步到统一数据库")
     if owner != str(user.id) and not user.is_superuser:

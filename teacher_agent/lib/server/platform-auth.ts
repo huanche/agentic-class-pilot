@@ -27,6 +27,16 @@ export async function platformMiddleware(request: NextRequest): Promise<NextResp
   const serviceKey = process.env.PLATFORM_SERVICE_KEY;
   const supplied = request.headers.get('x-platform-service-key');
   const isService = Boolean(serviceKey && supplied === serviceKey);
+  if (isService && request.nextUrl.pathname.startsWith('/api/internal/platform/')) {
+    // These endpoints are called by the platform while it is authorizing a
+    // browser request. Calling platform /authorize again here would recurse.
+    // The service key proves the platform caller; each route checks this
+    // middleware-injected marker before returning teacher-owned facts.
+    headers.set('x-platform-delegated', 'true');
+    headers.delete('x-platform-service-key');
+    headers.delete('x-platform-subject');
+    return NextResponse.next({ request: { headers } });
+  }
   try {
     const response = await fetch(`${process.env.PLATFORM_AUTH_URL}/api/v1/internal/teacher/authorize`, {
       method: 'POST',

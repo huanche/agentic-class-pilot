@@ -39,8 +39,10 @@ class FakeSession:
     def execute(self, statement, params):
         sql = str(statement)
         self.sql.append(sql)
-        if "FROM course WHERE id::text" in sql:
+        if "SELECT c.owner_id::text FROM course c" in sql:
             return Row((self.owner,) if self.course_exists else None)
+        if "FROM course WHERE id::text" in sql:
+            return Row((COURSE_ID,) if self.course_exists else None)
         if "FROM teacher_course_link" in sql:
             return Row((self.link,) if self.link else None)
         if "FROM enrollment" in sql:
@@ -125,6 +127,14 @@ def test_api_mode_owner_allowed_from_platform_tables(monkeypatch):
     monkeypatch.setattr(teacher_bridge.settings, "TEACHER_AUTHZ_READ_MODE", "api")
     session = FakeSession(owner=str(USER_ID))
     teacher_bridge._teacher_course_owner_allowed(session, COURSE_ID, user(USER_ID), "api")
+    assert any("owner_id" in sql for sql in session.sql)
+
+
+def test_api_mode_owner_uses_legacy_course_mapping(monkeypatch):
+    monkeypatch.setattr(teacher_bridge.settings, "TEACHER_AUTHZ_READ_MODE", "api")
+    session = FakeSession(owner=str(USER_ID))
+    teacher_bridge._teacher_course_owner_allowed(session, "legacy-course", user(USER_ID), "api")
+    assert any("external_course_id=:ref" in sql for sql in session.sql)
 
 
 def test_api_mode_owner_mismatch_rejected(monkeypatch):

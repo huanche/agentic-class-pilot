@@ -130,6 +130,38 @@ describe('platformMiddleware', () => {
     expect(overrideList).toContain('x-platform-delegated');
   });
 
+  it('lets the platform query internal teacher facts without an authorize callback', async () => {
+    const response = await platformMiddleware(makeRequest(
+      '/api/internal/platform/classrooms/room-1/visibility', {
+        headers: {
+          'x-platform-service-key': SERVICE_KEY,
+          'x-platform-subject': 'student-user',
+          'x-platform-delegated': 'attacker-value',
+        },
+      },
+    ));
+    expect(response.status).toBe(200);
+    expect(fetchMock).not.toHaveBeenCalled();
+    const overrideList = (response.headers.get('x-middleware-override-headers') || '').toLowerCase();
+    expect(overrideList).toContain('x-platform-delegated');
+    expect(overrideList).not.toContain('x-platform-service-key');
+    expect(overrideList).not.toContain('x-platform-subject');
+  });
+
+  it('never trusts a forged internal delegation header', async () => {
+    fetchMock.mockResolvedValueOnce(authorizeResponse({ detail: 'Teacher role required' }, 403));
+    const response = await platformMiddleware(makeRequest(
+      '/api/internal/platform/classrooms/room-1/visibility', {
+        headers: {
+          'x-platform-service-key': 'wrong',
+          'x-platform-delegated': 'true',
+        },
+      },
+    ));
+    expect(response.status).toBe(403);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it('fails closed with 503 when the platform identity service is unreachable', async () => {
     fetchMock.mockRejectedValueOnce(new TypeError('network down'));
     const response = await platformMiddleware(makeRequest('/api/course-space'));
