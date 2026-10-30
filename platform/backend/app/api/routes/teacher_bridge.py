@@ -210,17 +210,10 @@ def register_teacher_course(
     """
     check_service_key(x_teacher_service_key)
     from app.models import User
-    if settings.TEACHER_COURSE_REGISTRATION_MODE == "legacy":
-        source = session.execute(text("SELECT teacher_id,title,payload FROM teacher.mentra_courses WHERE id=:id"), {"id": str(body.course_id)}).first()
-        if not source or source[0] != str(body.teacher_id):
-            raise HTTPException(409, "Teacher course ownership mismatch")
-        title = source[1]
-        description = source[2].get("description")
-    else:
-        # The service key authenticates the teacher service. Its registration
-        # request is the course snapshot; platform owns only the enrollment copy.
-        title = body.title
-        description = body.description
+    # The service key authenticates the teacher service. Its registration
+    # request is the course snapshot; platform owns only the enrollment copy.
+    title = body.title
+    description = body.description
     teacher = session.get(User, body.teacher_id)
     if not teacher or not teacher.is_active or (teacher.role != "teacher" and not teacher.is_superuser):
         raise HTTPException(403, "Invalid teacher")

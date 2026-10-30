@@ -39,9 +39,6 @@ class Settings(BaseSettings):
     TEACHER_SERVICE_KEY: str = ""
     TEACHER_URL: str = "http://127.0.0.1:3200"
     TEACHER_PUBLIC_URL: str = "http://localhost:3200"
-    # api: trust the authenticated teacher service's registration payload;
-    # legacy: cross-check teacher.mentra_courses in the shared database.
-    TEACHER_COURSE_REGISTRATION_MODE: Literal["legacy", "api"] = "legacy"
     TEACHER_ANALYTICS_READ_MODE: Literal["legacy", "api"] = "legacy"
     TEACHER_CLASSROOM_READ_MODE: Literal["legacy", "shadow", "api"] = "legacy"
     # api: assemble the learning context from one teacher content snapshot;

@@ -48,30 +48,6 @@ class Session:
         pass
 
 
-class Row:
-    def __init__(self, values):
-        self.values = values
-
-    def first(self):
-        return self.values
-
-
-class LegacySession(Session):
-    """legacy 模式：允许教师表交叉检查查询，其余约束与 api 模式相同。"""
-
-    def __init__(self, source, **kwargs):
-        super().__init__(**kwargs)
-        self.source = source
-
-    def execute(self, statement, parameters):
-        sql = str(statement)
-        self.statements.append(sql)
-        if "teacher.mentra_courses" in sql:
-            return Row(self.source)
-        assert "teacher_course_link" in sql
-        return None
-
-
 def body(teacher_id=OWNER_ID):
     return teacher_bridge.TeacherCourseRegistration(
         course_id=COURSE_ID, teacher_id=teacher_id,
@@ -80,7 +56,6 @@ def body(teacher_id=OWNER_ID):
 
 
 def test_authenticated_registration_avoids_teacher_tables(monkeypatch):
-    monkeypatch.setattr(teacher_bridge.settings, "TEACHER_COURSE_REGISTRATION_MODE", "api")
     monkeypatch.setattr(teacher_bridge.settings, "TEACHER_SERVICE_KEY", "test-key")
     session = Session()
 
@@ -95,7 +70,6 @@ def test_authenticated_registration_avoids_teacher_tables(monkeypatch):
     ("test-key", uuid.UUID(int=4), 409),
 ])
 def test_registration_still_rejects_invalid_service_or_owner(monkeypatch, key, existing_owner, status):
-    monkeypatch.setattr(teacher_bridge.settings, "TEACHER_COURSE_REGISTRATION_MODE", "api")
     monkeypatch.setattr(teacher_bridge.settings, "TEACHER_SERVICE_KEY", "test-key")
     existing = SimpleNamespace(owner_id=existing_owner) if existing_owner else None
     session = Session(existing=existing)
@@ -106,31 +80,8 @@ def test_registration_still_rejects_invalid_service_or_owner(monkeypatch, key, e
     assert not session.statements
 
 
-def test_legacy_mode_still_crosschecks_teacher_tables(monkeypatch):
-    monkeypatch.setattr(teacher_bridge.settings, "TEACHER_COURSE_REGISTRATION_MODE", "legacy")
-    monkeypatch.setattr(teacher_bridge.settings, "TEACHER_SERVICE_KEY", "test-key")
-    session = LegacySession(source=(str(OWNER_ID), "库内标题", {"description": "库内描述"}))
-
-    assert teacher_bridge.register_teacher_course(body(), session, "test-key") == {"id": str(COURSE_ID)}
-    assert any("teacher.mentra_courses" in sql for sql in session.statements)
-    assert session.added[0].title == "库内标题"
-    assert session.added[0].description == "库内描述"
-    assert any("teacher_course_link" in sql for sql in session.statements)
-
-
-def test_legacy_mode_rejects_ownership_mismatch(monkeypatch):
-    monkeypatch.setattr(teacher_bridge.settings, "TEACHER_COURSE_REGISTRATION_MODE", "legacy")
-    monkeypatch.setattr(teacher_bridge.settings, "TEACHER_SERVICE_KEY", "test-key")
-    session = LegacySession(source=(str(uuid.UUID(int=9)), "库内标题", {}))
-
-    with pytest.raises(HTTPException) as error:
-        teacher_bridge.register_teacher_course(body(), session, "test-key")
-    assert error.value.status_code == 409
-
-
 def test_re_registration_without_description_keeps_existing_copy(monkeypatch):
     """api 模式重登记缺 description 时不得清空平台已有描述。"""
-    monkeypatch.setattr(teacher_bridge.settings, "TEACHER_COURSE_REGISTRATION_MODE", "api")
     monkeypatch.setattr(teacher_bridge.settings, "TEACHER_SERVICE_KEY", "test-key")
     existing = SimpleNamespace(id=COURSE_ID, owner_id=OWNER_ID, title="旧标题", description="已有描述")
     session = Session(existing=existing)
