@@ -87,6 +87,7 @@ describe('platformMiddleware', () => {
       service_user_id: undefined,
     });
     expect(response.headers.get('x-middleware-override-headers')).toContain('x-platform-user-id');
+    expect(response.headers.get('Server-Timing')).toMatch(/^platform-auth;dur=\d+\.\d$/);
   });
 
   it('strips spoofed identity and service headers, then injects the platform principal', async () => {

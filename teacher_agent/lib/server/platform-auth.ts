@@ -39,6 +39,7 @@ export async function platformMiddleware(request: NextRequest): Promise<NextResp
     return NextResponse.next({ request: { headers } });
   }
   try {
+    const authStartedAt = performance.now();
     const result = await authorizeTeacherRequest({
       baseUrl: `${(process.env.PLATFORM_AUTH_URL || '').replace(/\/$/, '')}/api/v1`,
       headers: { 'X-Teacher-Service-Key': serviceKey || '' },
@@ -54,6 +55,7 @@ export async function platformMiddleware(request: NextRequest): Promise<NextResp
       signal: AbortSignal.timeout(5000),
       cache: 'no-store',
     });
+    const authTiming = `platform-auth;dur=${(performance.now() - authStartedAt).toFixed(1)}`;
     if (!result.response) throw new Error('Platform authorization request failed');
     const status = result.response?.status ?? 503;
     if (!result.response?.ok) {
@@ -76,7 +78,9 @@ export async function platformMiddleware(request: NextRequest): Promise<NextResp
     if (isService) headers.set('x-platform-delegated', 'true');
     headers.delete('x-platform-service-key');
     headers.delete('x-platform-subject');
-    return NextResponse.next({ request: { headers } });
+    const response = NextResponse.next({ request: { headers } });
+    response.headers.set('Server-Timing', authTiming);
+    return response;
   } catch (error) {
     log.error('Platform authorize call failed; failing closed:', error instanceof Error ? error.message : error);
     return NextResponse.json({ success: false, error: '平台身份服务暂不可用' }, { status: 503 });
