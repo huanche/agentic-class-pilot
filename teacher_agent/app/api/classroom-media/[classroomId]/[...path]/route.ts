@@ -91,10 +91,9 @@ export async function GET(
         'Content-Length': String(range ? range.end - range.start + 1 : stat.size),
         ...(isVideo ? { 'Accept-Ranges': 'bytes' } : {}),
         ...(range ? { 'Content-Range': `bytes ${range.start}-${range.end}/${stat.size}` } : {}),
-        // Versioned narration URLs change when bytes change. Older URLs may
-        // cache privately; unversioned stable filenames must revalidate.
+        // Audio may be regenerated and access may be revoked; revalidate it.
         'Cache-Control': subDir === 'audio'
-          ? (req.nextUrl.searchParams.has('v') ? 'private, max-age=86400, immutable' : 'private, no-cache')
+          ? 'private, no-cache'
           : 'public, max-age=86400, immutable',
       },
     });

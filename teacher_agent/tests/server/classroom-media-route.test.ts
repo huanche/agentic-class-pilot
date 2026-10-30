@@ -47,10 +47,10 @@ describe('classroom media delivery', () => {
     expect(response.headers.get('Content-Range')).toBe('bytes */10');
   });
 
-  it('caches only versioned audio privately', async () => {
+  it('revalidates audio even when its URL carries a version', async () => {
     const { GET, context, url } = await routeFor('.wav');
     const versioned = await GET(new NextRequest(`${url}?v=hash-1`), context);
-    expect(versioned.headers.get('Cache-Control')).toBe('private, max-age=86400, immutable');
+    expect(versioned.headers.get('Cache-Control')).toBe('private, no-cache');
     const unversioned = await GET(new NextRequest(url), context);
     expect(unversioned.headers.get('Cache-Control')).toBe('private, no-cache');
   });
