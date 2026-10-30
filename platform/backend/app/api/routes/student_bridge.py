@@ -88,8 +88,8 @@ def verify_launch_token(token: str, *, refresh_session: bool = False) -> dict:
         raise HTTPException(401, "Invalid launch token") from error
     if not hmac.compare_digest(signature, _launch_signature(payload_json)):
         raise HTTPException(401, "Invalid launch token")
-    # Previously issued launch tokens have no kind. A signed playback grant
-    # must not be accepted as a student-workspace launch credential.
+    # Previously issued launch tokens have no kind. A token signed for any
+    # other purpose must never become a student-workspace credential.
     if payload.get("kind") not in (None, "launch"):
         raise HTTPException(401, "Invalid launch token purpose")
     if not refresh_session and int(payload.get("exp", 0)) < time.time():
@@ -302,7 +302,7 @@ def _content_from_teacher_snapshot(snapshot, user_id: uuid.UUID,
     """Project the teacher content snapshot into the legacy in-memory shapes.
 
     Returns (package_payload, published_lessons). The platform keeps the parts
-    it owns: playback grants, player URLs and every enrollment decision.
+    it owns: player URLs and every enrollment decision.
     """
     from app.generated.platform_teacher_api.types import UNSET
 
@@ -363,8 +363,6 @@ def _content_from_teacher_snapshot(snapshot, user_id: uuid.UUID,
             ],
             "playerUrl": f"{teacher_base}/classroom-player/{classroom.id}",
         }
-        classroom_view["playbackToken"] = _issue_playback_grant(
-            user_id, course_id, classroom.id)
         lessons.append({
             "id": item.id,
             "title": item.title,
@@ -474,9 +472,6 @@ def student_learning_context(body: LearningContextRequest, session: SessionDep,
             # 课程级grounding尚未接入学生端，也不能夹带其他课时正文。
             "grounding": {},
         }
-        grant = _issue_playback_grant(user_id, course_id, classroom_id) if classroom_id else None
-        if grant:
-            context["classroom"]["playbackToken"] = grant
         return context
     except HTTPException:
         raise
@@ -505,23 +500,6 @@ def student_classroom_view(body: ClassroomViewRequest, session: SessionDep,
         raise
     except TeacherLearningContentUnavailable as error:
         raise HTTPException(503, "教师学习内容服务暂不可用，请稍后重试") from error
-
-
-def _issue_playback_grant(user_id: uuid.UUID, course_id: uuid.UUID, classroom_id: str) -> str:
-    """Short-lived playback authorization bound to user+course+classroom.
-
-    The current player does not consume this grant. Its requests are authorized
-    through the platform's teacher authorize endpoint instead.
-    """
-    import time as _time
-    payload = {
-        "kind": "playback", "uid": str(user_id), "cid": str(course_id), "rid": classroom_id,
-        "exp": int(_time.time()) + 1800, "nonce": secrets.token_urlsafe(9),
-    }
-    payload_json = json.dumps(payload, separators=(",", ":"), sort_keys=True)
-    encoded = base64.urlsafe_b64encode(payload_json.encode()).decode().rstrip("=")
-    return f"{encoded}.{_launch_signature(payload_json)}"
-
 
 
 @router.get("/courses/{course_id}/learning-data")

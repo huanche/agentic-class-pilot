@@ -204,7 +204,7 @@ class ProviderPayloadTests(unittest.TestCase):
                         "_load_published_content": lambda *_: (
                             {"id": "fixture-publication", "version": 1, "entries": entries}, lessons),
                         "ensure_published_knowledge_job": lambda *_: None,
-                        "_grounding_context": lambda *_: {}, "_issue_playback_grant": lambda *_: "fixture-grant",
+                        "_grounding_context": lambda *_: {},
                     })
                 session = SimpleNamespace(execute=lambda *_: SimpleNamespace(first=lambda: ("Fixture course",)))
                 result = namespace["student_learning_context"](

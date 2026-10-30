@@ -32,7 +32,6 @@ def context_setup(monkeypatch):
         {"id": "pub", "version": 1, "entries": copy.deepcopy(entries)},
         copy.deepcopy(lessons),
     ))
-    monkeypatch.setattr(bridge, "_issue_playback_grant", lambda *args: "selected-grant")
     monkeypatch.setattr(bridge, "ensure_published_knowledge_job", lambda *args: "rev-test")
     session = Mock()
     session.execute.return_value = SimpleNamespace(first=lambda: ("Course",))

@@ -91,7 +91,7 @@ def test_api_mode_builds_context_from_one_snapshot(monkeypatch):
     lesson = lessons[0]
     assert lesson["id"] == "L1" and lesson["week"] == 1
     assert lesson["classroom"]["playerUrl"] == "http://t:3200/classroom-player/room-1"
-    assert lesson["classroom"]["playbackToken"]
+    assert "playbackToken" not in lesson["classroom"]
     scene = lesson["classroom"]["scenes"][0]
     assert scene["visibleText"] == ["要点"]
     assert scene["actions"] == [{"id": "a", "type": "speech", "text": "旁白"}]
