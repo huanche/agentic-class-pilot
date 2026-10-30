@@ -17,8 +17,10 @@ USER_ID = uuid.UUID(int=2)
 
 
 def test_api_learning_data_uses_only_platform_owned_queries(monkeypatch):
-    monkeypatch.setattr(student_bridge.settings, "STUDENT_ANALYTICS_READ_MODE", "api")
-    monkeypatch.setattr(student_bridge, "get_accessible_course", lambda *_args: None)
+    monkeypatch.setattr(student_bridge, "get_accessible_course",
+                        lambda *_args: SimpleNamespace(owner_id=USER_ID))
+    monkeypatch.setattr(teacher_analytics_client, "get_teacher_publication_counts",
+                        lambda *_args: {"distinctClassrooms": 2})
     captured = []
     monkeypatch.setattr(
         student_analytics_client, "get_course_learning_data",
@@ -30,11 +32,9 @@ def test_api_learning_data_uses_only_platform_owned_queries(monkeypatch):
     class Session:
         def execute(self, statement, _params):
             sql = str(statement)
-            assert "student." not in sql
-            if "enrollment" in sql:
-                return SimpleNamespace(fetchall=lambda: [(USER_ID,)])
-            assert "teacher.mentra_course_artifacts" in sql
-            return SimpleNamespace(first=lambda: (2,))
+            assert "teacher." not in sql and "student." not in sql
+            assert "enrollment" in sql
+            return SimpleNamespace(fetchall=lambda: [(USER_ID,)])
 
     result = student_bridge.course_learning_data(
         COURSE_ID, Session(), SimpleNamespace(role="teacher", is_superuser=False),
@@ -45,7 +45,8 @@ def test_api_learning_data_uses_only_platform_owned_queries(monkeypatch):
 
 
 def test_api_progress_uses_student_metrics_and_teacher_total(monkeypatch):
-    monkeypatch.setattr(student_bridge.settings, "STUDENT_ANALYTICS_READ_MODE", "api")
+    monkeypatch.setattr(teacher_analytics_client, "get_teacher_publication_counts",
+                        lambda *_args: {"publishedArtifactsWithClassroom": 2})
     monkeypatch.setattr(
         student_analytics_client, "get_user_course_progress",
         lambda *_args: {"learnedLessons": 1, "sessionCount": 2,
@@ -53,9 +54,11 @@ def test_api_progress_uses_student_metrics_and_teacher_total(monkeypatch):
     )
 
     class Session:
-        def execute(self, statement, _params):
-            assert "student." not in str(statement)
-            return SimpleNamespace(first=lambda: (2,))
+        def get(self, _model, _id):
+            return SimpleNamespace(owner_id=USER_ID)
+
+        def execute(self, *_args):
+            raise AssertionError("cross-service SQL")
 
     result = student_bridge._course_learning_progress(Session(), USER_ID, COURSE_ID)
     assert result == {"totalLessons": 2, "learnedLessons": 1, "sessionCount": 2,
@@ -64,7 +67,8 @@ def test_api_progress_uses_student_metrics_and_teacher_total(monkeypatch):
 
 
 def test_api_progress_fails_closed_on_student_outage(monkeypatch):
-    monkeypatch.setattr(student_bridge.settings, "STUDENT_ANALYTICS_READ_MODE", "api")
+    monkeypatch.setattr(teacher_analytics_client, "get_teacher_publication_counts",
+                        lambda *_args: {"publishedArtifactsWithClassroom": 2})
 
     def unavailable(*_args):
         raise student_analytics_client.StudentAnalyticsUnavailable()
@@ -72,8 +76,11 @@ def test_api_progress_fails_closed_on_student_outage(monkeypatch):
     monkeypatch.setattr(student_analytics_client, "get_user_course_progress", unavailable)
 
     class Session:
+        def get(self, _model, _id):
+            return SimpleNamespace(owner_id=USER_ID)
+
         def execute(self, *_args):
-            return SimpleNamespace(first=lambda: (2,))
+            raise AssertionError("cross-service SQL")
 
     with pytest.raises(HTTPException) as error:
         student_bridge._course_learning_progress(Session(), USER_ID, COURSE_ID)
@@ -91,8 +98,6 @@ def test_teacher_course_owner_comes_from_platform_course():
 
 
 def test_both_api_modes_avoid_teacher_and_student_tables(monkeypatch):
-    monkeypatch.setattr(student_bridge.settings, "STUDENT_ANALYTICS_READ_MODE", "api")
-    monkeypatch.setattr(student_bridge.settings, "TEACHER_ANALYTICS_READ_MODE", "api")
     monkeypatch.setattr(
         student_bridge, "get_accessible_course",
         lambda *_args: SimpleNamespace(owner_id=USER_ID),

@@ -794,7 +794,7 @@ def _issue_playback_grant(user_id: uuid.UUID, course_id: uuid.UUID, classroom_id
 
 @router.get("/courses/{course_id}/learning-data")
 def course_learning_data(course_id: uuid.UUID, session: SessionDep, user: CurrentUser):
-    """Teacher-facing per-course learning data from the student schema.
+    """Teacher-facing per-course learning data from the student service.
 
     Real persisted rows only — no fabricated aggregates. Students see their
     own rows; teachers see rows for their enrolled students."""
@@ -813,64 +813,23 @@ def course_learning_data(course_id: uuid.UUID, session: SessionDep, user: Curren
     if not enrolled_ids:
         return {"sessions": [], "mastery": [], "events": []}
 
-    if settings.TEACHER_ANALYTICS_READ_MODE == "api":
-        from app.services.teacher_analytics_client import (
-            TeacherAnalyticsUnavailable, get_teacher_publication_counts,
-        )
-        try:
-            published_lessons = get_teacher_publication_counts(
-                course_id, course.owner_id,
-            )["distinctClassrooms"]
-        except TeacherAnalyticsUnavailable as error:
-            raise HTTPException(503, "教师发布统计暂不可用，请稍后重试") from error
-    else:
-        published_row = session.execute(
-            text("SELECT count(DISTINCT a.payload->>'classroomId') FROM teacher.mentra_course_artifacts a "
-                 "JOIN teacher_course_link l ON l.external_course_id = a.course_id "
-                 "WHERE l.course_id=:course AND a.status='published' "
-                 "AND a.payload->>'classroomId' IS NOT NULL"),
-            {"course": course_id}).first()
-        published_lessons = int(published_row[0]) if published_row else 0
-
-    if settings.STUDENT_ANALYTICS_READ_MODE == "api":
-        from app.services.student_analytics_client import (
-            StudentAnalyticsUnavailable, get_course_learning_data,
-        )
-        try:
-            data = get_course_learning_data(course_id, enrolled_ids)
-        except StudentAnalyticsUnavailable as error:
-            raise HTTPException(503, "学生学情服务暂不可用，请稍后重试") from error
-        return {"publishedLessons": published_lessons, **data}
-
-    id_list = tuple(enrolled_ids)
-    placeholders = ", ".join(f":u{i}" for i in range(len(id_list)))
-    params = {"course": course_id}
-    for i, value in enumerate(id_list):
-        params[f"u{i}"] = value
-
-    sessions = session.execute(
-        text(f"SELECT session_key, user_id, publication_version, classroom_id, "
-             f"started_at, last_active_at, ended_at IS NOT NULL AS ended "
-             f"FROM student.student_sessions WHERE user_id IN ({placeholders}) "
-             f"AND course_id = CAST(:course AS text) ORDER BY started_at DESC LIMIT 50"), params).fetchall()
-    mastery = session.execute(
-        text(f"SELECT user_id, knowledge_point_id, stars, status, evidence, updated_at "
-             f"FROM student.knowledge_mastery WHERE user_id IN ({placeholders}) "
-             f"AND course_id = CAST(:course AS text) ORDER BY updated_at DESC LIMIT 100"), params).fetchall()
-    events = session.execute(
-        text(f"SELECT event_type, count(*) FROM student.learning_events "
-             f"WHERE user_id IN ({placeholders}) AND course_id = CAST(:course AS text) "
-             f"GROUP BY event_type"), params).fetchall()
-
-    return {
-        "publishedLessons": published_lessons,
-        "sessions": [{"sessionKey": r[0], "userId": r[1], "publicationVersion": r[2],
-                      "classroomId": r[3], "startedAt": str(r[4]), "lastActiveAt": str(r[5]),
-                      "ended": bool(r[6])} for r in sessions],
-        "mastery": [{"userId": r[0], "knowledgePointId": r[1], "stars": r[2],
-                     "status": r[3], "evidence": r[4], "updatedAt": str(r[5])} for r in mastery],
-        "eventSummary": {r[0]: r[1] for r in events},
-    }
+    from app.services.teacher_analytics_client import (
+        TeacherAnalyticsUnavailable, get_teacher_publication_counts,
+    )
+    try:
+        published_lessons = get_teacher_publication_counts(
+            course_id, course.owner_id,
+        )["distinctClassrooms"]
+    except TeacherAnalyticsUnavailable as error:
+        raise HTTPException(503, "教师发布统计暂不可用，请稍后重试") from error
+    from app.services.student_analytics_client import (
+        StudentAnalyticsUnavailable, get_course_learning_data,
+    )
+    try:
+        data = get_course_learning_data(course_id, enrolled_ids)
+    except StudentAnalyticsUnavailable as error:
+        raise HTTPException(503, "学生学情服务暂不可用，请稍后重试") from error
+    return {"publishedLessons": published_lessons, **data}
 
 
 @router.get("/student/status")
@@ -903,69 +862,31 @@ class LearningProgressReport(BaseModel):
 
 
 def _course_learning_progress(session, user_id: uuid.UUID, course_id: uuid.UUID) -> dict:
-    """Real per-course classroom progress from the student schema only."""
-    if settings.TEACHER_ANALYTICS_READ_MODE == "api":
-        from app.services.teacher_analytics_client import (
-            TeacherAnalyticsUnavailable, get_teacher_publication_counts,
-        )
-        course = session.get(Course, course_id)
-        if course is None:
-            raise HTTPException(404, "课程不存在")
-        try:
-            total = get_teacher_publication_counts(
-                course_id, course.owner_id,
-            )["publishedArtifactsWithClassroom"]
-        except TeacherAnalyticsUnavailable as error:
-            raise HTTPException(503, "教师发布统计暂不可用，请稍后重试") from error
-    else:
-        total_row = session.execute(
-            text("SELECT count(*) FROM teacher.mentra_course_artifacts a "
-                 "JOIN teacher_course_link l ON l.external_course_id = a.course_id "
-                 "WHERE l.course_id=:id AND a.status='published' "
-                 "AND a.payload->>'classroomId' IS NOT NULL"),
-            {"id": str(course_id)}).first()
-        total = int(total_row[0]) if total_row else 0
-    if settings.STUDENT_ANALYTICS_READ_MODE == "api":
-        from app.services.student_analytics_client import (
-            StudentAnalyticsUnavailable, get_user_course_progress,
-        )
-        try:
-            student_metrics = get_user_course_progress(course_id, user_id)
-        except StudentAnalyticsUnavailable as error:
-            raise HTTPException(503, "学生学情服务暂不可用，请稍后重试") from error
-        learned = student_metrics["learnedLessons"]
-        return {
-            "totalLessons": total,
-            **student_metrics,
-            "percent": min(100, round(learned / total * 100)) if total else 0,
-        }
-    learned_row = session.execute(
-        text("SELECT count(DISTINCT classroom_id), max(last_active_at), count(*) "
-             "FROM student.student_sessions "
-             "WHERE user_id=:u AND course_id=:c"),
-        {"u": str(user_id), "c": str(course_id)}).first()
-    learned = int(learned_row[0]) if learned_row and learned_row[0] else 0
-    last_active = learned_row[1] if learned_row else None
-    session_count = int(learned_row[2]) if learned_row else 0
-    ended_row = session.execute(
-        text("SELECT count(*) FROM student.student_sessions "
-             "WHERE user_id=:u AND course_id=:c AND ended_at IS NOT NULL"),
-        {"u": str(user_id), "c": str(course_id)}).first()
-    ended = int(ended_row[0]) if ended_row else 0
-    stars_row = session.execute(
-        text("SELECT coalesce(sum(stars),0) FROM student.knowledge_mastery "
-             "WHERE user_id=:u AND course_id=:c"),
-        {"u": str(user_id), "c": str(course_id)}).first()
-    stars = int(stars_row[0]) if stars_row else 0
-    percent = min(100, round(learned / total * 100)) if total else 0
+    """Real per-course classroom progress from the student service."""
+    from app.services.teacher_analytics_client import (
+        TeacherAnalyticsUnavailable, get_teacher_publication_counts,
+    )
+    course = session.get(Course, course_id)
+    if course is None:
+        raise HTTPException(404, "课程不存在")
+    try:
+        total = get_teacher_publication_counts(
+            course_id, course.owner_id,
+        )["publishedArtifactsWithClassroom"]
+    except TeacherAnalyticsUnavailable as error:
+        raise HTTPException(503, "教师发布统计暂不可用，请稍后重试") from error
+    from app.services.student_analytics_client import (
+        StudentAnalyticsUnavailable, get_user_course_progress,
+    )
+    try:
+        student_metrics = get_user_course_progress(course_id, user_id)
+    except StudentAnalyticsUnavailable as error:
+        raise HTTPException(503, "学生学情服务暂不可用，请稍后重试") from error
+    learned = student_metrics["learnedLessons"]
     return {
         "totalLessons": total,
-        "learnedLessons": learned,
-        "sessionCount": session_count,
-        "endedSessions": ended,
-        "lastActiveAt": str(last_active) if last_active else None,
-        "stars": stars,
-        "percent": percent,
+        **student_metrics,
+        "percent": min(100, round(learned / total * 100)) if total else 0,
     }
 
 

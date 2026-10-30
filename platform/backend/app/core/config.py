@@ -39,7 +39,6 @@ class Settings(BaseSettings):
     TEACHER_SERVICE_KEY: str = ""
     TEACHER_URL: str = "http://127.0.0.1:3200"
     TEACHER_PUBLIC_URL: str = "http://localhost:3200"
-    TEACHER_ANALYTICS_READ_MODE: Literal["legacy", "api"] = "legacy"
     # api: assemble the learning context from one teacher content snapshot;
     # shadow: compare it against the legacy cross-schema reads; legacy: direct SQL.
     TEACHER_LEARNING_CONTENT_READ_MODE: Literal["legacy", "shadow", "api"] = "legacy"
@@ -51,7 +50,6 @@ class Settings(BaseSettings):
     # accepted for non-GET teacher requests, in addition to FRONTEND_HOST.
     TEACHER_ALLOWED_ORIGINS: str = ""
     STUDENT_SERVICE_KEY: str = ""
-    STUDENT_ANALYTICS_READ_MODE: Literal["legacy", "api"] = "legacy"
     # 凭证签名专用密钥：与通道认证密钥分离（问题6.3）。留空时回落到
     # STUDENT_SERVICE_KEY（过渡兼容），并记录告警——生产环境应显式配置。
     STUDENT_TOKEN_SIGNING_KEY: str = ""
