@@ -25,7 +25,20 @@ SERVICE=agentic-platform
 PLATFORM="$REPO/platform"
 FRONTEND_DIR="$PLATFORM/backend/app/frontend"
 HEALTH_URL=http://127.0.0.1:8080/health
+MIGRATION_URL_FILE=${PLATFORM_MIGRATION_URL_FILE:-/etc/agentic-class-pilot/platform-migration-url}
 export PATH="$HOME/.local/bin:$PATH"
+
+run_alembic() {
+  if [ -e "$MIGRATION_URL_FILE" ]; then
+    [ -r "$MIGRATION_URL_FILE" ] || { echo "FATAL: migration URL file is not readable"; return 1; }
+    local migration_url=''
+    IFS= read -r migration_url < "$MIGRATION_URL_FILE" || [ -n "$migration_url" ]
+    [ -n "$migration_url" ] || { echo "FATAL: migration URL file is empty"; return 1; }
+    ( cd "$PLATFORM/backend" && MIGRATION_DATABASE_URL="$migration_url" ../.venv/bin/python -m alembic "$@" )
+  else
+    ( cd "$PLATFORM/backend" && ../.venv/bin/python -m alembic "$@" )
+  fi
+}
 
 # Installed independently so CI uploads cannot bypass the retention policy.
 BACKUP_POLICY=/usr/local/lib/agentic-class-pilot/server-backup-policy.py
@@ -71,8 +84,8 @@ echo "[2/5] Syncing backend deps (uv) ..."
 echo "[3/5] Running alembic migrations ..."
 # Ordinary code releases do not copy the whole data directory. Back up only
 # when the database revision differs from the migration heads being deployed.
-CURRENT_REVISIONS=$(cd "$PLATFORM/backend" && ../.venv/bin/python -m alembic current | awk '{print $1}' | sort)
-TARGET_REVISIONS=$(cd "$PLATFORM/backend" && ../.venv/bin/python -m alembic heads | awk '{print $1}' | sort)
+CURRENT_REVISIONS=$(run_alembic current | awk '{print $1}' | sort)
+TARGET_REVISIONS=$(run_alembic heads | awk '{print $1}' | sort)
 if [ "$CURRENT_REVISIONS" != "$TARGET_REVISIONS" ]; then
   if ! sudo -n python3 "$BACKUP_POLICY" backup; then
     echo "FATAL: migration backup failed — code rolled back, database untouched"
@@ -80,7 +93,7 @@ if [ "$CURRENT_REVISIONS" != "$TARGET_REVISIONS" ]; then
     exit 1
   fi
 fi
-( cd "$PLATFORM/backend" && ../.venv/bin/python -m alembic upgrade head ) || {
+run_alembic upgrade head || {
   echo "FATAL: migration failed — code rolled back, service untouched"
   git reset --hard "$OLD_SHA"
   exit 1
