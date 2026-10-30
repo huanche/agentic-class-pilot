@@ -190,26 +190,14 @@ def latest_session_key(user_id: str, course_id: str, publication_id: str,
 
 
 def classroom_scenes(classroom_id: str) -> list[dict]:
-    """Reload the published player's source for sessions saved before scene grounding.
-
-    api 模式经平台契约读取，不再直查教师课堂表；平台不可用时回退为
-    空场景（与旧行为一致，回放退化为无知识点，不阻断课堂）。
-    """
-    if os.environ.get("STUDENT_REPLAY_SCENE_READ_MODE", "legacy").strip().lower() == "api":
-        from . import platform_client
-        try:
-            return platform_client.fetch_classroom_scenes(classroom_id)
-        except HTTPException as error:
-            if error.status_code in (401, 403):
-                raise
-            logging.getLogger(__name__).warning(
-                "replay_scene_api_unavailable classroom_id=%s detail=%s",
-                classroom_id, getattr(error, "detail", ""))
-            return []
-    _bind_database()
-    with database._db() as connection:
-        row = connection.execute(
-            "SELECT scenes FROM teacher.mentra_classrooms WHERE id = %s",
-            (classroom_id,),
-        ).fetchone()
-    return list(row[0] or []) if row else []
+    """Reload old-session scenes through the platform contract."""
+    from . import platform_client
+    try:
+        return platform_client.fetch_classroom_scenes(classroom_id)
+    except HTTPException as error:
+        if error.status_code in (401, 403):
+            raise
+        logging.getLogger(__name__).warning(
+            "replay_scene_api_unavailable classroom_id=%s detail=%s",
+            classroom_id, getattr(error, "detail", ""))
+        return []

@@ -70,8 +70,7 @@ def test_generated_learning_context_rejects_invalid_success(monkeypatch):
     assert error.value.status_code == 503
 
 
-def test_runtime_switch_only_routes_opted_in_calls(monkeypatch):
-    monkeypatch.setenv("STUDENT_PLATFORM_CLIENT_MODE", "generated")
+def test_runtime_uses_generated_learning_context(monkeypatch):
     monkeypatch.setattr(
         platform_client,
         "learning_context",
@@ -133,15 +132,12 @@ def test_generated_progress_rejects_platform_error(monkeypatch):
     assert error.value.status_code == 403
 
 
-def test_generated_progress_switch_sends_once_without_blocking_class(monkeypatch, caplog):
-    monkeypatch.setenv("STUDENT_PLATFORM_CLIENT_MODE", "generated")
+def test_generated_progress_sends_once_without_blocking_class(monkeypatch, caplog):
     monkeypatch.setenv("PLATFORM_AUTH_URL", "http://platform:8080")
     monkeypatch.setenv("STUDENT_SERVICE_KEY", "test-key")
     sent = []
     monkeypatch.setattr(platform_client, "report_learning_progress", lambda *args:
                         sent.append(args) or False)
-    monkeypatch.setattr(main.urllib.request, "build_opener", lambda *args:
-                        pytest.fail("legacy progress request must not be sent"))
     session = {"id": "session-1", "classroomId": "room-1",
                "context": {"userId": USER_ID, "courseId": COURSE_ID}}
     main.report_learning_progress(session, "started")

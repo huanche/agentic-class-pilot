@@ -12,7 +12,6 @@ beforeEach(() => {
   vi.stubEnv('PLATFORM_AUTH_ENABLED', 'true');
   vi.stubEnv('PLATFORM_AUTH_URL', 'http://platform.test:8080');
   vi.stubEnv('PLATFORM_SERVICE_KEY', 'test-service-key');
-  vi.stubEnv('TEACHER_PLATFORM_CLIENT_MODE', 'generated');
   vi.stubGlobal('fetch', fetchMock);
   fetchMock.mockReset();
 });
@@ -44,16 +43,4 @@ it('does not treat a platform rejection as an empty roster', async () => {
     status: 403, headers: { 'content-type': 'application/json' },
   }));
   await expect(platformCourseMembers(request(), 'course-1')).rejects.toThrow('forbidden');
-});
-
-it('keeps the existing fetch path when generated mode is off', async () => {
-  vi.stubEnv('TEACHER_PLATFORM_CLIENT_MODE', 'legacy');
-  fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ members: [] }), {
-    status: 200, headers: { 'content-type': 'application/json' },
-  }));
-  expect(await platformCourseMembers(request(), 'course-1')).toEqual([]);
-  expect(fetchMock).toHaveBeenCalledTimes(1);
-  expect(fetchMock.mock.calls[0][0]).toBe(
-    'http://platform.test:8080/api/v1/internal/teacher/courses/course-1/members',
-  );
 });
