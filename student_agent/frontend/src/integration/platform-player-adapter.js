@@ -38,8 +38,26 @@ export const platformPlayerAdapter = {
     iframe.style.background = "#fff";
 
     let ended = false;
+    // 握手超时：教师端播放器挂载后会立即发 PLAYER_READY。开发服务器冷编译
+    // 或大课堂时首帧可能超过 20 秒——超时只给提示，播放器随后就绪会自动清除；
+    // 若 iframe 根本没加载（授权失败、跳登录页），提示会一直保留。
+    let ready = false;
+    const HANDSHAKE_TIMEOUT_MS = 20000;
+    const handshakeTimer = setTimeout(() => {
+      if (!ready && context.onError) {
+        const slow = new Error("播放器仍在加载（教师端响应较慢）。如长时间未出画面请刷新重试。");
+        slow.slowLoad = true;
+        context.onError(slow);
+      }
+    }, HANDSHAKE_TIMEOUT_MS);
+
     function receive(event) {
       if (event.origin !== playerOrigin || event.source !== iframe.contentWindow) return;
+      if (!ready) {
+        ready = true;
+        clearTimeout(handshakeTimer);
+        if (context.onReady) context.onReady();
+      }
       const message = playerMessage(event.data);
       if (!message) return;
       if (message.type === "SCENE_COMPLETED" && context.onSceneCompleted) {
@@ -56,6 +74,7 @@ export const platformPlayerAdapter = {
     window.addEventListener("message", receive);
     container.replaceChildren(iframe);
     return function destroy() {
+      clearTimeout(handshakeTimer);
       window.removeEventListener("message", receive);
       iframe.remove();
     };

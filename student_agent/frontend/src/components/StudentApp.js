@@ -230,6 +230,8 @@ export default function StudentApp() {
         replay: phase === "replay",
         onEnded: () => { setVideoEnded(true); setShowVideoAdvanceConfirm(false); },
         onError: playerError,
+        // 慢加载提示在播放器真正就绪后自动消失；真实错误不受影响。
+        onReady: () => setError((prev) => (prev.includes("仍在加载") ? "" : prev)),
       });
     } catch (err) { playerError(err); }
     return () => { if (typeof handle === "function") handle(); };
