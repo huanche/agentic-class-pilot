@@ -97,20 +97,7 @@ class FakeSession:
         )
 
 
-def test_shadow_keeps_legacy_verdict_on_teacher_outage(monkeypatch):
-    monkeypatch.setattr(course_publication.settings, "TEACHER_PUBLICATION_READ_MODE", "shadow")
-
-    def unavailable(*_args):
-        raise teacher_publication_client.TeacherPublicationUnavailable()
-
-    monkeypatch.setattr(course_publication, "get_teacher_publication", unavailable)
-    session = FakeSession(legacy_published=True)
-    course_publication.require_published_course(session, COURSE_ID)
-    assert session.queries == 1
-
-
-def test_api_mode_uses_teacher_verdict_and_fails_closed(monkeypatch):
-    monkeypatch.setattr(course_publication.settings, "TEACHER_PUBLICATION_READ_MODE", "api")
+def test_publication_gate_uses_teacher_verdict_and_fails_closed(monkeypatch):
     session = FakeSession(legacy_published=True)
     monkeypatch.setattr(course_publication, "get_teacher_publication", lambda *args: None)
     with pytest.raises(HTTPException) as unpublished:
@@ -148,24 +135,17 @@ def test_course_alias_only_reads_platform_mapping(monkeypatch):
     assert "teacher." not in session.statements[0]
 
 
-def test_student_launch_identity_switches_to_teacher_api(monkeypatch):
+def test_student_launch_identity_comes_from_teacher_api(monkeypatch):
     session = FakeSession(True, ("2", "old-package"))
-    monkeypatch.setattr(course_publication.settings, "TEACHER_PUBLICATION_READ_MODE", "shadow")
     monkeypatch.setattr(
         course_publication,
         "get_teacher_publication",
         lambda *args: {"publicationId": "new-package", "version": 3},
     )
     assert course_publication.latest_publication(session, COURSE_ID) == {
-        "publicationId": "old-package", "version": 2
-    }
-    assert session.queries == 1
-
-    monkeypatch.setattr(course_publication.settings, "TEACHER_PUBLICATION_READ_MODE", "api")
-    assert course_publication.latest_publication(session, COURSE_ID) == {
         "publicationId": "new-package", "version": 3
     }
-    assert session.queries == 1
+    assert session.queries == 0
 
 
 def test_generated_teacher_provisioning_keeps_owner_and_course_id(monkeypatch):
