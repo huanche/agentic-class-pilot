@@ -36,11 +36,11 @@ beforeEach(() => {
 
 describe('classroom visibility', () => {
   const context = { params: Promise.resolve({ classroomId: 'room-1' }) };
-  const request = () => new NextRequest('http://localhost/api/internal/platform/classrooms/room-1/visibility', delegated as RequestInit);
+  const request = () => new NextRequest('http://localhost/api/internal/platform/classrooms/room-1/visibility', delegated);
 
   it('requires authenticated service delegation', async () => {
     const response = await classroomVisibility(
-      new NextRequest('http://localhost/x', {} as RequestInit), context);
+      new NextRequest('http://localhost/x', {}), context);
     expect(response.status).toBe(403);
     expect(mocks.readClassroomBindingFromDatabase).not.toHaveBeenCalled();
   });
@@ -73,7 +73,7 @@ describe('classroom visibility', () => {
 
 describe('material visibility', () => {
   const context = { params: Promise.resolve({ courseId: 'c1', materialId: 'm1' }) };
-  const request = () => new NextRequest('http://localhost/x', delegated as RequestInit);
+  const request = () => new NextRequest('http://localhost/x', delegated);
 
   it('reports false for inactive or missing courses', async () => {
     mocks.readServerCourse.mockResolvedValue({ id: 'c1', status: 'archived', materials: [] });
@@ -96,7 +96,7 @@ describe('material visibility', () => {
 describe('job course resolution', () => {
   const context = { params: Promise.resolve({ jobId: 'job-1' }) };
   const request = (kind?: string) => new NextRequest(
-    `http://localhost/x${kind ? `?kind=${kind}` : ''}`, delegated as RequestInit);
+    `http://localhost/x${kind ? `?kind=${kind}` : ''}`, delegated);
 
   it('resolves artifact jobs by default and graph jobs by kind', async () => {
     mocks.readCourseJob.mockResolvedValue({ courseId: 'c-artifact' });

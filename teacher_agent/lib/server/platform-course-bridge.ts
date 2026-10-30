@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto';
 
 import { nanoid } from 'nanoid';
 import { type NextRequest } from 'next/server';
+import { registerTeacherCourse, resolveTeacherCourseAlias } from '@/generated/teacher_platform_api';
 
 import { DEFAULT_TEACHER_ID, type CreateCourseSpaceInput } from '@/lib/course-space/types';
 
@@ -75,26 +76,24 @@ export async function registerCourseWithPlatform(course: PlatformCourseRegistrat
   let lastError = new Error('platform registration failed');
   for (let attempt = 1; attempt <= REGISTRATION_ATTEMPTS; attempt += 1) {
     try {
-      const response = await fetch(`${process.env.PLATFORM_AUTH_URL}/api/v1/internal/teacher/courses`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Teacher-Service-Key': process.env.PLATFORM_SERVICE_KEY || '',
-        },
-        body: JSON.stringify({
+      const result = await registerTeacherCourse({
+        baseUrl: `${(process.env.PLATFORM_AUTH_URL || '').replace(/\/$/, '')}/api/v1`,
+        headers: { 'X-Teacher-Service-Key': process.env.PLATFORM_SERVICE_KEY || '' },
+        body: {
           course_id: course.id,
           teacher_id: course.teacherId,
           title: course.title,
           description: course.description,
-        }),
+        },
         cache: 'no-store',
         signal: AbortSignal.timeout(5000),
       });
-      if (response.ok) return;
-      if (response.status < 500) {
-        throw new PlatformRegistrationRejected(`platform registration failed: ${response.status}`);
+      if (result.response?.ok) return;
+      const status = result.response?.status ?? 503;
+      if (status < 500) {
+        throw new PlatformRegistrationRejected(`platform registration failed: ${status}`);
       }
-      lastError = new Error(`platform registration failed: ${response.status}`);
+      lastError = new Error(`platform registration failed: ${status}`);
     } catch (error) {
       if (error instanceof PlatformRegistrationRejected) throw error;
       lastError = error instanceof Error ? error : new Error(String(error));
@@ -128,18 +127,15 @@ export async function resolveLegacyCourseId(courseId: string): Promise<string | 
   const cached = legacyIdCache.get(courseId);
   if (cached !== undefined) return cached;
   try {
-    const response = await fetch(
-      `${process.env.PLATFORM_AUTH_URL}/api/v1/internal/teacher/course-alias/${encodeURIComponent(courseId)}`,
-      {
-        headers: { 'X-Teacher-Service-Key': process.env.PLATFORM_SERVICE_KEY || '' },
-        cache: 'no-store',
-        redirect: 'error',
-        signal: AbortSignal.timeout(5000),
-      },
-    );
-    if (!response.ok) return null;
-    const data = (await response.json()) as { legacyCourseId?: string | null };
-    if (!data.legacyCourseId || data.legacyCourseId === courseId) return null;
+    const result = await resolveTeacherCourseAlias({
+      baseUrl: `${(process.env.PLATFORM_AUTH_URL || '').replace(/\/$/, '')}/api/v1`,
+      path: { course_id: courseId },
+      headers: { 'X-Teacher-Service-Key': process.env.PLATFORM_SERVICE_KEY || '' },
+      cache: 'no-store', redirect: 'error', signal: AbortSignal.timeout(5000),
+    });
+    if (!result.response?.ok) return null;
+    const data = result.data;
+    if (!data?.legacyCourseId || data.legacyCourseId === courseId) return null;
     legacyIdCache.set(courseId, data.legacyCourseId);
     return data.legacyCourseId;
   } catch {

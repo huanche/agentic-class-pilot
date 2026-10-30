@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { createLogger } from '@/lib/logger';
+import { authorizeTeacherRequest } from '@/generated/teacher_platform_api';
 
 const log = createLogger('Platform auth');
 
@@ -38,10 +39,10 @@ export async function platformMiddleware(request: NextRequest): Promise<NextResp
     return NextResponse.next({ request: { headers } });
   }
   try {
-    const response = await fetch(`${process.env.PLATFORM_AUTH_URL}/api/v1/internal/teacher/authorize`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Teacher-Service-Key': serviceKey || '' },
-      body: JSON.stringify({
+    const result = await authorizeTeacherRequest({
+      baseUrl: `${(process.env.PLATFORM_AUTH_URL || '').replace(/\/$/, '')}/api/v1`,
+      headers: { 'X-Teacher-Service-Key': serviceKey || '' },
+      body: {
         cookie: request.cookies.get('agentedu_session')?.value,
         // Include the query string: the platform resolves classroom ownership
         // from `GET /api/classroom?id=...`, which carries the id in the query.
@@ -49,24 +50,27 @@ export async function platformMiddleware(request: NextRequest): Promise<NextResp
         method: request.method,
         origin: request.headers.get('origin'),
         service_user_id: isService ? request.headers.get('x-platform-subject') : undefined,
-      }),
+      },
       signal: AbortSignal.timeout(5000),
       cache: 'no-store',
     });
-    if (!response.ok) {
-      if (response.status === 401 && !request.nextUrl.pathname.startsWith('/api/')) {
+    if (!result.response) throw new Error('Platform authorization request failed');
+    const status = result.response?.status ?? 503;
+    if (!result.response?.ok) {
+      if (status === 401 && !request.nextUrl.pathname.startsWith('/api/')) {
         return NextResponse.redirect(new URL('/login', process.env.PLATFORM_PUBLIC_URL || request.nextUrl.origin));
       }
-      if (response.status >= 500) {
+      if (status >= 500) {
         return NextResponse.json({ success: false, error: '平台身份服务暂不可用，请稍后重试' }, { status: 503 });
       }
       // Pass the platform's specific rejection through: 401 未登录 / 403 无权限 /
       // 404 课程不存在 / 409 归属冲突 — never collapse them into one generic text.
-      const detail = await response.json().then((body: { detail?: string }) => body?.detail).catch(() => undefined);
-      const fallback = response.status === 401 ? '请先登录平台' : '无权访问该资源';
-      return NextResponse.json({ success: false, error: detail || fallback }, { status: response.status });
+      const detail = (result.error as { detail?: string } | undefined)?.detail;
+      const fallback = status === 401 ? '请先登录平台' : '无权访问该资源';
+      return NextResponse.json({ success: false, error: detail || fallback }, { status });
     }
-    const principal = await response.json() as { userId: string; isAdmin: boolean };
+    const principal = result.data;
+    if (!principal?.userId) throw new Error('Platform authorization response is invalid');
     headers.set('x-platform-user-id', principal.userId);
     headers.set('x-platform-admin', principal.isAdmin ? 'true' : 'false');
     if (isService) headers.set('x-platform-delegated', 'true');

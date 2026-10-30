@@ -25,11 +25,11 @@ beforeEach(() => {
 
 describe('classroom content projection', () => {
   const context = { params: Promise.resolve({ classroomId: 'room-1' }) };
-  const request = () => new NextRequest('http://localhost/x', delegated as RequestInit);
+  const request = () => new NextRequest('http://localhost/x', delegated);
 
   it('requires authenticated service delegation', async () => {
     const response = await classroomContent(
-      new NextRequest('http://localhost/x', {} as RequestInit), context);
+      new NextRequest('http://localhost/x', {}), context);
     expect(response.status).toBe(403);
     expect(mocks.readClassroom).not.toHaveBeenCalled();
   });
@@ -50,7 +50,7 @@ describe('classroom content projection', () => {
 
 describe('published lesson verdict', () => {
   const context = { params: Promise.resolve({ artifactId: 'a1' }) };
-  const request = () => new NextRequest('http://localhost/x', delegated as RequestInit);
+  const request = () => new NextRequest('http://localhost/x', delegated);
 
   it('rejects unpublished artifacts with the not-published reason', async () => {
     mocks.readCourseArtifact.mockResolvedValue({ status: 'approved', classVisible: true });
