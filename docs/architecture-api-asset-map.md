@@ -36,10 +36,10 @@ rg --files platform/backend/tests teacher_agent/tests student_agent/backend/test
 | 最近已发布课堂 ID | 教师端；课堂及工件 | 平台学生工作区 | 教师拥有 `GET /api/internal/platform/courses/{courseId}/latest-classroom`；平台 `TEACHER_CLASSROOM_READ_MODE=legacy/shadow/api`，默认直查教师表 | [`test_teacher_classroom_client.py`](../platform/backend/tests/unit/test_teacher_classroom_client.py)、[`platform-latest-classroom.test.ts`](../teacher_agent/tests/course-space/platform-latest-classroom.test.ts)；待三服务影子对比、延迟和教师服务故障演练 |
 | 学生启动学习与学习上下文 | 平台负责签发令牌、选课资格与组装；教师端拥有发布内容；学生端消费上下文 | 学生端→平台 | 学生端调用 `POST /api/v1/internal/student/learning-context`；平台默认直查教师表组装；`TEACHER_LEARNING_CONTENT_READ_MODE=api` 可改用教师一次性快照 `GET /api/internal/platform/courses/{courseId}/published-content`（`shadow` 对比，默认 `legacy`） | [`test_learning_context.py`](../platform/backend/tests/api/routes/test_learning_context.py)、[`test_student_lesson_context.py`](../platform/backend/tests/api/routes/test_student_lesson_context.py)、[`test_teacher_learning_content_client.py`](../platform/backend/tests/unit/test_teacher_learning_content_client.py)、教师端 [`platform-published-content.test.ts`](../teacher_agent/tests/course-space/platform-published-content.test.ts)、学生 [`test_platform_lesson_contract.py`](../student_agent/backend/tests/test_platform_lesson_contract.py)；**最高优先级对照**：选课、下架、空课时、旧课程 ID、权限、响应大小与耗时 |
 | 学生查看已发布视频／资料 | 教师端拥有媒体和发布状态；平台拥有选课资格 | 学生浏览器→教师端；教师端→平台授权 | 学生播放器、媒体、资料 URL 指向教师端；平台授权处理器直查教师表判断发布可见，并查平台选课 | 平台教师桥接、教师发布生命周期测试；待真实浏览器验证 URL、资源撤销后禁止读取、跨课程越权 |
-| 课时知识准备登记 | 学生端拥有 `student.published_lesson_knowledge`；教师发布触发、平台核实 | 教师端→平台→学生端 | 平台 `STUDENT_KNOWLEDGE_ENQUEUE_MODE=api` 可调学生内部 API，默认直接 `INSERT student` 表；平台核实发布状态又直查教师表 | [`test_student_knowledge_client.py`](../platform/backend/tests/unit/test_student_knowledge_client.py)、学生 `test_internal_platform_knowledge_db.py`；需验证重复触发幂等、失败恢复和无双写 |
+| 课时知识准备登记 | 学生端拥有 `student.published_lesson_knowledge`；教师发布触发、平台核实 | 教师端→平台→学生端 | 平台 `STUDENT_KNOWLEDGE_ENQUEUE_MODE=api` 可调学生内部 API，默认直接 `INSERT student` 表；发布核实已随 `TEACHER_LEARNING_CONTENT_READ_MODE` 可走教师 `GET /api/internal/platform/artifacts/{artifactId}/published-lesson`（默认 legacy） | [`test_student_knowledge_client.py`](../platform/backend/tests/unit/test_student_knowledge_client.py)、学生 `test_internal_platform_knowledge_db.py`；需验证重复触发幂等、失败恢复和无双写 |
 | 学生会话、播放进度、掌握度 | 学生端；`student` schema | 学生页面／学生后端；平台学情页 | 学生端直接读写自有表；平台 `STUDENT_ANALYTICS_READ_MODE=api` 可调学生内部学情 API，默认仍直查 `student.student_sessions`、`knowledge_mastery`、`learning_events` | 学生数据库写入及平台学情客户端有测试；待真实课程大样本、分页/限制、权限和延迟验证 |
 | 教师授课管理中的学情与进度 | 学生端拥有学习事件；教师端拥有授课管理视图；平台拥有选课名单 | 学生端→平台→教师端，教师页面→平台 | 学生端上报 `/internal/student/learning-progress`；平台从学生表与教师表算进度，可选两侧 analytics API（默认 `legacy`），再 `PUT /api/classes/{courseId}/students` 推教师端 | [`test_student_analytics_client.py`](../platform/backend/tests/unit/test_student_analytics_client.py)、学生 `test_internal_platform_analytics_db.py`；需测教师服务故障时学生学习不中断、重试/补偿及数据一致性 |
-| 旧学生会话恢复课堂画面 | 教师端拥有课堂场景 | 学生端旧会话恢复逻辑 | [`student_agent/agent/persistence.py`](../student_agent/agent/persistence.py) 的 `classroom_scenes` 直接读 `teacher.mentra_classrooms`；仅旧上下文缺少课时资料时使用 | 学生重放测试存在；需用真实旧会话样本确认调用频率与停用条件，之后再设计最小替代读取 |
+| 旧学生会话恢复课堂画面 | 教师端拥有课堂场景 | 学生端旧会话恢复逻辑 | [`student_agent/agent/persistence.py`](../student_agent/agent/persistence.py) 的 `classroom_scenes` 默认仍直读 `teacher.mentra_classrooms`；`STUDENT_REPLAY_SCENE_READ_MODE=api` 时经平台 `POST /internal/student/classroom-view`（平台再按 `TEACHER_LEARNING_CONTENT_READ_MODE` 读教师或自身），平台不可用回退空场景；仅旧上下文缺少课时资料时使用 | 学生重放测试存在；需用真实旧会话样本确认调用频率与停用条件，之后再设计最小替代读取 |
 | 模型配置 | 平台拥有用户密钥与配置 | 教师端、学生端 | 平台 `/internal/user/{user_id}/model-config`；教师端 `platform-user-model-config.ts`、学生端平台客户端消费 | 契约已声明；需核对密钥脱敏、用户撤权、缓存和实际运行日志 |
 
 ## 接口来源与调用方：已核对的跨服务入口
@@ -70,6 +70,10 @@ rg --files platform/backend/tests teacher_agent/tests student_agent/backend/test
 2. **实际调用**：`legacy/shadow/api` 模式由运行配置决定，源码有接口不等于实际走接口。联调时应在隔离环境记录每条业务路径的模式、调用方向、状态码、耗时、失败数、影子差异数和回退结果；日志不得输出令牌、服务密钥、模型密钥或完整学习上下文。
 3. **性能与可靠性**：直接 SQL 通常少一次网络跳转；HTTP API 让数据拥有方能够独立改内部表，但多一次序列化、网络及服务可用性依赖。比较 `p50/p95`、错误率、响应体大小、下架生效时间；不能只看单次成功或把 API 当作天然更快。
 4. **下一次验证顺序**：先在独立测试库做最近课堂 `shadow` 和真实三端 HTTP 对比；再核对学习上下文的输出语义与权限；之后处理鉴权依赖和旧会话；最后以受限数据库角色证明平台不再需要跨 schema 权限。每次只切一个读取点，保留可回退模式。当前不具备撤销跨表权限或合并生产 `main` 的证据。
+
+### 2026-10-30 第二批：登记/首页/回放/学生表切换就绪
+
+四项收尾：①发布登记（published-lesson-knowledge）与②学生首页 published-content 均随 `TEACHER_LEARNING_CONTENT_READ_MODE` 支持教师快照（shadow 对比，legacy 权威，默认 legacy）；③学生旧会话回放新增 `STUDENT_REPLAY_SCENE_READ_MODE=api` 走平台 `/internal/student/classroom-view`，平台不可用回退空场景；④平台对学生 schema 的全部直接读写（知识登记、学情读取、进度计算）确认均已有 `STUDENT_KNOWLEDGE_ENQUEUE_MODE`/`STUDENT_ANALYTICS_READ_MODE` 开关覆盖，无未开关路径。离线验证：平台 71 项、教师端 22 项、学生端 4 项、契约 15 项通过；教师端两条新路由契约化并重新生成客户端。隔离环境真实 HTTP 验证与受限账号权限验证未做。
 
 ### 2026-10-30 学习上下文一次性快照（代码就绪，未切换）
 

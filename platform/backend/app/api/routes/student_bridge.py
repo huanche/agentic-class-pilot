@@ -22,7 +22,7 @@ from urllib.parse import quote
 
 import httpx
 from fastapi import APIRouter, Header, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlmodel import select
 
@@ -757,6 +757,66 @@ def student_learning_context(body: LearningContextRequest, session: SessionDep,
         raise
     except Exception as error:
         raise HTTPException(503, "平台数据库暂不可用，请稍后重试") from error
+
+
+class ClassroomViewRequest(BaseModel):
+    classroom_id: str = Field(min_length=1)
+
+
+@router.post("/internal/student/classroom-view")
+def student_classroom_view(body: ClassroomViewRequest, session: SessionDep,
+                           x_student_service_key: str | None = Header(default=None)):
+    """Old-session replay scenes without the student agent reading teacher tables.
+
+    The legacy replay query returned empty scenes for a missing classroom;
+    both paths keep that behavior. Classroom ids come from the student's own
+    signed session, so no per-student check exists here (parity with legacy).
+    """
+    check_student_service_key(x_student_service_key)
+    try:
+        mode = settings.TEACHER_LEARNING_CONTENT_READ_MODE
+        if mode == "legacy":
+            try:
+                view = _classroom_view(session, body.classroom_id)
+            except HTTPException:
+                view = None
+            return {"classroomId": body.classroom_id,
+                    "scenes": view["scenes"] if view else []}
+        from app.services.teacher_learning_content_client import (
+            TeacherLearningContentUnavailable, get_teacher_classroom_view,
+        )
+
+        def fetch():
+            view = get_teacher_classroom_view(body.classroom_id)
+            if view is None:
+                return {"classroomId": body.classroom_id, "scenes": []}
+            return {"classroomId": view.id, "scenes": view.to_dict()["scenes"]}
+
+        if mode == "shadow":
+            legacy_scenes = _classroom_view(session, body.classroom_id)["scenes"]
+            started = time.monotonic()
+            try:
+                proposed = fetch()
+                if [s["id"] for s in proposed["scenes"]] != [s["id"] for s in legacy_scenes]:
+                    logging.getLogger(__name__).warning(
+                        "student_replay_shadow_mismatch classroom_id=%s legacy=%d api=%d elapsed_ms=%d",
+                        body.classroom_id, len(legacy_scenes), len(proposed["scenes"]),
+                        int((time.monotonic() - started) * 1000))
+            except TeacherLearningContentUnavailable as error:
+                logging.getLogger(__name__).warning(
+                    "student_replay_shadow_unavailable classroom_id=%s error=%s",
+                    body.classroom_id, type(error).__name__)
+            try:
+                view = _classroom_view(session, body.classroom_id)
+            except HTTPException:
+                view = None
+            return {"classroomId": body.classroom_id,
+                    "scenes": view["scenes"] if view else []}
+        return fetch()
+    except HTTPException:
+        raise
+    except Exception as error:
+        raise HTTPException(503, "平台暂不可用，请稍后重试") from error
 
 
 def _issue_playback_grant(user_id: uuid.UUID, course_id: uuid.UUID, classroom_id: str) -> str:

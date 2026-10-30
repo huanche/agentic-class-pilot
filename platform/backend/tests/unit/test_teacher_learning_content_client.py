@@ -197,3 +197,140 @@ def test_generated_call_maps_statuses_and_rejects_wrong_shape(monkeypatch):
         lambda *_args, **_kwargs: SimpleNamespace(status_code=200, parsed="not-a-model"))
     with pytest.raises(teacher_learning_content_client.TeacherLearningContentUnavailable):
         teacher_learning_content_client.get_teacher_published_content(COURSE_ID, OWNER_ID)
+
+
+def test_enqueue_api_mode_maps_reasons_and_course_ref(monkeypatch):
+    """① api 模式：登记端点用教师快照替代教师表读取。"""
+    from app.api.routes import teacher_bridge
+
+    class Row:
+        def __init__(self, values):
+            self.values = values
+
+        def first(self):
+            return self.values
+
+    class Session:
+        def __init__(self):
+            self.sql = []
+
+        def execute(self, statement, params):
+            sql = str(statement)
+            self.sql.append(sql)
+            if "owner_id::text FROM course" in sql:
+                return Row((str(OWNER_ID),))
+            if "SELECT id::text FROM course WHERE" in sql:
+                return Row((COURSE_ID,))
+            if "teacher_course_link" in sql:
+                return Row((COURSE_ID,))
+            if "teacher." in sql:
+                raise AssertionError(f"teacher SQL in api mode: {sql}")
+            raise AssertionError(sql)
+
+    lesson_model = SimpleNamespace(
+        course_id="canonical-id", lesson_id="L1", classroom_id="room-1",
+        published_at=123,
+        classroom=SimpleNamespace(
+            id="room-1", title="课堂", scenes=[],
+            to_dict=lambda: {"id": "room-1", "title": "课堂", "scenes": []}))
+
+    def fetch_ok():
+        return ({"courseId": "canonical-id", "lessonId": "L1", "classroomId": "room-1",
+                 "publishedAt": 123, "classroom": lesson_model.classroom}, None)
+
+    monkeypatch.setattr(teacher_bridge.settings, "TEACHER_LEARNING_CONTENT_READ_MODE", "api")
+    monkeypatch.setattr(teacher_bridge.settings, "STUDENT_KNOWLEDGE_ENQUEUE_MODE", "legacy")
+    monkeypatch.setattr(teacher_bridge.settings, "TEACHER_SERVICE_KEY", "test-key")
+    monkeypatch.setattr(teacher_bridge, "get_teacher_published_lesson", fetch_ok, raising=False)
+    monkeypatch.setattr(
+        "app.services.teacher_learning_content_client.get_teacher_published_lesson",
+        lambda artifact, owner: fetch_ok())
+    enqueued = {}
+    monkeypatch.setattr(teacher_bridge, "ensure_published_knowledge_job",
+                        lambda session, course, lesson, classroom, published_at:
+                        enqueued.update(course=course, lesson=lesson,
+                                        classroom=classroom, at=published_at) or "rev-1")
+    session = Session()
+    body = teacher_bridge.PublishedLessonPreparation(course_id=str(COURSE_ID), artifact_id="a1")
+    result = teacher_bridge.enqueue_published_lesson_knowledge(body, session, "test-key")
+    assert result == {"lessonId": "L1", "videoRevision": "rev-1"}
+    assert str(enqueued["course"]) == str(COURSE_ID)
+    assert enqueued["classroom"]["id"] == "room-1"
+    assert not any("teacher.mentra" in s for s in session.sql)
+
+
+def test_enqueue_api_mode_rejects_unpublished(monkeypatch):
+    from fastapi import HTTPException as HTTPError
+    from app.api.routes import teacher_bridge
+
+    class Row:
+        def __init__(self, values):
+            self.values = values
+
+        def first(self):
+            return self.values
+
+    class Session:
+        def execute(self, statement, params):
+            return Row((str(OWNER_ID),)) if "owner_id" in str(statement) else Row(None)
+
+    monkeypatch.setattr(teacher_bridge.settings, "TEACHER_LEARNING_CONTENT_READ_MODE", "api")
+    monkeypatch.setattr(teacher_bridge.settings, "TEACHER_SERVICE_KEY", "test-key")
+    monkeypatch.setattr(
+        "app.services.teacher_learning_content_client.get_teacher_published_lesson",
+        lambda artifact, owner: (None, "not-published"))
+    with pytest.raises(HTTPError) as error:
+        teacher_bridge.enqueue_published_lesson_knowledge(
+            teacher_bridge.PublishedLessonPreparation(course_id=str(COURSE_ID), artifact_id="a1"),
+            Session(), "test-key")
+    assert error.value.status_code == 409
+    assert error.value.detail == "未找到已发布的教学视频"
+
+
+def test_classroom_view_endpoint_serves_replay_without_teacher_tables(monkeypatch):
+    """③ 平台回放端点：api 模式从教师快照取场景，学生不再有直查路径。"""
+    from app.api.routes import student_bridge
+
+    class Row:
+        def __init__(self, values):
+            self.values = values
+
+        def first(self):
+            return self.values
+
+    class Session:
+        def execute(self, statement, params):
+            if "teacher." in str(statement):
+                raise AssertionError("teacher SQL in api mode")
+            raise AssertionError(str(statement))
+
+    view_model = SimpleNamespace(
+        id="room-1", title="课堂", to_dict=lambda: {
+            "id": "room-1", "title": "课堂",
+            "scenes": [{"id": "s1", "type": "slide", "order": 1, "title": "页",
+                        "visibleText": ["要点"], "actions": []}]})
+    monkeypatch.setattr(student_bridge.settings, "TEACHER_LEARNING_CONTENT_READ_MODE", "api")
+    monkeypatch.setattr(student_bridge.settings, "STUDENT_SERVICE_KEY", "key")
+    monkeypatch.setattr(
+        "app.services.teacher_learning_content_client.get_teacher_classroom_view",
+        lambda classroom_id: view_model)
+    result = student_bridge.student_classroom_view(
+        student_bridge.ClassroomViewRequest(classroom_id="room-1"), Session(), "key")
+    assert result == {"classroomId": "room-1", "scenes": view_model.to_dict()["scenes"]}
+
+
+def test_classroom_view_missing_returns_empty_scenes(monkeypatch):
+    from app.api.routes import student_bridge
+
+    class Session:
+        def execute(self, statement, params):
+            raise AssertionError("no SQL expected")
+
+    monkeypatch.setattr(student_bridge.settings, "TEACHER_LEARNING_CONTENT_READ_MODE", "api")
+    monkeypatch.setattr(student_bridge.settings, "STUDENT_SERVICE_KEY", "key")
+    monkeypatch.setattr(
+        "app.services.teacher_learning_content_client.get_teacher_classroom_view",
+        lambda classroom_id: None)
+    result = student_bridge.student_classroom_view(
+        student_bridge.ClassroomViewRequest(classroom_id="missing"), Session(), "key")
+    assert result == {"classroomId": "missing", "scenes": []}

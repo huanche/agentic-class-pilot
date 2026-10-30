@@ -180,6 +180,67 @@ paths:
         '403': { description: Invalid service delegation }
         '404': { description: Task not found }
         '503': { description: Teacher storage unavailable }
+  /api/internal/platform/classrooms/{classroomId}/content:
+    get:
+      operationId: getTeacherClassroomContent
+      summary: Projected scenes of one classroom for old-session replay
+      description: >-
+        Null classroom when the snapshot is missing; the platform's legacy
+        replay query returned empty scenes for that case.
+      security: [{ platformServiceKey: [], platformSubject: [] }]
+      parameters:
+        - { name: classroomId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Projected classroom, if any
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [classroom]
+                properties:
+                  classroom:
+                    oneOf:
+                      - { type: 'null' }
+                      - $ref: '#/components/schemas/PublishedClassroomView'
+        '403': { description: Invalid service delegation }
+        '503': { description: Teacher storage unavailable }
+  /api/internal/platform/artifacts/{artifactId}/published-lesson:
+    get:
+      operationId: getTeacherPublishedLesson
+      summary: The teacher-verified published lesson video and its classroom projection
+      description: >-
+        Serves the platform's published-lesson-knowledge registration without
+        teacher-schema reads. reason mirrors the legacy failure messages:
+        not-published and not-a-lesson-video surface as 409, classroom-missing
+        as 404 on the platform side.
+      security: [{ platformServiceKey: [], platformSubject: [] }]
+      parameters:
+        - { name: artifactId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Published lesson verdict
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [published, reason, lesson]
+                properties:
+                  published: { type: boolean }
+                  reason: { type: [string, 'null'], enum: [not-published, not-a-lesson-video, classroom-missing, null] }
+                  lesson:
+                    oneOf:
+                      - { type: 'null' }
+                      - type: object
+                        required: [courseId, lessonId, classroomId, classroom]
+                        properties:
+                          courseId: { type: string }
+                          lessonId: { type: string }
+                          classroomId: { type: string }
+                          publishedAt: { type: [number, 'null'] }
+                          classroom: { $ref: '#/components/schemas/PublishedClassroomView' }
+        '403': { description: Invalid service delegation }
+        '503': { description: Teacher storage unavailable }
   /api/health:
     get:
       operationId: getTeacherServiceHealth

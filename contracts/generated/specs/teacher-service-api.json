@@ -543,6 +543,161 @@
         "security": []
       }
     },
+    "/api/internal/platform/artifacts/{artifactId}/published-lesson": {
+      "get": {
+        "description": "Serves the platform's published-lesson-knowledge registration without teacher-schema reads. reason mirrors the legacy failure messages: not-published and not-a-lesson-video surface as 409, classroom-missing as 404 on the platform side.",
+        "operationId": "getTeacherPublishedLesson",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "artifactId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "lesson": {
+                      "oneOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "properties": {
+                            "classroom": {
+                              "$ref": "#/components/schemas/PublishedClassroomView"
+                            },
+                            "classroomId": {
+                              "type": "string"
+                            },
+                            "courseId": {
+                              "type": "string"
+                            },
+                            "lessonId": {
+                              "type": "string"
+                            },
+                            "publishedAt": {
+                              "type": [
+                                "number",
+                                "null"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "courseId",
+                            "lessonId",
+                            "classroomId",
+                            "classroom"
+                          ],
+                          "type": "object"
+                        }
+                      ]
+                    },
+                    "published": {
+                      "type": "boolean"
+                    },
+                    "reason": {
+                      "enum": [
+                        "not-published",
+                        "not-a-lesson-video",
+                        "classroom-missing",
+                        null
+                      ],
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "published",
+                    "reason",
+                    "lesson"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Published lesson verdict"
+          },
+          "403": {
+            "description": "Invalid service delegation"
+          },
+          "503": {
+            "description": "Teacher storage unavailable"
+          }
+        },
+        "security": [
+          {
+            "platformServiceKey": [],
+            "platformSubject": []
+          }
+        ],
+        "summary": "The teacher-verified published lesson video and its classroom projection"
+      }
+    },
+    "/api/internal/platform/classrooms/{classroomId}/content": {
+      "get": {
+        "description": "Null classroom when the snapshot is missing; the platform's legacy replay query returned empty scenes for that case.",
+        "operationId": "getTeacherClassroomContent",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "classroomId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "classroom": {
+                      "oneOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "$ref": "#/components/schemas/PublishedClassroomView"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "classroom"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Projected classroom, if any"
+          },
+          "403": {
+            "description": "Invalid service delegation"
+          },
+          "503": {
+            "description": "Teacher storage unavailable"
+          }
+        },
+        "security": [
+          {
+            "platformServiceKey": [],
+            "platformSubject": []
+          }
+        ],
+        "summary": "Projected scenes of one classroom for old-session replay"
+      }
+    },
     "/api/internal/platform/classrooms/{classroomId}/visibility": {
       "get": {
         "description": "Teacher-owned half of the student player authorization. courseId is the teacher service's own course reference; the platform resolves it to the enrollment record. Classroom→course linkage requires the teacher course database, like the legacy authorize queries.",
