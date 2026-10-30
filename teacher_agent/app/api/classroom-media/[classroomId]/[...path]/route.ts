@@ -1,4 +1,5 @@
 import { promises as fs, createReadStream } from 'fs';
+import { Readable } from 'stream';
 import path from 'path';
 import { NextRequest, NextResponse } from 'next/server';
 import { CLASSROOMS_DIR, isValidClassroomId } from '@/lib/server/classroom-storage';
@@ -20,8 +21,17 @@ const MIME_TYPES: Record<string, string> = {
   '.aac': 'audio/aac',
 };
 
+export function parseByteRange(value: string, size: number): { start: number; end: number } | null {
+  const match = /^bytes=(\d*)-(\d*)$/.exec(value);
+  if (!match || size <= 0 || (!match[1] && !match[2])) return null;
+  const start = match[1] ? Number(match[1]) : Math.max(0, size - Number(match[2]));
+  const end = match[2] && match[1] ? Number(match[2]) : size - 1;
+  if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start >= size || end < start) return null;
+  return { start, end: Math.min(end, size - 1) };
+}
+
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ classroomId: string; path: string[] }> },
 ) {
   const { classroomId, path: pathSegments } = await params;
@@ -60,32 +70,32 @@ export async function GET(
 
     const ext = path.extname(realPath).toLowerCase();
     const contentType = MIME_TYPES[ext] || 'application/octet-stream';
+    const isVideo = ext === '.mp4' || ext === '.webm';
+    const requestedRange = isVideo ? req.headers.get('range') : null;
+    const range = requestedRange ? parseByteRange(requestedRange, stat.size) : null;
+    if (requestedRange && !range) {
+      return new NextResponse(null, {
+        status: 416,
+        headers: { 'Content-Range': `bytes */${stat.size}`, 'Accept-Ranges': 'bytes' },
+      });
+    }
 
     // Stream the file to avoid loading large videos into memory
-    const stream = createReadStream(realPath);
-    const webStream = new ReadableStream({
-      start(controller) {
-        stream.on('data', (chunk: Buffer | string) => controller.enqueue(chunk));
-        stream.on('end', () => controller.close());
-        stream.on('error', (err) => controller.error(err));
-      },
-      cancel() {
-        stream.destroy();
-      },
-    });
+    const stream = createReadStream(realPath, range ? { start: range.start, end: range.end } : undefined);
+    const webStream = Readable.toWeb(stream) as ReadableStream<Uint8Array>;
 
     return new NextResponse(webStream, {
-      status: 200,
+      status: range ? 206 : 200,
       headers: {
         'Content-Type': contentType,
-        'Content-Length': String(stat.size),
-        // Narration files are regenerated in place under stable names (server
-        // narration re-runs and browser TTS re-uploads both overwrite
-        // `tts_s<order>_<actionId>.<ext>`), so audio must always revalidate —
-        // an immutable entry would pin superseded bytes for a day. Slide media
-        // is content-final and stays immutable-cacheable.
-        'Cache-Control':
-          subDir === 'audio' ? 'private, no-cache' : 'public, max-age=86400, immutable',
+        'Content-Length': String(range ? range.end - range.start + 1 : stat.size),
+        ...(isVideo ? { 'Accept-Ranges': 'bytes' } : {}),
+        ...(range ? { 'Content-Range': `bytes ${range.start}-${range.end}/${stat.size}` } : {}),
+        // Versioned narration URLs change when bytes change. Older URLs may
+        // cache privately; unversioned stable filenames must revalidate.
+        'Cache-Control': subDir === 'audio'
+          ? (req.nextUrl.searchParams.has('v') ? 'private, max-age=86400, immutable' : 'private, no-cache')
+          : 'public, max-age=86400, immutable',
       },
     });
   } catch (error) {
