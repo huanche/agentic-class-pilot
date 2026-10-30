@@ -17,8 +17,9 @@ from sqlalchemy import text
 from app.api.deps import CurrentUser, SessionDep, TeacherUser
 from app.core.config import settings
 from app.models import Course
-from app.api.routes.student_bridge import (_classroom_view, _content_from_teacher_snapshot,
-    _published_classroom, _published_package_payload, ensure_published_knowledge_job)
+from app.api.routes.student_bridge import (
+    _content_from_teacher_snapshot, ensure_published_knowledge_job,
+)
 from app.services.browser_sessions import user_for_cookie
 from app.services.course_access import get_accessible_course, get_owned_course
 from app.services.teacher_course_client import (
@@ -40,99 +41,38 @@ def enqueue_published_lesson_knowledge(
     body: PublishedLessonPreparation, session: SessionDep,
     x_teacher_service_key: str | None = Header(default=None),
 ):
-    """Record the verified published video; student workers do the model work."""
+    """Verify a teacher-owned published video, then enqueue student knowledge."""
     check_service_key(x_teacher_service_key)
-    mode = settings.TEACHER_LEARNING_CONTENT_READ_MODE
-    owner_row = None
-    if mode != "legacy":
-        owner_row = session.execute(
-            text("SELECT owner_id::text FROM course WHERE id::text=:id"),
-            {"id": str(body.course_id)}).first()
+    from app.services.teacher_learning_content_client import (
+        TeacherLearningContentUnavailable, get_teacher_published_lesson,
+    )
 
-    def legacy_lesson():
-        row = session.execute(text(
-            "SELECT l.course_id, a.payload FROM teacher.mentra_course_artifacts a "
-            "JOIN teacher_course_link l ON l.external_course_id=a.course_id "
-            "WHERE a.id=:artifact AND a.course_id=:course AND a.status='published' "
-            "AND a.payload->>'classVisible'='true' "
-            "AND a.payload->>'classPublicationId' IS NOT NULL"
-        ), {"artifact": body.artifact_id, "course": body.course_id}).first()
-        if not row:
-            raise HTTPException(409, "未找到已发布的教学视频")
-        course_id, artifact = row
-        placement = artifact.get("publicationPlacement") or {}
-        lesson_id = placement.get("lessonId")
-        classroom_id = artifact.get("classroomId")
-        if not lesson_id or not classroom_id:
-            raise HTTPException(409, "已发布内容不是课时教学视频")
-        classroom = _classroom_view(session, classroom_id)
-        return {"course_id": course_id, "lesson_id": lesson_id,
-                "classroom_id": classroom_id, "classroom": classroom,
-                "published_at": artifact.get("classPublishedAt")}
-
-    if mode == "legacy":
-        lesson = legacy_lesson()
-    else:
-        from app.services.teacher_learning_content_client import (
-            TeacherLearningContentUnavailable, get_teacher_published_lesson,
+    owner_row = session.execute(
+        text("SELECT owner_id::text FROM course WHERE id::text=:id"),
+        {"id": str(body.course_id)},
+    ).first()
+    try:
+        lesson, reason = get_teacher_published_lesson(
+            body.artifact_id,
+            uuid.UUID(str(owner_row[0])) if owner_row else None,
         )
-
-        def fetch():
-            lesson, reason = get_teacher_published_lesson(
-                body.artifact_id,
-                uuid.UUID(str(owner_row[0])) if owner_row else None)
-            if lesson is None:
-                if reason == "classroom-missing":
-                    raise HTTPException(404, "课堂不存在或尚未发布")
-                if reason == "not-a-lesson-video":
-                    raise HTTPException(409, "已发布内容不是课时教学视频")
-                raise HTTPException(409, "未找到已发布的教学视频")
-            return lesson
-
-        if mode == "shadow":
-            started = time.monotonic()
-            try:
-                proposed = fetch()
-                legacy = legacy_lesson()
-                if (proposed["lessonId"] != legacy["lesson_id"] or
-                        proposed["classroomId"] != legacy["classroom_id"] or
-                        proposed.get("publishedAt") != legacy["published_at"]):
-                    logging.getLogger(__name__).warning(
-                        "teacher_lesson_shadow_mismatch artifact=%s legacy=%s/%s api=%s/%s elapsed_ms=%d",
-                        body.artifact_id, legacy["lesson_id"], legacy["classroom_id"],
-                        proposed["lessonId"], proposed["classroomId"],
-                        int((time.monotonic() - started) * 1000))
-                else:
-                    logging.getLogger(__name__).debug(
-                        "teacher_lesson_shadow_match artifact=%s elapsed_ms=%d",
-                        body.artifact_id, int((time.monotonic() - started) * 1000))
-            except HTTPException:
-                raise
-            except Exception as error:  # noqa: BLE001 - shadow never changes the verdict
-                logging.getLogger(__name__).warning(
-                    "teacher_lesson_shadow_unavailable artifact=%s error=%s",
-                    body.artifact_id, type(error).__name__)
-            lesson = legacy_lesson()
-        else:
-            try:
-                lesson = fetch()
-            except HTTPException:
-                raise
-            except TeacherLearningContentUnavailable as error:
-                raise HTTPException(503, "教师服务暂不可用，请稍后重试") from error
-            platform_course = _platform_course_id(session, lesson["courseId"])
-            if not platform_course:
-                raise HTTPException(409, "未找到已发布的教学视频")
-            lesson = {
-                "course_id": uuid.UUID(platform_course),
-                "lesson_id": lesson["lessonId"],
-                "classroom": lesson["classroom"].to_dict(),
-                "published_at": lesson.get("publishedAt"),
-            }
+    except TeacherLearningContentUnavailable as error:
+        raise HTTPException(503, "教师服务暂不可用，请稍后重试") from error
+    if lesson is None:
+        if reason == "classroom-missing":
+            raise HTTPException(404, "课堂不存在或尚未发布")
+        if reason == "not-a-lesson-video":
+            raise HTTPException(409, "已发布内容不是课时教学视频")
+        raise HTTPException(409, "未找到已发布的教学视频")
+    platform_course = _platform_course_id(session, lesson["courseId"])
+    if not platform_course:
+        raise HTTPException(409, "未找到已发布的教学视频")
     revision = ensure_published_knowledge_job(
-        session, lesson["course_id"], lesson["lesson_id"],
-        lesson["classroom"], lesson["published_at"])
-    return {"lessonId": lesson["lesson_id"], "videoRevision": revision}
+        session, uuid.UUID(platform_course), lesson["lessonId"],
+        lesson["classroom"].to_dict(), lesson.get("publishedAt"),
+    )
+    return {"lessonId": lesson["lessonId"], "videoRevision": revision}
+
 
 # API prefixes a teacher (not only an admin) may call on the teacher service.
 # Each of them carries an explicit scope check (course or classroom ownership)
@@ -671,18 +611,6 @@ async def open_teacher_workspace(course_id: uuid.UUID, session: SessionDep, user
 @router.get("/courses/{course_id}/published-content")
 def published_content(course_id: uuid.UUID, session: SessionDep, user: CurrentUser):
     get_accessible_course(session, user, course_id)
-    mode = settings.TEACHER_LEARNING_CONTENT_READ_MODE
-
-    def legacy_response():
-        row = session.execute(text("SELECT p.payload FROM teacher.mentra_knowledge_packages p JOIN teacher_course_link l ON l.external_course_id=p.course_id WHERE l.course_id=:id AND p.status='published' ORDER BY p.version DESC LIMIT 1"), {"id": course_id}).first()
-        # Reading a published knowledge package does not require a player. Keep
-        # this separate from Classroom availability so students see real material
-        # while the teacher is still preparing interactive courseware.
-        return {"knowledgePackage": _published_package_payload(session, course_id) if row else None,
-                "classroomAvailable": bool(_published_classroom(session, course_id))}
-
-    if mode == "legacy":
-        return legacy_response()
     from app.services.teacher_learning_content_client import (
         TeacherLearningContentUnavailable, TeacherLearningContentMissing,
         get_teacher_published_content,
@@ -690,38 +618,12 @@ def published_content(course_id: uuid.UUID, session: SessionDep, user: CurrentUs
     course = session.get(Course, course_id)
     if course is None:
         return {"knowledgePackage": None, "classroomAvailable": False}
-
-    def api_response():
+    try:
         snapshot = get_teacher_published_content(course_id, course.owner_id)
         if snapshot is None:
             return {"knowledgePackage": None, "classroomAvailable": False}
-        # Playback grants are irrelevant to this summary; the snapshot helper
-        # issues them anyway, so reuse it instead of duplicating projection.
         package, lessons = _content_from_teacher_snapshot(snapshot, user.id, course_id)
         return {"knowledgePackage": package, "classroomAvailable": bool(lessons)}
-
-    if mode == "shadow":
-        legacy = legacy_response()
-        started = time.monotonic()
-        try:
-            proposed = api_response()
-            legacy_key = ((legacy["knowledgePackage"] or {}).get("id"),
-                          (legacy["knowledgePackage"] or {}).get("version"),
-                          legacy["classroomAvailable"])
-            proposed_key = ((proposed["knowledgePackage"] or {}).get("id"),
-                            (proposed["knowledgePackage"] or {}).get("version"),
-                            proposed["classroomAvailable"])
-            if legacy_key != proposed_key:
-                logging.getLogger(__name__).warning(
-                    "published_content_shadow_mismatch course_id=%s legacy=%s api=%s elapsed_ms=%d",
-                    course_id, legacy_key, proposed_key, int((time.monotonic() - started) * 1000))
-        except Exception as error:  # noqa: BLE001
-            logging.getLogger(__name__).warning(
-                "published_content_shadow_unavailable course_id=%s error=%s",
-                course_id, type(error).__name__)
-        return legacy
-    try:
-        return api_response()
     except (TeacherLearningContentUnavailable, TeacherLearningContentMissing) as error:
         raise HTTPException(503, "教师服务暂不可用，请稍后重试") from error
 

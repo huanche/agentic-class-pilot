@@ -17,7 +17,6 @@ import secrets
 import base64
 import time
 import uuid
-from html import unescape
 from urllib.parse import quote
 
 import httpx
@@ -277,110 +276,6 @@ class LearningContextRequest(BaseModel):
     refresh_session: bool = False
 
 
-def _published_package_payload(session: SessionDep, course_id: uuid.UUID) -> dict | None:
-    row = session.execute(
-        text("SELECT p.payload FROM teacher.mentra_knowledge_packages p "
-             "JOIN teacher_course_link l ON l.external_course_id = p.course_id "
-             "WHERE l.course_id = :id AND p.status = 'published' "
-             "ORDER BY p.version DESC LIMIT 1"),
-        {"id": course_id}).first()
-    if not row:
-        return None
-    require_published_course(session, course_id)
-    package = dict(row[0])
-    # Resolve the current explicit publications, never legacy bulk-published entries.
-    package["entries"] = published_course_entries(session, course_id)
-    return package
-
-
-def published_course_entries(session: SessionDep, course_id: uuid.UUID) -> list[dict]:
-    row = session.execute(text(
-        "SELECT c.payload FROM teacher.mentra_courses c "
-        "JOIN teacher_course_link l ON l.external_course_id=c.id "
-        "WHERE l.course_id=:id AND c.status='active'"), {"id": course_id}).first()
-    if not row:
-        return []
-    course = row[0] or {}
-    def visible(item):
-        return item.get("classVisible") is True and bool(item.get("classPublicationId"))
-    entries = []
-    for artifact_row in session.execute(text(
-        "SELECT a.payload FROM teacher.mentra_course_artifacts a "
-        "JOIN teacher_course_link l ON l.external_course_id=a.course_id "
-        "WHERE l.course_id=:id AND a.status='published' "
-        "AND a.payload->>'classVisible'='true' AND a.payload->>'classPublicationId' IS NOT NULL "
-        "ORDER BY a.created_at, a.id"), {"id": course_id}).all():
-        item = artifact_row[0]
-        if visible(item):
-            entries.append({"id": item["id"], "title": item.get("title", ""),
-                            "content": item.get("content", ""), "citations": item.get("citations", []),
-                            "scope": ({"type": "lesson", "lessonId": item["publicationPlacement"]["lessonId"]}
-                                      if (item.get("publicationPlacement") or {}).get("lessonId")
-                                      else item.get("scope")), "kind": "artifact",
-                            # 教师确认的类型保存在发布归属中，兼容旧版顶层字段。
-                            "resourceType": (item.get("publicationPlacement") or {}).get("resourceType")
-                                            or item.get("resourceType"),
-                            "publicationId": item["classPublicationId"]})
-    for module in course.get("modules", []):
-        for lesson in module.get("lessons", []):
-            for item in lesson.get("files", []):
-                if visible(item):
-                    entries.append({"id": item["id"], "title": item.get("title", ""),
-                                    "content": item.get("content", ""), "kind": "lesson-file",
-                                    # 课时知识点是 lesson.files，不是独立工件；两条链路都需保留类型。
-                                    "resourceType": (item.get("publicationPlacement") or {}).get("resourceType")
-                                                    or item.get("type"),
-                                    "scope": {"type": "lesson", "lessonId": lesson["id"]},
-                                    "publicationId": item["classPublicationId"]})
-    for item in course.get("materials", []):
-        if visible(item):
-            entries.append({"id": item["id"], "title": item.get("name", ""), "content": "",
-                            "kind": "material", "publicationId": item["classPublicationId"],
-                            "scope": {"type": "lesson", "lessonId": (item.get("publicationPlacement") or {}).get("lessonId")},
-                            "url": f"{settings.TEACHER_PUBLIC_URL.rstrip('/')}/api/course-space/{course['id']}/materials/{item['id']}"})
-    return entries
-
-
-def _classroom_view(session: SessionDep, classroom_id: str) -> dict:
-    row = session.execute(
-        text("SELECT stage, scenes FROM teacher.mentra_classrooms WHERE id = :id"),
-        {"id": classroom_id}).first()
-    if not row:
-        raise HTTPException(404, "课堂不存在或尚未发布")
-    scenes = []
-    for scene in (row[1] or []):
-        content = scene.get("content") or {}
-        canvas = (content.get("canvas") or {}) if isinstance(content, dict) else {}
-        visible_text = []
-        for element in canvas.get("elements") or []:
-            if isinstance(element, dict) and element.get("type") == "text":
-                value = unescape(re.sub(r"<[^>]*>", " ", str(element.get("content") or ""))).strip()
-                if value:
-                    visible_text.append(value)
-        scenes.append({
-            "id": scene.get("id"),
-            "type": scene.get("type", "slide"),
-            "order": int(scene.get("order") or 1),
-            "title": scene.get("title", ""),
-            "visibleText": visible_text,
-            # Text shown to the student and narration ground the new agent;
-            # media assets stay in the player's own data channel.
-            "actions": [
-                {"id": action.get("id"), "type": action.get("type", "speech"),
-                 "text": action.get("text")}
-                for action in (scene.get("actions") or [])
-                if isinstance(action, dict)
-            ],
-        })
-    scenes.sort(key=lambda item: item["order"])
-    return {
-        "id": classroom_id,
-        "title": (row[0] or {}).get("name", ""),
-        "scenes": scenes,
-        "playerUrl": f"{settings.TEACHER_PUBLIC_URL.rstrip('/')}/classroom-player/{classroom_id}",
-    }
-
-
 def ensure_published_knowledge_job(session: SessionDep, course_id: uuid.UUID,
                                    lesson_id: str, classroom: dict,
                                    published_at: int | None) -> str:
@@ -400,47 +295,6 @@ def ensure_published_knowledge_job(session: SessionDep, course_id: uuid.UUID,
     except StudentKnowledgeUnavailable as error:
         raise HTTPException(503, "学生知识准备服务暂不可用，请稍后重试") from error
     return revision
-
-
-def _published_lessons(session: SessionDep, course_id: uuid.UUID,
-                       user_id: uuid.UUID) -> list[dict]:
-    """Read explicit lesson bindings; never use another lesson's classroom."""
-    course_row = session.execute(text(
-        "SELECT c.payload FROM teacher.mentra_courses c "
-        "JOIN teacher_course_link l ON l.external_course_id=c.id "
-        "WHERE l.course_id=:id AND c.status='active'"), {"id": course_id}).first()
-    if not course_row:
-        return []
-    course = course_row[0] or {}
-    teacher_lessons = {lesson["id"]: lesson for module in course.get("modules", [])
-                       for lesson in module.get("lessons", [])}
-    rows = session.execute(text(
-        "SELECT a.payload FROM teacher.mentra_course_artifacts a "
-        "JOIN teacher_course_link l ON l.external_course_id=a.course_id "
-        "WHERE l.course_id=:id AND a.status='published' "
-        "AND a.payload->>'classVisible'='true' AND a.payload->>'classPublicationId' IS NOT NULL "
-        "AND a.payload->>'classroomId' IS NOT NULL "
-        "ORDER BY (a.payload->>'classPublishedAt')::bigint DESC NULLS LAST, a.created_at DESC, a.id DESC"
-    ), {"id": course_id}).all()
-    selected = {}
-    for row in rows:
-        artifact = row[0]
-        placement = artifact.get("publicationPlacement") or {}
-        scope = artifact.get("scope") or {}
-        lesson_id = placement.get("lessonId") or (scope.get("lessonId") if scope.get("type") == "lesson" else None)
-        if lesson_id not in teacher_lessons or lesson_id in selected:
-            continue
-        lesson = teacher_lessons[lesson_id]
-        classroom = _classroom_view(session, artifact["classroomId"])
-        classroom["playbackToken"] = _issue_playback_grant(user_id, course_id, artifact["classroomId"])
-        selected[lesson_id] = {
-            "id": lesson_id, "title": artifact.get("title") or lesson.get("title"),
-            "order": lesson.get("order", 1), "week": placement.get("week") or lesson.get("week"),
-            "lessonNumber": placement.get("lessonNumber") or lesson.get("lessonNumber"),
-            "teachingHours": placement.get("teachingHours") or lesson.get("teachingHours"),
-            "publishedAt": artifact.get("classPublishedAt"), "classroom": classroom,
-        }
-    return sorted(selected.values(), key=lambda lesson: (lesson.get("week") or 1000, lesson.get("lessonNumber") or lesson["order"], lesson["id"]))
 
 
 def _content_from_teacher_snapshot(snapshot, user_id: uuid.UUID,
@@ -524,38 +378,9 @@ def _content_from_teacher_snapshot(snapshot, user_id: uuid.UUID,
     return package, lessons
 
 
-def _legacy_published_content(session: SessionDep, course_id: uuid.UUID,
-                              user_id: uuid.UUID) -> tuple[dict | None, list[dict]]:
-    package = _published_package_payload(session, course_id)
-    if package is None:
-        return None, []
-    return package, _published_lessons(session, course_id, user_id)
-
-
-def _log_content_shadow(course_id: uuid.UUID, legacy: tuple, proposed: tuple,
-                        started: float) -> None:
-    elapsed = int((time.monotonic() - started) * 1000)
-    legacy_key = (legacy[0].get("id") if legacy[0] else None,
-                  legacy[0].get("version") if legacy[0] else None,
-                  [lesson["id"] for lesson in legacy[1]])
-    proposed_key = (proposed[0].get("id") if proposed[0] else None,
-                    proposed[0].get("version") if proposed[0] else None,
-                    [lesson["id"] for lesson in proposed[1]])
-    if legacy_key != proposed_key:
-        logging.getLogger(__name__).warning(
-            "teacher_content_shadow_mismatch course_id=%s legacy=%s api=%s elapsed_ms=%d",
-            course_id, legacy_key, proposed_key, elapsed)
-    else:
-        logging.getLogger(__name__).debug(
-            "teacher_content_shadow_match course_id=%s elapsed_ms=%d", course_id, elapsed)
-
-
 def _load_published_content(session: SessionDep, course_id: uuid.UUID,
                             user_id: uuid.UUID) -> tuple[dict | None, list[dict]]:
-    """Assemble (package_payload, published_lessons) via the configured read mode."""
-    mode = settings.TEACHER_LEARNING_CONTENT_READ_MODE
-    if mode == "legacy":
-        return _legacy_published_content(session, course_id, user_id)
+    """Read one teacher-owned published-content snapshot."""
     course = session.get(Course, course_id)
     if course is None:
         return None, []
@@ -563,71 +388,15 @@ def _load_published_content(session: SessionDep, course_id: uuid.UUID,
         TeacherLearningContentMissing, TeacherLearningContentUnavailable,
         get_teacher_published_content,
     )
-
-    def fetch():
+    try:
         snapshot = get_teacher_published_content(course_id, course.owner_id)
         if snapshot is None:
             return None, []
         return _content_from_teacher_snapshot(snapshot, user_id, course_id)
-
-    if mode == "shadow":
-        legacy = _legacy_published_content(session, course_id, user_id)
-        started = time.monotonic()
-        try:
-            proposed = fetch()
-            _log_content_shadow(course_id, legacy, proposed, started)
-        except (TeacherLearningContentUnavailable, TeacherLearningContentMissing) as error:
-            logging.getLogger(__name__).warning(
-                "teacher_content_shadow_unavailable course_id=%s elapsed_ms=%d error=%s",
-                course_id, int((time.monotonic() - started) * 1000),
-                type(error).__name__)
-        return legacy
-    try:
-        return fetch()
     except TeacherLearningContentUnavailable as error:
         raise HTTPException(503, "教师学习内容服务暂不可用，请稍后重试") from error
     except TeacherLearningContentMissing as error:
         raise HTTPException(404, "课堂不存在或尚未发布") from error
-
-
-def _grounding_context(session: SessionDep, course_id: uuid.UUID) -> dict:
-    """Course grounding for better student guidance: material excerpts and
-    published-graph knowledge points. Queries join teacher_course_link so
-    legacy nanoid courses resolve. Published graphs only; excerpts capped."""
-    excerpts = []
-    for row in session.execute(
-        text("SELECT e.payload->'chunks' FROM teacher.mentra_material_extractions e "
-             "JOIN teacher_course_link l ON l.external_course_id = e.course_id "
-             "JOIN teacher.mentra_courses c ON c.id=e.course_id "
-             "WHERE l.course_id = :id AND c.status='active' AND EXISTS ("
-             "SELECT 1 FROM jsonb_array_elements(c.payload->'materials') m "
-             "WHERE m->>'id'=e.material_id AND m->>'classVisible'='true' "
-             "AND m->>'classPublicationId' IS NOT NULL)"), {"id": course_id}).fetchall():
-        for chunk in (row[0] or [])[:6]:
-            text_value = (chunk or {}).get("text", "")
-            if text_value.strip():
-                excerpts.append({"source": (chunk or {}).get("source") or "",
-                                 "page": (chunk or {}).get("page"),
-                                 "text": text_value[:600]})
-            if len(excerpts) >= 12:
-                break
-        if len(excerpts) >= 12:
-            break
-
-    concepts = []
-    graph_row = session.execute(
-        text("SELECT g.version FROM teacher.mentra_course_graph_versions g "
-             "JOIN teacher_course_link l ON l.external_course_id = g.course_id "
-             "WHERE l.course_id = :id AND g.status = 'published' ORDER BY g.version DESC LIMIT 1"),
-        {"id": course_id}).first()
-    if graph_row:
-        for node in session.execute(
-            text("SELECT n.id, n.title, n.description FROM teacher.mentra_course_graph_nodes n "
-                 "JOIN teacher_course_link l ON l.external_course_id = n.course_id "
-                 "WHERE l.course_id = :id AND n.graph_version = :v AND n.node_type = 'knowledge-point'"),
-            {"id": course_id, "v": graph_row[0]}).fetchall():
-            concepts.append({"id": node[0], "title": node[1], "description": (node[2] or "")[:400]})
-    return {"materialExcerpts": excerpts, "knowledgePoints": concepts}
 
 
 @router.post("/internal/student/learning-context")
@@ -722,57 +491,20 @@ class ClassroomViewRequest(BaseModel):
 @router.post("/internal/student/classroom-view")
 def student_classroom_view(body: ClassroomViewRequest, session: SessionDep,
                            x_student_service_key: str | None = Header(default=None)):
-    """Old-session replay scenes without the student agent reading teacher tables.
-
-    The legacy replay query returned empty scenes for a missing classroom;
-    both paths keep that behavior. Classroom ids come from the student's own
-    signed session, so no per-student check exists here (parity with legacy).
-    """
+    """Old-session replay scenes via the teacher-owned classroom API."""
     check_student_service_key(x_student_service_key)
+    from app.services.teacher_learning_content_client import (
+        TeacherLearningContentUnavailable, get_teacher_classroom_view,
+    )
     try:
-        mode = settings.TEACHER_LEARNING_CONTENT_READ_MODE
-        if mode == "legacy":
-            try:
-                view = _classroom_view(session, body.classroom_id)
-            except HTTPException:
-                view = None
-            return {"classroomId": body.classroom_id,
-                    "scenes": view["scenes"] if view else []}
-        from app.services.teacher_learning_content_client import (
-            TeacherLearningContentUnavailable, get_teacher_classroom_view,
-        )
-
-        def fetch():
-            view = get_teacher_classroom_view(body.classroom_id)
-            if view is None:
-                return {"classroomId": body.classroom_id, "scenes": []}
-            return {"classroomId": view.id, "scenes": view.to_dict()["scenes"]}
-
-        if mode == "shadow":
-            legacy_scenes = _classroom_view(session, body.classroom_id)["scenes"]
-            started = time.monotonic()
-            try:
-                proposed = fetch()
-                if [s["id"] for s in proposed["scenes"]] != [s["id"] for s in legacy_scenes]:
-                    logging.getLogger(__name__).warning(
-                        "student_replay_shadow_mismatch classroom_id=%s legacy=%d api=%d elapsed_ms=%d",
-                        body.classroom_id, len(legacy_scenes), len(proposed["scenes"]),
-                        int((time.monotonic() - started) * 1000))
-            except TeacherLearningContentUnavailable as error:
-                logging.getLogger(__name__).warning(
-                    "student_replay_shadow_unavailable classroom_id=%s error=%s",
-                    body.classroom_id, type(error).__name__)
-            try:
-                view = _classroom_view(session, body.classroom_id)
-            except HTTPException:
-                view = None
-            return {"classroomId": body.classroom_id,
-                    "scenes": view["scenes"] if view else []}
-        return fetch()
+        view = get_teacher_classroom_view(body.classroom_id)
+        if view is None:
+            return {"classroomId": body.classroom_id, "scenes": []}
+        return {"classroomId": view.id, "scenes": view.to_dict()["scenes"]}
     except HTTPException:
         raise
-    except Exception as error:
-        raise HTTPException(503, "平台暂不可用，请稍后重试") from error
+    except TeacherLearningContentUnavailable as error:
+        raise HTTPException(503, "教师学习内容服务暂不可用，请稍后重试") from error
 
 
 def _issue_playback_grant(user_id: uuid.UUID, course_id: uuid.UUID, classroom_id: str) -> str:

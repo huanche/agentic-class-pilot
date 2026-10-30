@@ -69,7 +69,6 @@ def snapshot():
 
 
 def test_api_mode_builds_context_from_one_snapshot(monkeypatch):
-    monkeypatch.setattr(student_bridge.settings, "TEACHER_LEARNING_CONTENT_READ_MODE", "api")
     monkeypatch.setattr(student_bridge.settings, "TEACHER_PUBLIC_URL", "http://t:3200")
     monkeypatch.setattr(
         teacher_learning_content_client, "get_teacher_published_content",
@@ -99,7 +98,6 @@ def test_api_mode_builds_context_from_one_snapshot(monkeypatch):
 
 
 def test_api_mode_unpublished_returns_none(monkeypatch):
-    monkeypatch.setattr(student_bridge.settings, "TEACHER_LEARNING_CONTENT_READ_MODE", "api")
     monkeypatch.setattr(
         teacher_learning_content_client, "get_teacher_published_content",
         lambda *_: None)
@@ -107,36 +105,7 @@ def test_api_mode_unpublished_returns_none(monkeypatch):
     assert package is None and lessons == []
 
 
-def test_shadow_keeps_legacy_result_on_mismatch(monkeypatch):
-    monkeypatch.setattr(student_bridge.settings, "TEACHER_LEARNING_CONTENT_READ_MODE", "shadow")
-    legacy_package = {"id": "pkg-1", "version": 2, "entries": []}
-    monkeypatch.setattr(student_bridge, "_published_package_payload",
-                        lambda _s, _c: legacy_package)
-    monkeypatch.setattr(student_bridge, "_published_lessons", lambda _s, _c, _u: [])
-    monkeypatch.setattr(teacher_learning_content_client, "get_teacher_published_content",
-                        lambda *_: snapshot())
-    package, lessons = student_bridge._load_published_content(NoSqlSession(), COURSE_ID, USER_ID)
-    assert package is legacy_package and lessons == []
-
-
-def test_shadow_keeps_legacy_result_during_teacher_outage(monkeypatch):
-    monkeypatch.setattr(student_bridge.settings, "TEACHER_LEARNING_CONTENT_READ_MODE", "shadow")
-    legacy_package = {"id": "pkg-1", "version": 2, "entries": []}
-    monkeypatch.setattr(student_bridge, "_published_package_payload",
-                        lambda _s, _c: legacy_package)
-    monkeypatch.setattr(student_bridge, "_published_lessons", lambda _s, _c, _u: [])
-
-    def unavailable(*_args):
-        raise teacher_learning_content_client.TeacherLearningContentUnavailable()
-
-    monkeypatch.setattr(teacher_learning_content_client,
-                        "get_teacher_published_content", unavailable)
-    package, lessons = student_bridge._load_published_content(NoSqlSession(), COURSE_ID, USER_ID)
-    assert package is legacy_package and lessons == []
-
-
 def test_api_mode_fails_closed_when_teacher_unavailable(monkeypatch):
-    monkeypatch.setattr(student_bridge.settings, "TEACHER_LEARNING_CONTENT_READ_MODE", "api")
 
     def unavailable(*_args):
         raise teacher_learning_content_client.TeacherLearningContentUnavailable()
@@ -149,7 +118,6 @@ def test_api_mode_fails_closed_when_teacher_unavailable(monkeypatch):
 
 
 def test_api_mode_maps_missing_snapshot_to_legacy_404(monkeypatch):
-    monkeypatch.setattr(student_bridge.settings, "TEACHER_LEARNING_CONTENT_READ_MODE", "api")
 
     def missing(*_args):
         raise teacher_learning_content_client.TeacherLearningContentMissing()
@@ -238,7 +206,6 @@ def test_enqueue_api_mode_maps_reasons_and_course_ref(monkeypatch):
         return ({"courseId": "canonical-id", "lessonId": "L1", "classroomId": "room-1",
                  "publishedAt": 123, "classroom": lesson_model.classroom}, None)
 
-    monkeypatch.setattr(teacher_bridge.settings, "TEACHER_LEARNING_CONTENT_READ_MODE", "api")
     monkeypatch.setattr(teacher_bridge.settings, "TEACHER_SERVICE_KEY", "test-key")
     monkeypatch.setattr(teacher_bridge, "get_teacher_published_lesson", fetch_ok, raising=False)
     monkeypatch.setattr(
@@ -273,7 +240,6 @@ def test_enqueue_api_mode_rejects_unpublished(monkeypatch):
         def execute(self, statement, params):
             return Row((str(OWNER_ID),)) if "owner_id" in str(statement) else Row(None)
 
-    monkeypatch.setattr(teacher_bridge.settings, "TEACHER_LEARNING_CONTENT_READ_MODE", "api")
     monkeypatch.setattr(teacher_bridge.settings, "TEACHER_SERVICE_KEY", "test-key")
     monkeypatch.setattr(
         "app.services.teacher_learning_content_client.get_teacher_published_lesson",
@@ -308,7 +274,6 @@ def test_classroom_view_endpoint_serves_replay_without_teacher_tables(monkeypatc
             "id": "room-1", "title": "课堂",
             "scenes": [{"id": "s1", "type": "slide", "order": 1, "title": "页",
                         "visibleText": ["要点"], "actions": []}]})
-    monkeypatch.setattr(student_bridge.settings, "TEACHER_LEARNING_CONTENT_READ_MODE", "api")
     monkeypatch.setattr(student_bridge.settings, "STUDENT_SERVICE_KEY", "key")
     monkeypatch.setattr(
         "app.services.teacher_learning_content_client.get_teacher_classroom_view",
@@ -325,7 +290,6 @@ def test_classroom_view_missing_returns_empty_scenes(monkeypatch):
         def execute(self, statement, params):
             raise AssertionError("no SQL expected")
 
-    monkeypatch.setattr(student_bridge.settings, "TEACHER_LEARNING_CONTENT_READ_MODE", "api")
     monkeypatch.setattr(student_bridge.settings, "STUDENT_SERVICE_KEY", "key")
     monkeypatch.setattr(
         "app.services.teacher_learning_content_client.get_teacher_classroom_view",

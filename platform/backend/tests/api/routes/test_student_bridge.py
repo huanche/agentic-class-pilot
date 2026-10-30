@@ -10,26 +10,6 @@ from app.core.config import settings
 BRIDGE_KEY = "student-bridge-test-key"
 
 
-def test_classroom_view_includes_visible_slide_text() -> None:
-    from app.api.routes.student_bridge import _classroom_view
-
-    class Result:
-        def first(self):
-            return ({"name": "课堂"}, [{"id": "scene-1", "order": 1,
-                    "content": {"canvas": {"elements": [
-                        {"type": "text", "content": "<p>电路交换 &amp; 分组交换</p>"},
-                        {"type": "image", "content": "ignore"},
-                    ]}}, "actions": [{"type": "speech", "text": "讲解"}]}])
-
-    class Session:
-        def execute(self, *_args, **_kwargs):
-            return Result()
-
-    classroom = _classroom_view(Session(), "room-1")
-    assert classroom["scenes"][0]["visibleText"] == ["电路交换 & 分组交换"]
-    assert classroom["scenes"][0]["actions"][0]["text"] == "讲解"
-
-
 @pytest.fixture(autouse=True)
 def bridge_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "STUDENT_SERVICE_KEY", BRIDGE_KEY)
@@ -225,63 +205,3 @@ def test_knowledge_outline_ignores_fenced_heading_examples() -> None:
     points = _knowledge_points_from_markdown(content)
     assert [p["title"] for p in points] == ["实际概念"]
     assert points[0]["expectedConcepts"] == ["实际要点"]
-
-
-def test_published_lesson_knowledge_file_reaches_student_rubric() -> None:
-    """已发布课时文件不能在桥接时丢类型，导致学生辅导报没有知识点。"""
-    import uuid
-    from types import SimpleNamespace
-
-    from app.api.routes.student_bridge import (
-        _knowledge_artifact_rubric,
-        published_course_entries,
-    )
-
-    course = {"modules": [{"lessons": [{"id": "L1", "files": [
-        {"id": "k1", "type": "knowledge-points", "title": "第1周知识点",
-         "content": "## 交换的概念\n- 建立通信信道传送信息。",
-         "classVisible": True, "classPublicationId": "PUB-K1",
-         "publicationPlacement": {"lessonId": "L1", "resourceType": "knowledge-points"}},
-        {"id": "k2", "type": "knowledge-points", "title": "未发布知识点",
-         "content": "## 不应出现", "classVisible": False},
-        # 历史已发布文件尚无 publicationPlacement，仍保留明确的 type。
-        {"id": "k3", "type": "knowledge-points", "title": "历史知识点",
-         "content": "## 历史概念", "classVisible": True, "classPublicationId": "PUB-K3"},
-    ]}]}]}
-
-    class PublishedSession:
-        def execute(self, query, params):
-            return SimpleNamespace(first=lambda: (course,), all=lambda: [])
-
-    entries = published_course_entries(PublishedSession(), uuid.UUID(int=1))
-    assert [entry["id"] for entry in entries] == ["k1", "k3"]
-    assert all(entry["resourceType"] == "knowledge-points" for entry in entries)
-    rubric = _knowledge_artifact_rubric(entries, "L1")
-    assert rubric is not None
-    assert [point["title"] for point in rubric["knowledgePoints"]] == ["交换的概念"]
-
-
-def test_published_artifact_preserves_explicit_publication_resource_type() -> None:
-    """工件发布类型存放在 publicationPlacement，桥接必须读取同一字段。"""
-    import uuid
-    from types import SimpleNamespace
-
-    from app.api.routes.student_bridge import (
-        _knowledge_artifact_rubric,
-        published_course_entries,
-    )
-
-    artifact = {
-        "id": "a1", "title": "课程知识点", "content": "## 交换概念\n- 传送信息。",
-        "classVisible": True, "classPublicationId": "PUB-A1",
-        "scope": {"type": "lesson", "lessonId": "L1"},
-        "publicationPlacement": {"resourceType": "knowledge-points", "lessonId": "L1"},
-    }
-
-    class PublishedSession:
-        def execute(self, query, params):
-            return SimpleNamespace(first=lambda: ({"modules": []},), all=lambda: [(artifact,)])
-
-    entries = published_course_entries(PublishedSession(), uuid.UUID(int=1))
-    assert entries[0]["resourceType"] == "knowledge-points"
-    assert _knowledge_artifact_rubric(entries, "L1") is not None
