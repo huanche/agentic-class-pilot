@@ -4,9 +4,14 @@ on:
   pull_request:
     branches: [main]
     paths:
+      - 'platform/backend/app/api/**'
+      - 'platform/backend/app/services/**'
+      - 'student_agent/agent/**'
+      - 'student_agent/backend/**'
       - 'contracts/**'
       - 'scripts/check_integration_contracts.py'
       - 'scripts/check_schema_ownership.py'
+      - 'scripts/check_runtime_data_ownership.py'
       - 'scripts/tests/test_integration_contracts.py'
       - 'scripts/generate_integration_clients.py'
       - 'scripts/tests/test_generated_clients.py'
@@ -77,8 +82,13 @@ on:
       - '.github/workflows/integration-contracts.yml'
   push:
     paths:
+      - 'platform/backend/app/api/**'
+      - 'platform/backend/app/services/**'
+      - 'student_agent/agent/**'
+      - 'student_agent/backend/**'
       - 'contracts/**'
       - 'scripts/check_integration_contracts.py'
+      - 'scripts/check_runtime_data_ownership.py'
       - 'scripts/tests/test_integration_contracts.py'
       - 'scripts/generate_integration_clients.py'
       - 'scripts/tests/test_generated_clients.py'
@@ -170,6 +180,8 @@ jobs:
         run: python scripts/check_integration_contracts.py
       - name: Keep new teacher and student schema changes in their owning services
         run: python scripts/check_schema_ownership.py
+      - name: Prevent new cross-owner runtime SQL
+        run: python scripts/check_runtime_data_ownership.py
       - name: Reject generated gateway routing drift
         run: python platform/scripts/gen_routing.py --check
       - name: Run isolated contract regressions (no application or database)
