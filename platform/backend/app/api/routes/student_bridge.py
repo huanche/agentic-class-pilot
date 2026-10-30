@@ -98,7 +98,7 @@ def verify_launch_token(token: str, *, refresh_session: bool = False) -> dict:
     return payload
 
 
-# --- published-content resolution (read-only cross-schema queries) ------------
+# --- published-content resolution ---------------------------------------------
 
 def _latest_publication(session: SessionDep, course_id: uuid.UUID) -> dict | None:
     from app.services.course_publication import latest_publication
@@ -106,46 +106,13 @@ def _latest_publication(session: SessionDep, course_id: uuid.UUID) -> dict | Non
     return latest_publication(session, course_id)
 
 
-def _legacy_published_classroom(session: SessionDep, course_id: uuid.UUID) -> str | None:
-    row = session.execute(
-        text("SELECT c.id FROM teacher.mentra_classrooms c "
-             "JOIN teacher.mentra_course_artifacts a ON a.payload->>'classroomId' = c.id "
-             "JOIN teacher_course_link l ON l.external_course_id = a.course_id "
-             "JOIN teacher.mentra_courses course ON course.id=a.course_id AND course.status='active' "
-             "WHERE l.course_id=:id AND a.status='published' AND a.payload->>'classVisible'='true' AND a.payload->>'classPublicationId' IS NOT NULL "
-             "ORDER BY (a.payload->>'classPublishedAt')::bigint DESC NULLS LAST LIMIT 1"),
-        {"id": course_id}).first()
-    return row[0] if row else None
-
-
 def _published_classroom(session: SessionDep, course_id: uuid.UUID) -> str | None:
-    mode = settings.TEACHER_CLASSROOM_READ_MODE
-    if mode == "legacy":
-        return _legacy_published_classroom(session, course_id)
     course = session.get(Course, course_id)
     if course is None:
         return None
     from app.services.teacher_classroom_client import (
         TeacherClassroomUnavailable, get_latest_classroom,
     )
-    if mode == "shadow":
-        existing = _legacy_published_classroom(session, course_id)
-        started = time.monotonic()
-        try:
-            proposed = get_latest_classroom(course_id, course.owner_id)
-            if proposed != existing:
-                logging.getLogger(__name__).warning(
-                    "teacher_classroom_shadow_mismatch course_id=%s legacy=%s api=%s elapsed_ms=%d",
-                    course_id, existing, proposed, int((time.monotonic() - started) * 1000))
-            else:
-                logging.getLogger(__name__).debug(
-                    "teacher_classroom_shadow_match course_id=%s elapsed_ms=%d",
-                    course_id, int((time.monotonic() - started) * 1000))
-        except TeacherClassroomUnavailable:
-            logging.getLogger(__name__).warning(
-                "teacher_classroom_shadow_unavailable course_id=%s elapsed_ms=%d",
-                course_id, int((time.monotonic() - started) * 1000))
-        return existing
     try:
         return get_latest_classroom(course_id, course.owner_id)
     except TeacherClassroomUnavailable as error:

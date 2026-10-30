@@ -40,7 +40,6 @@ class Settings(BaseSettings):
     TEACHER_URL: str = "http://127.0.0.1:3200"
     TEACHER_PUBLIC_URL: str = "http://localhost:3200"
     TEACHER_ANALYTICS_READ_MODE: Literal["legacy", "api"] = "legacy"
-    TEACHER_CLASSROOM_READ_MODE: Literal["legacy", "shadow", "api"] = "legacy"
     # api: assemble the learning context from one teacher content snapshot;
     # shadow: compare it against the legacy cross-schema reads; legacy: direct SQL.
     TEACHER_LEARNING_CONTENT_READ_MODE: Literal["legacy", "shadow", "api"] = "legacy"

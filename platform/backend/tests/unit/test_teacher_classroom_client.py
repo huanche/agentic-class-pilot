@@ -1,4 +1,4 @@
-"""The platform keeps the old classroom read authoritative until API cutover."""
+"""Platform reads teacher-owned classroom publication through its API."""
 
 import uuid
 from types import SimpleNamespace
@@ -28,7 +28,6 @@ class Session:
 
 
 def test_api_mode_uses_teacher_service_without_cross_schema_sql(monkeypatch):
-    monkeypatch.setattr(student_bridge.settings, "TEACHER_CLASSROOM_READ_MODE", "api")
     monkeypatch.setattr(teacher_classroom_client, "get_latest_classroom",
                         lambda course, owner: "new-room" if (course, owner) == (COURSE_ID, OWNER_ID) else None)
     session = Session()
@@ -36,28 +35,7 @@ def test_api_mode_uses_teacher_service_without_cross_schema_sql(monkeypatch):
     assert session.queries == 0
 
 
-def test_shadow_keeps_legacy_result_on_mismatch(monkeypatch):
-    monkeypatch.setattr(student_bridge.settings, "TEACHER_CLASSROOM_READ_MODE", "shadow")
-    monkeypatch.setattr(teacher_classroom_client, "get_latest_classroom", lambda *_: "new-room")
-    session = Session()
-    assert student_bridge._published_classroom(session, COURSE_ID) == "old-room"
-    assert session.queries == 1
-
-
-def test_shadow_keeps_legacy_result_during_teacher_outage(monkeypatch):
-    monkeypatch.setattr(student_bridge.settings, "TEACHER_CLASSROOM_READ_MODE", "shadow")
-
-    def unavailable(*_args):
-        raise teacher_classroom_client.TeacherClassroomUnavailable()
-
-    monkeypatch.setattr(teacher_classroom_client, "get_latest_classroom", unavailable)
-    session = Session()
-    assert student_bridge._published_classroom(session, COURSE_ID) == "old-room"
-    assert session.queries == 1
-
-
 def test_api_mode_fails_closed_when_teacher_unavailable(monkeypatch):
-    monkeypatch.setattr(student_bridge.settings, "TEACHER_CLASSROOM_READ_MODE", "api")
 
     def unavailable(*_args):
         raise teacher_classroom_client.TeacherClassroomUnavailable()
