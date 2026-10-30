@@ -239,7 +239,6 @@ def test_enqueue_api_mode_maps_reasons_and_course_ref(monkeypatch):
                  "publishedAt": 123, "classroom": lesson_model.classroom}, None)
 
     monkeypatch.setattr(teacher_bridge.settings, "TEACHER_LEARNING_CONTENT_READ_MODE", "api")
-    monkeypatch.setattr(teacher_bridge.settings, "STUDENT_KNOWLEDGE_ENQUEUE_MODE", "legacy")
     monkeypatch.setattr(teacher_bridge.settings, "TEACHER_SERVICE_KEY", "test-key")
     monkeypatch.setattr(teacher_bridge, "get_teacher_published_lesson", fetch_ok, raising=False)
     monkeypatch.setattr(

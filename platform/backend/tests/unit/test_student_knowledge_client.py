@@ -1,5 +1,7 @@
 """The student service owns durable knowledge jobs after the API switch."""
 
+import hashlib
+import json
 import uuid
 from types import SimpleNamespace
 
@@ -54,8 +56,7 @@ def test_student_queue_rejects_mismatched_response(monkeypatch):
         )
 
 
-def test_api_mode_does_not_write_student_table_from_platform(monkeypatch):
-    monkeypatch.setattr(student_bridge.settings, "STUDENT_KNOWLEDGE_ENQUEUE_MODE", "api")
+def test_platform_enqueues_through_student_api_without_writing_student_table(monkeypatch):
     called = []
     monkeypatch.setattr(
         student_knowledge_client, "enqueue_student_knowledge",
@@ -69,11 +70,13 @@ def test_api_mode_does_not_write_student_table_from_platform(monkeypatch):
     revision = student_bridge.ensure_published_knowledge_job(
         NoSqlSession(), uuid.UUID(int=1), "lesson", {"id": "classroom", "scenes": []}, 123,
     )
+    assert revision == hashlib.sha256(json.dumps(
+        ["classroom", 123, []], sort_keys=True, ensure_ascii=False,
+    ).encode()).hexdigest()
     assert called == [(str(uuid.UUID(int=1)), "lesson", revision, "classroom", [])]
 
 
-def test_api_mode_fails_closed_on_student_outage(monkeypatch):
-    monkeypatch.setattr(student_bridge.settings, "STUDENT_KNOWLEDGE_ENQUEUE_MODE", "api")
+def test_student_outage_fails_closed(monkeypatch):
 
     def unavailable(*_args):
         raise student_knowledge_client.StudentKnowledgeUnavailable()
