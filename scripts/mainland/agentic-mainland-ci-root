@@ -4,6 +4,10 @@ umask 077
 export PATH=/usr/sbin:/usr/bin:/sbin:/bin
 
 case "${1:-}" in
+  seed-baseline)
+    [[ $# -eq 1 ]] || exit 64
+    exec timeout 1620s /usr/local/sbin/agentic-teacher-tcr-prepare --seed-baseline
+    ;;
   prepare)
     [[ $# -eq 1 ]] || exit 64
     exec timeout 1020s /usr/local/sbin/agentic-teacher-tcr-prepare

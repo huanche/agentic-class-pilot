@@ -36,6 +36,12 @@ def run():
     if shutil.disk_usage('/var/lib/docker').free < 10 * 1024**3:
         raise RuntimeError('Insufficient disk space')
     image = REPOSITORY + ':' + tag
+    seed = sys.argv[1:] == ['--seed-baseline']
+    if sys.argv[1:] and not seed:
+        raise RuntimeError('Invalid mode')
+    if seed and (tag != 'main-df839c6' or expected !=
+                 'sha256:ff22e32dbb0c0b31cd1ca5edd8447f68238a23016b4fe18a40e3e630caeded9d'):
+        raise RuntimeError('Seeding is restricted to the verified migration baseline')
     with open('/run/lock/agentic-teacher-deploy.lock', 'a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         with tempfile.TemporaryDirectory(prefix='agentic-tcr-', dir='/run') as config:
@@ -46,6 +52,14 @@ def run():
             if login.returncode:
                 raise RuntimeError('TCR login failed (credential output suppressed)')
             print('TCR login successful; temporary credentials only', flush=True)
+            if seed:
+                source = 'zmzm1443/agentic-teacher:main-df839c6'
+                actual = subprocess.check_output(['/usr/bin/docker', 'image', 'inspect', '--format', '{{.Id}}', source]).decode().strip()
+                if actual != expected:
+                    raise RuntimeError('Local baseline ID mismatch')
+                subprocess.run(['/usr/bin/docker', 'tag', source, image], check=True)
+                print('Seeding the verified baseline from mainland; no container changes', flush=True)
+                subprocess.run(docker + ['push', image], check=True, timeout=600)
             subprocess.run(docker + ['pull', '--platform', 'linux/amd64', image], check=True, timeout=900)
         metadata = json.loads(subprocess.check_output(['/usr/bin/docker', 'image', 'inspect', image]))[0]
         if metadata['Id'] != expected:

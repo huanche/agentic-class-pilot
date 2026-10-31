@@ -6,6 +6,10 @@ export PATH=/usr/sbin:/usr/bin:/sbin:/bin
 ORIGINAL="${SSH_ORIGINAL_COMMAND:-}"
 
 case "$ORIGINAL" in
+  teacher-seed-baseline)
+    exec /usr/bin/sudo -n \
+      /usr/local/sbin/agentic-mainland-ci-root seed-baseline
+    ;;
   teacher-prepare)
     exec /usr/bin/sudo -n \
       /usr/local/sbin/agentic-mainland-ci-root prepare
