@@ -4,7 +4,9 @@ umask 077
 
 NAME=agentic-teacher-prod
 NET=agentic-migration-internal
-IMAGE=zmzm1443/agentic-teacher
+IMAGE=ccr.ccs.tencentyun.com/agentedu-mainland/agentic-teacher
+PREPARED=/var/lib/agentic-class-pilot/prepared-images
+BACKUP=/usr/local/sbin/agentic-mainland-backup
 ENVFILE=/etc/agentic-class-pilot/teacher.env
 DATA=/home/ubuntu/teacher-agent-data
 CONFIG=/opt/agentic-class-pilot/teacher_agent/server-providers.yml
@@ -188,6 +190,22 @@ systemctl is-active --quiet agentic-deepseek-egress.service \
 AI_HOST=$(deepseek_host)
 
 NEW="$2:$3"
+[[ -x "$BACKUP" ]] || die "完整备份程序缺失"
+[[ "$1" == deploy-local ]] || die "必须先使用受限 TCR 准备指令拉取和校验镜像"
+EXPECTED_ID=$(python3 - "$PREPARED/$3.json" "$NEW" <<'PY'
+import json, re, sys
+from pathlib import Path
+p = Path(sys.argv[1])
+assert p.stat().st_uid == 0 and p.stat().st_mode & 0o022 == 0
+record = json.loads(p.read_text())
+assert record['image'] == sys.argv[2]
+assert re.fullmatch('sha256:[0-9a-f]{64}', record['id'])
+print(record['id'])
+PY
+) || die "缺少可信镜像校验记录"
+[[ $(docker image inspect -f '{{.Id}}' "$NEW") == "$EXPECTED_ID" ]] || die "本地镜像已变化"
+echo '执行部署前完整静止备份'
+"$BACKUP" --locked
 BACK="${NAME}-rollback-$(date -u +%Y%m%dT%H%M%SZ)"
 STOP_ATTEMPTED=0
 FORWARD_PAUSED=0
@@ -247,7 +265,7 @@ if [[ "$1" == deploy-local ]]; then
   docker image inspect "$NEW" >/dev/null \
     || die "本地镜像不存在，禁止部署"
 
-  echo "本地镜像模式：跳过 Docker Hub"
+  echo "已校验的 TCR 本地镜像模式"
 else
   docker pull "$NEW"
 fi
@@ -258,6 +276,8 @@ systemctl stop "$FORWARD"
 
 echo "等待当前课程生成任务空闲"
 bash "$WAIT"
+# Recheck the immutable image after backup/drain before touching the old container.
+[[ $(docker image inspect -f '{{.Id}}' "$NEW") == "$EXPECTED_ID" ]] || die "镜像校验已失效"
 
 echo "停止并保留旧容器: $BACK"
 STOP_ATTEMPTED=1
@@ -268,13 +288,14 @@ echo "启动新容器"
 docker run -d \
   --name "$NAME" \
   --pull never \
+  --label "org.agentedu.requested-image=$NEW" \
   --restart no \
   --network "$NET" \
   --add-host "$AI_HOST:172.19.0.1" \
   --env-file "$ENVFILE" \
   --mount "type=bind,source=$DATA,target=/app/data" \
   --mount "type=bind,source=$CONFIG,target=/app/server-providers.yml,readonly" \
-  "$NEW" >/dev/null
+  "$EXPECTED_ID" >/dev/null
 
 echo "检查新容器健康状态"
 wait_new_healthy || die "新容器健康检查失败"

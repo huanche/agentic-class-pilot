@@ -1,0 +1,64 @@
+#!/bin/bash
+# Consistent mainland snapshot: close app entrypoints, drain, stop writers, capture, restore.
+set -Eeuo pipefail
+umask 077
+[[ $EUID == 0 && $(hostname) == VM-0-4-ubuntu ]] || exit 1
+if [[ ${1:-} == --locked && $# == 1 ]]; then
+  [[ $(readlink /proc/$$/fd/9) == /run/lock/agentic-teacher-deploy.lock ]] || exit 1
+elif [[ $# == 0 ]]; then
+  exec 9>/run/lock/agentic-teacher-deploy.lock
+  flock -n 9 || { echo 'Another backup/deployment is active'; exit 1; }
+else
+  exit 64
+fi
+POLICY=/usr/local/lib/agentic-class-pilot/server-backup-policy.py
+WAIT=/usr/local/libexec/agentic-teacher-wait-idle.sh
+[[ $(docker inspect -f '{{.State.Running}}' agentic-teacher-prod) == true ]]
+[[ $(docker inspect -f '{{.State.Running}}' agentedu-final-minio-1) == true ]]
+UNITS=()
+for unit in agentic-platform agentic-student agentic-teacher-forward; do
+  if systemctl is-active --quiet "$unit"; then UNITS+=("$unit"); fi
+done
+bash "$WAIT" --once
+restore() {
+  local rc=$?
+  trap - EXIT
+  set +e
+  docker start agentedu-final-minio-1 >/dev/null || rc=1
+  docker start agentic-teacher-prod >/dev/null || rc=1
+  if ((${#UNITS[@]})); then systemctl start "${UNITS[@]}" || rc=1; fi
+  if [[ " ${UNITS[*]} " == *' agentic-teacher-forward '* ]]; then
+    local healthy=0
+    for _ in $(seq 1 60); do
+      if [[ $(curl --noproxy '*' -s --max-time 3 -o /dev/null -w '%{http_code}' http://127.0.0.1:3200/api/health) == 200 ]]; then healthy=1; break; fi
+      sleep 2
+    done
+    ((healthy == 1)) || rc=1
+  fi
+  echo "BACKUP_EXIT=$rc original services restored"
+  exit "$rc"
+}
+trap restore EXIT
+if ((${#UNITS[@]})); then systemctl stop "${UNITS[@]}"; fi
+bash "$WAIT"
+docker stop -t 60 agentic-teacher-prod >/dev/null
+docker stop -t 30 agentedu-final-minio-1 >/dev/null
+python3 "$POLICY" backup
+SNAP=$(find /srv/agentedu-auto-backups -mindepth 1 -maxdepth 1 -type d -name 'migration-*' | sort | tail -1)
+[[ -f $SNAP/BACKUP_COMPLETE ]]
+SUPPLEMENT=/srv/agentedu-server-config-backups
+install -d -m 700 "$SUPPLEMENT"
+CONFIG_ARCHIVE="$SUPPLEMENT/$(basename "$SNAP").tar.gz"
+python3 - "$CONFIG_ARCHIVE" <<'PY'
+from pathlib import Path
+import sys, tarfile
+sources = [Path('/etc/agentic-class-pilot'), Path('/usr/local/lib/agentic-class-pilot'),
+           Path('/etc/sudoers.d'), Path('/opt/agentic-class-pilot/student_agent/.env.local')]
+for pattern in ('/etc/systemd/system/agentic*', '/usr/local/libexec/agentic*', '/usr/local/sbin/agentic*'):
+    sources.extend(Path('/').glob(pattern.lstrip('/')))
+with tarfile.open(sys.argv[1], 'w:gz') as archive:
+    for source in sources:
+        if source.exists(): archive.add(source, arcname=str(source).lstrip('/'))
+PY
+sha256sum "$CONFIG_ARCHIVE" > "$CONFIG_ARCHIVE.sha256"
+echo "QUIESCED_BACKUP_COMPLETE $SNAP"

@@ -104,7 +104,7 @@ jobs:
           # Baseline layers may have been seeded from mainland. Prove the runner
           # can also upload a new filesystem layer, using a non-deployable tag.
           PROBE_IMAGE="ccr.ccs.tencentyun.com/agentedu-mainland/agentic-teacher:probe-${GITHUB_RUN_ID}"
-          printf 'FROM %s\nRUN printf "TCR upload probe %s\\n" > /agentic-tcr-probe\n' \
+          printf 'FROM %s\nRUN printf "TCR upload probe %s\\n" > /tmp/agentic-tcr-probe\n' \
             "$TARGET_IMAGE" "$GITHUB_RUN_ID" |
             docker build --network none --tag "$PROBE_IMAGE" -
           timeout 300s docker push "$PROBE_IMAGE"

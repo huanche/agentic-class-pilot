@@ -1,0 +1,112 @@
+name: Mainland Teacher Release
+
+on:
+  workflow_run:
+    workflows: [teacher-deploy]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: Successful teacher-deploy build run on main (not a PR run)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: mainland-teacher-operations
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.event == 'push' || github.event.workflow_run.event == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Verify trusted build and reject superseded teacher code
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ inputs.source_run_id || github.event.workflow_run.id }}
+        run: |
+          set -Eeuo pipefail
+          [[ "$SOURCE_RUN_ID" =~ ^[0-9]+$ ]]
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN_ID" > /tmp/source-run.json
+          jq -e --arg repo "$GITHUB_REPOSITORY" '
+            .path == ".github/workflows/teacher-deploy.yml" and
+            .head_branch == "main" and .head_repository.full_name == $repo and
+            (.event == "push" or .event == "workflow_dispatch") and .status == "completed"
+          ' /tmp/source-run.json >/dev/null
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN_ID/jobs?filter=latest&per_page=100" |
+            jq -e 'any(.jobs[]; .name == "build" and .conclusion == "success")' >/dev/null
+          SHA=$(jq -r .head_sha /tmp/source-run.json)
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]
+          git merge-base --is-ancestor "$SHA" origin/main
+          git diff --exit-code "$SHA" origin/main -- teacher_agent/
+          echo "SOURCE_SHA=$SHA" >> "$GITHUB_ENV"
+          echo "IMAGE_TAG=main-${SHA:0:7}" >> "$GITHUB_ENV"
+
+      - name: Publish existing successful build and prepare mainland image
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          TCR_USERNAME: ${{ secrets.TCR_USERNAME }}
+          TCR_PASSWORD: ${{ secrets.TCR_PASSWORD }}
+          SERVER_HOST: ${{ secrets.MAINLAND_SERVER_HOST }}
+          SERVER_SSH_KEY: ${{ secrets.MAINLAND_SERVER_SSH_KEY }}
+          SERVER_KNOWN_HOSTS: ${{ secrets.MAINLAND_SSH_KNOWN_HOSTS }}
+          GH_TOKEN: ${{ github.token }}
+          AUTODEPLOY: ${{ vars.MAINLAND_AUTODEPLOY_ENABLED }}
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          test "$SERVER_HOST" = '43.138.178.158'
+          for name in DOCKERHUB_USERNAME DOCKERHUB_TOKEN TCR_USERNAME TCR_PASSWORD SERVER_SSH_KEY SERVER_KNOWN_HOSTS; do
+            test -n "${!name}"
+          done
+          DIR=$(mktemp -d)
+          trap 'rm -rf -- "$DIR"' EXIT
+          export DOCKER_CONFIG="$DIR/docker"
+          mkdir -m 700 "$DOCKER_CONFIG"
+          printf '%s' "$DOCKERHUB_TOKEN" | docker login docker.io -u "$DOCKERHUB_USERNAME" --password-stdin >/dev/null
+          SOURCE="zmzm1443/agentic-teacher:$IMAGE_TAG"
+          TARGET="ccr.ccs.tencentyun.com/agentedu-mainland/agentic-teacher:$IMAGE_TAG"
+          docker pull --platform linux/amd64 "$SOURCE"
+          export IMAGE_ID=$(docker image inspect --format '{{.Id}}' "$SOURCE")
+          printf '%s' "$TCR_PASSWORD" | docker login ccr.ccs.tencentyun.com -u "$TCR_USERNAME" --password-stdin >/dev/null
+          docker tag "$SOURCE" "$TARGET"
+          timeout 3600s docker push "$TARGET"
+          printf '%s\n' "$SERVER_SSH_KEY" > "$DIR/key"
+          printf '%s\n' "$SERVER_KNOWN_HOSTS" > "$DIR/known_hosts"
+          ssh-keygen -y -f "$DIR/key" >/dev/null
+          ssh-keygen -F "$SERVER_HOST" -f "$DIR/known_hosts" >/dev/null
+          SSH=(ssh -F /dev/null -T -i "$DIR/key"
+            -o BatchMode=yes -o IdentitiesOnly=yes -o IdentityAgent=none
+            -o StrictHostKeyChecking=yes -o HostKeyAlgorithms=ssh-ed25519
+            -o UserKnownHostsFile="$DIR/known_hosts" -o ConnectTimeout=15
+            -o ServerAliveInterval=15 -o ServerAliveCountMax=4)
+          python3 - <<'PY' | timeout 1080s "${SSH[@]}" "agentic-ci@$SERVER_HOST" teacher-prepare
+          import json, os
+          print(json.dumps({
+            'tag': os.environ['IMAGE_TAG'], 'image_id': os.environ['IMAGE_ID'],
+            'username': os.environ['TCR_USERNAME'], 'password': os.environ['TCR_PASSWORD'],
+          }))
+          PY
+          "${SSH[@]}" "agentic-ci@$SERVER_HOST" teacher-check
+          if [[ "$AUTODEPLOY" != true ]]; then
+            echo '### Image verified on mainland; deployment remains disabled' >> "$GITHUB_STEP_SUMMARY"
+            echo "Prepared $TARGET ($IMAGE_ID)." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          # Re-fetch after potentially slow uploads. A later teacher change invalidates this release.
+          git fetch origin main
+          git diff --exit-code "$SOURCE_SHA" origin/main -- teacher_agent/
+          timeout 1800s "${SSH[@]}" "agentic-ci@$SERVER_HOST" "teacher-deploy $IMAGE_TAG"
+          echo "### Deployed $TARGET ($IMAGE_ID)" >> "$GITHUB_STEP_SUMMARY"

@@ -30,7 +30,7 @@ case "${1:-}" in
     [[ "$TAG" =~ ^main-[0-9a-f]{7}$ ]] || exit 64
 
     exec /usr/local/sbin/agentic-teacher-deploy \
-      deploy-local zmzm1443/agentic-teacher "$TAG"
+      deploy-local ccr.ccs.tencentyun.com/agentedu-mainland/agentic-teacher "$TAG"
     ;;
 
   *)
