@@ -128,6 +128,11 @@ def backup():
         if gateway.returncode == 0:
             capture(['docker', 'cp', 'agentic-caddy-mainland:/data/.', '-'], path / 'gateway-tls-state.tar')
         capture(['tar', '-C', str(REPO / 'student_agent/runtime'), '-czf', '-', '.'], path / 'student-runtime.tar.gz')
+        for voice in ('kokoro', 'hojo'):
+            runtime = REPO / 'teacher_agent/.runtime' / voice / 'runtime'
+            if runtime.is_dir():
+                capture(['tar', '-C', str(runtime), '--exclude=./cache/Microsoft/DeveloperTools/.onnxruntime',
+                         '-czf', '-', '.'], path / (voice + '-runtime.tar.gz'))
         subprocess.run(['git', '-c', 'safe.directory=' + str(REPO), '-C', str(REPO),
                         'bundle', 'create', str(path / 'server-source.bundle'), 'HEAD'], check=True)
         active_web = Path('/opt/agentic-mainland-web/current')
