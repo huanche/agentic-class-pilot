@@ -1,0 +1,82 @@
+
+name: Mainland Teacher SSH Check
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  ssh-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Test mainland server SSH connection
+        shell: bash
+        env:
+          SERVER_HOST: ${{ secrets.MAINLAND_SERVER_HOST }}
+          SERVER_SSH_KEY: ${{ secrets.MAINLAND_SERVER_SSH_KEY }}
+          SERVER_KNOWN_HOSTS: ${{ secrets.MAINLAND_SSH_KNOWN_HOSTS }}
+
+        run: |
+          set -euo pipefail
+
+          echo "====== 1. 检查 Secrets ======"
+
+          for name in SERVER_HOST SERVER_SSH_KEY SERVER_KNOWN_HOSTS; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "::error::$name 未配置"
+              exit 1
+            fi
+          done
+
+          if [[ "$SERVER_HOST" == "43.132.155.8" ]]; then
+            echo "::error::禁止连接香港生产服务器"
+            exit 1
+          fi
+
+          echo "三个 Secrets 均已配置"
+
+          echo "====== 2. 准备 SSH 密钥 ======"
+
+          DIR=$(mktemp -d)
+          trap 'rm -rf -- "$DIR"' EXIT
+          chmod 700 "$DIR"
+
+          printf '%s\n' "$SERVER_SSH_KEY" > "$DIR/key"
+          printf '%s\n' "$SERVER_KNOWN_HOSTS" > "$DIR/known_hosts"
+
+          chmod 600 "$DIR/key" "$DIR/known_hosts"
+
+          ssh-keygen -y -f "$DIR/key" >/dev/null
+
+          ssh-keygen -F "$SERVER_HOST" \
+            -f "$DIR/known_hosts" >/dev/null || {
+              echo "::error::known_hosts 不包含国内服务器地址"
+              exit 1
+            }
+
+          echo "SSH 私钥和主机公钥检查通过"
+
+          echo "====== 3. 连接国内服务器 ======"
+
+          timeout 90s ssh \
+            -F /dev/null \
+            -i "$DIR/key" \
+            -T \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -o IdentityAgent=none \
+            -o PasswordAuthentication=no \
+            -o KbdInteractiveAuthentication=no \
+            -o StrictHostKeyChecking=yes \
+            -o HostKeyAlgorithms=ssh-ed25519 \
+            -o UserKnownHostsFile="$DIR/known_hosts" \
+            -o ConnectTimeout=15 \
+            -o ServerAliveInterval=15 \
+            -o ServerAliveCountMax=3 \
+            "agentic-ci@$SERVER_HOST" \
+            teacher-check
+
+          echo "====== GitHub 到国内服务器 SSH 测试成功 ======"
