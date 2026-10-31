@@ -90,3 +90,19 @@ sudo /usr/local/sbin/agentic-mainland-backup
 ```
 
 禁用大陆教师自动替换时，先把GitHub变量设为false，再移除大陆保护文件；在途部署需要先检查运行状态，不能把关闭开关当作中断或数据回滚。不要修改香港的Secrets。
+
+## 用户授权后的正式教师受控替换
+
+用户确认原域名备案已完成，并授权同版本受控替换及成功后开启教师自动部署。
+
+- 2026-10-31 18:09:01至18:13:13，agentic-teacher-controlled-deploy-20261031执行成功。
+- 替换前新增完整备份migration-20261031-180913，通过校验；本轮静止备份及容器切换全过程约4分11秒。
+- 新正式容器ID：7fa5a68e209a5c08beccc54ba198210fc3cc625f6fdf129b39f042690208c434。
+- 运行镜像ID保持已验证的ff22e32d…；请求版本标签记录为TCR的main-df839c6。按不可变镜像ID启动，因此docker inspect的Config.Image显示sha256是预期行为。
+- 原容器保留为agentic-teacher-prod-rollback-20261031T101308Z。正式教师健康检查、DeepSeek TLS和本机转发通过，随后三端页面/健康接口均HTTP200。
+- 服务器teacher-deploy-enabled为root:root:600；GitHub变量MAINLAND_AUTODEPLOY_ENABLED已设为true。
+- 重复发布同一已校验版本时，重新检查教师健康和AI TLS，输出DEPLOY_ALREADY_CURRENT，不重复暂停服务。
+- 开启后的首次补充工作流验证遇到GitHub连接TCR的HTTPS超时，在替换前停止；已加入有限次数的登录/推送重试。最终工作流验收结果继续记录于本节。
+- [开启后的完整发布验收](https://github.com/huanche/agentic-class-pilot/actions/runs/41191997961)于18:15:55成功完成。受限SSH部署入口执行并输出DEPLOY_ALREADY_CURRENT，正式容器ID保持7fa5a68e…，HTTP200；验证同版本不会重复重启。教师自动部署已启用。
+
+该自动部署只覆盖teacher-deploy构建出的教师镜像。平台/学生大陆自动部署、最终数据同步及公网切换仍属于未完成项；香港服务及DNS保持不变。权威NS为balsam.dnspod.net与thunder.dnspod.net，域名使用DNSPod解析。
