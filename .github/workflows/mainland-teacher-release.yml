@@ -80,9 +80,19 @@ jobs:
           TARGET="ccr.ccs.tencentyun.com/agentedu-mainland/agentic-teacher:$IMAGE_TAG"
           docker pull --platform linux/amd64 "$SOURCE"
           export IMAGE_ID=$(docker image inspect --format '{{.Id}}' "$SOURCE")
-          printf '%s' "$TCR_PASSWORD" | docker login ccr.ccs.tencentyun.com -u "$TCR_USERNAME" --password-stdin >/dev/null
+          for attempt in 1 2 3; do
+            if printf '%s' "$TCR_PASSWORD" | timeout 60s docker login ccr.ccs.tencentyun.com -u "$TCR_USERNAME" --password-stdin >/dev/null; then break; fi
+            if [[ "$attempt" = 3 ]]; then exit 1; fi
+            echo "TCR login unavailable; retry $attempt/3 in 5 seconds"
+            sleep 5
+          done
           docker tag "$SOURCE" "$TARGET"
-          timeout 3600s docker push "$TARGET"
+          for attempt in 1 2 3; do
+            if timeout 3600s docker push "$TARGET"; then break; fi
+            if [[ "$attempt" = 3 ]]; then exit 1; fi
+            echo "TCR push interrupted; retry $attempt/3 in 10 seconds"
+            sleep 10
+          done
           printf '%s\n' "$SERVER_SSH_KEY" > "$DIR/key"
           printf '%s\n' "$SERVER_KNOWN_HOSTS" > "$DIR/known_hosts"
           ssh-keygen -y -f "$DIR/key" >/dev/null
