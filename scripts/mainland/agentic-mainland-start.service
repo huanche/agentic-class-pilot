@@ -1,0 +1,14 @@
+[Unit]
+Description=Restore mainland application topology after Docker and network startup
+Wants=network-online.target
+Requires=docker.service
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/agentic-mainland-start
+TimeoutStartSec=600
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

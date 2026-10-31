@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import re
 import signal
+import shutil
 import subprocess
 import sys
 import tarfile
@@ -57,6 +58,7 @@ def atomic_text(path, text):
 
 def deploy():
     assert os.geteuid() == 0 and output(['hostname']) == 'VM-0-4-ubuntu'
+    os.umask(0o022)  # Source releases must be traversable by the service user; no secrets are stored here.
     sha = sys.argv[1] if len(sys.argv) == 2 else ''
     if not re.fullmatch('[0-9a-f]{40}', sha):
         raise RuntimeError('Invalid commit')
@@ -75,9 +77,12 @@ def deploy():
     assert metadata['image'] == REPO + ':' + tag
     assert output(['docker', 'image', 'inspect', '-f', '{{.Id}}', metadata['image']]) == metadata['id']
     BASE.mkdir(mode=0o755, exist_ok=True)
+    (BASE / 'releases').mkdir(mode=0o755, exist_ok=True)
     current = BASE / 'current'
     release = BASE / 'releases' / sha
     if current.is_symlink() and current.resolve() == release and healthy():
+        assert output(['systemctl', 'show', UNITS[0], '-p', 'WorkingDirectory', '--value']) == str(release / 'platform/backend')
+        assert output(['systemctl', 'show', UNITS[1], '-p', 'WorkingDirectory', '--value']) == str(release / 'student_agent')
         print('WEB_ALREADY_CURRENT', sha, flush=True)
         return
     # Capture the old service env before switching. No credentials enter the release image.
@@ -108,12 +113,29 @@ def deploy():
     call(['chown', '-R', 'ubuntu:ubuntu', str(release)])
     platform = release / 'platform'
     student = release / 'student_agent'
-    call(['runuser', '-u', 'ubuntu', '--', UV, 'sync', '--frozen', '--no-dev', '--package', 'app',
-          '--python', str(OLD / 'platform/.venv/bin/python')], cwd=platform, env=env_platform, timeout=900)
-    call(['runuser', '-u', 'ubuntu', '--', UV, 'venv', str(student / '.venv'), '--python',
-          str(OLD / 'student_agent/.venv-migrate/bin/python')], env=env_student, timeout=60)
-    call(['runuser', '-u', 'ubuntu', '--', UV, 'pip', 'install', '--python', str(student / '.venv/bin/python'),
-          '-r', str(student / 'backend/requirements.txt')], env=env_student, timeout=900)
+    reference = current.resolve() if current.is_symlink() else OLD
+    def clone_unchanged_environment(app, files, old_venv, env):
+        if not all((reference / app / f).read_bytes() == (release / app / f).read_bytes() for f in files):
+            return False
+        target = release / app / '.venv'
+        shutil.copytree(old_venv, target, symlinks=True)
+        # Editable install paths must follow the versioned code, never the old checkout.
+        for pth in target.glob('lib/python*/site-packages/*.pth'):
+            text = pth.read_text()
+            pth.write_text(text.replace(str(reference / app), str(release / app)))
+        call(['chown', '-R', 'ubuntu:ubuntu', str(target)])
+        call(['runuser', '-u', 'ubuntu', '--', UV, 'pip', 'check', '--python', str(target / 'bin/python')], env=env, timeout=60)
+        print('DEPENDENCIES_REUSED_WITH_IDENTICAL_METADATA', app, flush=True)
+        return True
+    if not clone_unchanged_environment('platform', ['uv.lock', 'pyproject.toml', 'backend/pyproject.toml'], reference / 'platform/.venv', env_platform):
+        call(['runuser', '-u', 'ubuntu', '--', UV, 'sync', '--frozen', '--no-dev', '--package', 'app',
+              '--python', str(OLD / 'platform/.venv/bin/python')], cwd=platform, env=env_platform, timeout=900)
+    student_venv = reference / ('student_agent/.venv-migrate' if reference == OLD else 'student_agent/.venv')
+    if not clone_unchanged_environment('student_agent', ['backend/requirements.txt'], student_venv, env_student):
+        call(['runuser', '-u', 'ubuntu', '--', UV, 'venv', str(student / '.venv'), '--python',
+              str(OLD / 'student_agent/.venv-migrate/bin/python')], env=env_student, timeout=60)
+        call(['runuser', '-u', 'ubuntu', '--', UV, 'pip', 'install', '--python', str(student / '.venv/bin/python'),
+              '-r', str(student / 'backend/requirements.txt')], env=env_student, timeout=900)
     python = str(platform / '.venv/bin/python')
     def revisions(which):
         return output(['runuser', '-u', 'ubuntu', '--', python, '-m', 'alembic', which],

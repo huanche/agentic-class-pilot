@@ -1,0 +1,30 @@
+#!/bin/bash
+# Restore the existing mainland topology; never create new databases or replace data.
+set -Eeuo pipefail
+[[ $EUID == 0 && $(hostname) == VM-0-4-ubuntu ]]
+exec 9>/run/lock/agentic-teacher-deploy.lock
+flock -w 300 9
+[[ $(docker network inspect -f '{{(index .IPAM.Config 0).Gateway}}' agentic-migration-internal) == 172.19.0.1 ]]
+docker start agentedu-final-database-1 agentedu-final-minio-1 >/dev/null
+READY=0
+for _ in $(seq 1 60); do
+  if [[ $(docker inspect -f '{{.State.Health.Status}}' agentedu-final-database-1) == healthy ]]; then READY=1; break; fi
+  sleep 2
+done
+[[ $READY == 1 ]]
+systemctl start agentic-teacher-gateway@55432 agentic-teacher-gateway@59000 agentic-deepseek-egress
+docker start agentic-hojo agentic-kokoro >/dev/null
+systemctl start agentic-hojo-forward agentic-kokoro-forward
+systemctl start agentic-platform agentic-student agentic-teacher-platform-forward
+docker start agentic-teacher-prod >/dev/null
+systemctl restart agentic-teacher-forward
+docker start agentic-caddy-localtest >/dev/null
+for url in http://127.0.0.1:8080/api/v1/utils/health-check/ http://127.0.0.1:8000/api/session/health http://127.0.0.1:3200/api/health; do
+  READY=0
+  for _ in $(seq 1 60); do
+    if [[ $(curl --noproxy '*' -s --max-time 3 -o /dev/null -w '%{http_code}' "$url" || true) == 200 ]]; then READY=1; break; fi
+    sleep 2
+  done
+  [[ $READY == 1 ]] || { echo "Startup health check failed: $url"; exit 1; }
+done
+echo 'MAINLAND_STARTUP_OK'

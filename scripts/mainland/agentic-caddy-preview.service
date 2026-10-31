@@ -1,0 +1,15 @@
+[Unit]
+Description=Mainland HTTPS verification gateway with restricted preview access
+Requires=docker.service agentic-mainland-start.service
+After=docker.service agentic-mainland-start.service
+
+[Service]
+ExecStartPre=-/usr/bin/docker rm -f agentic-caddy-mainland
+ExecStart=/usr/bin/docker run --rm --name agentic-caddy-mainland --network host --add-host host.docker.internal:127.0.0.1 --env-file /etc/agentic-class-pilot/caddy-preview.env --mount type=bind,source=/etc/agentic-class-pilot/Caddyfile.preview,target=/etc/caddy/Caddyfile,readonly --mount type=bind,source=/etc/agentic-class-pilot/tls,target=/tls,readonly --mount type=volume,source=agentic-mainland-caddy-data,target=/data --mount type=volume,source=agentic-mainland-caddy-config,target=/config caddy:2.10-alpine
+ExecStop=/usr/bin/docker stop -t 10 agentic-caddy-mainland
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=20
+
+[Install]
+WantedBy=multi-user.target

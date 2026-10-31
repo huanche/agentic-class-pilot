@@ -126,6 +126,14 @@ def backup():
         capture(['tar', '-C', str(REPO / 'student_agent/runtime'), '-czf', '-', '.'], path / 'student-runtime.tar.gz')
         subprocess.run(['git', '-c', 'safe.directory=' + str(REPO), '-C', str(REPO),
                         'bundle', 'create', str(path / 'server-source.bundle'), 'HEAD'], check=True)
+        active_web = Path('/opt/agentic-mainland-web/current')
+        if active_web.is_symlink():
+            release = active_web.resolve()
+            if release.parent != Path('/opt/agentic-mainland-web/releases'):
+                raise RuntimeError('Unexpected active web release path')
+            capture(['tar', '-C', str(release), '--exclude=.venv', '--exclude=node_modules',
+                     '--exclude=runtime', '-czf', '-', '.'], path / 'active-web-source.tar.gz')
+            (path / 'active-web-release.txt').write_text(str(release) + '\n')
         config = path / 'config'
         config.mkdir(mode=0o700)
         for source in [Path('/etc/agentic-class-pilot/teacher.env'),
