@@ -81,7 +81,7 @@ jobs:
 
   deploy:
     # PR builds stop after the build check; only main pushes / manual runs deploy.
-    if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request' && vars.HONGKONG_DEPLOY_ENABLED == 'true'
     needs: build
     runs-on: ubuntu-latest
     steps:

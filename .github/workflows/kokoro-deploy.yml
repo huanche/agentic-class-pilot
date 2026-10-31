@@ -78,7 +78,7 @@ jobs:
           print('CPU image produced complete short and 306-character Xiaoyi WAVs within 1 CPU / 1 GiB.')
           PY
   deploy:
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && vars.HONGKONG_DEPLOY_ENABLED == 'true'
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 12
