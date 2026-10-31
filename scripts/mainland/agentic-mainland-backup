@@ -19,7 +19,7 @@ UNITS=()
 for unit in agentic-platform agentic-student agentic-teacher-forward; do
   if systemctl is-active --quiet "$unit"; then UNITS+=("$unit"); fi
 done
-bash "$WAIT" --once
+bash "$WAIT"
 restore() {
   local rc=$?
   trap - EXIT
@@ -39,6 +39,8 @@ restore() {
   exit "$rc"
 }
 trap restore EXIT
+trap 'exit 143' TERM
+trap 'exit 130' INT
 if ((${#UNITS[@]})); then systemctl stop "${UNITS[@]}"; fi
 bash "$WAIT"
 docker stop -t 60 agentic-teacher-prod >/dev/null

@@ -1,0 +1,2 @@
+scripts/mainland/* text eol=lf
+.github/workflows/mainland*.yml text eol=lf

@@ -21,7 +21,7 @@ def table_counts(container, user):
     sql = r"""SELECT format('SELECT %L, count(*) FROM %I.%I;',
         schemaname || '.' || tablename, schemaname, tablename)
         FROM pg_tables WHERE schemaname NOT IN ('pg_catalog','information_schema')
-        ORDER BY schemaname, tablename;
+        ORDER BY schemaname, tablename
         \gexec
     """
     return subprocess.check_output(['docker', 'exec', '-i', container, 'psql', '-X', '-At',

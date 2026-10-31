@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import re
+import signal
 import shutil
 import subprocess
 import sys
@@ -79,6 +80,11 @@ def run():
 
 
 if __name__ == '__main__':
+    def interrupted(signum, frame):
+        raise RuntimeError('Interrupted; removing temporary registry credentials')
+
+    signal.signal(signal.SIGTERM, interrupted)
+    signal.signal(signal.SIGINT, interrupted)
     try:
         run()
     except Exception as error:

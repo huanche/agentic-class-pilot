@@ -255,6 +255,8 @@ rollback_on_exit() {
   exit "$rc"
 }
 trap rollback_on_exit EXIT
+trap 'exit 143' TERM
+trap 'exit 130' INT
 
 docker container inspect "$BACK" >/dev/null 2>&1 \
   && die "回滚容器名称已存在"
