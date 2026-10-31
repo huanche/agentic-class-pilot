@@ -13,7 +13,7 @@ concurrency:
 jobs:
   push-image:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 70
 
     env:
       SOURCE_IMAGE: zmzm1443/agentic-teacher:main-df839c6
@@ -92,7 +92,7 @@ jobs:
 
           echo "====== 6. 推送镜像到国内 TCR ======"
 
-          timeout 1500s docker push "$TARGET_IMAGE"
+          timeout 3600s docker push "$TARGET_IMAGE"
 
           echo "====== 7. 确认本地镜像一致 ======"
 
@@ -100,6 +100,16 @@ jobs:
             --format '{{.Id}}' "$TARGET_IMAGE")
 
           test "$FINAL_ID" = "$EXPECTED_IMAGE_ID"
+
+          # Baseline layers may have been seeded from mainland. Prove the runner
+          # can also upload a new filesystem layer, using a non-deployable tag.
+          PROBE_IMAGE="ccr.ccs.tencentyun.com/agentedu-mainland/agentic-teacher:probe-${GITHUB_RUN_ID}"
+          printf 'FROM %s\nRUN printf "TCR upload probe %s\\n" > /agentic-tcr-probe\n' \
+            "$TARGET_IMAGE" "$GITHUB_RUN_ID" |
+            docker build --network none --tag "$PROBE_IMAGE" -
+          timeout 300s docker push "$PROBE_IMAGE"
+          docker manifest inspect "$PROBE_IMAGE" > "$DIR/probe-manifest.json"
+          echo "新增镜像层上传与远端 manifest 查询成功（probe 标签不可部署）"
 
           echo "====== TCR 镜像推送成功 ======"
           echo "已推送 main-df839c6 到国内 TCR"
