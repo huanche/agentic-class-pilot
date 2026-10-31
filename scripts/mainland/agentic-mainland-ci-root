@@ -4,6 +4,16 @@ umask 077
 export PATH=/usr/sbin:/usr/bin:/sbin:/bin
 
 case "${1:-}" in
+  web-prepare)
+    [[ $# -eq 1 ]] || exit 64
+    exec timeout 1380s /usr/local/sbin/agentic-teacher-tcr-prepare --web
+    ;;
+  web-deploy)
+    [[ $# -eq 1 ]] || exit 64
+    IFS= read -r -t 10 SHA || exit 64
+    [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || exit 64
+    exec timeout 2400s /usr/local/sbin/agentic-web-deploy "$SHA"
+    ;;
   seed-baseline)
     [[ $# -eq 1 ]] || exit 64
     exec timeout 1620s /usr/local/sbin/agentic-teacher-tcr-prepare --seed-baseline

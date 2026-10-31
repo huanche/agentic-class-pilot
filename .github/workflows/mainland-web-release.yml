@@ -1,0 +1,117 @@
+name: Mainland Platform and Student Release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'platform/**'
+      - 'student_agent/**'
+      - '.github/workflows/mainland-web-release.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mainland-teacher-operations
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: student_agent/frontend/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Test and build student frontend and backend
+        run: |
+          set -euo pipefail
+          cd student_agent/frontend
+          npm ci
+          npx playwright install --with-deps chromium --only-shell
+          npm run test:e2e
+          npm run build
+          cd ../..
+          python -m pip install -r student_agent/backend/requirements.txt pytest
+          python -m pytest -q student_agent/backend/tests
+      - name: Build platform frontend
+        working-directory: platform
+        run: |
+          set -euo pipefail
+          bun install --frozen-lockfile
+          bun run --filter frontend build
+      - name: Package trusted source and frontends into a TCR release artifact
+        env:
+          TCR_USERNAME: ${{ secrets.TCR_USERNAME }}
+          TCR_PASSWORD: ${{ secrets.TCR_PASSWORD }}
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          [[ "$GITHUB_REF" = refs/heads/main ]]
+          mkdir -p /tmp/web-release/release
+          git archive HEAD platform student_agent | tar xf - -C /tmp/web-release/release
+          mkdir -p /tmp/web-release/release/platform/backend/app/frontend /tmp/web-release/release/student_agent/frontend/out
+          cp -a platform/backend/app/frontend/. /tmp/web-release/release/platform/backend/app/frontend/
+          cp -a student_agent/frontend/out/. /tmp/web-release/release/student_agent/frontend/out/
+          printf '{"sha":"%s"}\n' "$GITHUB_SHA" > /tmp/web-release/release/manifest.json
+          # Only tracked source plus explicit build outputs enter the image; no runtime/env/credentials.
+          printf 'FROM scratch\nCOPY release/ /release/\n' > /tmp/web-release/Dockerfile
+          IMAGE="ccr.ccs.tencentyun.com/agentedu-mainland/agentic-teacher:web-$GITHUB_SHA"
+          docker build --tag "$IMAGE" /tmp/web-release
+          echo "WEB_IMAGE_ID=$(docker image inspect --format '{{.Id}}' "$IMAGE")" >> "$GITHUB_ENV"
+          export DOCKER_CONFIG=$(mktemp -d)
+          trap 'rm -rf -- "$DOCKER_CONFIG"' EXIT
+          for attempt in 1 2 3; do
+            if printf '%s' "$TCR_PASSWORD" | timeout 60s docker login ccr.ccs.tencentyun.com -u "$TCR_USERNAME" --password-stdin >/dev/null; then break; fi
+            [[ "$attempt" != 3 ]] || exit 1
+            sleep 5
+          done
+          for attempt in 1 2 3; do
+            if timeout 1200s docker push "$IMAGE"; then break; fi
+            [[ "$attempt" != 3 ]] || exit 1
+            sleep 10
+          done
+      - name: Verify artifact on mainland and optionally activate the release
+        env:
+          TCR_USERNAME: ${{ secrets.TCR_USERNAME }}
+          TCR_PASSWORD: ${{ secrets.TCR_PASSWORD }}
+          SERVER_HOST: ${{ secrets.MAINLAND_SERVER_HOST }}
+          SERVER_SSH_KEY: ${{ secrets.MAINLAND_SERVER_SSH_KEY }}
+          SERVER_KNOWN_HOSTS: ${{ secrets.MAINLAND_SSH_KNOWN_HOSTS }}
+          AUTODEPLOY: ${{ vars.MAINLAND_WEB_AUTODEPLOY_ENABLED }}
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          test "$SERVER_HOST" = 43.138.178.158
+          DIR=$(mktemp -d)
+          trap 'rm -rf -- "$DIR"' EXIT
+          printf '%s\n' "$SERVER_SSH_KEY" > "$DIR/key"
+          printf '%s\n' "$SERVER_KNOWN_HOSTS" > "$DIR/known_hosts"
+          ssh-keygen -y -f "$DIR/key" >/dev/null
+          ssh-keygen -F "$SERVER_HOST" -f "$DIR/known_hosts" >/dev/null
+          SSH=(ssh -F /dev/null -T -i "$DIR/key" -o BatchMode=yes -o IdentitiesOnly=yes
+            -o IdentityAgent=none -o StrictHostKeyChecking=yes -o HostKeyAlgorithms=ssh-ed25519
+            -o UserKnownHostsFile="$DIR/known_hosts" -o ConnectTimeout=15
+            -o ServerAliveInterval=15 -o ServerAliveCountMax=4)
+          python3 - <<'PY' | timeout 1440s "${SSH[@]}" "agentic-ci@$SERVER_HOST" web-prepare
+          import json,os
+          print(json.dumps({'tag':'web-'+os.environ['GITHUB_SHA'],'image_id':os.environ['WEB_IMAGE_ID'],
+                           'username':os.environ['TCR_USERNAME'],'password':os.environ['TCR_PASSWORD']}))
+          PY
+          if [[ "$AUTODEPLOY" != true ]]; then
+            echo 'Artifact verified on mainland; web activation remains disabled' >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          git fetch origin main
+          git diff --exit-code "$GITHUB_SHA" origin/main -- platform/ student_agent/
+          timeout 2460s "${SSH[@]}" "agentic-ci@$SERVER_HOST" "web-deploy $GITHUB_SHA"

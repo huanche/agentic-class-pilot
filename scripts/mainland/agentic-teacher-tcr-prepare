@@ -25,7 +25,8 @@ def run():
         raise RuntimeError('Request too large')
     request = json.loads(payload)
     tag, expected = request['tag'], request['image_id']
-    if not re.fullmatch(r'main-[0-9a-f]{7}', tag):
+    web = sys.argv[1:] == ['--web']
+    if not re.fullmatch(r'web-[0-9a-f]{40}' if web else r'main-[0-9a-f]{7}', tag):
         raise RuntimeError('Invalid tag')
     if not re.fullmatch(r'sha256:[0-9a-f]{64}', expected):
         raise RuntimeError('Invalid image ID')
@@ -38,7 +39,7 @@ def run():
         raise RuntimeError('Insufficient disk space')
     image = REPOSITORY + ':' + tag
     seed = sys.argv[1:] == ['--seed-baseline']
-    if sys.argv[1:] and not seed:
+    if sys.argv[1:] and not seed and not web:
         raise RuntimeError('Invalid mode')
     if seed and (tag != 'main-df839c6' or expected !=
                  'sha256:ff22e32dbb0c0b31cd1ca5edd8447f68238a23016b4fe18a40e3e630caeded9d'):

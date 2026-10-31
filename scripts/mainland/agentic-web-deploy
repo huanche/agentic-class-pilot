@@ -1,0 +1,175 @@
+#!/usr/bin/python3
+"""Deploy a verified two-app release without mutating the shared repository or runtime data."""
+import fcntl
+import json
+import os
+from pathlib import Path
+import re
+import signal
+import subprocess
+import sys
+import tarfile
+import tempfile
+import time
+import urllib.request
+
+BASE = Path('/opt/agentic-mainland-web')
+OLD = Path('/opt/agentic-class-pilot')
+UV = '/home/ubuntu/.local/bin/uv'
+REPO = 'ccr.ccs.tencentyun.com/agentedu-mainland/agentic-teacher'
+UNITS = ('agentic-platform', 'agentic-student')
+
+
+def call(args, **kwargs):
+    return subprocess.run(args, check=True, **kwargs)
+
+
+def output(args, **kwargs):
+    return subprocess.check_output(args, **kwargs).decode().strip()
+
+
+def live_environment(unit):
+    pid = output(['systemctl', 'show', unit, '-p', 'MainPID', '--value'])
+    values = dict(p.decode().split('=', 1) for p in Path('/proc/' + pid + '/environ').read_bytes().split(b'\0') if b'=' in p)
+    values.update(HOME='/home/ubuntu', UV_PYTHON_DOWNLOADS='never', UV_LINK_MODE='copy')
+    return values
+
+
+def healthy():
+    urls = ('http://127.0.0.1:8080/api/v1/utils/health-check/', 'http://127.0.0.1:8000/api/session/health')
+    for _ in range(40):
+        try:
+            for url in urls:
+                with urllib.request.urlopen(url, timeout=3) as response:
+                    assert response.status == 200
+            return True
+        except Exception:
+            time.sleep(2)
+    return False
+
+
+def atomic_text(path, text):
+    tmp = path.with_suffix('.new')
+    tmp.write_text(text)
+    tmp.chmod(0o644)
+    tmp.replace(path)
+
+
+def deploy():
+    assert os.geteuid() == 0 and output(['hostname']) == 'VM-0-4-ubuntu'
+    sha = sys.argv[1] if len(sys.argv) == 2 else ''
+    if not re.fullmatch('[0-9a-f]{40}', sha):
+        raise RuntimeError('Invalid commit')
+    flag = Path('/etc/agentic-class-pilot/web-deploy-enabled')
+    assert flag.is_file() and flag.stat().st_uid == 0 and flag.stat().st_mode & 0o777 == 0o600
+    fd = os.open('/run/lock/agentic-teacher-deploy.lock', os.O_CREAT | os.O_WRONLY, 0o600)
+    if fd != 9:
+        os.dup2(fd, 9)
+        os.close(fd)
+    os.set_inheritable(9, True)
+    fcntl.flock(9, fcntl.LOCK_EX)
+    tag = 'web-' + sha
+    record = Path('/var/lib/agentic-class-pilot/prepared-images') / (tag + '.json')
+    assert record.stat().st_uid == 0 and record.stat().st_mode & 0o022 == 0
+    metadata = json.loads(record.read_text())
+    assert metadata['image'] == REPO + ':' + tag
+    assert output(['docker', 'image', 'inspect', '-f', '{{.Id}}', metadata['image']]) == metadata['id']
+    BASE.mkdir(mode=0o755, exist_ok=True)
+    current = BASE / 'current'
+    release = BASE / 'releases' / sha
+    if current.is_symlink() and current.resolve() == release and healthy():
+        print('WEB_ALREADY_CURRENT', sha, flush=True)
+        return
+    # Capture the old service env before switching. No credentials enter the release image.
+    env_platform = live_environment(UNITS[0])
+    env_student = live_environment(UNITS[1])
+    if release.exists():
+        raise RuntimeError('Incomplete/existing release directory; inspect before retrying')
+    release.mkdir(mode=0o755, parents=True)
+    container = 'agentic-web-extract-' + sha[:12]
+    call(['docker', 'create', '--name', container, '--entrypoint', '/unused', metadata['id']], stdout=subprocess.DEVNULL)
+    try:
+        with tempfile.TemporaryFile() as archive:
+            call(['docker', 'cp', container + ':/release/.', '-'], stdout=archive)
+            archive.seek(0)
+            with tarfile.open(fileobj=archive) as tar:
+                tar.extractall(release, filter='data')
+    finally:
+        call(['docker', 'rm', container], stdout=subprocess.DEVNULL)
+    assert json.loads((release / 'manifest.json').read_text())['sha'] == sha
+    for path in ('platform/backend/app/frontend/index.html', 'student_agent/frontend/out/index.html'):
+        assert (release / path).is_file(), path
+    # Runtime is persistent and is never copied into a code release.
+    runtime = release / 'student_agent/runtime'
+    if runtime.exists():
+        raise RuntimeError('Release must not contain persisted runtime')
+    runtime.symlink_to(OLD / 'student_agent/runtime', target_is_directory=True)
+    # Dependency builders run as ubuntu, never as root. Runtime requirements are pinned by source lock/requirements.
+    call(['chown', '-R', 'ubuntu:ubuntu', str(release)])
+    platform = release / 'platform'
+    student = release / 'student_agent'
+    call(['runuser', '-u', 'ubuntu', '--', UV, 'sync', '--frozen', '--no-dev', '--package', 'app',
+          '--python', str(OLD / 'platform/.venv/bin/python')], cwd=platform, env=env_platform, timeout=900)
+    call(['runuser', '-u', 'ubuntu', '--', UV, 'venv', str(student / '.venv'), '--python',
+          str(OLD / 'student_agent/.venv-migrate/bin/python')], env=env_student, timeout=60)
+    call(['runuser', '-u', 'ubuntu', '--', UV, 'pip', 'install', '--python', str(student / '.venv/bin/python'),
+          '-r', str(student / 'backend/requirements.txt')], env=env_student, timeout=900)
+    python = str(platform / '.venv/bin/python')
+    def revisions(which):
+        return output(['runuser', '-u', 'ubuntu', '--', python, '-m', 'alembic', which],
+                      cwd=platform / 'backend', env=env_platform)
+    # Reject automatic data-format changes: code rollback cannot undo a schema migration.
+    current_revision = revisions('current')
+    target_revision = revisions('heads')
+    if sorted(line.split()[0] for line in current_revision.splitlines() if line.strip()) != sorted(line.split()[0] for line in target_revision.splitlines() if line.strip()):
+        raise RuntimeError('Database migration requires separate reviewed execution; active services untouched')
+    call(['/usr/local/sbin/agentic-mainland-backup', '--locked'], pass_fds=(9,), timeout=1800)
+    files = [Path('/etc/systemd/system') / (u + '.service.d/98-versioned-release.conf') for u in UNITS]
+    previous = {path: path.read_bytes() if path.exists() else None for path in files}
+    previous_current = os.readlink(current) if current.is_symlink() else None
+    changed = False
+    def restore():
+        for path, data in previous.items():
+            if data is None: path.unlink(missing_ok=True)
+            else: path.write_bytes(data)
+        if previous_current:
+            temp = BASE / 'current.restore'
+            temp.unlink(missing_ok=True)
+            temp.symlink_to(previous_current, target_is_directory=True)
+            temp.replace(current)
+        else:
+            current.unlink(missing_ok=True)
+        call(['systemctl', 'daemon-reload'])
+        call(['systemctl', 'restart', *UNITS])
+        if not healthy(): raise RuntimeError('Rollback health check failed')
+        print('WEB_ROLLBACK_OK', flush=True)
+    try:
+        changed = True
+        call(['systemctl', 'stop', *UNITS])
+        atomic_text(files[0], f'[Service]\nWorkingDirectory={platform}/backend\nExecStart=\nExecStart={python} -m uvicorn app.main:app --host 127.0.0.1 --port 8080\n')
+        start = release / 'student-start.sh'
+        start.write_text('#!/bin/bash\nset -eu\nexport STUDENT_DATABASE_URL="postgresql://student:${STUDENT_DB_PASSWORD}@127.0.0.1:55432/education"\n'
+                         f'exec {student}/.venv/bin/python apps/start.py --no-browser --host 127.0.0.1 --port 8000\n')
+        start.chmod(0o755)
+        atomic_text(files[1], f'[Service]\nWorkingDirectory={student}\nExecStart=\nExecStart={start}\n')
+        temp = BASE / 'current.new'
+        temp.unlink(missing_ok=True)
+        temp.symlink_to(release, target_is_directory=True)
+        temp.replace(current)
+        call(['systemctl', 'daemon-reload'])
+        call(['systemctl', 'start', *UNITS])
+        if not healthy(): raise RuntimeError('New web release failed health check')
+    except BaseException:
+        if changed: restore()
+        raise
+    print('WEB_DEPLOY_OK', sha, flush=True)
+
+
+if __name__ == '__main__':
+    def interrupt(signum, frame): raise RuntimeError('Interrupted')
+    signal.signal(signal.SIGTERM, interrupt)
+    signal.signal(signal.SIGINT, interrupt)
+    try: deploy()
+    except Exception as error:
+        print('WEB_DEPLOY_FAILED:', type(error).__name__, str(error), file=sys.stderr)
+        sys.exit(1)
