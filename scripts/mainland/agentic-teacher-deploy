@@ -204,6 +204,13 @@ print(record['id'])
 PY
 ) || die "缺少可信镜像校验记录"
 [[ $(docker image inspect -f '{{.Id}}' "$NEW") == "$EXPECTED_ID" ]] || die "本地镜像已变化"
+if [[ $(docker inspect -f '{{.Image}}' "$NAME") == "$EXPECTED_ID" &&
+      $(docker inspect -f '{{index .Config.Labels "org.agentedu.requested-image"}}' "$NAME") == "$NEW" ]]; then
+  wait_forward_healthy || die "当前版本转发健康检查失败"
+  verify_new_ai_tls || die "当前版本 AI TLS 检查失败"
+  echo "DEPLOY_ALREADY_CURRENT: $NEW ($EXPECTED_ID)"
+  exit 0
+fi
 echo '执行部署前完整静止备份'
 "$BACKUP" --locked
 BACK="${NAME}-rollback-$(date -u +%Y%m%dT%H%M%SZ)"
