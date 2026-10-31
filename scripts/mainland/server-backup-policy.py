@@ -123,6 +123,10 @@ def backup():
         capture(['tar', '-C', '/home/ubuntu/teacher-agent-data', '-czf', '-', '.'], path / 'teacher-data.tar.gz')
         # MinIO's image has no tar executable; the daemon streams this archive.
         capture(['docker', 'cp', 'agentedu-final-minio-1:/data/.', '-'], path / 'object-storage.tar')
+        gateway = subprocess.run(['docker', 'container', 'inspect', 'agentic-caddy-mainland'],
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if gateway.returncode == 0:
+            capture(['docker', 'cp', 'agentic-caddy-mainland:/data/.', '-'], path / 'gateway-tls-state.tar')
         capture(['tar', '-C', str(REPO / 'student_agent/runtime'), '-czf', '-', '.'], path / 'student-runtime.tar.gz')
         subprocess.run(['git', '-c', 'safe.directory=' + str(REPO), '-C', str(REPO),
                         'bundle', 'create', str(path / 'server-source.bundle'), 'HEAD'], check=True)

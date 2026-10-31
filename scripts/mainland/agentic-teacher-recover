@@ -1,0 +1,13 @@
+#!/bin/bash
+# Recover an unexpectedly exited teacher; backup/deploy/maintenance always take precedence.
+set -Eeuo pipefail
+[[ $EUID == 0 && $(hostname) == VM-0-4-ubuntu ]]
+[[ ! -e /etc/agentic-class-pilot/maintenance ]] || exit 0
+exec 9>/run/lock/agentic-teacher-deploy.lock
+flock -n 9 || exit 0
+if [[ $(docker inspect -f '{{.State.Running}}' agentic-teacher-prod) != true ]]; then
+  systemctl start agentic-deepseek-egress agentic-teacher-gateway@55432 agentic-teacher-gateway@59000 agentic-teacher-platform-forward
+  docker start agentic-teacher-prod >/dev/null
+  systemctl restart agentic-teacher-forward
+  echo 'Recovered unexpectedly stopped teacher container'
+fi

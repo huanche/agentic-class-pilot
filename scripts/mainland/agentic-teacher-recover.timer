@@ -1,0 +1,10 @@
+[Unit]
+Description=Check mainland teacher container once a minute
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=1min
+Unit=agentic-teacher-recover.service
+
+[Install]
+WantedBy=timers.target

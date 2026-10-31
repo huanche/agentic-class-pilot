@@ -1,0 +1,9 @@
+{
+    admin off
+}
+
+agenticclasspilot.com {
+    header Retry-After 60
+    header Content-Type "text/plain; charset=utf-8"
+    respond "系统正在迁移，请稍后刷新。" 503
+}
