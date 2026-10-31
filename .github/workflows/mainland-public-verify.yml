@@ -12,7 +12,8 @@ jobs:
           set -Eeuo pipefail
           for ip in 43.138.178.158 43.132.155.8; do
             for path in / /app/ /teacher/ /api/v1/utils/health-check/ /api/session/health /teacher/api/health; do
-              code=$(curl --noproxy '*' --resolve "agenticclasspilot.com:443:$ip" --retry 2 --retry-connrefused --connect-timeout 15 --max-time 30 -sS -D /tmp/headers -o /tmp/body -w '%{http_code}' "https://agenticclasspilot.com$path")
+              code=$(curl --noproxy '*' --resolve "agenticclasspilot.com:443:$ip" --location --max-redirs 5 --retry 2 --retry-connrefused --connect-timeout 15 --max-time 30 -sS -D /tmp/headers -o /tmp/body -w '%{http_code}' "https://agenticclasspilot.com$path")
+              echo "$ip $path -> HTTP $code"
               test "$code" = 200
               grep -qi '^x-agentic-backend: mainland' /tmp/headers
               echo "$ip $path -> HTTP 200, mainland backend, TLS verified"
