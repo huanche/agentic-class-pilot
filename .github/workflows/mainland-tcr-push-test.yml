@@ -1,0 +1,106 @@
+
+name: Mainland TCR Push Test
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: mainland-tcr-push-test
+  cancel-in-progress: false
+
+jobs:
+  push-image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+
+    env:
+      SOURCE_IMAGE: zmzm1443/agentic-teacher:main-df839c6
+      TARGET_IMAGE: ccr.ccs.tencentyun.com/agentedu-mainland/agentic-teacher:main-df839c6
+      EXPECTED_IMAGE_ID: sha256:ff22e32dbb0c0b31cd1ca5edd8447f68238a23016b4fe18a40e3e630caeded9d
+
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+      TCR_USERNAME: ${{ secrets.TCR_USERNAME }}
+      TCR_PASSWORD: ${{ secrets.TCR_PASSWORD }}
+
+    steps:
+      - name: Push verified teacher image to TCR
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          umask 077
+
+          echo "====== 1. 检查配置 ======"
+
+          for name in \
+            DOCKERHUB_USERNAME \
+            DOCKERHUB_TOKEN \
+            TCR_USERNAME \
+            TCR_PASSWORD
+          do
+            if [[ -z "${!name:-}" ]]; then
+              echo "::error::$name 未配置"
+              exit 1
+            fi
+          done
+
+          DIR=$(mktemp -d)
+          export DOCKER_CONFIG="$DIR/docker"
+          mkdir -m 700 "$DOCKER_CONFIG"
+          trap 'rm -rf -- "$DIR"' EXIT
+
+          echo "====== 2. 登录 Docker Hub ======"
+
+          printf '%s' "$DOCKERHUB_TOKEN" |
+            docker login docker.io \
+              --username "$DOCKERHUB_USERNAME" \
+              --password-stdin >/dev/null
+
+          echo "====== 3. 下载已验证的教师镜像 ======"
+
+          docker pull --platform linux/amd64 "$SOURCE_IMAGE"
+
+          ACTUAL_ID=$(docker image inspect \
+            --format '{{.Id}}' "$SOURCE_IMAGE")
+
+          if [[ "$ACTUAL_ID" != "$EXPECTED_IMAGE_ID" ]]; then
+            echo "::error::镜像 ID 不一致，停止推送"
+            exit 1
+          fi
+
+          echo "教师镜像 ID 校验通过"
+
+          echo "====== 4. 登录腾讯云 TCR ======"
+
+          printf '%s' "$TCR_PASSWORD" |
+            docker login ccr.ccs.tencentyun.com \
+              --username "$TCR_USERNAME" \
+              --password-stdin >/dev/null
+
+          echo "腾讯云 TCR 登录成功"
+
+          echo "====== 5. 添加国内仓库标签 ======"
+
+          docker tag "$SOURCE_IMAGE" "$TARGET_IMAGE"
+
+          TAGGED_ID=$(docker image inspect \
+            --format '{{.Id}}' "$TARGET_IMAGE")
+
+          test "$TAGGED_ID" = "$EXPECTED_IMAGE_ID"
+
+          echo "====== 6. 推送镜像到国内 TCR ======"
+
+          timeout 1500s docker push "$TARGET_IMAGE"
+
+          echo "====== 7. 确认本地镜像一致 ======"
+
+          FINAL_ID=$(docker image inspect \
+            --format '{{.Id}}' "$TARGET_IMAGE")
+
+          test "$FINAL_ID" = "$EXPECTED_IMAGE_ID"
+
+          echo "====== TCR 镜像推送成功 ======"
+          echo "已推送 main-df839c6 到国内 TCR"
+          echo "没有连接或重启任何服务器"
