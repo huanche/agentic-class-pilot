@@ -1,0 +1,36 @@
+#!/bin/bash
+set -euo pipefail
+umask 077
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin
+
+case "${1:-}" in
+  prepare)
+    [[ $# -eq 1 ]] || exit 64
+    exec timeout 1020s /usr/local/sbin/agentic-teacher-tcr-prepare
+    ;;
+  check)
+    [[ $# -eq 1 ]] || exit 64
+    /usr/local/sbin/agentic-teacher-image-import check
+    exec /usr/local/sbin/agentic-teacher-deploy check
+    ;;
+
+  upload)
+    [[ $# -eq 1 ]] || exit 64
+    exec /usr/local/sbin/agentic-teacher-image-import
+    ;;
+
+  deploy)
+    [[ $# -eq 1 ]] || exit 64
+
+    IFS= read -r -t 10 TAG || exit 64
+    [[ "$TAG" =~ ^main-[0-9a-f]{7}$ ]] || exit 64
+
+    exec /usr/local/sbin/agentic-teacher-deploy \
+      deploy-local zmzm1443/agentic-teacher "$TAG"
+    ;;
+
+  *)
+    echo "不允许的操作" >&2
+    exit 64
+    ;;
+esac

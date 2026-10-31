@@ -1,0 +1,292 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+umask 077
+
+NAME=agentic-teacher-prod
+NET=agentic-migration-internal
+IMAGE=zmzm1443/agentic-teacher
+ENVFILE=/etc/agentic-class-pilot/teacher.env
+DATA=/home/ubuntu/teacher-agent-data
+CONFIG=/opt/agentic-class-pilot/teacher_agent/server-providers.yml
+FORWARD=agentic-teacher-forward.service
+WAIT=/usr/local/libexec/agentic-teacher-wait-idle.sh
+ENABLE=/etc/agentic-class-pilot/teacher-deploy-enabled
+
+die() {
+  echo "ERROR: $*" >&2
+  exit 1
+}
+
+check_common() {
+  [[ "$EUID" -eq 0 ]] || die "必须以 root 身份运行"
+  [[ -f "$ENVFILE" ]] || die "教师环境文件缺失"
+  [[ -d "$DATA" ]] || die "教师数据目录缺失"
+  [[ -f "$CONFIG" ]] || die "教师服务配置缺失"
+
+  [[ "$(stat -c '%U:%G:%a' "$ENVFILE")" == "root:root:600" ]] \
+    || die "教师环境文件权限不符合要求"
+
+  [[ "$(docker network inspect -f '{{.Internal}}' "$NET")" == true ]] \
+    || die "隔离网络配置不正确"
+
+  [[ "$(docker inspect -f '{{.State.Running}}' "$NAME")" == true ]] \
+    || die "教师容器没有运行"
+
+  [[ "$(docker inspect -f '{{.HostConfig.NetworkMode}}' "$NAME")" == "$NET" ]] \
+    || die "教师容器网络不正确"
+
+  [[ "$(docker inspect -f '{{.HostConfig.RestartPolicy.Name}}' "$NAME")" == no ]] \
+    || die "容器自动重启策略不正确"
+
+  [[ "$(docker inspect -f '{{range .Mounts}}{{if eq .Destination "/app/data"}}{{.Source}}{{end}}{{end}}' "$NAME")" == "$DATA" ]] \
+    || die "教师数据挂载目录不正确"
+
+  systemctl is-active --quiet "$FORWARD" \
+    || die "教师端转发服务未运行"
+}
+
+http_code() {
+  curl --noproxy '*' --silent --max-time 5 \
+    -o /dev/null -w '%{http_code}' "$1" || true
+}
+
+wait_new_healthy() {
+  local ip code
+  ip=$(docker inspect -f \
+    '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$NAME")
+
+  [[ -n "$ip" ]] || return 1
+
+  for _ in $(seq 1 30); do
+    code=$(http_code "http://$ip:3200/api/health")
+    [[ "$code" == 200 ]] && return 0
+    sleep 2
+  done
+  return 1
+}
+
+deepseek_host() {
+  python3 - "$ENVFILE" <<'PYHOST'
+from pathlib import Path
+from urllib.parse import urlsplit
+import re, sys
+
+values = {}
+for line in Path(sys.argv[1]).read_text().splitlines():
+    if '=' in line and not line.lstrip().startswith('#'):
+        k, v = line.split('=', 1)
+        values[k] = v
+
+url = urlsplit(values.get('DEEPSEEK_BASE_URL', ''))
+host = url.hostname or ''
+
+if url.scheme != 'https' or url.port not in (None, 443):
+    raise SystemExit('DeepSeek 出口必须是 HTTPS 443')
+if not re.fullmatch(r'[A-Za-z0-9.-]+', host):
+    raise SystemExit('DeepSeek 域名不符合要求')
+
+print(host)
+PYHOST
+}
+
+wait_forward_healthy() {
+  local code
+  for _ in $(seq 1 25); do
+    code=$(http_code 'http://127.0.0.1:3200/api/health')
+    [[ "$code" == 200 ]] && return 0
+    sleep 1
+  done
+  return 1
+}
+
+verify_new_ai_tls() {
+  timeout 15s docker exec -i "$NAME" node - <<'JSAI'
+const dns = require('node:dns').promises;
+const tls = require('node:tls');
+
+(async () => {
+  const host = new URL(process.env.DEEPSEEK_BASE_URL).hostname;
+  const result = await dns.lookup(host);
+
+  if (result.address !== '172.19.0.1') {
+    throw new Error('DeepSeek DNS 映射错误');
+  }
+
+  await new Promise((resolve, reject) => {
+    const socket = tls.connect({
+      host, port: 443, servername: host,
+      rejectUnauthorized: true, timeout: 8000
+    });
+
+    socket.once('secureConnect', () => {
+      if (!socket.authorized) {
+        return reject(new Error('TLS 证书验证失败'));
+      }
+      socket.end();
+      resolve();
+    });
+
+    socket.once('error', reject);
+    socket.once('timeout', () => {
+      socket.destroy();
+      reject(new Error('HTTPS 连接超时'));
+    });
+  });
+})().catch(error => {
+  console.error(
+    'DeepSeek TLS 检查失败:',
+    error.code || error.message
+  );
+  process.exitCode = 1;
+});
+JSAI
+}
+
+if [[ "${1:-}" == check && $# -eq 1 ]]; then
+  check_common
+  echo "====== 教师自动部署检查 ======"
+  echo "当前镜像: $(docker inspect -f '{{.Config.Image}}' "$NAME")"
+  echo "网络: $NET"
+  if docker inspect -f '{{json .HostConfig.ExtraHosts}}' "$NAME" | grep -q '172.19.0.1'; then
+    echo 'DeepSeek 域名映射: 已设置'
+  else
+    echo 'DeepSeek 域名映射: 当前容器尚未设置'
+  fi
+  echo "本机健康接口 HTTP: $(http_code http://127.0.0.1:3200/api/health)"
+  if [[ -f "$ENABLE" ]]; then
+    echo "部署保护开关: 已开启"
+  else
+    echo "部署保护开关: 未开启（安全状态）"
+  fi
+  echo "====== 检查完成 ======"
+  exit 0
+fi
+
+[[ $# -eq 3 && ( "${1:-}" == deploy || "${1:-}" == deploy-local ) ]] \
+  || die "用法: $0 check | deploy <image> <tag>"
+
+[[ "$2" == "$IMAGE" ]] || die "不允许使用其他镜像仓库"
+[[ "$3" =~ ^main-[0-9a-f]{7}$ ]] || die "镜像标签格式不正确"
+
+check_common
+
+[[ -f "$ENABLE" ]] || die "正式部署尚未启用"
+[[ "$(stat -c '%U:%G:%a' "$ENABLE")" == root:root:600 ]] \
+  || die "部署保护开关权限不正确"
+
+[[ -x "$WAIT" ]] || die "尚未安装经过审核的空闲任务检查脚本"
+
+exec 9>/run/lock/agentic-teacher-deploy.lock
+flock -n 9 || die "已有其他教师部署正在执行"
+
+systemctl is-active --quiet agentic-deepseek-egress.service \
+  || die "DeepSeek 出口服务没有运行"
+
+[[ "$(docker network inspect -f '{{(index .IPAM.Config 0).Gateway}}' "$NET")" == '172.19.0.1' ]] \
+  || die "隔离网络网关已变化"
+
+AI_HOST=$(deepseek_host)
+
+NEW="$2:$3"
+BACK="${NAME}-rollback-$(date -u +%Y%m%dT%H%M%SZ)"
+STOP_ATTEMPTED=0
+FORWARD_PAUSED=0
+
+rollback_on_exit() {
+  local rc=$?
+  local restored=0
+  trap - EXIT
+
+  if (( rc != 0 && STOP_ATTEMPTED == 1 )); then
+    echo '部署失败：尝试恢复旧教师容器' >&2
+
+    if docker container inspect "$BACK" >/dev/null 2>&1; then
+      # 只有旧容器确实已保存在 BACK 时，才允许删除新容器。
+      if docker container inspect "$NAME" >/dev/null 2>&1; then
+        docker rm -f "$NAME" >/dev/null || true
+      fi
+
+      if ! docker container inspect "$NAME" >/dev/null 2>&1; then
+        if docker rename "$BACK" "$NAME"; then
+          docker start "$NAME" >/dev/null && restored=1 || true
+        fi
+      fi
+    else
+      # 原容器停止但未重命名时，不允许删除它。
+      if docker container inspect "$NAME" >/dev/null 2>&1; then
+        docker start "$NAME" >/dev/null && restored=1 || true
+      fi
+    fi
+
+    if (( restored == 1 )); then
+      systemctl restart "$FORWARD" || true
+      wait_forward_healthy ||
+        echo '警告：回滚后 3200 尚未通过健康检查' >&2
+    else
+      echo '严重：未能确认旧教师容器恢复，需人工检查' >&2
+    fi
+  fi
+
+  if (( rc != 0 && FORWARD_PAUSED == 1 && STOP_ATTEMPTED == 0 )); then
+    echo '恢复原教师端本机转发' >&2
+    systemctl restart "$FORWARD" || true
+    wait_forward_healthy ||
+      echo '警告：本机 3200 未通过恢复检查' >&2
+  fi
+
+  exit "$rc"
+}
+trap rollback_on_exit EXIT
+
+docker container inspect "$BACK" >/dev/null 2>&1 \
+  && die "回滚容器名称已存在"
+
+echo "准备镜像: $NEW"
+
+if [[ "$1" == deploy-local ]]; then
+  docker image inspect "$NEW" >/dev/null \
+    || die "本地镜像不存在，禁止部署"
+
+  echo "本地镜像模式：跳过 Docker Hub"
+else
+  docker pull "$NEW"
+fi
+
+echo "暂停本机教师请求入口"
+FORWARD_PAUSED=1
+systemctl stop "$FORWARD"
+
+echo "等待当前课程生成任务空闲"
+bash "$WAIT"
+
+echo "停止并保留旧容器: $BACK"
+STOP_ATTEMPTED=1
+docker stop -t 30 "$NAME" >/dev/null
+docker rename "$NAME" "$BACK"
+
+echo "启动新容器"
+docker run -d \
+  --name "$NAME" \
+  --pull never \
+  --restart no \
+  --network "$NET" \
+  --add-host "$AI_HOST:172.19.0.1" \
+  --env-file "$ENVFILE" \
+  --mount "type=bind,source=$DATA,target=/app/data" \
+  --mount "type=bind,source=$CONFIG,target=/app/server-providers.yml,readonly" \
+  "$NEW" >/dev/null
+
+echo "检查新容器健康状态"
+wait_new_healthy || die "新容器健康检查失败"
+
+echo "验证新容器 DeepSeek HTTPS 连接"
+verify_new_ai_tls || die "新容器 DeepSeek HTTPS 验证失败"
+
+echo "刷新本机 3200 端口转发"
+systemctl restart "$FORWARD"
+wait_forward_healthy || die "本机转发健康检查失败（已重试）"
+
+FORWARD_PAUSED=0
+STOP_ATTEMPTED=0
+echo "部署成功: $NEW"
+echo "保留回滚容器: $BACK"

@@ -1,0 +1,52 @@
+name: Mainland TCR Pull Test
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: mainland-teacher-operations
+  cancel-in-progress: false
+
+jobs:
+  verify-pull:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Prepare verified image on mainland without deploying
+        shell: bash
+        env:
+          SERVER_HOST: ${{ secrets.MAINLAND_SERVER_HOST }}
+          SERVER_SSH_KEY: ${{ secrets.MAINLAND_SERVER_SSH_KEY }}
+          SERVER_KNOWN_HOSTS: ${{ secrets.MAINLAND_SSH_KNOWN_HOSTS }}
+          TCR_USERNAME: ${{ secrets.TCR_USERNAME }}
+          TCR_PASSWORD: ${{ secrets.TCR_PASSWORD }}
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          for name in SERVER_HOST SERVER_SSH_KEY SERVER_KNOWN_HOSTS TCR_USERNAME TCR_PASSWORD; do
+            test -n "${!name}" || { echo "::error::Missing $name"; exit 1; }
+          done
+          test "$SERVER_HOST" = '43.138.178.158'
+          DIR=$(mktemp -d)
+          trap 'rm -rf -- "$DIR"' EXIT
+          printf '%s\n' "$SERVER_SSH_KEY" > "$DIR/key"
+          printf '%s\n' "$SERVER_KNOWN_HOSTS" > "$DIR/known_hosts"
+          ssh-keygen -y -f "$DIR/key" >/dev/null
+          ssh-keygen -F "$SERVER_HOST" -f "$DIR/known_hosts" >/dev/null
+          SSH=(ssh -F /dev/null -T -i "$DIR/key"
+            -o BatchMode=yes -o IdentitiesOnly=yes -o IdentityAgent=none
+            -o StrictHostKeyChecking=yes -o HostKeyAlgorithms=ssh-ed25519
+            -o UserKnownHostsFile="$DIR/known_hosts" -o ConnectTimeout=15
+            -o ServerAliveInterval=15 -o ServerAliveCountMax=4)
+          python3 - <<'PY' | timeout 1080s "${SSH[@]}" "agentic-ci@$SERVER_HOST" teacher-prepare
+          import json, os
+          print(json.dumps({
+            'tag': 'main-df839c6',
+            'image_id': 'sha256:ff22e32dbb0c0b31cd1ca5edd8447f68238a23016b4fe18a40e3e630caeded9d',
+            'username': os.environ['TCR_USERNAME'],
+            'password': os.environ['TCR_PASSWORD'],
+          }))
+          PY
+          "${SSH[@]}" "agentic-ci@$SERVER_HOST" teacher-check

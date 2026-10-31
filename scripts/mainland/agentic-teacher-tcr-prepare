@@ -1,0 +1,71 @@
+#!/usr/bin/python3
+"""Pull one verified TCR image; credentials exist only in a temporary root directory."""
+import fcntl
+import json
+import os
+from pathlib import Path
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+
+REPOSITORY = 'ccr.ccs.tencentyun.com/agentedu-mainland/agentic-teacher'
+STATE = Path('/var/lib/agentic-class-pilot/prepared-images')
+
+
+def run():
+    if os.geteuid() != 0:
+        raise RuntimeError('Root required')
+    os.umask(0o077)
+    # Forced-command callers cannot select a registry, filesystem path or executable.
+    payload = sys.stdin.buffer.read(16385)
+    if len(payload) > 16384:
+        raise RuntimeError('Request too large')
+    request = json.loads(payload)
+    tag, expected = request['tag'], request['image_id']
+    if not re.fullmatch(r'main-[0-9a-f]{7}', tag):
+        raise RuntimeError('Invalid tag')
+    if not re.fullmatch(r'sha256:[0-9a-f]{64}', expected):
+        raise RuntimeError('Invalid image ID')
+    username, password = request['username'], request['password']
+    if not isinstance(username, str) or not re.fullmatch(r'[A-Za-z0-9_@.+:-]{1,256}', username):
+        raise RuntimeError('Invalid username')
+    if not isinstance(password, str) or not 1 <= len(password) <= 8192 or '\n' in password:
+        raise RuntimeError('Invalid password')
+    if shutil.disk_usage('/var/lib/docker').free < 10 * 1024**3:
+        raise RuntimeError('Insufficient disk space')
+    image = REPOSITORY + ':' + tag
+    with open('/run/lock/agentic-teacher-deploy.lock', 'a') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        with tempfile.TemporaryDirectory(prefix='agentic-tcr-', dir='/run') as config:
+            docker = ['/usr/bin/docker', '--config', config]
+            login = subprocess.run(docker + ['login', 'ccr.ccs.tencentyun.com', '--username', username,
+                                             '--password-stdin'], input=password.encode(),
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60)
+            if login.returncode:
+                raise RuntimeError('TCR login failed (credential output suppressed)')
+            print('TCR login successful; temporary credentials only', flush=True)
+            subprocess.run(docker + ['pull', '--platform', 'linux/amd64', image], check=True, timeout=900)
+        metadata = json.loads(subprocess.check_output(['/usr/bin/docker', 'image', 'inspect', image]))[0]
+        if metadata['Id'] != expected:
+            raise RuntimeError('Image ID mismatch; deployment not authorized')
+        digests = [d for d in metadata.get('RepoDigests', []) if d.startswith(REPOSITORY + '@sha256:')]
+        if not digests:
+            raise RuntimeError('Missing TCR repository digest')
+        STATE.mkdir(mode=0o700, parents=True, exist_ok=True)
+        record = STATE / (tag + '.json')
+        temp = STATE / (tag + '.tmp')
+        temp.write_text(json.dumps({'image': image, 'id': expected, 'digest': digests[0]}) + '\n')
+        temp.replace(record)
+        print('TCR_PREPARE_OK', image, expected, digests[0], flush=True)
+        print('No container was started or replaced; temporary credentials removed', flush=True)
+
+
+if __name__ == '__main__':
+    try:
+        run()
+    except Exception as error:
+        # Never print the request, credentials or login process output.
+        print('TCR_PREPARE_FAILED:', type(error).__name__, file=sys.stderr)
+        sys.exit(1)
