@@ -10,7 +10,7 @@ case "${1:-}" in
     ;;
   prepare)
     [[ $# -eq 1 ]] || exit 64
-    exec timeout 1020s /usr/local/sbin/agentic-teacher-tcr-prepare
+    exec timeout 1380s /usr/local/sbin/agentic-teacher-tcr-prepare
     ;;
   check)
     [[ $# -eq 1 ]] || exit 64

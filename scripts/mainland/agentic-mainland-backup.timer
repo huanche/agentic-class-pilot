@@ -1,0 +1,10 @@
+[Unit]
+Description=Mainland backup daily at 03:30 China time
+
+[Timer]
+OnCalendar=*-*-* 03:30:00 Asia/Shanghai
+Persistent=false
+Unit=agentic-mainland-backup.service
+
+[Install]
+WantedBy=timers.target

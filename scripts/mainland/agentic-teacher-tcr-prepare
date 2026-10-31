@@ -43,7 +43,9 @@ def run():
                  'sha256:ff22e32dbb0c0b31cd1ca5edd8447f68238a23016b4fe18a40e3e630caeded9d'):
         raise RuntimeError('Seeding is restricted to the verified migration baseline')
     with open('/run/lock/agentic-teacher-deploy.lock', 'a') as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        # The forced-command wrapper bounds the total wait/pull time.
+        print('Waiting for the backup/deployment lock', flush=True)
+        fcntl.flock(lock, fcntl.LOCK_EX)
         with tempfile.TemporaryDirectory(prefix='agentic-tcr-', dir='/run') as config:
             docker = ['/usr/bin/docker', '--config', config]
             login = subprocess.run(docker + ['login', 'ccr.ccs.tencentyun.com', '--username', username,

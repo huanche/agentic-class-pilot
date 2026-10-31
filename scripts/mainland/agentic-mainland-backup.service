@@ -1,0 +1,10 @@
+[Unit]
+Description=Quiesced mainland application backup
+After=docker.service agentic-platform.service agentic-student.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/agentic-mainland-backup
+TimeoutStartSec=1800
+UMask=0077
+

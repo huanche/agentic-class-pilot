@@ -92,7 +92,7 @@ jobs:
             -o StrictHostKeyChecking=yes -o HostKeyAlgorithms=ssh-ed25519
             -o UserKnownHostsFile="$DIR/known_hosts" -o ConnectTimeout=15
             -o ServerAliveInterval=15 -o ServerAliveCountMax=4)
-          python3 - <<'PY' | timeout 1080s "${SSH[@]}" "agentic-ci@$SERVER_HOST" teacher-prepare
+          python3 - <<'PY' | timeout 1440s "${SSH[@]}" "agentic-ci@$SERVER_HOST" teacher-prepare
           import json, os
           print(json.dumps({
             'tag': os.environ['IMAGE_TAG'], 'image_id': os.environ['IMAGE_ID'],
