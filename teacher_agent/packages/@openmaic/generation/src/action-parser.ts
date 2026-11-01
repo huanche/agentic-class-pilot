@@ -10,11 +10,39 @@
  */
 
 import type { Action, ActionType } from '@openmaic/dsl';
-import { SLIDE_ONLY_ACTIONS } from '@openmaic/dsl';
+import { isActionType, SLIDE_ONLY_ACTIONS } from '@openmaic/dsl';
 import { nanoid } from 'nanoid';
 import { parse as parsePartialJson, Allow } from 'partial-json';
 import { jsonrepair } from 'jsonrepair';
 import { noopGenerationLogger, type GenerationLogger } from './logger.js';
+
+/** A bad model document, not a provider/network failure. Recovery is bounded by the caller. */
+export class ActionOutputFormatError extends Error {
+  readonly isRetryable = false;
+
+  constructor(message: string) {
+    super(message);
+    this.name = 'ActionOutputFormatError';
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function actionId(item: Record<string, unknown>): string {
+  const id = item.action_id ?? item.tool_id ?? item.id;
+  return typeof id === 'string' && id.trim() ? id : `action_${nanoid(8)}`;
+}
+
+function speechAction(item: Record<string, unknown>, id: string): Action | undefined {
+  const text = item.text ?? item.content;
+  if (typeof text !== 'string') {
+    throw new ActionOutputFormatError('speech requires string text or content');
+  }
+  if (!text.trim()) return undefined;
+  return { ...item, id, type: 'speech', text: text.trim() } as Action;
+}
 
 /**
  * Strip markdown code fences (```json ... ``` or ``` ... ```) from a response string.
@@ -54,7 +82,7 @@ export function parseActionsFromStructuredOutput(
 
   if (startIdx === -1) {
     log.warn('No JSON array found in response');
-    return [];
+    throw new ActionOutputFormatError('No JSON action array found in response');
   }
 
   const jsonStr = endIdx > startIdx ? cleaned.slice(startIdx, endIdx + 1) : cleaned.slice(startIdx); // unclosed array — let partial-json handle it
@@ -76,57 +104,49 @@ export function parseActionsFromStructuredOutput(
         );
       } catch (e) {
         log.warn('Failed to parse JSON array:', (e as Error).message);
-        return [];
+        throw new ActionOutputFormatError('Cannot parse JSON action array');
       }
     }
   }
 
   if (!Array.isArray(items)) {
     log.warn('Parsed result is not an array');
-    return [];
+    throw new ActionOutputFormatError('Action output must be a JSON array');
   }
 
   // Step 4: Convert items to Action[]
   const actions: Action[] = [];
 
   for (const item of items) {
-    if (!item || typeof item !== 'object' || !('type' in item)) continue;
-    const typedItem = item as Record<string, unknown>;
-
-    if (typedItem.type === 'text') {
-      const text = ((typedItem.content as string) || '').trim();
-      if (text) {
-        actions.push({
-          id: `action_${nanoid(8)}`,
-          type: 'speech',
-          text,
-        });
-      }
-    } else if (typedItem.type === 'action') {
-      try {
-        // Support both new format (name/params) and legacy format (tool_name/parameters)
-        const actionName = typedItem.name || typedItem.tool_name;
-        const actionParams = (typedItem.params || typedItem.parameters || {}) as Record<
-          string,
-          unknown
-        >;
-        const action = {
-          id: (typedItem.action_id || typedItem.tool_id || `action_${nanoid(8)}`) as string,
-          type: actionName as Action['type'],
-          ...actionParams,
-        } as Action;
-        // `widget_setState.state` is required by the type, but the LLM may omit it.
-        // The former TeacherAction→Action converter always defaulted it to `{}`;
-        // restore that guard so a missing `state` can't reach the iframe as
-        // `state: undefined` (SET_WIDGET_STATE handlers dereference it).
-        if (action.type === 'widget_setState' && action.state == null) {
-          action.state = {};
-        }
-        actions.push(action);
-      } catch (_e) {
-        log.warn('Invalid action item, skipping:', JSON.stringify(typedItem).slice(0, 100));
-      }
+    if (!isRecord(item)) {
+      throw new ActionOutputFormatError('Each action item must be an object');
     }
+    const id = actionId(item);
+    let action: Action | undefined;
+    if (item.type === 'text' || item.type === 'speech') {
+      action = speechAction(item, id);
+    } else if (item.type === 'action') {
+      // Support the envelope and legacy tool formats, but never let params
+      // overwrite the envelope's type/id. "text" is narration, not a DSL verb.
+      const name = item.name ?? item.tool_name;
+      const params = item.params ?? item.parameters ?? {};
+      if (!isRecord(params)) {
+        throw new ActionOutputFormatError('Action params must be an object');
+      }
+      action =
+        name === 'text' || name === 'speech'
+          ? speechAction(params, id)
+          : ({ ...params, id, type: name as Action['type'] } as Action);
+    } else if (isActionType(item.type)) {
+      action = { ...item, id } as Action;
+    } else {
+      throw new ActionOutputFormatError(`unknown action type: ${JSON.stringify(item.type)}`);
+    }
+    // Keep the existing widget default without weakening the DSL validator.
+    if (action?.type === 'widget_setState' && action.state == null) {
+      action.state = {};
+    }
+    if (action) actions.push(action);
   }
 
   // Classroom live discussions have been removed. Ignore model-emitted legacy

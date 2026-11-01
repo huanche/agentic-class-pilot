@@ -15,7 +15,7 @@ import type {
   SlideBackground,
   WidgetType,
 } from '@openmaic/dsl';
-import { isWidgetType, normalizeElement } from '@openmaic/dsl';
+import { isWidgetType, normalizeElement, validateAction } from '@openmaic/dsl';
 import { MAX_VISION_IMAGES } from './constants.js';
 import {
   formatImageDescription,
@@ -31,7 +31,7 @@ import type {
 } from './outline-types.js';
 import { DEFAULT_LANGUAGE_DIRECTIVE } from './outline-generator.js';
 import { postProcessInteractiveHtml } from './interactive-post-processor.js';
-import { parseActionsFromStructuredOutput } from './action-parser.js';
+import { ActionOutputFormatError, parseActionsFromStructuredOutput } from './action-parser.js';
 import { parseJsonResponse } from './json-repair.js';
 import {
   buildCourseContext,
@@ -1602,9 +1602,46 @@ function buildPBLProjectSummary(outline: SceneOutline, project: PBLProject | und
     .join('\n');
 }
 
-/**
- * Step 3.2: Generate Actions based on content and script
- */
+/** Repair representation locally first; only malformed actions need one extra model call. */
+async function generateValidatedActions(
+  aiCall: AICallFn,
+  prompts: { system: string; user: string },
+  sceneType: string,
+  log: GenerationLogger,
+  allowedActions?: string[],
+): Promise<Action[]> {
+  let feedback = '';
+  for (let attempt = 0; attempt < 2; attempt++) {
+    // Provider errors and cancellation propagate unchanged, outside the format retry boundary.
+    const response = await aiCall(prompts.system, prompts.user + feedback);
+    try {
+      const actions = parseActionsFromStructuredOutput(response, sceneType, allowedActions, log);
+      if (attempt > 0 && actions.length === 0) {
+        throw new ActionOutputFormatError('Format correction returned an empty action array');
+      }
+      const issues = actions.flatMap((action, index) => {
+        const result = validateAction(action);
+        return result.valid
+          ? []
+          : result.errors.map((issue) => `/actions/${index}${issue.path}: ${issue.message}`);
+      });
+      if (issues.length) throw new ActionOutputFormatError(issues.join('; '));
+      return actions;
+    } catch (error) {
+      if (!(error instanceof ActionOutputFormatError)) throw error;
+      if (attempt === 1) {
+        throw new ActionOutputFormatError(
+          `讲解动作格式无效（当前页已自动重试 1 次）：${error.message}`,
+        );
+      }
+      log.warn('Retrying current-page action format once:', error.message);
+      feedback = `\n\nAction format correction: the previous response failed validation: ${error.message.slice(0, 2000)}\nReturn the complete action array for this same page, not just the failed item. Preserve all teaching content, narration requirements and original-PPT animation order from the original request. Use {"type":"text","content":"spoken words"} for narration and {"type":"action","name":"supported action name","params":{...}} for effects. Do not put type or id inside params. Supply every required action field. Do not shorten the lesson or omit narration to bypass validation.`;
+    }
+  }
+  throw new ActionOutputFormatError('Action format recovery exhausted');
+}
+
+/** Step 3.2: Generate Actions based on content and script. */
 export async function generateSceneActions(
   outline: SceneOutline,
   content:
@@ -1646,8 +1683,7 @@ export async function generateSceneActions(
       return generateDefaultSlideActions(outline, content.elements);
     }
 
-    const response = await aiCall(prompts.system, prompts.user);
-    const actions = parseActionsFromStructuredOutput(response, outline.type, undefined, log);
+    const actions = await generateValidatedActions(aiCall, prompts, outline.type, log);
 
     if (actions.length > 0) {
       // Validate and fill in Action IDs
@@ -1675,8 +1711,7 @@ export async function generateSceneActions(
       return generateDefaultQuizActions(outline);
     }
 
-    const response = await aiCall(prompts.system, prompts.user);
-    const actions = parseActionsFromStructuredOutput(response, outline.type, undefined, log);
+    const actions = await generateValidatedActions(aiCall, prompts, outline.type, log);
 
     if (actions.length > 0) {
       return processActions(actions, [], agents, log);
@@ -1712,12 +1747,12 @@ export async function generateSceneActions(
       return generateDefaultInteractiveActions(outline);
     }
 
-    const response = await aiCall(prompts.system, prompts.user);
-    const actions = parseActionsFromStructuredOutput(
-      response,
+    const actions = await generateValidatedActions(
+      aiCall,
+      prompts,
       outline.type,
-      INTERACTIVE_WIDGET_ACTIONS,
       log,
+      INTERACTIVE_WIDGET_ACTIONS,
     );
 
     if (actions.length > 0) {
@@ -1747,8 +1782,7 @@ export async function generateSceneActions(
       return generateDefaultPBLActions(outline);
     }
 
-    const response = await aiCall(prompts.system, prompts.user);
-    const actions = parseActionsFromStructuredOutput(response, outline.type, undefined, log);
+    const actions = await generateValidatedActions(aiCall, prompts, outline.type, log);
 
     if (actions.length > 0) {
       return processActions(actions, [], agents, log);
