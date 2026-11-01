@@ -14,6 +14,8 @@ jobs:
     steps:
       - name: Read the new TCR manifest without pulling layers or touching production
         env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
           TCR_USERNAME: ${{ secrets.TCR_USERNAME }}
           TCR_PASSWORD: ${{ secrets.TCR_PASSWORD }}
         run: |
@@ -24,13 +26,27 @@ jobs:
           export DOCKER_CONFIG="$DIR/docker"
           mkdir -m 700 "$DOCKER_CONFIG"
           printf '%s' "$TCR_PASSWORD" | timeout 60s docker login ccr.ccs.tencentyun.com -u "$TCR_USERNAME" --password-stdin >/dev/null
+          printf '%s' "$DOCKERHUB_TOKEN" | timeout 60s docker login docker.io -u "$DOCKERHUB_USERNAME" --password-stdin >/dev/null
+          SOURCE=zmzm1443/agentic-teacher:main-b0eb142
+          timeout 45s docker manifest inspect --verbose "$SOURCE" > "$DIR/source.json"
+          python3 - "$DIR/source.json" <<'PYSOURCE'
+          import json,sys
+          obj=json.load(open(sys.argv[1])); docs=obj if isinstance(obj,list) else [obj]
+          item=next((d for d in docs if d.get('Descriptor',{}).get('platform',{}).get('architecture')=='amd64'),docs[0])
+          manifest=item.get('SchemaV2Manifest') or item.get('OCIManifest') or item
+          assert manifest.get('config',{}).get('digest')
+          print('VERIFY_SOURCE_IMAGE_CONFIG='+manifest['config']['digest'])
+          print('VERIFY_SOURCE_COMPRESSED_BYTES='+str(sum(layer.get('size',0) for layer in manifest.get('layers',[]))))
+          PYSOURCE
           TARGET=ccr.ccs.tencentyun.com/agentedu-mainland/agentic-teacher:main-b0eb142
-          timeout 45s docker manifest inspect "$TARGET" > "$DIR/manifest.json"
-          python3 - "$DIR/manifest.json" <<'PYIMAGE'
+          if timeout 45s docker manifest inspect "$TARGET" > "$DIR/manifest.json" 2>"$DIR/manifest.err"; then
+            python3 - "$DIR/manifest.json" <<'PYIMAGE'
           import json,re,sys
-          obj=json.load(open(sys.argv[1]))
-          value=obj.get('config',{}).get('digest')
+          obj=json.load(open(sys.argv[1])); value=obj.get('config',{}).get('digest')
           assert isinstance(value,str) and re.fullmatch('sha256:[a-f0-9]{64}',value)
           print('VERIFY_TCR_IMAGE_CONFIG='+value)
           print('VERIFY_TCR_IMAGE_TAG=main-b0eb142')
           PYIMAGE
+          else
+            echo 'VERIFY_TCR_NEW_TAG=not-visible-yet'
+          fi
