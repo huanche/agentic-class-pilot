@@ -6,7 +6,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: mainland-teacher-operations
+  group: mainland-teacher-observe
   cancel-in-progress: false
 jobs:
   verify:
