@@ -1,0 +1,64 @@
+name: action-format-retry-transfer-20261101
+on:
+  push:
+    branches: [codex/backup-generation-controls-20261020]
+    paths: [.github/workflows/action-format-retry-transfer-20261101.yml]
+permissions:
+  actions: write
+concurrency:
+  group: mainland-image-retry-observe
+  cancel-in-progress: false
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Retry only if production is still old and the new registry manifest is absent
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SERVER_HOST: ${{ secrets.MAINLAND_SERVER_HOST }}
+          SERVER_SSH_KEY: ${{ secrets.MAINLAND_SERVER_SSH_KEY }}
+          SERVER_KNOWN_HOSTS: ${{ secrets.MAINLAND_SSH_KNOWN_HOSTS }}
+          TCR_USERNAME: ${{ secrets.TCR_USERNAME }}
+          TCR_PASSWORD: ${{ secrets.TCR_PASSWORD }}
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          test "$SERVER_HOST" = '43.138.178.158'
+          API=repos/huanche/agentic-class-pilot/actions/runs/41294098519
+          gh api "$API" > /tmp/release-state.json
+          jq -e '.path == ".github/workflows/mainland-teacher-release.yml" and .head_sha == "b0eb142e21c11cc6f2a7c8ec60ae8e398ec70e68" and .head_branch == "main" and .status == "in_progress"' /tmp/release-state.json >/dev/null
+          DIR=$(mktemp -d)
+          trap 'rm -rf -- "$DIR"' EXIT
+          printf '%s\n' "$SERVER_SSH_KEY" > "$DIR/key"
+          printf '%s\n' "$SERVER_KNOWN_HOSTS" > "$DIR/known_hosts"
+          SSH=(ssh -F /dev/null -T -i "$DIR/key" -o BatchMode=yes -o IdentitiesOnly=yes -o IdentityAgent=none -o StrictHostKeyChecking=yes -o HostKeyAlgorithms=ssh-ed25519 -o UserKnownHostsFile="$DIR/known_hosts" -o ConnectTimeout=15)
+          "${SSH[@]}" "agentic-ci@$SERVER_HOST" teacher-check > "$DIR/before.txt"
+          grep -Fq '当前镜像: sha256:ff22e32dbb0c0b31cd1ca5edd8447f68238a23016b4fe18a40e3e630caeded9d' "$DIR/before.txt"
+          grep -Fq '本机健康接口 HTTP: 200' "$DIR/before.txt"
+          export DOCKER_CONFIG="$DIR/docker"
+          mkdir -m 700 "$DOCKER_CONFIG"
+          printf '%s' "$TCR_PASSWORD" | timeout 60s docker login ccr.ccs.tencentyun.com -u "$TCR_USERNAME" --password-stdin >/dev/null
+          TARGET=ccr.ccs.tencentyun.com/agentedu-mainland/agentic-teacher:main-b0eb142
+          if timeout 30s docker manifest inspect "$TARGET" > "$DIR/manifest.json" 2>"$DIR/manifest.err"; then
+            echo 'VERIFY_NEW_TAG_ALREADY_VISIBLE=leave-original-release-running'
+            exit 0
+          fi
+          grep -Fq 'no such manifest:' "$DIR/manifest.err"
+          gh api "$API" > "$DIR/current.json"
+          if ! jq -e '.status == "in_progress" and .head_sha == "b0eb142e21c11cc6f2a7c8ec60ae8e398ec70e68"' "$DIR/current.json" >/dev/null; then
+            echo 'VERIFY_RELEASE_STATE_CHANGED=left-untouched'
+            exit 0
+          fi
+          gh api --method POST "$API/cancel"
+          echo 'VERIFY_SAFE_CANCEL_REQUESTED=old-production-healthy; new-manifest-absent; source-commit-checked'
+          for i in $(seq 1 30); do
+            state=$(gh api "$API" --jq .status)
+            test "$state" != completed || break
+            sleep 3
+          done
+          test "$state" = completed
+          "${SSH[@]}" "agentic-ci@$SERVER_HOST" teacher-check > "$DIR/after.txt"
+          grep -Fq '当前镜像: sha256:ff22e32dbb0c0b31cd1ca5edd8447f68238a23016b4fe18a40e3e630caeded9d' "$DIR/after.txt"
+          grep -Fq '本机健康接口 HTTP: 200' "$DIR/after.txt"
+          echo 'VERIFY_SAFE_CANCEL_COMPLETE=old-production-unchanged-and-healthy'
