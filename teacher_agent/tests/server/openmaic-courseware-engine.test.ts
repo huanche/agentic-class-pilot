@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { buildCompleteScene, generateSceneActions } from '@openmaic/generation';
 import {
   generateOpenmaicCourseware,
   type OpenmaicCheckpoint,
@@ -105,5 +106,44 @@ describe('OpenMAIC server generation ordering', () => {
       3, 4, 5,
     ]);
     expect(vi.mocked(s.services.actions).mock.calls[0][2]?.id).toBe('s2');
+  });
+  it('repairs only the current page actions while continuing the original five-page plan', async () => {
+    const s = setup();
+    s.saved.push(page(1), page(2));
+    s.saved[0].actions![0] = {
+      id: 'a1',
+      type: 'speech',
+      text: 'Speech 1',
+      audioId: 'original-audio',
+    };
+    const preserved = structuredClone(s.saved);
+    const attempts = new Map<number, number>();
+    vi.mocked(s.services.actions).mockImplementation(async (outline) => {
+      const content = { elements: [] };
+      const actions = await generateSceneActions(outline, content, async () => {
+        const attempt = (attempts.get(outline.order) ?? 0) + 1;
+        attempts.set(outline.order, attempt);
+        return JSON.stringify(
+          outline.order === 3 && attempt === 1
+            ? [{ type: 'action', name: 'unknown_action', params: {} }]
+            : [{ type: 'action', name: 'text', params: { content: `Speech ${outline.order}` } }],
+        );
+      });
+      return buildCompleteScene(outline, content, actions, 'stage')! as Scene;
+    });
+    await s.run();
+    expect(s.saved.map((scene) => scene.order)).toEqual([1, 2, 3, 4, 5]);
+    expect(s.saved.slice(0, 2)).toEqual(preserved);
+    expect([...attempts.entries()]).toEqual([
+      [3, 2],
+      [4, 1],
+      [5, 1],
+    ]);
+    expect(vi.mocked(s.services.content).mock.calls.map(([outline]) => outline.order)).toEqual([
+      3, 4, 5,
+    ]);
+    expect(vi.mocked(s.services.narrate).mock.calls.map(([scene]) => scene.order)).toEqual([
+      3, 4, 5,
+    ]);
   });
 });
