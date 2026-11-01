@@ -1,0 +1,29 @@
+name: onlyoffice-image-transfer-20261101
+on:
+  push:
+    branches: [codex/backup-generation-controls-20261020]
+    paths: [.github/workflows/onlyoffice-image-transfer-20261101.yml]
+permissions:
+  contents: read
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Package pinned official ONLYOFFICE image for offline lab installation
+        run: |
+          set -Eeuo pipefail
+          SOURCE=docker.io/onlyoffice/documentserver@sha256:ca17889f10b11141cc6441836aebdd2835cf3e1b49681b2fd6e155c94b7850b3
+          docker pull "$SOURCE"
+          mkdir -p /tmp/onlyoffice-image
+          docker image inspect "$SOURCE" > /tmp/onlyoffice-image/image.json
+          docker save "$SOURCE" | zstd -T2 -3 > /tmp/onlyoffice-image/onlyoffice.tar.zst
+          cd /tmp/onlyoffice-image
+          sha256sum onlyoffice.tar.zst > SHA256SUMS
+          ls -lh onlyoffice.tar.zst
+      - uses: actions/upload-artifact@v4
+        with:
+          name: onlyoffice-pinned-image
+          path: /tmp/onlyoffice-image/
+          compression-level: 0
+          retention-days: 2
