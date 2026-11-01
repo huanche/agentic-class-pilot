@@ -1,0 +1,36 @@
+name: action-format-image-audit-20261101
+on:
+  push:
+    branches: [codex/backup-generation-controls-20261020]
+    paths: [.github/workflows/action-format-image-audit-20261101.yml]
+permissions: {}
+concurrency:
+  group: mainland-image-observe
+  cancel-in-progress: false
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Read the new TCR manifest without pulling layers or touching production
+        env:
+          TCR_USERNAME: ${{ secrets.TCR_USERNAME }}
+          TCR_PASSWORD: ${{ secrets.TCR_PASSWORD }}
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          DIR=$(mktemp -d)
+          trap 'rm -rf -- "$DIR"' EXIT
+          export DOCKER_CONFIG="$DIR/docker"
+          mkdir -m 700 "$DOCKER_CONFIG"
+          printf '%s' "$TCR_PASSWORD" | timeout 60s docker login ccr.ccs.tencentyun.com -u "$TCR_USERNAME" --password-stdin >/dev/null
+          TARGET=ccr.ccs.tencentyun.com/agentedu-mainland/agentic-teacher:main-b0eb142
+          timeout 45s docker manifest inspect "$TARGET" > "$DIR/manifest.json"
+          python3 - "$DIR/manifest.json" <<'PYIMAGE'
+          import json,re,sys
+          obj=json.load(open(sys.argv[1]))
+          value=obj.get('config',{}).get('digest')
+          assert isinstance(value,str) and re.fullmatch('sha256:[a-f0-9]{64}',value)
+          print('VERIFY_TCR_IMAGE_CONFIG='+value)
+          print('VERIFY_TCR_IMAGE_TAG=main-b0eb142')
+          PYIMAGE
