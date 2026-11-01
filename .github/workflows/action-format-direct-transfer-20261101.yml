@@ -1,0 +1,60 @@
+name: action-format-direct-transfer-20261101
+on:
+  push:
+    branches: [codex/backup-generation-controls-20261020]
+    paths: [.github/workflows/action-format-direct-transfer-20261101.yml]
+permissions:
+  actions: read
+concurrency:
+  group: action-format-same-image-transfer
+  cancel-in-progress: false
+jobs:
+  transfer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Install registry copy tool
+        run: |
+          set -Eeuo pipefail
+          command -v skopeo >/dev/null || { sudo apt-get update -qq; sudo apt-get install -y -qq skopeo; }
+      - name: Transfer the verified exact platform manifest without changing image digests
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          TCR_USERNAME: ${{ secrets.TCR_USERNAME }}
+          TCR_PASSWORD: ${{ secrets.TCR_PASSWORD }}
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          gh api repos/huanche/agentic-class-pilot/actions/runs/41293311141 | jq -e '.status == "completed" and .conclusion == "success" and .head_sha == "b0eb142e21c11cc6f2a7c8ec60ae8e398ec70e68" and .head_branch == "main"' >/dev/null
+          DIR=$(mktemp -d)
+          trap 'rm -rf -- "$DIR"' EXIT
+          export DOCKER_CONFIG="$DIR/docker"
+          mkdir -m 700 "$DOCKER_CONFIG"
+          printf '%s' "$DOCKERHUB_TOKEN" | timeout 60s docker login docker.io -u "$DOCKERHUB_USERNAME" --password-stdin >/dev/null
+          printf '%s' "$TCR_PASSWORD" | timeout 60s docker login ccr.ccs.tencentyun.com -u "$TCR_USERNAME" --password-stdin >/dev/null
+          SOURCE=zmzm1443/agentic-teacher:main-b0eb142
+          TARGET=ccr.ccs.tencentyun.com/agentedu-mainland/agentic-teacher:main-b0eb142
+          timeout 45s docker manifest inspect --verbose "$SOURCE" > "$DIR/source.json"
+          python3 - "$DIR/source.json" "$DIR/source-ref" <<'PYSOURCE'
+          import json,re,sys
+          from pathlib import Path
+          obj=json.load(open(sys.argv[1])); docs=obj if isinstance(obj,list) else [obj]
+          item=next((d for d in docs if d.get('Descriptor',{}).get('platform',{}).get('architecture')=='amd64'),docs[0])
+          manifest=item.get('SchemaV2Manifest') or item.get('OCIManifest') or item
+          assert manifest['config']['digest']=='sha256:f177a11985dace95a75cfbf3176572b6aaa184b8ef4ebe361906ada516470a91'
+          digest=item['Descriptor']['digest']; assert re.fullmatch('sha256:[0-9a-f]{64}',digest)
+          Path(sys.argv[2]).write_text('docker.io/zmzm1443/agentic-teacher@'+digest)
+          print('VERIFY_DIRECT_SOURCE_CONFIG='+manifest['config']['digest'])
+          print('VERIFY_DIRECT_SOURCE_MANIFEST='+digest)
+          PYSOURCE
+          REF=$(cat "$DIR/source-ref")
+          timeout 1200s skopeo copy --preserve-digests --src-authfile "$DIR/docker/config.json" --dest-authfile "$DIR/docker/config.json" "docker://$REF" "docker://$TARGET"
+          timeout 45s docker manifest inspect "$TARGET" > "$DIR/target.json"
+          python3 - "$DIR/target.json" <<'PYTARGET'
+          import json,sys
+          obj=json.load(open(sys.argv[1]))
+          assert obj['config']['digest']=='sha256:f177a11985dace95a75cfbf3176572b6aaa184b8ef4ebe361906ada516470a91'
+          print('VERIFY_DIRECT_TRANSFER_COMPLETE=main-b0eb142; config-identity-preserved')
+          PYTARGET
