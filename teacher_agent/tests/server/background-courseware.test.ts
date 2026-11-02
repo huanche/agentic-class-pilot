@@ -148,6 +148,23 @@ afterEach(async () => {
 });
 
 describe('server-owned courseware generation', () => {
+  it('uses a local internal origin only for generation API calls', async () => {
+    vi.stubEnv('COURSEWARE_INTERNAL_API_ORIGIN', 'http://127.0.0.1:3200/');
+    const job = await createBackgroundCoursewareJob(input('internal_origin'), context);
+    const saved = JSON.parse(
+      await fs.readFile(
+        path.join(process.cwd(), '.runtime', 'background-task-tests',
+          `${job.id}.courseware-input.json`),
+        'utf8',
+      ),
+    );
+    expect(saved.baseUrl).toBe(context.baseUrl);
+    await runBackgroundCoursewareJob(job.id);
+    expect(state.jobs.get(job.id)?.status).toBe('review');
+    expect(vi.mocked(fetch).mock.calls.length).toBeGreaterThan(0);
+    for (const [url] of vi.mocked(fetch).mock.calls)
+      expect(String(url)).toMatch(/^http:\/\/127\.0\.0\.1:3200\/api\/generate\//);
+  });
   it.each(['missing', 'malformed', 'incomplete'])(
     'settles a %s persisted plan as failed instead of leaving a stuck running task',
     async (problem) => {

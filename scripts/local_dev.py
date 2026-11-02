@@ -152,6 +152,7 @@ def environment(config: dict[str, str], service: str) -> dict[str, str]:
         env.update(PLATFORM_AUTH_ENABLED="true", PLATFORM_AUTH_URL="http://127.0.0.1:8080",
                    PLATFORM_SERVICE_KEY=config["TEACHER_SERVICE_KEY"],
                    NEXT_PUBLIC_SAAS_HOST_ORIGIN=PUBLIC_URL, ALLOWED_FRAME_ANCESTORS=PUBLIC_URL,
+                   COURSEWARE_INTERNAL_API_ORIGIN="http://127.0.0.1:3200",
                    COURSE_STORAGE_MODE="postgres", COURSE_DATABASE_SCHEMA="teacher",
                    COURSE_DATABASE_URL=teacher_database_url(config),
                    COURSE_SPACES_DATA_DIR=str(data / "course-spaces"),

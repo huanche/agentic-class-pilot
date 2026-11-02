@@ -93,6 +93,7 @@ class LocalConfigurationTests(unittest.TestCase):
         self.assertNotIn("DATABASE_URL", env)
         self.assertNotIn("ACCESS_CODE", env)
         self.assertEqual(env["COURSE_OBJECT_STORAGE_SECRET_KEY"], "object-secret")
+        self.assertEqual(env["COURSEWARE_INTERNAL_API_ORIGIN"], "http://127.0.0.1:3200")
 
     def test_open_but_broken_minio_forwarding_is_not_treated_as_ready(self):
         config = {"COURSE_OBJECT_STORAGE_MODE": "minio",
