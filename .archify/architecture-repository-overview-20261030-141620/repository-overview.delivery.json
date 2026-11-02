@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "84025383-700a-4f30-9738-fe241e19bfa4",
+  "status": "current",
+  "command": "deliver",
+  "type": "architecture",
+  "input": "E:\\LMS系统参考\\项目\\agentic-class-pilot-running\\.archify\\architecture-repository-overview-20261030-141620\\candidate.json",
+  "output": "E:\\LMS系统参考\\项目\\agentic-class-pilot-running\\.archify\\architecture-repository-overview-20261030-141620\\repository-overview.html",
+  "specification": {
+    "sha256": "4444ca56fadfdd8986f6a53565871d4d931be8d288c8b8a80e6a843e96712b8a",
+    "bytes": 11389
+  },
+  "artifact": {
+    "sha256": "609c3514e0e6e7bbbfe8101caff1a6a0284fe6a53a7974cefd890e27b2e04e8a",
+    "bytes": 860027
+  }
+}
