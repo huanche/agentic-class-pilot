@@ -50,6 +50,10 @@ class BrowserRestoreRequest(BaseModel):
     launch_token: str = ""
 
 
+class ResumeRequest(StartRequest):
+    lesson_id: str = Field(min_length=1, max_length=200)
+
+
 def _browser_snapshot(session: dict) -> str:
     payload = {key: value for key, value in session.items()
                if key not in {"lock", "launchToken"}}
@@ -141,6 +145,64 @@ def get_session(sid: str) -> dict:
         else:
             raise HTTPException(404, "会话不存在，请重新进入课堂")
     return session
+
+
+def restore_lesson(context: dict, token: str, lesson_id: str) -> dict | None:
+    """Restore only the authenticated lesson; database state outranks browser hints."""
+    lessons = context.get("lessons") or []
+    if (str(context.get("selectedLessonId")) != lesson_id or len(lessons) != 1
+            or str(lessons[0].get("id")) != lesson_id):
+        raise HTTPException(409, "所选课时与课程不匹配，请重新进入课程")
+    classroom_id = str((lessons[0].get("classroom") or {}).get("id") or "")
+    publication = context.get("publication") or {}
+    try:
+        sid = persistence.latest_session_key(
+            str(context["userId"]), str(context["courseId"]),
+            str(publication["id"]), int(publication["version"]), lesson_id, classroom_id)
+    except Exception as error:
+        logger.exception("Failed to find student lesson history")
+        raise HTTPException(503, "读取历史会话失败，请稍后重试") from error
+    if not sid:
+        return None
+
+    def read_saved() -> dict:
+        try:
+            saved = persistence.restore(sid)
+        except Exception as error:
+            logger.exception("Failed to restore student lesson history")
+            raise HTTPException(503, "恢复历史会话失败，请稍后重试") from error
+        if not saved:
+            raise HTTPException(503, "历史会话暂不可用，请稍后重试")
+        identity = saved.get("context") or {}
+        if (saved.get("id") != sid
+                or str(identity.get("userId")) != str(context["userId"])
+                or str(identity.get("courseId")) != str(context["courseId"])
+                or identity.get("publication") != publication
+                or saved.get("lessonId") != lesson_id
+                or str(saved.get("classroomId") or "") != classroom_id
+                or saved.get("phase") not in {"video", "discussion", "done", "postclass", "replay"}):
+            raise HTTPException(409, "历史会话与当前用户或课时不匹配")
+        # Postclass is a frontend view; its API handlers use the completed
+        # classroom phase while postclassStage tracks the ongoing conversation.
+        if saved["phase"] == "postclass":
+            saved["phase"] = "done"
+        saved.update(context=context, courses=catalog(context), launchToken=token)
+        return saved
+
+    with session_lock:
+        cached = sessions.get(sid)
+    if cached is None:
+        saved = read_saved()
+        with session_lock:
+            cached = sessions.setdefault(sid, saved)
+        if cached is saved:
+            return cached
+    # Serialize refreshes with local commits; stale snapshots cannot replace
+    # the newer conversation persisted by this process or another device.
+    with cached["lock"]:
+        saved = read_saved()
+        cached.update({key: value for key, value in saved.items() if key != "lock"})
+    return cached
 
 
 def state(session: dict) -> dict:
@@ -310,11 +372,39 @@ def start(body: StartRequest) -> dict:
     return state(sessions[sid])
 
 
+@app.post("/api/session/resume")
+def resume(body: ResumeRequest, background_tasks: BackgroundTasks) -> dict:
+    if not body.launch_token:
+        raise HTTPException(401, "请从平台重新进入课程以恢复历史会话")
+    context = platform_context(body.launch_token, body.lesson_id)
+    session = restore_lesson(context, body.launch_token, body.lesson_id)
+    if session is None:
+        raise HTTPException(404, "该课时暂无历史会话")
+    with session["lock"]:
+        schedule_preparation(session, background_tasks)
+        return state(session)
+
+
 @app.post("/api/session/browser-restore")
 def browser_restore(body: BrowserRestoreRequest) -> dict:
     if not persistence.fresh_session_mode():
         raise HTTPException(404, "浏览器学习记录恢复未启用")
     restored = _restore_browser_snapshot(body.snapshot)
+    if restored.get("context"):
+        if not body.launch_token:
+            raise HTTPException(401, "请从平台重新进入课程以恢复历史会话")
+        lesson_id = restored.get("lessonId")
+        if not lesson_id:
+            return start(StartRequest(launch_token=body.launch_token))
+        context = platform_context(body.launch_token, lesson_id)
+        original = restored["context"]
+        if any(str(context.get(key)) != str(original.get(key)) for key in ("userId", "courseId")):
+            raise HTTPException(403, "浏览器学习记录与当前用户或课程不匹配")
+        session = restore_lesson(context, body.launch_token, lesson_id)
+        if session is None:
+            raise HTTPException(404, "该课时暂无历史会话，请重新选择课时")
+        with session["lock"]:
+            return state(session)
     restored["launchToken"] = body.launch_token or None
     with session_lock:
         session = sessions.setdefault(restored["id"], restored)
@@ -390,36 +480,14 @@ def begin(sid: str, lesson_id: str, background_tasks: BackgroundTasks) -> dict:
         lesson = next((item for item in selected_courses[0]["lessons"] if item["id"] == lesson_id), None)
         if not lesson or not lesson.get("playerUrl"):
             raise HTTPException(409, "所选课时没有已发布的播放器")
-        try:
-            old_id = None if persistence.fresh_session_mode() else persistence.latest_session_key(
-                str(original["userId"]), str(original["courseId"]),
-                str((original.get("publication") or {})["id"]),
-                int((original.get("publication") or {})["version"]),
-                lesson_id, str(lesson["classroomId"]),
-            )
-        except Exception as error:
-            logger.exception("Failed to find previous student lesson session")
-            raise HTTPException(503, "读取上次课堂失败，请稍后重试") from error
-        if old_id:
-            resumed = get_session(old_id)
-            saved_context = resumed.get("context") or {}
-            if (str(saved_context.get("userId")) == str(original["userId"])
-                    and str(saved_context.get("courseId")) == str(original["courseId"])
-                    and str((saved_context.get("publication") or {}).get("id"))
-                    == str((original.get("publication") or {}).get("id"))
-                    and int((saved_context.get("publication") or {}).get("version") or 0)
-                    == int((original.get("publication") or {}).get("version") or 0)
-                    and resumed.get("lessonId") == lesson_id
-                    and resumed.get("classroomId") == lesson["classroomId"]
-                    and resumed.get("phase") in {"video", "discussion", "done"}):
-                with resumed["lock"]:
-                    resumed["context"] = selected_context
-                    resumed["courses"] = selected_courses
-                    schedule_preparation(resumed, background_tasks)
-                    restored_state = state(resumed)
-                with session_lock:
-                    sessions.pop(sid, None)
-                return restored_state
+        resumed = restore_lesson(selected_context, token, lesson_id)
+        if resumed is not None:
+            with resumed["lock"]:
+                schedule_preparation(resumed, background_tasks)
+                restored_state = state(resumed)
+            with session_lock:
+                sessions.pop(sid, None)
+            return restored_state
     with session["lock"]:
         if session["phase"] != "idle":
             if session["lessonId"] != lesson_id:

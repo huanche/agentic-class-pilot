@@ -15,8 +15,8 @@ Get-Content -LiteralPath $platformEnv | ForEach-Object {
 }
 if (-not $env:STUDENT_SERVICE_KEY) { throw 'STUDENT_SERVICE_KEY is missing from platform .env' }
 $env:PLATFORM_AUTH_URL = "$($env:PLATFORM_URL.TrimEnd('/'))/api/v1"
-# Local testing starts a fresh student session on each browser open and writes
-# progress without loading previous student records from the database.
+# Keep browser snapshot hints. Authenticated lesson selection restores database
+# history even when this browser is new or its local storage has been cleared.
 $env:STUDENT_FRESH_SESSION_MODE = '1'
 Remove-Item Env:STUDENT_NEW_DEMO_PLAYER_URL -ErrorAction SilentlyContinue
 

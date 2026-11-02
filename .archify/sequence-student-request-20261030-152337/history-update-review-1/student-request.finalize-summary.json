@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "command": "finalize",
+  "status": "pass",
+  "type": "sequence",
+  "quality": "showcase",
+  "specification": {
+    "path": "E:\\LMS系统参考\\项目\\agentic-class-pilot-running\\.archify\\sequence-student-request-20261030-152337\\candidate.json",
+    "sha256": "eec76e08772c82c22e57df006580835b2a43a27df4dad4f9cde8ad6bcc426623",
+    "bytes": 18035
+  },
+  "artifact": {
+    "path": "E:\\LMS系统参考\\项目\\agentic-class-pilot-running\\.archify\\sequence-student-request-20261030-152337\\student-request.html",
+    "sha256": "51bd225d27d5f729a5eb49008baf3bcc424839376a4f8c0fb80ecd3554e20d74",
+    "bytes": 880690
+  },
+  "gates": {
+    "validate": "pass",
+    "deliver": "pass",
+    "check": "pass",
+    "browser-check": "pass"
+  },
+  "diagnostics": [],
+  "diagnosticSummary": {
+    "total": 0,
+    "shown": 0,
+    "truncated": false
+  },
+  "evidence": {
+    "receipt": "E:\\LMS系统参考\\项目\\agentic-class-pilot-running\\.archify\\sequence-student-request-20261030-152337\\history-update-review-1\\student-request.finalize.json",
+    "summaryReceipt": "E:\\LMS系统参考\\项目\\agentic-class-pilot-running\\.archify\\sequence-student-request-20261030-152337\\history-update-review-1\\student-request.finalize-summary.json",
+    "browserCheckReceipt": "E:\\LMS系统参考\\项目\\agentic-class-pilot-running\\.archify\\sequence-student-request-20261030-152337\\history-update-review-1\\student-request.browser-check.json"
+  },
+  "update": {
+    "status": "current",
+    "installedVersion": "3.2.0",
+    "availableVersion": "3.2.0",
+    "releaseNotes": null,
+    "checkedAt": "2026-10-30T06:10:49.367Z",
+    "source": "cache",
+    "noticeRequired": false,
+    "noticeText": null
+  },
+  "visualReview": "not-requested",
+  "durationMs": 5980,
+  "browserCheck": {
+    "requested": true,
+    "ran": true
+  }
+}

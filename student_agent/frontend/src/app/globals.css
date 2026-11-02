@@ -884,6 +884,9 @@ body::before {
 }
 
 .done.done--feedback { max-width: 820px; width: 100%; margin: 0 auto; padding: clamp(18px, 4vw, 42px); }
+.conversation-history { width: 100%; margin-top: 24px; text-align: left; border: 1px solid var(--hairline); border-radius: 16px; }
+.conversation-history > summary { padding: 16px; cursor: pointer; font-weight: 600; }
+.conversation-history .conversation-log { max-height: 420px; padding: 16px; }
 .lesson-feedback { width: 100%; text-align: left; margin-top: 28px; }
 .lesson-feedback h4 { margin: 0 0 12px; font-size: 21px; }
 .lesson-feedback__summary { color: var(--text-2); line-height: 1.8; }

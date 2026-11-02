@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "85120bd7-2e62-41be-af62-fb8dadd9f970",
+  "status": "current",
+  "command": "deliver",
+  "type": "sequence",
+  "input": "E:\\LMS系统参考\\项目\\agentic-class-pilot-running\\.archify\\sequence-student-request-20261030-152337\\candidate.json",
+  "output": "E:\\LMS系统参考\\项目\\agentic-class-pilot-running\\.archify\\sequence-student-request-20261030-152337\\student-request.html",
+  "specification": {
+    "sha256": "eec76e08772c82c22e57df006580835b2a43a27df4dad4f9cde8ad6bcc426623",
+    "bytes": 18035
+  },
+  "artifact": {
+    "sha256": "51bd225d27d5f729a5eb49008baf3bcc424839376a4f8c0fb80ecd3554e20d74",
+    "bytes": 880690
+  }
+}

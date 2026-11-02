@@ -33,6 +33,10 @@ async function boot(page, { entry = "catalog", missingUrl = false, completed = t
     let status = 200;
     if (path.endsWith("/platform-entry")) body = { freshSessionMode: true, platformUrl: "http://platform.example" };
     else if (path.endsWith("/start")) body = path.endsWith("/postclass/start") ? { ...saved, phase: "postclass" } : catalog;
+    else if (path.endsWith("/resume")) {
+      status = completed ? 200 : 404;
+      body = completed ? saved : { detail: "该课时暂无历史会话" };
+    }
     else if (path.endsWith("/browser-restore")) body = saved;
     else if (path.includes("/begin/")) body = { ...saved, phase: "video", feedback: null };
     else if (path.endsWith("/discussion")) body = { ...saved, phase: "discussion", agentStage: "wrapup" };
@@ -100,6 +104,13 @@ test("reload directly into a completed lesson and replay", async ({ page }) => {
   await boot(page, { entry: "done" });
   await page.getByRole("button", { name: "回看视频" }).click();
   await expectReplay(page);
+});
+
+test("completed lesson exposes restored conversation history", async ({ page }) => {
+  await boot(page);
+  await enterCompleted(page);
+  await page.getByText(/查看历史会话/).click();
+  await expect(page.getByRole("log", { name: "历史课堂与课后对话" })).toContainText(messages[0].text);
 });
 
 test("missing saved URL is fetched without restarting the lesson", async ({ page }) => {

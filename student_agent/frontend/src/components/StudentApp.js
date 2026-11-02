@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { platformPlayerAdapter } from "../integration/platform-player-adapter";
+import { restoreStudentSession } from "../integration/session-recovery.mjs";
 import LessonFeedback from "./LessonFeedback";
 import LessonProgress, { STAGE_TITLES } from "./LessonProgress";
 
@@ -149,9 +150,12 @@ export default function StudentApp() {
         : localStorage.getItem("student_browser_last_key") || `${courseKey}:catalog`;
       const savedId = localStorage.getItem(`student_browser_session:${resumeKey}`);
       const snapshot = localStorage.getItem(`student_browser_snapshot:${resumeKey}`);
-      const resume = freshToken ? Promise.resolve(null) : entry.freshSessionMode && snapshot
-        ? api("/session/browser-restore", "POST", { snapshot, launch_token: token }).catch(() => null)
-        : savedId ? api(`/session/${savedId}`).catch(() => null) : Promise.resolve(null);
+      const savedLessonId = snapshotState(snapshot)?.lessonId
+        || (resumeKey.startsWith(`${courseKey}:`) ? resumeKey.slice(courseKey.length + 1) : null);
+      const resume = freshToken ? Promise.resolve(null) : restoreStudentSession({
+        api, launchToken: token, lessonId: savedLessonId, snapshot,
+        sessionId: savedId, demo: entry.demoEnabled,
+      });
       return resume.then((saved) => {
         if (saved) {
           showSession(saved);
@@ -223,19 +227,13 @@ export default function StudentApp() {
     const lessonKey = `${browserCourseKey.current}:${selected.id}`;
     const snapshot = localStorage.getItem(`student_browser_snapshot:${lessonKey}`);
     try {
-      if (snapshot) {
-        try {
-          const saved = await api("/session/browser-restore", "POST",
-            { snapshot, launch_token: launchToken.current });
-          if (saved.lessonId === selected.id && saved.phase !== "idle") {
-            showSession(saved);
-            return;
-          }
-        } catch (err) {
-          if (err.status !== 400 && err.status !== 404) throw err;
-          localStorage.removeItem(`student_browser_snapshot:${lessonKey}`);
-          localStorage.removeItem(`student_browser_session:${lessonKey}`);
-        }
+      const saved = await restoreStudentSession({
+        api, launchToken: launchToken.current, lessonId: selected.id, snapshot,
+        demo: !launchToken.current,
+      });
+      if (saved && saved.lessonId === selected.id && saved.phase !== "idle") {
+        showSession(saved);
+        return;
       }
       if (activeLessonId.current) {
         const started = await api("/session/start", "POST", { launch_token: launchToken.current });
@@ -308,6 +306,7 @@ export default function StudentApp() {
       const route = isPostclass ? "postclass/message" : "message";
       const state = await api(`/session/${sessionId.current}/${route}`, "POST", { text });
       if (isPostclass) {
+        setMessages(state.messages || []);
         setPostclassMessages(state.postclassMessages || []);
         setPostclassStage(state.postclassStage);
         setFeedback(state.feedback);
@@ -363,6 +362,7 @@ export default function StudentApp() {
     setBusy(true); setError("");
     try {
       const state = await api(`/session/${sessionId.current}/postclass/start`, "POST");
+      setMessages(state.messages || []);
       setPostclassMessages(state.postclassMessages || []);
       setPostclassStage(state.postclassStage);
       setPhase("postclass");
@@ -428,7 +428,16 @@ export default function StudentApp() {
           </div>
         </div>
       </div>}
-      {phase === "done" && <div className="stage stage--done"><div className="done done--feedback"><span className="done__check" aria-hidden="true">✓</span><p>第 {lesson?.week} 周 · 第 {lesson?.lessonNumber} 次课</p><h3 className="done__title">本节课结束</h3><LessonFeedback feedback={feedback} />{replayError && <p className="replay-error" role="alert">暂时无法回看：{replayError}</p>}<div className="postclass-actions"><button className="btn btn--primary" type="button" disabled={busy} onClick={() => openReplay(Boolean(replayError))}>{replayLoading ? "正在获取播放信息…" : replayError ? "重试回看" : "回看视频"}</button><button className="btn btn--primary" type="button" disabled={busy} onClick={openPostclass}>{postclassStage === "open" ? "与 AI 自由提问" : "继续未完成的学习"}</button><button className="btn btn--ghost" type="button" disabled={busy} onClick={() => setPhase("lessons")}>返回课时列表</button><a className="btn btn--ghost" href={`${platformUrl || "http://localhost:8088"}/student`}>返回首页</a></div></div></div>}
+      {phase === "done" && <div className="stage stage--done"><div className="done done--feedback"><span className="done__check" aria-hidden="true">✓</span><p>第 {lesson?.week} 周 · 第 {lesson?.lessonNumber} 次课</p><h3 className="done__title">本节课结束</h3><LessonFeedback feedback={feedback} />
+        {messages.length > 0 && <details className="conversation-history">
+          <summary>查看历史会话（{messages.length} 条）</summary>
+          <div className="chat conversation-log" role="log" aria-label="历史课堂与课后对话">
+            {messages.map((message, index) => <div className={`msg msg--${message.role === "student" ? "me" : "ai"}`} key={index}>
+              {message.role !== "student" && <div className="msg__avatar">AI</div>}
+              <div className="msg__bubble"><span className="msg__stage">{String(message.phase || "").startsWith("postclass-") ? "课后对话" : STAGE_TITLES[message.phase] || "课堂对话"}</span>{message.text}</div>
+            </div>)}
+          </div>
+        </details>}{replayError && <p className="replay-error" role="alert">暂时无法回看：{replayError}</p>}<div className="postclass-actions"><button className="btn btn--primary" type="button" disabled={busy} onClick={() => openReplay(Boolean(replayError))}>{replayLoading ? "正在获取播放信息…" : replayError ? "重试回看" : "回看视频"}</button><button className="btn btn--primary" type="button" disabled={busy} onClick={openPostclass}>{postclassStage === "open" ? "与 AI 自由提问" : "继续未完成的学习"}</button><button className="btn btn--ghost" type="button" disabled={busy} onClick={() => setPhase("lessons")}>返回课时列表</button><a className="btn btn--ghost" href={`${platformUrl || "http://localhost:8088"}/student`}>返回首页</a></div></div></div>}
     </div></div></section>}
     {error && phase !== "error" && <p className="new-error" role="alert">{error}</p>}
   </main>;

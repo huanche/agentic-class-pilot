@@ -9,7 +9,7 @@ from . import database
 
 
 def fresh_session_mode() -> bool:
-    """Keep history in each browser unless server configuration opts back in to DB reads."""
+    """Legacy browser preference, independent of authenticated lesson recovery."""
     return os.environ.get("STUDENT_FRESH_SESSION_MODE", "1").strip().lower() not in {"0", "false", "off"}
 
 
@@ -129,7 +129,7 @@ def latest_session_key(user_id: str, course_id: str, publication_id: str,
             "WHERE e.user_id = %s AND e.course_id = %s AND e.publication_id = %s "
             "AND s.publication_version = %s AND e.classroom_id = %s "
             "AND e.event_type = 'agent_state' AND e.payload->>'lessonId' = %s "
-            "AND e.payload->>'phase' IN ('video', 'discussion', 'done') "
+            "AND e.payload->>'phase' IN ('video', 'discussion', 'done', 'postclass', 'replay') "
             "ORDER BY e.id DESC LIMIT 1",
             (user_id, course_id, publication_id, publication_version, classroom_id, lesson_id),
         ).fetchone()

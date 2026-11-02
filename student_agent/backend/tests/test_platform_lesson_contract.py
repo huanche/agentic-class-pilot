@@ -160,13 +160,13 @@ def test_new_launch_resumes_completed_lesson_and_feedback(monkeypatch: pytest.Mo
         main.sessions.pop("finished-session", None)
 
 
-def test_new_browser_launch_does_not_read_saved_lesson_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_new_browser_launch_checks_saved_lesson_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("STUDENT_FRESH_SESSION_MODE", raising=False)
     monkeypatch.setenv("STUDENT_SERVICE_KEY", "test-key")
     monkeypatch.setattr(main, "platform_context", lambda token, lesson_id=None: _context(lesson_id))
     monkeypatch.setattr(main.persistence, "save", lambda *args: None)
-    monkeypatch.setattr(main.persistence, "latest_session_key",
-                        lambda *args: pytest.fail("a new browser must not read saved lessons"))
+    lookups = []
+    monkeypatch.setattr(main.persistence, "latest_session_key", lambda *args: lookups.append(args))
     started = main.start(main.StartRequest(launch_token="new-ticket"))
     sid = started["sessionId"]
     try:
@@ -174,6 +174,7 @@ def test_new_browser_launch_does_not_read_saved_lesson_by_default(monkeypatch: p
         lesson = main.begin(sid, "L2", BackgroundTasks())
         assert lesson["sessionId"] == sid
         assert lesson["phase"] == "video"
+        assert lookups == [("u", "c", "p", 1, "L2", "room-2")]
     finally:
         main.sessions.pop(sid, None)
         main.preparing.discard(sid)
