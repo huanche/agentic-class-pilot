@@ -1,0 +1,50 @@
+name: teacher-chat-records-test
+
+on:
+  push:
+    branches: ["codex/student-chat-viewer"]
+  pull_request:
+    paths:
+      - "platform/backend/**"
+      - "local_chat_viewer/**"
+      - ".github/workflows/teacher-chat-records-test.yml"
+
+jobs:
+  authorization:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_DB: app_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: local-test-password
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d app_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SECRET_KEY: local-test-secret-key-never-used-in-production
+      PROJECT_NAME: chat-records-test
+      FIRST_SUPERUSER: admin@example.com
+      FIRST_SUPERUSER_PASSWORD: local-test-password
+      LLM_API_KEY: local-test-key
+      DATABASE_URL: postgresql://postgres:local-test-password@127.0.0.1:5433/app_test
+      TEST_DATABASE_URL: postgresql://postgres:local-test-password@127.0.0.1:5433/app_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: Install project test dependencies
+        working-directory: platform
+        run: uv sync --frozen --package app --group dev
+      - name: Prepare isolated test database
+        working-directory: platform/backend
+        run: ../.venv/bin/alembic upgrade head
+      - name: Check authorization and chat queries
+        working-directory: platform/backend
+        run: ../.venv/bin/python -m pytest tests/api/routes/test_teacher_chat_records.py -q
+      - name: Check authentication boundaries independently
+        run: platform/.venv/bin/python -m pytest local_chat_viewer/tests/test_access.py -q
