@@ -109,12 +109,14 @@ def user_course_progress(
         with _db() as connection:
             learned = connection.execute(
                 "SELECT count(DISTINCT classroom_id), max(last_active_at), count(*) "
-                "FROM student.student_sessions WHERE user_id=%s AND course_id=%s",
+                "FROM student.student_sessions WHERE user_id=%s AND course_id=%s "
+                "AND revoked_at IS NULL AND classroom_id IS NOT NULL",
                 (user_id, course_id),
             ).fetchone()
             ended = connection.execute(
                 "SELECT count(*) FROM student.student_sessions "
-                "WHERE user_id=%s AND course_id=%s AND ended_at IS NOT NULL",
+                "WHERE user_id=%s AND course_id=%s AND ended_at IS NOT NULL "
+                "AND revoked_at IS NULL AND classroom_id IS NOT NULL",
                 (user_id, course_id),
             ).fetchone()
             stars = connection.execute(
