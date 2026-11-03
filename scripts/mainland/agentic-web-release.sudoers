@@ -1,0 +1,2 @@
+# Install root:root 0440 only after visudo -cf validation; do not grant a shell.
+agentic-ci ALL=(root) NOPASSWD: /usr/local/sbin/agentic-mainland-ci-root web-prepare, /usr/local/sbin/agentic-mainland-ci-root web-deploy-v2

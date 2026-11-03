@@ -47,6 +47,8 @@
 
 ## 发布和维护
 
+学生端可靠会话升级的最新门禁、停写迁移和回退限制见 [2026-11-03 上线前检查](student-production-preflight-20261103.md)。该文列出的运维脚本与迁移尚未安装/执行；不能将本节历史切换验收当作本次新版本已可直接上线的证明。
+
 - main上teacher_agent变动走teacher构建、TCR、受限SSH教师发布；platform或student_agent变动走独立web构建/测试和TCR版本发布。数据库revision变化会阻止web自动上线，需单独审核迁移。
 - GitHub变量：MAINLAND_AUTODEPLOY_ENABLED=true、MAINLAND_WEB_AUTODEPLOY_ENABLED=true、HONGKONG_DEPLOY_ENABLED=false。
 - 不要把旧SERVER_HOST/SERVER_SSH_KEY改为大陆。大陆使用MAINLAND_*专用通道，旧香港工作流已停用部署步骤。

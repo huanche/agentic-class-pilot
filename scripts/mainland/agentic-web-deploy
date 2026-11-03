@@ -19,6 +19,7 @@ OLD = Path('/opt/agentic-class-pilot')
 UV = '/home/ubuntu/.local/bin/uv'
 REPO = 'ccr.ccs.tencentyun.com/agentedu-mainland/agentic-teacher'
 UNITS = ('agentic-platform', 'agentic-student')
+FROZEN = Path('/run/agentic-web-migration')
 
 
 def call(args, **kwargs):
@@ -31,13 +32,60 @@ def output(args, **kwargs):
 
 def live_environment(unit):
     pid = output(['systemctl', 'show', unit, '-p', 'MainPID', '--value'])
-    values = dict(p.decode().split('=', 1) for p in Path('/proc/' + pid + '/environ').read_bytes().split(b'\0') if b'=' in p)
+    if pid == '0':
+        values = stopped_environment(unit)
+    else:
+        values = dict(p.decode().split('=', 1) for p in Path('/proc/' + pid + '/environ').read_bytes().split(b'\0') if b'=' in p)
     values.update(HOME='/home/ubuntu', UV_PYTHON_DOWNLOADS='never', UV_LINK_MODE='copy')
     return values
 
 
+def stopped_environment(unit):
+    current = (BASE / 'current').resolve()
+    path = FROZEN / (unit + '.json')
+    try:
+        return frozen_environment(path, str(current))
+    except RuntimeError:
+        # A failed first start can leave current pointing at the new code while
+        # both writers remain stopped. Its root-owned receipt binds the original
+        # environment, allowing a compatible repair without restarting old code.
+        receipt = Path('/var/lib/agentic-class-pilot/staged-web') / (current.name + '.json')
+        data = json.loads(receipt.read_text())
+        reference = data.get('reference', '')
+        if (data.get('sha') != current.name or not staged_release_matches(receipt, current, data)
+                or not isinstance(reference, str)
+                or not (reference.startswith(str(BASE / 'releases') + '/') or reference == str(OLD))):
+            raise RuntimeError('Cannot verify the previous environment after failed activation') from None
+        return frozen_environment(path, reference)
+
+
+def frozen_environment(path, reference):
+    stat = path.stat()
+    if path.is_symlink() or stat.st_uid != 0 or stat.st_mode & 0o777 != 0o600:
+        raise RuntimeError('Untrusted frozen environment')
+    data = json.loads(path.read_text())
+    if data['reference'] != reference or not isinstance(data['environment'], dict) or not all(
+            isinstance(k, str) and isinstance(v, str) for k, v in data['environment'].items()):
+        raise RuntimeError('Frozen environment does not match the previous release')
+    return data['environment']
+
+
+def capture_migration_environment():
+    # Explicit root-only maintenance operation, never reachable via the CI SHA protocol.
+    assert all(output(['systemctl', 'show', u, '-p', 'MainPID', '--value']) != '0' for u in UNITS)
+    FROZEN.mkdir(mode=0o700, exist_ok=True)
+    assert not FROZEN.is_symlink() and FROZEN.stat().st_uid == 0 and FROZEN.stat().st_mode & 0o777 == 0o700
+    for unit in UNITS:
+        path = FROZEN / (unit + '.json')
+        # Exclusive create prevents overwriting a previous maintenance window or following a symlink.
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, 'w') as file:
+            json.dump({'reference': str((BASE / 'current').resolve()), 'environment': live_environment(unit)}, file)
+    print('MIGRATION_ENVIRONMENT_CAPTURED; secrets remain in root-only /run files', flush=True)
+
+
 def healthy():
-    urls = ('http://127.0.0.1:8080/api/v1/utils/health-check/', 'http://127.0.0.1:8000/api/session/health')
+    urls = ('http://127.0.0.1:8080/api/v1/utils/health-check/', 'http://127.0.0.1:8000/api/session/ready')
     for _ in range(40):
         try:
             for url in urls:
@@ -56,10 +104,43 @@ def atomic_text(path, text):
     tmp.replace(path)
 
 
+def rollback_compatible(reference, release):
+    try:
+        filename = 'student_agent/RELEASE_COMPATIBILITY.json'
+        previous = json.loads((reference / filename).read_text())
+        target = json.loads((release / filename).read_text())
+        return previous['studentDataFormat'] == target['studentDataFormat'] == 'student-reliable-records-v1'
+    except (OSError, ValueError, KeyError, TypeError):
+        return False
+
+
+def staged_release_matches(receipt, release, expected):
+    try:
+        return (not release.is_symlink() and not receipt.is_symlink()
+                and receipt.stat().st_uid == 0 and receipt.stat().st_mode & 0o777 == 0o600
+                and json.loads(receipt.read_text()) == expected
+                and json.loads((release / 'manifest.json').read_text())['sha'] == expected['sha'])
+    except (OSError, ValueError, KeyError, TypeError):
+        return False
+
+
+def recover(restore, stop, compatible):
+    # The migration/backfill has already happened even if start failed early.
+    # Resuming a pre-P2 writer would leave authoritative snapshots stale.
+    if not compatible:
+        stop()
+        raise RuntimeError('UNSAFE_CODE_ROLLBACK_BLOCKED: services stopped; keep maintenance closed and recover with a compatible release; do not downgrade or restore over new records')
+    restore()
+
+
 def deploy():
     assert os.geteuid() == 0 and output(['hostname']) == 'VM-0-4-ubuntu'
     os.umask(0o022)  # Source releases must be traversable by the service user; no secrets are stored here.
-    sha = sys.argv[1] if len(sys.argv) == 2 else ''
+    if sys.argv[1:] == ['--capture-migration-environment']:
+        capture_migration_environment()
+        return
+    stage_only = len(sys.argv) == 3 and sys.argv[1] == '--stage-only'
+    sha = sys.argv[2] if stage_only else (sys.argv[1] if len(sys.argv) == 2 else '')
     if not re.fullmatch('[0-9a-f]{40}', sha):
         raise RuntimeError('Invalid commit')
     flag = Path('/etc/agentic-class-pilot/web-deploy-enabled')
@@ -88,54 +169,71 @@ def deploy():
     # Capture the old service env before switching. No credentials enter the release image.
     env_platform = live_environment(UNITS[0])
     env_student = live_environment(UNITS[1])
-    if release.exists():
-        raise RuntimeError('Incomplete/existing release directory; inspect before retrying')
-    release.mkdir(mode=0o755, parents=True)
-    container = 'agentic-web-extract-' + sha[:12]
-    call(['docker', 'create', '--name', container, '--entrypoint', '/unused', metadata['id']], stdout=subprocess.DEVNULL)
-    try:
-        with tempfile.TemporaryFile() as archive:
-            call(['docker', 'cp', container + ':/release/.', '-'], stdout=archive)
-            archive.seek(0)
-            with tarfile.open(fileobj=archive) as tar:
-                tar.extractall(release, filter='data')
-    finally:
-        call(['docker', 'rm', container], stdout=subprocess.DEVNULL)
-    assert json.loads((release / 'manifest.json').read_text())['sha'] == sha
-    for path in ('platform/backend/app/frontend/index.html', 'student_agent/frontend/out/index.html'):
-        assert (release / path).is_file(), path
-    # Runtime is persistent and is never copied into a code release.
-    runtime = release / 'student_agent/runtime'
-    if runtime.exists():
-        raise RuntimeError('Release must not contain persisted runtime')
-    runtime.symlink_to(OLD / 'student_agent/runtime', target_is_directory=True)
-    # Dependency builders run as ubuntu, never as root. Runtime requirements are pinned by source lock/requirements.
-    call(['chown', '-R', 'ubuntu:ubuntu', str(release)])
+    reference = current.resolve() if current.is_symlink() else OLD
     platform = release / 'platform'
     student = release / 'student_agent'
-    reference = current.resolve() if current.is_symlink() else OLD
-    def clone_unchanged_environment(app, files, old_venv, env):
-        if not all((reference / app / f).read_bytes() == (release / app / f).read_bytes() for f in files):
-            return False
-        target = release / app / '.venv'
-        shutil.copytree(old_venv, target, symlinks=True)
-        # Editable install paths must follow the versioned code, never the old checkout.
-        for pth in target.glob('lib/python*/site-packages/*.pth'):
-            text = pth.read_text()
-            pth.write_text(text.replace(str(reference / app), str(release / app)))
-        call(['chown', '-R', 'ubuntu:ubuntu', str(target)])
-        call(['runuser', '-u', 'ubuntu', '--', UV, 'pip', 'check', '--python', str(target / 'bin/python')], env=env, timeout=60)
-        print('DEPENDENCIES_REUSED_WITH_IDENTICAL_METADATA', app, flush=True)
-        return True
-    if not clone_unchanged_environment('platform', ['uv.lock', 'pyproject.toml', 'backend/pyproject.toml'], reference / 'platform/.venv', env_platform):
-        call(['runuser', '-u', 'ubuntu', '--', UV, 'sync', '--frozen', '--no-dev', '--package', 'app',
-              '--python', str(OLD / 'platform/.venv/bin/python')], cwd=platform, env=env_platform, timeout=900)
-    student_venv = reference / ('student_agent/.venv-migrate' if reference == OLD else 'student_agent/.venv')
-    if not clone_unchanged_environment('student_agent', ['backend/requirements.txt'], student_venv, env_student):
-        call(['runuser', '-u', 'ubuntu', '--', UV, 'venv', str(student / '.venv'), '--python',
-              str(OLD / 'student_agent/.venv-migrate/bin/python')], env=env_student, timeout=60)
-        call(['runuser', '-u', 'ubuntu', '--', UV, 'pip', 'install', '--python', str(student / '.venv/bin/python'),
-              '-r', str(student / 'backend/requirements.txt')], env=env_student, timeout=900)
+    receipts = Path('/var/lib/agentic-class-pilot/staged-web')
+    receipts.mkdir(mode=0o700, exist_ok=True)
+    assert not receipts.is_symlink() and receipts.stat().st_uid == 0 and receipts.stat().st_mode & 0o777 == 0o700
+    receipt = receipts / (sha + '.json')
+    expected = {'sha': sha, 'image_id': metadata['id'], 'reference': str(reference)}
+    if release.exists():
+        if not staged_release_matches(receipt, release, expected):
+            raise RuntimeError('Incomplete/unverified existing release; inspect before retrying')
+        print('VERIFIED_STAGED_RELEASE_REUSED', sha, flush=True)
+    else:
+        release.mkdir(mode=0o755, parents=True)
+        container = 'agentic-web-extract-' + sha[:12]
+        call(['docker', 'create', '--name', container, '--entrypoint', '/unused', metadata['id']], stdout=subprocess.DEVNULL)
+        try:
+            with tempfile.TemporaryFile() as archive:
+                call(['docker', 'cp', container + ':/release/.', '-'], stdout=archive)
+                archive.seek(0)
+                with tarfile.open(fileobj=archive) as tar:
+                    tar.extractall(release, filter='data')
+        finally:
+            call(['docker', 'rm', container], stdout=subprocess.DEVNULL)
+        assert json.loads((release / 'manifest.json').read_text())['sha'] == sha
+        for path in ('platform/backend/app/frontend/index.html', 'student_agent/frontend/out/index.html'):
+            assert (release / path).is_file(), path
+        # Runtime is persistent and is never copied into a code release.
+        runtime = release / 'student_agent/runtime'
+        if runtime.exists():
+            raise RuntimeError('Release must not contain persisted runtime')
+        runtime.symlink_to(OLD / 'student_agent/runtime', target_is_directory=True)
+        # Dependency builders run as ubuntu, never as root. Runtime requirements are pinned by source lock/requirements.
+        call(['chown', '-R', 'ubuntu:ubuntu', str(release)])
+        platform = release / 'platform'
+        student = release / 'student_agent'
+        def clone_unchanged_environment(app, files, old_venv, env):
+            if not all((reference / app / f).read_bytes() == (release / app / f).read_bytes() for f in files):
+                return False
+            target = release / app / '.venv'
+            shutil.copytree(old_venv, target, symlinks=True)
+            # Editable install paths must follow the versioned code, never the old checkout.
+            for pth in target.glob('lib/python*/site-packages/*.pth'):
+                text = pth.read_text()
+                pth.write_text(text.replace(str(reference / app), str(release / app)))
+            call(['chown', '-R', 'ubuntu:ubuntu', str(target)])
+            call(['runuser', '-u', 'ubuntu', '--', UV, 'pip', 'check', '--python', str(target / 'bin/python')],
+                 cwd=release / app, env=env, timeout=60)
+            print('DEPENDENCIES_REUSED_WITH_IDENTICAL_METADATA', app, flush=True)
+            return True
+        if not clone_unchanged_environment('platform', ['uv.lock', 'pyproject.toml', 'backend/pyproject.toml'], reference / 'platform/.venv', env_platform):
+            call(['runuser', '-u', 'ubuntu', '--', UV, 'sync', '--frozen', '--no-dev', '--package', 'app',
+                  '--python', str(OLD / 'platform/.venv/bin/python')], cwd=platform, env=env_platform, timeout=900)
+        student_venv = reference / ('student_agent/.venv-migrate' if reference == OLD else 'student_agent/.venv')
+        if not clone_unchanged_environment('student_agent', ['backend/requirements.txt'], student_venv, env_student):
+            call(['runuser', '-u', 'ubuntu', '--', UV, 'venv', str(student / '.venv'), '--python',
+                  str(OLD / 'student_agent/.venv-migrate/bin/python')], cwd=student, env=env_student, timeout=60)
+            call(['runuser', '-u', 'ubuntu', '--', UV, 'pip', 'install', '--python', str(student / '.venv/bin/python'),
+                  '-r', str(student / 'backend/requirements.txt')], cwd=student, env=env_student, timeout=900)
+        fd = os.open(receipt, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, 'w') as file:
+            json.dump(expected, file)
+    if stage_only:
+        print('WEB_STAGED_ONLY; no migration, backup, stop or service switch performed', sha, flush=True)
+        return
     python = str(platform / '.venv/bin/python')
     def revisions(which):
         return output(['runuser', '-u', 'ubuntu', '--', python, '-m', 'alembic', which],
@@ -145,6 +243,12 @@ def deploy():
     target_revision = revisions('heads')
     if sorted(line.split()[0] for line in current_revision.splitlines() if line.strip()) != sorted(line.split()[0] for line in target_revision.splitlines() if line.strip()):
         raise RuntimeError('Database migration requires separate reviewed execution; active services untouched')
+    # Run with the actual restricted student role, not the migration owner.
+    call(['runuser', '-u', 'ubuntu', '--', str(student / '.venv/bin/python'),
+          '-m', 'backend.infrastructure.release_check'], cwd=student, env=env_student, timeout=30)
+    compatible = rollback_compatible(reference, release)
+    if not compatible and any(output(['systemctl', 'show', u, '-p', 'MainPID', '--value']) != '0' for u in UNITS):
+        raise RuntimeError('First reliable-session release requires a frozen maintenance window; pre-P2 writers must remain stopped after migration')
     call(['/usr/local/sbin/agentic-mainland-backup', '--locked'], pass_fds=(9,), timeout=1800)
     files = [Path('/etc/systemd/system') / (u + '.service.d/98-versioned-release.conf') for u in UNITS]
     previous = {path: path.read_bytes() if path.exists() else None for path in files}
@@ -163,14 +267,14 @@ def deploy():
             current.unlink(missing_ok=True)
         call(['systemctl', 'daemon-reload'])
         call(['systemctl', 'restart', *UNITS])
-        if not healthy(): raise RuntimeError('Rollback health check failed')
+        if not healthy(): raise RuntimeError('Rollback readiness check failed')
         print('WEB_ROLLBACK_OK', flush=True)
     try:
         changed = True
         call(['systemctl', 'stop', *UNITS])
         atomic_text(files[0], f'[Service]\nWorkingDirectory={platform}/backend\nExecStart=\nExecStart={python} -m uvicorn app.main:app --host 127.0.0.1 --port 8080\n')
         start = release / 'student-start.sh'
-        start.write_text('#!/bin/bash\nset -eu\nexport STUDENT_DATABASE_URL="postgresql://student:${STUDENT_DB_PASSWORD}@127.0.0.1:55432/education"\n'
+        start.write_text('#!/bin/bash\nset -eu\nexport STUDENT_DYNAMIC_PILOT_SCOPES="[]"\nexport STUDENT_DATABASE_URL="postgresql://student:${STUDENT_DB_PASSWORD}@127.0.0.1:55432/education"\n'
                          f'exec {student}/.venv/bin/python apps/start.py --no-browser --host 127.0.0.1 --port 8000\n')
         start.chmod(0o755)
         atomic_text(files[1], f'[Service]\nWorkingDirectory={student}\nExecStart=\nExecStart={start}\n')
@@ -182,7 +286,8 @@ def deploy():
         call(['systemctl', 'start', *UNITS])
         if not healthy(): raise RuntimeError('New web release failed health check')
     except BaseException:
-        if changed: restore()
+        if changed:
+            recover(restore, lambda: call(['systemctl', 'stop', *UNITS]), compatible)
         raise
     print('WEB_DEPLOY_OK', sha, flush=True)
 

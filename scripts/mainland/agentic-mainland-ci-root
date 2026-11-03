@@ -8,10 +8,14 @@ case "${1:-}" in
     [[ $# -eq 1 ]] || exit 64
     exec timeout 1380s /usr/local/sbin/agentic-teacher-tcr-prepare --web
     ;;
-  web-deploy)
+  web-deploy-v2)
     [[ $# -eq 1 ]] || exit 64
     IFS= read -r -t 10 SHA || exit 64
     [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || exit 64
+    IFS= read -r -t 10 POLICY_HASH || exit 64
+    [[ "$POLICY_HASH" =~ ^[0-9a-f]{64}$ ]] || exit 64
+    ACTUAL_HASH=$(sha256sum /usr/local/sbin/agentic-web-deploy)
+    [[ "${ACTUAL_HASH%% *}" == "$POLICY_HASH" ]] || { echo 'Web deploy policy differs from the reviewed source' >&2; exit 1; }
     exec timeout 2400s /usr/local/sbin/agentic-web-deploy "$SHA"
     ;;
   seed-baseline)

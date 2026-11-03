@@ -97,6 +97,15 @@ def health() -> dict:
     return {"ok": True}
 
 
+@app.get("/api/session/ready")
+def ready() -> dict:
+    from backend.infrastructure.release_check import check, ReleaseCheckError
+    try:
+        return check()
+    except ReleaseCheckError as error:
+        raise HTTPException(503, str(error)) from None
+
+
 @app.get("/api/session/platform-entry")
 def platform_entry() -> dict:
     return {

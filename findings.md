@@ -223,3 +223,19 @@
 - 轻量动态试用发现真实模型把 observation 两字段返回为字符串数组（开场 supportedUnderstanding=[]），旧校验只接受字符串，导致 INVALID_DECISION 且保持 video。已增加有界文本数组到既有字符串契约的规范化，并明确提示词字段类型；非文本和超长内容仍拒绝，空数组不补造证据。定向 27 项动态测试通过；原失败命令重试后真实开场成功。
 
 - 真实轻量试用不能等同动态验收全部通过：无效观察引用在实际求助中出现，保护逻辑正确拦截；提示约束已补强但未再做真实求助复验。当前建议继续默认legacy，动态仅作为后续校准对象。
+
+## 上线前检查（2026-11-03）
+
+- 旧server-deploy-student.sh只有环境存在性健康检查，没有迁移前置；回退仍读取旧requirements路径。实际大陆发布另走web-prepare/web-deploy，应先找到当前生产路径，避免只修旧香港脚本。
+
+### 上线前检查结论（2026-11-03）
+- 生产 current=8729686，数据库 pub10；本地唯一 head=rec12。学生/平台 active，动态准入关闭，认证密钥一致，student 非超级用户、schema owner=platform。242 个最新历史快照未发现版本字段初检异常。
+- 发现三个同机备份完成标记，最新 migration-20261102-095415；不能视为本次停写备份或恢复验证。GitHub MAINLAND_WEB_AUTODEPLOY_ENABLED=true，香港关闭。
+- 修复配置存在即健康的假阳性、数据库 CI 静默跳过、不兼容旧写入自动回退、停机发布配置读取以及迁移前 staging 后无法重试的问题。新增受限角色只读 readiness、格式兼容标记、root-only staging/冻结环境、v2 受限激活与安装发布器摘要验证。
+- 生产仍为旧运维脚本/旧库；需另开窗口安装脚本和 sudoers、停写备份、迁移 rec12、权限/入口验收。不得直接 push main 或以 downgrade/香港快照覆盖新写入。完整结论见 docs/student-production-preflight-20261103.md。
+
+### 上线候选收尾（2026-11-03）
+- git fetch 确认 HEAD 比 origin/main 领先1提交、无分叉；远端最新发布 run 41398718949 在激活阶段因 uv 继承 /home/agentic-ci 工作目录导致权限错误失败。已为 uv 指定候选应用 cwd。
+- Linux stdin 隔离发布器10项通过；全部 subprocess 与健康请求模拟，只写临时目录并自动清理。新增首次失败后的可信环境恢复，拒绝非root/可写receipt。
+- 真实平台 Alembic env 在合成 loopback 库升级pub10→rec12并验证回填；同版本pg_dump/pg_restore验证合成会话、待处理命令、课时内容与索引恢复。
+- 最终后端189、前端unit42/e2e17、学生前端build通过；Linux visudo验证LF字节通过。正式安装/生产停写备份和迁移仍待上线窗口。
