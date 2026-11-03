@@ -80,6 +80,11 @@ def test_teacher_chat_records_are_scoped_to_owned_courses(client: TestClient, db
         assert sessions.status_code == 200
         assert [row["sessionKey"] for row in sessions.json()] == [session_a]
         assert sessions.json()[0]["lessonId"] == "lesson-test"
+        # Newer student sessions keep the authoritative lesson on the session
+        # itself, while older records only have it in the event snapshot.
+        db.execute(text("UPDATE student.student_sessions SET lesson_id = 'new-lesson' WHERE session_key = :key"), {"key": session_a})
+        db.commit()
+        assert client.get(f"{BASE}/courses/{course_a.id}/sessions", headers=headers_a).json()[0]["lessonId"] == "new-lesson"
         assert client.get(f"{BASE}/courses/{course_b.id}/sessions", headers=headers_a).status_code == 403
         assert client.get(f"{BASE}/courses/{course_a.id}/sessions", headers=headers_b).status_code == 403
 
@@ -91,6 +96,10 @@ def test_teacher_chat_records_are_scoped_to_owned_courses(client: TestClient, db
         assert client.get(f"{BASE}/courses/{course_a.id}/sessions/{session_b}/messages", headers=headers_a).status_code == 404
         assert client.get(path, headers=student_headers).status_code == 403
         assert client.post(path, headers=headers_a).status_code == 405
+        db.execute(text("UPDATE student.student_sessions SET revoked_at = now() WHERE session_key = :key"), {"key": session_a})
+        db.commit()
+        assert client.get(path, headers=headers_a).status_code == 404
+        assert client.get(f"{BASE}/courses/{course_a.id}/sessions", headers=headers_a).json() == []
     finally:
         for key in keys:
             for table in ("student_messages", "learning_events", "student_sessions"):

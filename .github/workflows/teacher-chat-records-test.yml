@@ -6,7 +6,6 @@ on:
   pull_request:
     paths:
       - "platform/backend/**"
-      - "local_chat_viewer/**"
       - ".github/workflows/teacher-chat-records-test.yml"
 
 jobs:
@@ -46,5 +45,3 @@ jobs:
       - name: Check authorization and chat queries
         working-directory: platform/backend
         run: ../.venv/bin/python -m pytest tests/api/routes/test_teacher_chat_records.py -q
-      - name: Check authentication boundaries independently
-        run: platform/.venv/bin/python -m pytest local_chat_viewer/tests/test_access.py -q

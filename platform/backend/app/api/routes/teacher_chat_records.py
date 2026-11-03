@@ -63,7 +63,7 @@ def list_sessions(
         SELECT s.session_key, s.user_id, s.classroom_id, s.started_at,
                s.last_active_at, s.ended_at,
                u.full_name, u.email,
-               state.payload->>'lessonId' AS lesson_id,
+               COALESCE(s.lesson_id, s.snapshot->>'lessonId', state.payload->>'lessonId') AS lesson_id,
                (SELECT count(*) FROM student.student_messages m
                 WHERE m.session_key = s.session_key) AS message_count
         FROM student.student_sessions s
@@ -77,7 +77,7 @@ def list_sessions(
             ORDER BY event.created_at DESC, event.id DESC
             LIMIT 1
         ) state ON true
-        WHERE s.course_id = :course{student_filter}
+        WHERE s.course_id = :course AND s.revoked_at IS NULL{student_filter}
         ORDER BY s.last_active_at DESC, s.session_key DESC
         LIMIT :limit
     """), params).all()
@@ -113,7 +113,7 @@ def list_messages(
         FROM student.student_sessions s
         JOIN enrollment e ON e.student_id::text = s.user_id
                          AND e.course_id = :course_uuid
-        WHERE s.session_key = :session_key AND s.course_id = :course
+        WHERE s.session_key = :session_key AND s.course_id = :course AND s.revoked_at IS NULL
     """), {"session_key": session_key, "course": str(course_id),
            "course_uuid": course_id}).first()
     if not allowed:
