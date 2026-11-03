@@ -3,20 +3,22 @@ from __future__ import annotations
 
 import json
 import logging
-import os
-import re
 from typing import TypedDict
 
-from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_openai import ChatOpenAI
 from langgraph.graph import END, START, StateGraph
-from .progression import advance, normalize, current_point, eligible_points
-from .prompts import (
-    EVALUATION_PROMPT, TUTOR_PROMPT, STAGE_PROMPTS, STRATEGY_PROMPTS,
-    DISCUSSION_QUESTION_HELP_PROMPT, DISCUSSION_RETRY_PROMPT,
-    FINAL_DISCUSSION_FEEDBACK_PROMPT,
-    opening_message,
-)
+from backend.infrastructure import model
+from backend.teaching.progression import advance
+from backend.teaching.progression import normalize
+from backend.teaching.progression import current_point
+from backend.teaching.progression import eligible_points
+from backend.teaching.prompts import EVALUATION_PROMPT
+from backend.teaching.prompts import TUTOR_PROMPT
+from backend.teaching.prompts import STAGE_PROMPTS
+from backend.teaching.prompts import STRATEGY_PROMPTS
+from backend.teaching.prompts import DISCUSSION_QUESTION_HELP_PROMPT
+from backend.teaching.prompts import DISCUSSION_RETRY_PROMPT
+from backend.teaching.prompts import FINAL_DISCUSSION_FEEDBACK_PROMPT
+from backend.teaching.prompts import opening_message
 
 logger = logging.getLogger(__name__)
 
@@ -47,32 +49,6 @@ def initial_state(points: list[dict]) -> DialogueState:
             "evaluation": {}, "reply": "", "strategy": "ask", "discussion_turns": 0})
 
 
-def _model() -> ChatOpenAI:
-    key = os.environ.get("STUDENT_AGENT_API_KEY") or os.environ.get("LLM_API_KEY")
-    if not key:
-        raise RuntimeError("请配置 STUDENT_AGENT_API_KEY 或 LLM_API_KEY")
-    return ChatOpenAI(api_key=key,
-                      base_url=os.environ.get("STUDENT_AGENT_BASE_URL") or
-                      os.environ.get("LLM_BASE_URL") or "https://api.deepseek.com/v1",
-                      model=os.environ.get("STUDENT_AGENT_MODEL") or
-                      os.environ.get("LLM_MODEL") or "deepseek-v4-flash",
-                      temperature=0.2, timeout=45, max_retries=1)
-
-
-def _completion(system: str, user: str) -> str:
-    result = _model().invoke([SystemMessage(content=system), HumanMessage(content=user)])
-    return str(result.content)
-
-
-def _json_object(raw: str) -> dict:
-    clean = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw.strip())
-    try:
-        value = json.loads(clean)
-        return value if isinstance(value, dict) else {}
-    except json.JSONDecodeError:
-        return {}
-
-
 def evaluate(state: DialogueState) -> dict:
     if state["stage"] == "wrapup":
         return {"evaluation": {"intent": "unclear", "assessments": []}}
@@ -80,9 +56,9 @@ def evaluate(state: DialogueState) -> dict:
     points = [active] if active else []
     # Only recent dialogue is needed to interpret a short answer such as "是的".
     history = state["messages"][-8:]
-    raw = _completion(EVALUATION_PROMPT, json.dumps({"stage": state["stage"], "points": points,
+    raw = model.complete(EVALUATION_PROMPT, json.dumps({"stage": state["stage"], "points": points,
                        "recentMessages": history, "studentText": state["student_text"]}, ensure_ascii=False))
-    value = _json_object(raw)
+    value = model.json_object(raw)
     valid_ids = {p["id"] for p in points}
     if value.get("intent") not in {"answer", "question", "unclear"} or not isinstance(value.get("assessments"), list):
         raise ValueError("课堂评估结果格式不正确")
@@ -109,7 +85,7 @@ def _last_discussion_feedback(state: DialogueState) -> str:
     context = {"point": {key: point.get(key) for key in ("title", "content", "description")},
                "studentAnswer": state.get("student_text", ""), "assessment": assessment}
     try:
-        feedback = _completion(FINAL_DISCUSSION_FEEDBACK_PROMPT,
+        feedback = model.complete(FINAL_DISCUSSION_FEEDBACK_PROMPT,
                                json.dumps(context, ensure_ascii=False)).strip()
         if feedback:
             return feedback
@@ -158,7 +134,7 @@ def respond(state: DialogueState) -> dict:
                                                          active.get("reinforcement_required")),
                        "recentMessages": state["messages"][-10:],
                        "studentText": state["student_text"]}, ensure_ascii=False)
-    reply = _completion(system, user).strip()
+    reply = model.complete(system, user).strip()
     if not reply:
         raise ValueError("课堂导师没有返回内容")
     notices = {

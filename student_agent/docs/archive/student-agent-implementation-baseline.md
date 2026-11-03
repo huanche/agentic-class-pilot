@@ -1,6 +1,8 @@
 # 学生端 Agent 实现详解
 
-> 面向刚开始读 Python、前端和 AI 项目的同学。本文解释的是当前仓库里的真实实现，代码引用均来自 `student_agent/`。内容重点是 Agent 如何取到课程资料、如何连接后端、每轮对话如何跑、状态怎样跳转，以及对话数据如何保存。
+> 历史归档：源码已按职责迁移，现行结构以 [目录与依赖说明](../student-directory-layout.md) 为准。本文链接已指向迁移后的源码；代码布局和实施状态以现行文档为准。
+
+> 面向刚开始读 Python、前端和 AI 项目的同学。本文记录的是目录整理前的实现基线，代码引用均来自 `student_agent/`。内容重点是 Agent 如何取到课程资料、如何连接后端、每轮对话如何跑、状态怎样跳转，以及对话数据如何保存。
 
 ## 0. 先用一句话概括
 
@@ -34,7 +36,7 @@ flowchart LR
 | psycopg | PostgreSQL 驱动，通过旧持久层使用 | Python 连接 PostgreSQL 数据库的工具 |
 | Next.js / React | 学生端前端 | 组织网页、组件和页面状态 |
 
-依赖版本范围见 [`backend/requirements.txt`](../backend/requirements.txt)：FastAPI、Uvicorn、LangGraph、langchain-openai 和 psycopg。`Uvicorn` 负责运行 FastAPI Web 服务。
+依赖版本范围见 [`backend/requirements.txt`](../../backend/requirements.txt)：FastAPI、Uvicorn、LangGraph、langchain-openai 和 psycopg。`Uvicorn` 负责运行 FastAPI Web 服务。
 
 ### 选择 LangGraph 的原因
 
@@ -54,15 +56,15 @@ LangGraph 把一轮拆成有顺序的节点。项目把“语言理解和自然�
 
 | 文件 | 责任 |
 |---|---|
-| [`backend/main.py`](../backend/main.py) | 接收前端请求、读取平台上下文、开始后台准备、调用图、将状态交给持久层 |
-| [`agent/context.py`](context.py) | 把视频场景的画面文字和讲解旁白整理成 Agent 输入材料 |
-| [`agent/knowledge.py`](knowledge.py) | 调用模型提取视频知识点，并检查是否有原文证据 |
-| [`agent/prompts.py`](prompts.py) | 规定知识点抽取、学生回答评估、课堂导师及各阶段的行为 |
-| [`agent/graph.py`](graph.py) | 定义课堂图、模型调用、evaluate/route/respond 三个节点 |
-| [`agent/progression.py`](progression.py) | 用确定性的代码更新知识点状态、轮数和阶段 |
-| [`agent/postclass.py`](postclass.py) | 课后补完和自由提问的另一张 LangGraph 图 |
-| [`agent/feedback.py`](feedback.py) | 从实际评估历史生成每课反馈 |
-| [`agent/persistence.py`](persistence.py) | 保存 Agent 会话快照与学习记录，并在重启后恢复；SQL 函数位于 `database.py` |
+| [`backend/main.py`](../../backend/main.py) | 接收前端请求、读取平台上下文、开始后台准备、调用图、将状态交给持久层 |
+| [`backend/content/context.py`](../../backend/content/context.py) | 把视频场景的画面文字和讲解旁白整理成 Agent 输入材料 |
+| [`backend/content/knowledge.py`](../../backend/content/knowledge.py) | 调用模型提取视频知识点，并检查是否有原文证据 |
+| [`backend/teaching/prompts.py`](../../backend/teaching/prompts.py) | 规定知识点抽取、学生回答评估、课堂导师及各阶段的行为 |
+| [`backend/teaching/graph.py`](../../backend/teaching/graph.py) | 定义课堂图、模型调用、evaluate/route/respond 三个节点 |
+| [`backend/teaching/progression.py`](../../backend/teaching/progression.py) | 用确定性的代码更新知识点状态、轮数和阶段 |
+| [`backend/teaching/postclass.py`](../../backend/teaching/postclass.py) | 课后补完和自由提问的另一张 LangGraph 图 |
+| [`backend/evidence/feedback.py`](../../backend/evidence/feedback.py) | 从实际评估历史生成每课反馈 |
+| [`backend/infrastructure/persistence.py`](../../backend/infrastructure/persistence.py) | 保存 Agent 会话快照与学习记录，并在重启后恢复；SQL 函数位于 `database.py` |
 
 命名中的 `agent` 文件夹代表服务端 AI 和教学流程代码。模型调用是在后端执行，浏览器不会直接拿到模型密钥。
 
@@ -184,7 +186,7 @@ def prepare_in_background(session: dict) -> None:
 
 ### 4.2 提示词如何限定知识点
 
-[`agent/prompts.py`](prompts.py) 的 `KNOWLEDGE_EXTRACTION_PROMPT` 要求模型：
+[`backend/teaching/prompts.py`](../../backend/teaching/prompts.py) 的 `KNOWLEDGE_EXTRACTION_PROMPT` 要求模型：
 
 - 只从视频画面文字和讲解旁白抽取内容；
 - 抽取真正讲解过的概念、原理、关系、方法、条件或步骤；
@@ -337,7 +339,7 @@ commit(session, {
 
 ### 6.3 LangGraph 的三个节点
 
-[`agent/graph.py`](graph.py) 定义了图：
+[`backend/teaching/graph.py`](../../backend/teaching/graph.py) 定义了图：
 
 ```python
 builder = StateGraph(DialogueState)
@@ -501,7 +503,7 @@ stateDiagram-v2
 
 ## 8. 模型提示词怎样分工
 
-提示词集中在 [`agent/prompts.py`](prompts.py)，分层组合：
+提示词集中在 [`backend/teaching/prompts.py`](../../backend/teaching/prompts.py)，分层组合：
 
 1. `TUTOR_PROMPT`：所有阶段通用的教学原则、禁止事项和衔接规则。
 2. `STAGE_PROMPTS[stage]`：首轮复述、加强复述、深入讨论各自的任务。
@@ -601,7 +603,7 @@ def commit(session: dict, changed: dict) -> None:
 
 ### 使用哪些数据库记录
 
-`agent/persistence.py` 通过同目录 `database.py` 访问平台数据库表：
+`backend/infrastructure/persistence.py` 通过同目录 `database.py` 访问平台数据库表：
 
 | 表 / 事件 | 保存内容 |
 |---|---|
@@ -622,7 +624,7 @@ def commit(session: dict, changed: dict) -> None:
 
 ## 11. 课后 Agent：与课堂图分开的第二条流程
 
-课后并不是课堂图的某个 `stage`，而是另一张独立 LangGraph：[`agent/postclass.py`](postclass.py)。入口是：
+课后并不是课堂图的某个 `stage`，而是另一张独立 LangGraph：[`backend/teaching/postclass.py`](../../backend/teaching/postclass.py)。入口是：
 
 - `POST /api/session/{sid}/postclass/start`
 - `POST /api/session/{sid}/postclass/message`
@@ -694,16 +696,16 @@ return ChatOpenAI(
 
 按这个顺序读，容易跟上真实数据流：
 
-1. [`backend/main.py`](../backend/main.py) 的 `begin()`：先理解开始课后端怎样转视频阶段并安排准备。
-2. [`agent/context.py`](context.py) 的 `classroom_materials()`：看视频内容如何形成材料。
-3. [`agent/knowledge.py`](knowledge.py) 的 `learning_points()` 和 `validated_points()`：看知识点怎样提取并核验。
-4. [`agent/graph.py`](graph.py) 的 `DialogueState` 与 `builder`：先看状态数据和图的节点顺序。
+1. [`backend/main.py`](../../backend/main.py) 的 `begin()`：先理解开始课后端怎样转视频阶段并安排准备。
+2. [`backend/content/context.py`](../../backend/content/context.py) 的 `classroom_materials()`：看视频内容如何形成材料。
+3. [`backend/content/knowledge.py`](../../backend/content/knowledge.py) 的 `learning_points()` 和 `validated_points()`：看知识点怎样提取并核验。
+4. [`backend/teaching/graph.py`](../../backend/teaching/graph.py) 的 `DialogueState` 与 `builder`：先看状态数据和图的节点顺序。
 5. `graph.py` 的 `evaluate()`、`route()`、`respond()`：看一轮对话内部如何串起来。
-6. [`agent/progression.py`](progression.py) 的 `next_stage()`、`current_point()`、`advance()`：看真正的跳转和计数规则。
-7. [`agent/prompts.py`](prompts.py)：看模型分别收到什么教学要求。
+6. [`backend/teaching/progression.py`](../../backend/teaching/progression.py) 的 `next_stage()`、`current_point()`、`advance()`：看真正的跳转和计数规则。
+7. [`backend/teaching/prompts.py`](../../backend/teaching/prompts.py)：看模型分别收到什么教学要求。
 8. 回到 `main.py` 的 `/message` 路由：把前端、图和持久化连起来。
-9. [`agent/persistence.py`](persistence.py) 和 [`agent/feedback.py`](feedback.py)：看结果怎样恢复以及怎样显示给学生。
-10. [`agent/postclass.py`](postclass.py)：最后读课后第二张图。
+9. [`backend/infrastructure/persistence.py`](../../backend/infrastructure/persistence.py) 和 [`backend/evidence/feedback.py`](../../backend/evidence/feedback.py)：看结果怎样恢复以及怎样显示给学生。
+10. [`backend/teaching/postclass.py`](../../backend/teaching/postclass.py)：最后读课后第二张图。
 
 ## 15. 修改需求时要改哪一层
 

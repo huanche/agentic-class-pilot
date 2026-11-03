@@ -37,15 +37,15 @@
 |---|---|---|
 | 平台签发选课/发布校验后的启动令牌 | [student_bridge.py](../../platform/backend/app/api/routes/student_bridge.py)，`open_student_workspace` | 测试账号经既有入口获取令牌，不构造虚假身份、不在报告保存令牌 |
 | 首次 start 取目录，begin 才取当前课时正文 | [main.py](../backend/main.py)，`start`、`begin` | 不能将目录摘要当完整课程；begin 返回的 sessionId 必须重新绑定 |
-| 当前知识来源为课堂场景文字和 speech | [context.py](../agent/context.py)，`classroom_materials` | 原 PPT 可用于人工核对，不能声称当前学生模型读取了完整 PPT/视频图像 |
+| 当前知识来源为课堂场景文字和 speech | [context.py](../backend/content/context.py)，`classroom_materials` | 原 PPT 可用于人工核对，不能声称当前学生模型读取了完整 PPT/视频图像 |
 | 准备可能 pending、ready、partial、error | [main.py](../backend/main.py)，`prepare_in_background` | partial 单列统计，完全失败保留，不能悄悄换一课排除失败 |
-| 每轮 evaluate→route→respond | [graph.py](../agent/graph.py) | 测整个链路，不能只把导师提示词单独发给模型 |
-| 默认首轮8轮，加强4轮；后期掌握再确认；讨论答对才推进 | [progression.py](../agent/progression.py) | 保持默认基线；遵守当前合同与教学体验问题分开评估 |
+| 每轮 evaluate→route→respond | [graph.py](../backend/teaching/graph.py) | 测整个链路，不能只把导师提示词单独发给模型 |
+| 默认首轮8轮，加强4轮；后期掌握再确认；讨论答对才推进 | [progression.py](../backend/teaching/progression.py) | 保持默认基线；遵守当前合同与教学体验问题分开评估 |
 | 阶段由程序推进；不会或求助也消耗复述轮次 | 同上，`advance` | 计数有界不等于帮助有效；不能把求助计数本身判实现错误 |
-| 内部评估看最近8条，生成看最近10条消息 | [graph.py](../agent/graph.py)，`evaluate`、`respond` | 设计跨窗口用例，比较独立评估的全程证据与系统窗口，先记归因假设 |
-| 默认 fresh 模式仍写数据库，以浏览器签名快照恢复 | [persistence.py](../agent/persistence.py)、[main.py](../backend/main.py) | 每个 trial 隔离账号/历史；不能认为设置 fresh 就没有写库 |
-| 课后后端 phase 仍为 done，另有 postclassStage | [postclass.py](../agent/postclass.py)、[main.py](../backend/main.py) | 课后评估以 taskType 和 postclassStage 为准，不能要求 phase=postclass |
-| 反馈包含逐点评估历史、概念和讨论结果 | [feedback.py](../agent/feedback.py) | 可核查，但反馈继承业务评估，不能拿它自证业务判断正确 |
+| 内部评估看最近8条，生成看最近10条消息 | [graph.py](../backend/teaching/graph.py)，`evaluate`、`respond` | 设计跨窗口用例，比较独立评估的全程证据与系统窗口，先记归因假设 |
+| 默认 fresh 模式仍写数据库，以浏览器签名快照恢复 | [persistence.py](../backend/infrastructure/persistence.py)、[main.py](../backend/main.py) | 每个 trial 隔离账号/历史；不能认为设置 fresh 就没有写库 |
+| 课后后端 phase 仍为 done，另有 postclassStage | [postclass.py](../backend/teaching/postclass.py)、[main.py](../backend/main.py) | 课后评估以 taskType 和 postclassStage 为准，不能要求 phase=postclass |
+| 反馈包含逐点评估历史、概念和讨论结果 | [feedback.py](../backend/evidence/feedback.py) | 可核查，但反馈继承业务评估，不能拿它自证业务判断正确 |
 | 已有提前结束按钮；主链普通 HTTP，非流式 | [StudentApp.js](../frontend/src/components/StudentApp.js) | 退出操作和自然语言请求分开；API 等待与学生思考时间分开 |
 | 现有回看浏览器用例 mock 了接口 | [replay.spec.js](../frontend/tests/e2e/replay.spec.js) | 保留这些回归，新增真实教学实验另计，不算已有完整教学 E2E |
 

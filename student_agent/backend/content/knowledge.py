@@ -6,8 +6,8 @@ import json
 import re
 from dataclasses import dataclass
 
-from .graph import _completion, _json_object
-from .prompts import KNOWLEDGE_EXTRACTION_PROMPT
+from backend.infrastructure import model
+from backend.content.prompts import KNOWLEDGE_EXTRACTION_PROMPT
 
 CURRICULUM_VERSION = 10
 _PUNCTUATION = str.maketrans("，。；：！？（）【】‘’“”", ",.;:!?()[]''\"\"")
@@ -191,7 +191,7 @@ def _model_error(error: Exception, stage: str) -> KnowledgePreparationError:
 
 def _complete(prompt: str, payload: dict, stage: str) -> dict:
     try:
-        return _json_object(_completion(prompt, json.dumps(payload, ensure_ascii=False)))
+        return model.json_object(model.complete(prompt, json.dumps(payload, ensure_ascii=False)))
     except Exception as error:
         raise _model_error(error, stage) from error
 

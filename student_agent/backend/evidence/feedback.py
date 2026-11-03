@@ -3,7 +3,10 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from .progression import normalize
+from backend.teaching.progression import normalize
+from backend.teaching.dynamic_state import read_state as _state
+from backend.teaching.dynamic_state import POLICY
+from backend.contracts import DYNAMIC_FLOW as FLOW
 
 
 def lesson_feedback(session: dict) -> dict:
@@ -97,3 +100,37 @@ def lesson_feedback(session: dict) -> dict:
                     f"尚未评估 {counts['not_assessed']} 个。" +
                     ("本课由学生提前结束。" if ended_early else "")),
     }
+
+
+def dynamic_feedback(session):
+    """Deterministic facts; model explanations remain qualified and cited, never scores."""
+    records = session.get("learningRecords") or {}
+    state = _state(session)
+    observations = records.get("observations", [])
+    entries = []
+    for topic in (session.get("lessonContent") or {}).get("topics", []):
+        obs = [o for o in observations if o["topicId"] == topic["topicId"]]
+        entries.append({"id": topic["topicId"], "title": topic["title"],
+            "category": "incomplete" if obs else "not_assessed", "label": "已有交流记录" if obs else "尚未讨论",
+            "status": "unknown", "evidence": "；".join(o["studentExcerpt"] for o in obs),
+            "observationIds": [o["observationId"] for o in obs], "assessments": [],
+            "suggestion": "结合原回答继续核对，交流完成不等于掌握。", "recallRounds": 0,
+            "reinforceRounds": 0, "postclassRounds": 0, "discussionNeedsReview": False,
+            "discussionIncomplete": False, "masteredIn": None})
+    return {"schemaVersion": 4, "flowVersion": FLOW, "sessionId": session["id"],
+        "lessonId": session.get("lessonId"), "policyVersion": POLICY["version"],
+        "points": entries, "counts": {"mastered": 0, "needs_review": 0,
+            "incomplete": sum(bool(p["observationIds"]) for p in entries),
+            "not_assessed": sum(not p["observationIds"] for p in entries), "postclass_completed": 0,
+            "discussion_needs_review": 0, "discussion_incomplete": 0},
+        "supported": [{"observationId": o["observationId"], "studentExcerpt": o["studentExcerpt"],
+                       "modelInterpretation": o.get("supportedUnderstanding", "")} for o in observations
+                      if o.get("supportedUnderstanding") and "request_not_an_assessment" not in o.get("limitations", [])],
+        "assisted": [o["observationId"] for o in observations if o["independence"] == "assisted"],
+        "unresolved": [{"observationId": o["observationId"], "questions": o.get("uncertainties", "")}
+                       for o in observations if o.get("uncertainties")],
+        "uncovered": [p["id"] for p in entries if not p["observationIds"]],
+        "contentLimitations": (session.get("lessonContent") or {}).get("coverageGaps", []),
+        "endedEarly": state["stage"] != "summary", "endedAtStage": state["stage"],
+        "summary": f"本次保留 {len(observations)} 条学生表达和 {len(records.get('assistance', []))} 条回复记录；"
+                   "观察只支持本次任务范围，未据此判断整课或长期掌握。"}

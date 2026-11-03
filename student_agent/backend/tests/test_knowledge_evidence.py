@@ -6,7 +6,8 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from agent import knowledge
+from backend.content import knowledge
+from backend.infrastructure import model
 
 
 SOURCE = "牛顿第一定律：物体保持静止或匀速直线运动，除非受到外力作用。"
@@ -55,7 +56,7 @@ def test_one_failure_keeps_valid_points_without_retry(monkeypatch):
     def complete(*args):
         calls.append(1)
         return json.dumps({"points": [point(), point(title="惯性")]}, ensure_ascii=False)
-    monkeypatch.setattr(knowledge, "_completion", complete)
+    monkeypatch.setattr(model, "complete", complete)
     result = knowledge.learning_points(MATERIALS)
     assert len(calls) == 1
     assert [item["title"] for item in result.points] == ["牛顿第一定律"]
@@ -66,7 +67,7 @@ def test_one_failure_keeps_valid_points_without_retry(monkeypatch):
 
 
 def test_all_invalid_points_still_fail(monkeypatch):
-    monkeypatch.setattr(knowledge, "_completion", lambda *args:
+    monkeypatch.setattr(model, "complete", lambda *args:
                         json.dumps({"points": [point(title="惯性")]}, ensure_ascii=False))
     with pytest.raises(knowledge.KnowledgePreparationError) as captured:
         knowledge.learning_points(MATERIALS)

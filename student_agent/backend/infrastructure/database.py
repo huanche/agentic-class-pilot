@@ -1,12 +1,13 @@
 """Database operations for the student classroom.
 
-The platform owns the student schema. This module only reads and writes its
-existing tables so the classroom no longer imports the retired student app.
+The platform owns the student schema. Helpers accept a borrowed connection so
+session mutations can share a single transaction without nested commits.
 """
 from __future__ import annotations
 
 import json
 import os
+from contextlib import nullcontext
 
 
 def _db():
@@ -20,8 +21,9 @@ def _db():
 
 def upsert_session(session_key: str, user_id: str, course_id: str,
                    publication_id: str, publication_version: int,
-                   classroom_id: str | None = None) -> None:
-    with _db() as connection:
+                   classroom_id: str | None = None, *, connection=None) -> None:
+    owned = connection is None
+    with (_db() if owned else nullcontext(connection)) as connection:
         connection.execute(
             "INSERT INTO student.student_sessions "
             "(session_key, user_id, course_id, publication_id, publication_version, classroom_id) "
@@ -29,25 +31,32 @@ def upsert_session(session_key: str, user_id: str, course_id: str,
             "ON CONFLICT (session_key) DO UPDATE SET last_active_at = now()",
             (session_key, user_id, course_id, publication_id, publication_version, classroom_id),
         )
-        connection.commit()
+        if owned:
+            connection.commit()
 
 
 def upsert_message(session_key: str, user_id: str, course_id: str,
                    publication_id: str, seq: int, role: str,
-                   phase: str | None, content: str) -> None:
-    with _db() as connection:
+                   phase: str | None, content: str, *, message_id=None, task_id=None, episode_id=None, connection=None) -> None:
+    owned = connection is None
+    with (_db() if owned else nullcontext(connection)) as connection:
         connection.execute(
             "INSERT INTO student.student_messages "
-            "(session_key, user_id, course_id, publication_id, seq, role, phase, content) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s) "
-            "ON CONFLICT (session_key, seq) DO NOTHING",
-            (session_key, user_id, course_id, publication_id, seq, role, phase, content),
+            "(session_key, user_id, course_id, publication_id, seq, role, phase, content,message_id,task_id,episode_id) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+            "ON CONFLICT (session_key, seq) DO UPDATE SET "
+            "message_id=COALESCE(student.student_messages.message_id,EXCLUDED.message_id),"
+            "task_id=COALESCE(student.student_messages.task_id,EXCLUDED.task_id),"
+            "episode_id=COALESCE(student.student_messages.episode_id,EXCLUDED.episode_id)",
+            (session_key, user_id, course_id, publication_id, seq, role, phase, content,message_id,task_id,episode_id),
         )
-        connection.commit()
+        if owned:
+            connection.commit()
 
 
-def read_mastery(user_id: str, course_id: str, publication_id: str) -> dict[str, int]:
-    with _db() as connection:
+def read_mastery(user_id: str, course_id: str, publication_id: str, *, connection=None) -> dict[str, int]:
+    owned = connection is None
+    with (_db() if owned else nullcontext(connection)) as connection:
         rows = connection.execute(
             "SELECT knowledge_point_id, stars FROM student.knowledge_mastery "
             "WHERE user_id = %s AND course_id = %s AND publication_id = %s",
@@ -59,8 +68,9 @@ def read_mastery(user_id: str, course_id: str, publication_id: str) -> dict[str,
 def upsert_mastery(session_key: str, user_id: str, course_id: str,
                    publication_id: str, knowledge_point_id: str,
                    stars: int, status: str, evidence: str | None = None,
-                   source: str | None = None) -> None:
-    with _db() as connection:
+                   source: str | None = None, *, connection=None) -> None:
+    owned = connection is None
+    with (_db() if owned else nullcontext(connection)) as connection:
         connection.execute(
             "INSERT INTO student.knowledge_mastery "
             "(session_key, user_id, course_id, publication_id, knowledge_point_id, stars, status, evidence, source) "
@@ -72,13 +82,15 @@ def upsert_mastery(session_key: str, user_id: str, course_id: str,
             (session_key, user_id, course_id, publication_id, knowledge_point_id,
              stars, status, evidence, source),
         )
-        connection.commit()
+        if owned:
+            connection.commit()
 
 
 def record_event(session_key: str, user_id: str, course_id: str,
                  publication_id: str, event_type: str, payload: dict,
-                 classroom_id: str | None = None, event_id: str | None = None) -> None:
-    with _db() as connection:
+                 classroom_id: str | None = None, event_id: str | None = None, *, connection=None) -> None:
+    owned = connection is None
+    with (_db() if owned else nullcontext(connection)) as connection:
         connection.execute(
             "INSERT INTO student.learning_events "
             "(session_key, user_id, course_id, publication_id, classroom_id, event_type, event_id, payload) "
@@ -87,15 +99,18 @@ def record_event(session_key: str, user_id: str, course_id: str,
             (session_key, user_id, course_id, publication_id, classroom_id,
              event_type, event_id, json.dumps(payload, ensure_ascii=False)),
         )
-        connection.commit()
+        if owned:
+            connection.commit()
 
 
-def finish_session(session_key: str) -> None:
-    with _db() as connection:
+def finish_session(session_key: str, *, connection=None) -> None:
+    owned = connection is None
+    with (_db() if owned else nullcontext(connection)) as connection:
         connection.execute(
             "UPDATE student.student_sessions "
             "SET ended_at = COALESCE(ended_at, now()), last_active_at = now() "
             "WHERE session_key = %s",
             (session_key,),
         )
-        connection.commit()
+        if owned:
+            connection.commit()

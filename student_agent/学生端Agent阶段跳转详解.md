@@ -1,13 +1,15 @@
 # 学生端 Agent 阶段跳转详解
 
-本文对应当前工作区的 `student_agent` 实现。先看 [Archify 交互流程图](../.archify/workflow-student-agent-stages-20261022-185608/student-agent-stages.html)，再按下面的代码位置阅读。代码尚在工作区中，文件行号可能随着修改变化，以函数名查找最可靠。
+> 历史说明：目录与职责已整理，当前阅读入口见 [目录与依赖说明](docs/student-directory-layout.md)。本文保留旧流程解释，源码路径已更新。
+
+本文记录 `student_agent` 的 legacy 阶段实现。历史 Archify 交互流程图未随当前源码保存；当前阅读入口见 [目录与依赖说明](docs/student-directory-layout.md)，再按下面的函数名阅读。文件位置和行号会随整理变化，以函数名查找最可靠。
 
 ## 1. 先分清两种“阶段”
 
 | 状态 | 存放位置 | 可能的值 | 控制什么 |
 | --- | --- | --- | --- |
 | 页面阶段 `session["phase"]` | `backend/main.py` 的课堂会话 | `idle`、`video`、`discussion`、`done` | 显示视频、对话框还是反馈页 |
-| Agent 阶段 `session["dialogue"]["stage"]` | `agent/progression.py` 的对话状态 | `recall`、`reinforce`、`discuss`、`wrapup` | AI 当前引导复述、补强、讨论还是总结 |
+| Agent 阶段 `session["dialogue"]["stage"]` | `backend/teaching/progression.py` 的对话状态 | `recall`、`reinforce`、`discuss`、`wrapup` | AI 当前引导复述、补强、讨论还是总结 |
 
 **关键区别：** 页面进入 `discussion` 后不再换页面。Agent 在同一个对话框内部切换四个子阶段。`phase` 不会因 `recall → reinforce` 而改变；变化的是 `dialogue.stage`。前端通过接口返回的 `agentStage` 显示当前子阶段和左侧进度条。
 
@@ -23,7 +25,7 @@
 相关核心代码：
 
 ```python
-# agent/graph.py
+# backend/teaching/graph.py
 def initial_state(points: list[dict]) -> DialogueState:
     return normalize({
         "stage": "recall",
@@ -39,7 +41,7 @@ def initial_state(points: list[dict]) -> DialogueState:
 
 课堂接口在 `backend/main.py` 的 `message()`。它先检查外层 `phase == "discussion"`，调用 `normalize()` 取得当前内层阶段。若已是 `wrapup`，拒绝继续课堂对话，提示学生查看反馈。否则将学生发言加入 `dialogue.messages`，调用 `dialogue_graph.invoke(dialogue)`。
 
-LangGraph 的图在 `agent/graph.py`：
+LangGraph 的图在 `backend/teaching/graph.py`：
 
 ```python
 builder = StateGraph(DialogueState)
@@ -56,7 +58,7 @@ dialogue_graph = builder.compile()
 这是一条固定节点链：**评估 → 规则跳转 → 生成回复**。`route()` 内部调用 `progression.advance()`；LangGraph 本身并没有让大模型选择下一条边。这里所谓“跳转”，指 `advance()` 修改共享状态中的 `stage`，下一次 `respond()` 按新阶段工作。
 
 ```python
-# agent/graph.py
+# backend/teaching/graph.py
 def route(state: DialogueState) -> dict:
     return advance(state)
 ```
@@ -80,11 +82,11 @@ def route(state: DialogueState) -> dict:
 
 `intent` 可以是 `answer`、`question`、`unclear`；结果可以是 `mastered`（掌握）、`partial`（部分理解）、`misconception`（误解）、`unanswered`（明确不会）。`evaluate()` 会检查 ID 是否属于本轮允许评估的知识点、结果是否在允许列表内。无效 ID 和无效结果不会进入阶段决策；整体 JSON 格式不对则本轮失败。
 
-评估规则写在 `agent/prompts.py` 的 `EVALUATION_PROMPT`。它要求不能仅凭学生说出概念名、复述 AI 刚讲过的答案或说“懂了”就判为掌握。模型的结果仍可能有判断误差；轮数与阶段顺序是代码保证的，知识理解质量取决于模型评估。
+评估规则写在 `backend/teaching/prompts.py` 的 `EVALUATION_PROMPT`。它要求不能仅凭学生说出概念名、复述 AI 刚讲过的答案或说“懂了”就判为掌握。模型的结果仍可能有判断误差；轮数与阶段顺序是代码保证的，知识理解质量取决于模型评估。
 
 ## 5. 代码怎样选“当前知识点”
 
-`agent/progression.py` 的 `current_point()` 按顺序找第一个尚未完成的点：
+`backend/teaching/progression.py` 的 `current_point()` 按顺序找第一个尚未完成的点：
 
 ```python
 def current_point(state: dict) -> dict | None:
@@ -109,7 +111,7 @@ def eligible_points(points: list[dict]) -> list[dict]:
 
 ## 6. 核心阶段跳转规则
 
-`agent/progression.py` 的 `advance()` 每轮读取 AI 的 `evaluation.assessments`，更新当前点的 `status`、`assessment_history`、复述轮数、是否完成和 `transition`。默认上限为初始复述每点 **8 轮**、加强复述每点 **4 轮**，可分别通过 `STUDENT_AGENT_RECALL_ROUNDS`、`STUDENT_AGENT_REINFORCE_ROUNDS` 设置。深入讨论改为**每个已掌握知识点一题**，不再使用全局 4 轮上限。队列与进度保存在状态中，刷新后继续。
+`backend/teaching/progression.py` 的 `advance()` 每轮读取 AI 的 `evaluation.assessments`，更新当前点的 `status`、`assessment_history`、复述轮数、是否完成和 `transition`。默认上限为初始复述每点 **8 轮**、加强复述每点 **4 轮**，可分别通过 `STUDENT_AGENT_RECALL_ROUNDS`、`STUDENT_AGENT_REINFORCE_ROUNDS` 设置。深入讨论改为**每个已掌握知识点一题**，不再使用全局 4 轮上限。队列与进度保存在状态中，刷新后继续。
 
 掌握时提前完成当前点：
 
@@ -167,7 +169,7 @@ if result["stage"] != stage:
 
 ## 7. 阶段变化怎样影响 AI 的话
 
-`agent/graph.py:respond()` 按**跳转后的** `state["stage"]` 取 `STAGE_PROMPTS[stage]`，再叠加 `STRATEGY_PROMPTS[state["strategy"]]`。因此同一个对话框会随着状态使用不同教学任务：
+`backend/teaching/graph.py:respond()` 按**跳转后的** `state["stage"]` 取 `STAGE_PROMPTS[stage]`，再叠加 `STRATEGY_PROMPTS[state["strategy"]]`。因此同一个对话框会随着状态使用不同教学任务：
 
 - `recall`：让学生按顺序用自己的话解释，不先出应用题。
 - `reinforce`：只补强未掌握的点，必要时换说法、拆小问题。
@@ -178,7 +180,7 @@ if result["stage"] != stage:
 
 ## 8. 状态怎样保存与恢复
 
-`backend/main.py:commit()` 先构造新会话，再调用 `agent/persistence.py:save()`，成功后才更新内存。正式平台会话通过 `agent/database.py` 把消息写入 `student.student_messages`，掌握度写入 `student.knowledge_mastery`，把包含 `dialogue.stage`、全部知识点、轮数和历史消息的快照写成 `student.learning_events` 中 `event_type='agent_state'` 的事件。
+`backend/main.py:commit()` 先构造新会话，再调用 `backend/infrastructure/persistence.py:save()`，成功后才更新内存。正式平台会话通过 `backend/infrastructure/database.py` 把消息写入 `student.student_messages`，掌握度写入 `student.knowledge_mastery`，把包含 `dialogue.stage`、全部知识点、轮数和历史消息的快照写成 `student.learning_events` 中 `event_type='agent_state'` 的事件。
 
 页面刷新或服务重启后，`get_session()` 在内存未命中时调用 `persistence.restore(sid)`，读取最近的 `agent_state` 快照。`state(session)` 返回 `agentStage` 和 `learningProgress` 给前端。前端 `StudentApp.js` 把 `agentStage` 传给 `LessonProgress.js`，于是左侧阶段条可恢复到当前阶段。
 
@@ -194,17 +196,17 @@ def state(session: dict) -> dict:
     }
 ```
 
-课堂结束时 `lesson_feedback()` 依据真实评估记录生成“掌握较好、加强后掌握、仍需巩固、评估未完成、尚未评估”等逐点反馈，并通过 `lesson_feedback` 事件和完成快照一起保存。`student_agent/agent/persistence.py` 的演示模式没有平台身份，不写这些正式学习表。
+课堂结束时 `lesson_feedback()` 依据真实评估记录生成“掌握较好、加强后掌握、仍需巩固、评估未完成、尚未评估”等逐点反馈，并通过 `lesson_feedback` 事件和完成快照一起保存。`student_agent/backend/infrastructure/persistence.py` 的演示模式没有平台身份，不写这些正式学习表。
 
 ## 9. 从哪里开始读代码
 
 建议按这个顺序打开：
 
 1. [`backend/main.py`](backend/main.py)：`begin()`、`discussion()`、`message()`、`end()`，看接口什么时候调用 Agent。
-2. [`agent/graph.py`](agent/graph.py)：`initial_state()`、`evaluate()`、`route()`、`respond()` 与 LangGraph 节点链。
-3. [`agent/progression.py`](agent/progression.py)：`current_point()`、`next_stage()`、`advance()`，这是跳转规则的核心。
-4. [`agent/prompts.py`](agent/prompts.py)：不同阶段的教学提示词及评估格式。
-5. [`agent/persistence.py`](agent/persistence.py)：对话、掌握度和状态快照的数据库读写。
+2. [`backend/teaching/graph.py`](backend/teaching/graph.py)：`initial_state()`、`evaluate()`、`route()`、`respond()` 与 LangGraph 节点链。
+3. [`backend/teaching/progression.py`](backend/teaching/progression.py)：`current_point()`、`next_stage()`、`advance()`，这是跳转规则的核心。
+4. [`backend/teaching/prompts.py`](backend/teaching/prompts.py)：不同阶段的教学提示词及评估格式。
+5. [`backend/infrastructure/persistence.py`](backend/infrastructure/persistence.py)：对话、掌握度和状态快照的数据库读写。
 6. [`frontend/src/components/StudentApp.js`](frontend/src/components/StudentApp.js) 与 [`LessonProgress.js`](frontend/src/components/LessonProgress.js)：展示当前阶段、阶段进度和结束按钮。
 
 一句话记住：**数据库保存当前状态，LangGraph 每轮依次评估、跳转和回复；模型判断回答质量，`progression.py` 决定真正的阶段跳转，前端只负责显示状态。**

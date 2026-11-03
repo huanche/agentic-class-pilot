@@ -612,6 +612,7 @@ def course_learning_data(course_id: uuid.UUID, session: SessionDep, user: Curren
         text(f"SELECT session_key, user_id, publication_version, classroom_id, "
              f"started_at, last_active_at, ended_at IS NOT NULL AS ended "
              f"FROM student.student_sessions WHERE user_id IN ({placeholders}) "
+             f"AND revoked_at IS NULL AND classroom_id IS NOT NULL "
              f"AND course_id = CAST(:course AS text) ORDER BY started_at DESC LIMIT 50"), params).fetchall()
     mastery = session.execute(
         text(f"SELECT user_id, knowledge_point_id, stars, status, evidence, updated_at "
@@ -674,14 +675,15 @@ def _course_learning_progress(session, user_id: uuid.UUID, course_id: uuid.UUID)
     learned_row = session.execute(
         text("SELECT count(DISTINCT classroom_id), max(last_active_at), count(*) "
              "FROM student.student_sessions "
-             "WHERE user_id=:u AND course_id=:c"),
+             "WHERE user_id=:u AND course_id=:c AND revoked_at IS NULL AND classroom_id IS NOT NULL"),
         {"u": str(user_id), "c": str(course_id)}).first()
     learned = int(learned_row[0]) if learned_row and learned_row[0] else 0
     last_active = learned_row[1] if learned_row else None
     session_count = int(learned_row[2]) if learned_row else 0
     ended_row = session.execute(
         text("SELECT count(*) FROM student.student_sessions "
-             "WHERE user_id=:u AND course_id=:c AND ended_at IS NOT NULL"),
+             "WHERE user_id=:u AND course_id=:c AND ended_at IS NOT NULL "
+             "AND revoked_at IS NULL AND classroom_id IS NOT NULL"),
         {"u": str(user_id), "c": str(course_id)}).first()
     ended = int(ended_row[0]) if ended_row else 0
     stars_row = session.execute(

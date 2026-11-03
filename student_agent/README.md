@@ -1,8 +1,39 @@
 # 学生端
 
-目录分为 `frontend/`（Next.js 静态页面）、`backend/`（FastAPI）和 `agent/`（LangGraph 复述与讨论）。平台负责登录、选课码加入课程、课程选择及签发课堂令牌；本服务使用令牌读取当前学生已发布的课时。课后补完与自由提问已接入，全班讨论尚未接入。
+模块职责、接口、状态归属及动态教学渐进改造设计见 [从需求到模块架构设计](docs/student-module-architecture-design.md)。P1 收拢入口，P2 补齐可靠命令和事务，P3 增加任务/消息标识、学习证据、帮助记录与课时内容版本，默认继续既有教学流程。P4 提供显式白名单的新会话动态教学试点能力，未默认启用。变更与回归见 [P1](docs/student-p1-implementation.md)、[P2](docs/student-p2-implementation.md)、[P3](docs/student-p3-implementation.md)、[P4](docs/student-p4-implementation.md)、[P5 实施记录](docs/student-p5-implementation.md)。
 
-`apps/` 仅保留服务器现有启动命令使用的兼容入口，教学功能在 `backend/` 和 `agent/`。本地启动脚本是根目录的 `start-platform.ps1`；`scripts/` 只存放服务器部署脚本。验证用例放在 `backend/tests/`，部署工作流会运行它们。
+现行目录按职责归位，详见 [目录与依赖说明](docs/student-directory-layout.md)。原 `agent/` 的业务源码已迁入 `backend/`，不再作为并列业务层：
+
+```text
+student_agent/
+├─ backend/
+│  ├─ main.py          HTTP 和应用启动入口
+│  ├─ contracts.py     共享异常、稳定标识和流程名称
+│  ├─ session/         学习会话编排、命令执行与恢复
+│  ├─ teaching/        教学执行、LangGraph 和纯状态规则
+│  ├─ evidence/        学习证据、帮助关联和反馈
+│  ├─ content/         来源材料、提取和版本化内容模型
+│  ├─ infrastructure/  数据库、内容存储、准备 worker、模型和平台 Adapter
+│  └─ tests/           后端及真实数据库回归
+├─ frontend/           Next.js 页面和学习交互 Module
+├─ apps/               现有部署启动入口
+├─ scripts/            部署脚本
+└─ docs/               设计、实施说明和历史归档
+```
+
+平台负责登录、选课码加入课程、课程选择及签发课堂令牌；本服务使用令牌读取当前学生已发布的课时。课后补完与自由提问已接入，全班讨论尚未接入。
+
+`apps/` 保留服务器现有启动命令使用的兼容入口，业务实现在 `backend/` 的职责包中。本地启动脚本仍是 `start-platform.ps1`；验证入口和部署命令不变。
+
+`backend/main.py` 负责 HTTP 参数、路由、异常转换与静态页面；`backend/session/service.py` 统一编排会话恢复、换版、课堂/课后操作和保存；`backend/teaching/service.py` 封装既有教学图及消息阶段处理；`backend/infrastructure/platform_access.py` 负责平台上下文和学情同步；`backend/infrastructure/model.py` 共用模型调用与响应解析。教学阶段与规则沿用原有实现。
+
+P2 新增 `backend/session/command_runtime.py` 与 `backend/infrastructure/commands.py`，正式页面的提交携带 commandId、stateVersion 和 contentGeneration。平台需先应用 `cmd11` 数据库迁移，再更新平台与学生代码；发布时暂停 P1 旧进程写入。恢复的权威依据是数据库快照，模型失败仍保留原回答供同命令重试。具体事务、兼容范围、隔离测试连接和维护排空方式见 P2 实施记录。
+
+P3 新增 `backend/evidence/records.py` 与 `backend/content/lesson_content.py`；任务、证据和帮助与原消息同事务保存，学习中的会话固定 contentRef，整理器升级保留旧内容版本。正式浏览器快照仅作定位。发布 P3 前需暂停旧写入并应用 `rec12` 迁移；旧记录缺失的任务/帮助/独立性保持未知，不补造历史。
+
+P4 新增 `backend/teaching/dynamic_teaching.py`，通过统一教学 Interface 执行受限动作、固定任务、独立尝试及证据反馈；新会话按可信课时白名单选择并固定 flowVersion/policy，旧会话继续 legacy。实际课时与真实模型抽样质量验收尚未执行，白名单默认为空。启用、限制和兼容回退见 P4 实施记录。
+
+P5 新增前端 `learning-session.mjs`，统一课时恢复、请求/重试、准备与状态刷新；页面订阅 LearningView，动态会话按后端 allowedCommands 接入提示、例子、提问、暂停和继续。默认 legacy 教学和演示行为不变，未启用正式动态试点。
 
 ## 课堂流程
 
@@ -10,7 +41,7 @@
 
 平台首次只下发课时目录。点击“开始上课”时，后端携带所选课时 ID 再请求平台，取得该课时的视频地址、画面文字和旁白；其他课时的正文不会进入本次会话。旧课程在首次被选中时也会登记一次共享准备任务，供更新前已发布的视频使用。
 
-教师发布后，学生服务从数据库领取准备任务并调用 `agent/knowledge.py`；失败自动重试，课堂页也可手动重试。学生开始上课时只读取当前视频版本的共享结果，不为每个学生调用一次模型。未准备好时可以观看视频，准备完成后进入复述与讨论；服务重启后继续处理未完成任务。演示模式仍在本地准备知识点。
+教师发布后，学生服务从数据库领取准备任务并调用 `backend/content/knowledge.py`；失败自动重试，课堂页也可手动重试。学生开始上课时只读取当前视频版本的共享结果，不为每个学生调用一次模型。未准备好时可以观看视频，准备完成后进入复述与讨论；服务重启后继续处理未完成任务。演示模式仍在本地准备知识点。
 
 部署时先执行平台迁移 `pub10_published_lesson_knowledge.py`，再更新教师端和学生端服务。三个 GitHub 自动部署工作流独立运行，发布这项跨服务改动时需要确保数据库迁移先完成。本机若已在下一版本分支执行过更高的 Alembic 修订号，可仅按本迁移创建任务表，保留现有迁移版本及数据。
 
@@ -18,11 +49,11 @@
 
 对话共用一个页面，开场列出完整清单，再从第一个知识点开始逐项引导。首轮每个知识点最多 8 轮学生发言，不会时先提示；掌握则提前进入下一点，达到上限则留到加强复述。首轮全部走完后，加强复述处理未掌握的点，以及第 6～8 轮才掌握、仍需再确认一次的点，每点最多 4 轮。后者要在加强阶段独立解释一次概念，才能进入深入讨论。首轮超过 5 轮仍未掌握的概念会标记为重点强化，第二阶段会换简单表述或类比重新讲解，再请学生复述。加强后仍未掌握的点记录待巩固，不再进入深入讨论或出题范围。没有任何掌握点时不再出题，提示结束查看反馈。
 
-`agent/progression.py` 控制顺序和计数。首轮上限由 `STUDENT_AGENT_RECALL_ROUNDS` 配置（默认 8），加强阶段上限由 `STUDENT_AGENT_REINFORCE_ROUNDS` 配置（默认 4）；两个值范围均为 1–20。开始课堂时保存上限，刷新不会清零。每次学生针对当前点发送消息计一轮，包括求助和表示不会；模型请求失败不计轮数。旧会话保留已知掌握结果，首次使用新流程时初始化分阶段计数。
+`backend/teaching/progression.py` 控制顺序和计数。首轮上限由 `STUDENT_AGENT_RECALL_ROUNDS` 配置（默认 8），加强阶段上限由 `STUDENT_AGENT_REINFORCE_ROUNDS` 配置（默认 4）；两个值范围均为 1–20。开始课堂时保存上限，刷新不会清零。每次学生针对当前点发送消息计一轮，包括求助和表示不会；模型请求失败不计轮数。旧会话保留已知掌握结果，首次使用新流程时初始化分阶段计数。
 
-结束本课后，`agent/feedback.py` 依据本次实际评估生成逐知识点反馈，区分掌握较好、加强后掌握、仍需巩固、评估未完成和尚未评估。初始与加强复述的概念掌握结果和深入讨论的应用题结果分别记录；讨论题答错不会抹掉先前的概念掌握，反馈会同时显示概念掌握依据和讨论题待巩固的依据。完成页可回看视频，也可进入课后 AI 对话。课后按待办队列继续概念复述、加强确认和未完成的讨论题，所有任务完成后才进入自由提问；学生独立讲清后标记“课后补完”，全部补完后在同一对话框自由提问。当前反馈作为 `lesson_feedback` 事件写入 `student.learning_events`（`event_id=final`），课堂结束时的原始反馈另存为 `classroom_feedback`。反馈与会话快照仍写入数据库；同一用户重新登录、清空浏览器存储或换设备后，选择原课时会经平台鉴权恢复数据库中的最新会话，浏览器快照仅作为定位线索。`GET /api/session/{sid}/feedback` 返回更新后的个人反馈。已有跨课次最高掌握度不用于替代本次课的实际结果。
+结束本课后，`backend/evidence/feedback.py` 依据本次实际评估生成逐知识点反馈，区分掌握较好、加强后掌握、仍需巩固、评估未完成和尚未评估。初始与加强复述的概念掌握结果和深入讨论的应用题结果分别记录；讨论题答错不会抹掉先前的概念掌握，反馈会同时显示概念掌握依据和讨论题待巩固的依据。完成页可回看视频，也可进入课后 AI 对话。课后按待办队列继续概念复述、加强确认和未完成的讨论题，所有任务完成后才进入自由提问；学生独立讲清后标记“课后补完”，全部补完后在同一对话框自由提问。当前反馈作为 `lesson_feedback` 事件写入 `student.learning_events`（`event_id=final`），课堂结束时的原始反馈另存为 `classroom_feedback`。反馈与会话快照仍写入数据库；同一用户重新登录、清空浏览器存储或换设备后，选择原课时会经平台鉴权恢复数据库中的最新会话，浏览器快照仅作为定位线索。`GET /api/session/{sid}/feedback` 返回更新后的个人反馈。已有跨课次最高掌握度不用于替代本次课的实际结果。
 
-新版本的开场文案、评估提示词、复述/补强/讨论提示词及各类对话策略统一维护在 `agent/prompts.py`；LangGraph 的状态跳转在 `agent/graph.py`。已保存的历史消息保留原文，新进入复述与讨论的课堂使用新的开场。
+新版本的开场文案、评估提示词、复述/补强/讨论提示词及各类对话策略统一维护在 `backend/teaching/prompts.py`；LangGraph 的状态跳转在 `backend/teaching/graph.py`。已保存的历史消息保留原文，新进入复述与讨论的课堂使用新的开场。
 
 深入讨论对每个已掌握知识点各提出一个问题，只有当前题答对才进入下一个点；回答不完整、答错、表示不会或求助时，导师围绕原题提示，仍保留当前讨论题。最后一题答对后先给出简短反馈，再进入课堂总结。学生可主动提前结束，状态快照和个人反馈会记录提前结束及未完成的讨论题。加强复述后仍未掌握的点不会进入讨论。每轮学生消息由 LangGraph 调用模型评估与生成回复，阶段跳转由代码规则执行。正式课程会话、消息、知识点掌握度和 Agent 状态快照分别写入平台数据库的 `student.student_sessions`、`student.student_messages`、`student.knowledge_mastery` 和 `student.learning_events`。课时历史恢复始终通过平台可信身份查询数据库，不受 `STUDENT_FRESH_SESSION_MODE` 开关限制；该开关保留浏览器快照和旧式按会话编号读取的兼容行为。
 

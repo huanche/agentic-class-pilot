@@ -3,7 +3,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from agent.postclass import apply_assessment, pending_points, postclass_stage
+from backend.teaching.postclass import apply_assessment
+from backend.teaching.postclass import pending_points
+from backend.teaching.postclass import postclass_stage
 
 
 def test_postclass_completes_only_the_active_gap():
@@ -25,7 +27,8 @@ def test_postclass_completes_only_the_active_gap():
 
 
 def test_confirmation_and_discussion_must_both_finish():
-    from agent.postclass import pending_kind, advance
+    from backend.teaching.postclass import pending_kind
+    from backend.teaching.postclass import advance
     point = {"id": "a", "title": "A", "status": "mastered", "reinforcement_required": True,
              "reinforce_done": False, "discussion_required": True, "assessment_history": []}
     state = advance({"points": [point], "stage": "remediation", "student_text": "explanation",
@@ -41,7 +44,8 @@ def test_confirmation_and_discussion_must_both_finish():
 
 
 def test_early_end_queues_unattempted_discussion_without_another_points_question():
-    from agent.postclass import prepare_points, pending_kind
+    from backend.teaching.postclass import prepare_points
+    from backend.teaching.postclass import pending_kind
     points = [{"id": key, "status": "mastered"} for key in ("a", "b")]
     prepared = prepare_points({"points": points, "discussion_point_ids": ["a", "b"],
                                "discussion_index": 0}, [{"phase": "discuss", "text": "question A"}])

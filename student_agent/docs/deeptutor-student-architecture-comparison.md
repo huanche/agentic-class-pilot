@@ -71,7 +71,7 @@ Tool 是一次具体操作，例如读取当前学习状态、检索片段或登
 
 当前课堂是每轮调用一次 `evaluate → route → respond`；`route()` 调用 `progression.advance()`，首轮、加强和讨论的推进由确定性 Python 规则控制。课后有另一张类似图，先完成待办再进入自由提问。v0.8 方案中的显式教学动作选择尚未进入这些图。
 
-来源：[课堂图](E:/LMS系统参考/项目/agentic-class-pilot-running/student_agent/agent/graph.py:174)、[推进规则](E:/LMS系统参考/项目/agentic-class-pilot-running/student_agent/agent/progression.py:115)、[课后图](E:/LMS系统参考/项目/agentic-class-pilot-running/student_agent/agent/postclass.py:131)。更多具体行号见[学生端核查笔记](student-source-comparison-notes.md)。
+来源：[课堂图](../backend/teaching/graph.py)、[推进规则](../backend/teaching/progression.py)、[课后图](../backend/teaching/postclass.py)。更多具体行号见[学生端核查笔记](student-source-comparison-notes.md)。
 
 现有实现有六项应当保留：
 
