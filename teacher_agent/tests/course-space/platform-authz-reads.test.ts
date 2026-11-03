@@ -25,6 +25,7 @@ vi.mock('@/lib/server/course-knowledge-store', () => ({
 import { GET as classroomVisibility } from '@/app/api/internal/platform/classrooms/[classroomId]/visibility/route';
 import { GET as materialVisibility } from '@/app/api/internal/platform/courses/[courseId]/materials/[materialId]/visibility/route';
 import { GET as jobCourseRef } from '@/app/api/internal/platform/course-space/jobs/[jobId]/course-ref/route';
+import { GET as lessonTitles } from '@/app/api/internal/platform/courses/[courseId]/lesson-titles/route';
 
 const delegated = { headers: { 'x-platform-delegated': 'true' } };
 
@@ -32,6 +33,26 @@ beforeEach(() => {
   vi.resetAllMocks();
   vi.stubEnv('PLATFORM_AUTH_ENABLED', 'true');
   mocks.isCourseDatabaseConfigured.mockReturnValue(true);
+});
+
+describe('lesson titles for platform chat records', () => {
+  const context = { params: Promise.resolve({ courseId: 'c1' }) };
+  const request = (delegatedRequest: boolean) => new NextRequest('http://localhost/api/internal/platform/courses/c1/lesson-titles',
+    delegatedRequest ? delegated : {});
+
+  it('requires platform service delegation', async () => {
+    expect((await lessonTitles(request(false), context)).status).toBe(403);
+    expect(mocks.readServerCourse).not.toHaveBeenCalled();
+  });
+
+  it('returns only lesson identifiers and titles', async () => {
+    mocks.readServerCourse.mockResolvedValue({ modules: [
+      { lessons: [{ id: 'l1', title: 'First lesson' }, { id: 'l2', title: '' }] },
+    ] });
+    expect(await (await lessonTitles(request(true), context)).json()).toEqual({
+      titles: { l1: 'First lesson', l2: 'l2' },
+    });
+  });
 });
 
 describe('classroom visibility', () => {

@@ -3,10 +3,10 @@
 import sys
 from pathlib import Path
 
-from fastapi import HTTPException
+from backend.contracts import SessionError
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from agent import persistence, platform_client
+from backend.infrastructure import persistence, platform_client
 
 
 def test_api_mode_fetches_scenes_from_platform(monkeypatch):
@@ -22,7 +22,7 @@ def test_api_mode_keeps_empty_scenes_when_platform_unavailable(monkeypatch):
     monkeypatch.delenv("STUDENT_DATABASE_URL", raising=False)
 
     def unavailable(classroom_id):
-        raise HTTPException(503, "平台服务暂不可用")
+        raise SessionError(503, "平台服务暂不可用")
 
     monkeypatch.setattr(platform_client, "fetch_classroom_scenes", unavailable)
     assert persistence.classroom_scenes("room-1") == []

@@ -1,0 +1,196 @@
+{
+  "schemaVersion": 1,
+  "documentStatus": "design_only_not_executable",
+  "executionEnabled": false,
+  "batchId": "student-simulation-baseline-v1-example",
+  "displayTimezone": "Asia/Shanghai",
+  "designDate": "2026-10-27",
+  "baseline": {
+    "reviewedCommit": "e5d957e00662f539aba90da43d074766dc2878d2",
+    "resolvedCommit": null,
+    "businessSourceHashes": null,
+    "dependencyLockHash": null,
+    "deploymentId": null,
+    "flowVersionObserved": 3,
+    "curriculumVersionObserved": 10,
+    "recallRoundsExpected": 8,
+    "reinforceRoundsExpected": 4,
+    "freshSessionModeExpected": true,
+    "observationMode": "local_decode_server_returned_browser_snapshot"
+  },
+  "environment": {
+    "type": "isolated_test",
+    "studentBaseUrl": null,
+    "platformBaseUrl": null,
+    "databaseTargetFingerprint": null,
+    "databaseIsolationVerified": false,
+    "testIdentityMapRef": null,
+    "identityPolicy": "distinct_test_identity_per_trial",
+    "productionAllowed": false,
+    "restartTargetRef": null,
+    "faultProxyRef": null,
+    "browserConfigRef": null
+  },
+  "models": {
+    "tutor": {
+      "providerAlias": null,
+      "deploymentVersion": null,
+      "temperatureExpected": 0.2,
+      "usageMeterRef": null,
+      "providerSeedSupported": null
+    },
+    "student": {
+      "providerAlias": null,
+      "deploymentVersion": null,
+      "temperature": 0.7,
+      "maxOutputTokens": 400,
+      "promptVersion": "student-policy-v1-draft",
+      "promptHash": null
+    },
+    "knowledgeUpdater": {
+      "providerAlias": null,
+      "deploymentVersion": null,
+      "temperature": 0,
+      "maxOutputTokens": 1200,
+      "promptHash": null,
+      "maxNewCoreRelationsPerReplyForP01P02": 1
+    },
+    "simulationAuditor": {
+      "providerAlias": null,
+      "deploymentVersion": null,
+      "temperature": 0,
+      "maxOutputTokens": 2000,
+      "promptHash": null
+    },
+    "judge": {
+      "providerAlias": null,
+      "deploymentVersion": null,
+      "temperature": 0,
+      "maxOutputTokens": 3000,
+      "promptVersion": "judge-policy-v1-draft",
+      "promptHash": null,
+      "blindToVariantName": true,
+      "twoPassEvaluation": true,
+      "independentFromTutorVerified": false
+    }
+  },
+  "lessons": [
+    {
+      "alias": "L-A",
+      "selectionIntent": "concepts_and_relations",
+      "courseId": null,
+      "lessonId": null,
+      "publicationId": null,
+      "publicationVersion": null,
+      "classroomId": null,
+      "sourceBundleRef": null,
+      "sourceBundleHash": null,
+      "humanRubricRef": null,
+      "profileInstancesRef": null,
+      "humanReviewStatus": "pending"
+    },
+    {
+      "alias": "L-B",
+      "selectionIntent": "conditions_procedures_or_application",
+      "courseId": null,
+      "lessonId": null,
+      "publicationId": null,
+      "publicationVersion": null,
+      "classroomId": null,
+      "sourceBundleRef": null,
+      "sourceBundleHash": null,
+      "humanRubricRef": null,
+      "profileInstancesRef": null,
+      "humanReviewStatus": "pending"
+    }
+  ],
+  "profiles": ["P01", "P02", "P03", "P04", "P05", "P06"],
+  "scripts": ["G01", "G02", "G03", "G04", "G05", "G06"],
+  "browserChecks": ["U01", "U02", "U03", "U04", "U05", "U06"],
+  "stages": {
+    "calibration": {"lessonCount": 2, "profileCount": 6, "repeats": 1, "plannedTrials": 12},
+    "adaptiveBaseline": {"lessonCount": 2, "profileCount": 6, "repeats": 5, "plannedTrials": 60},
+    "scriptedBaseline": {"lessonCount": 2, "scriptCount": 6, "repeats": 2, "plannedTrials": 24},
+    "browser": {
+      "plannedTrials": 6,
+      "lessonAssignments": {"U01": "L-A", "U02": "L-B", "U03": "L-A", "U04": "L-B", "U05": "L-A", "U06": "L-B"}
+    },
+    "plannedOfficialTrials": 90,
+    "plannedTrialsIncludingCalibration": 102
+  },
+  "scheduler": {
+    "apiConcurrency": 2,
+    "calibrationConcurrency": 1,
+    "browserConcurrency": 1,
+    "serializeRequestsWithinTrial": true,
+    "shuffleSeed": 20261027,
+    "trialRandomIdsRef": null,
+    "automaticRetryOfFailedTrials": false,
+    "resumptionPolicy": "resume_only_not_started_trials_reconcile_uncertain_inflight",
+    "restartCheckRequiresExclusiveService": true
+  },
+  "limits": {
+    "submittedStudentMessagesPerTrial": 80,
+    "scriptSetupMessages": 10,
+    "wallClockSecondsPerTrial": 1800,
+    "preparationPollSeconds": 2,
+    "preparationTimeoutSeconds": 180,
+    "httpConnectTimeoutSeconds": 10,
+    "httpReadTimeoutSeconds": 210,
+    "automaticWriteRetries": 0,
+    "safeReadRetries": 2,
+    "messageLengthCharacters": 2000,
+    "noProgressCandidateWindow": 3,
+    "helpResponseWindowTutorReplies": 2,
+    "stopOnNoProgressCandidate": false
+  },
+  "budget": {
+    "currency": "CNY",
+    "maxBatchCost": null,
+    "maxTrialCost": null,
+    "maxBatchModelCalls": null,
+    "priceTableRef": null,
+    "priceTableAsOf": null,
+    "usageMeasurementMode": null,
+    "conservativeTokenBoundsRef": null,
+    "reserveForInflightCalls": true,
+    "includeFailedAndInvalidTrials": true,
+    "unknownUsageMustNotBeZero": true
+  },
+  "review": {
+    "simulationCalibrationMinValid": 10,
+    "simulationCalibrationRequiresEachProfile": true,
+    "offlineJudgeAnchorCount": 24,
+    "offlineJudgeMinAgreementCount": 20,
+    "offlineJudgeMinCorrectNegativesOf12": 10,
+    "humanReviewFractionOfRemainingValidTraces": 0.2,
+    "reviewAllP0P1Candidates": true,
+    "reviewAllFalseMasteryCandidates": true,
+    "reviewAllInvalidOrUncertainSimulation": true,
+    "reviewAllJudgeDisagreements": true,
+    "rawDataRetentionDaysSuggested": 14,
+    "redactedDataRetentionDaysSuggested": 90
+  },
+  "output": {
+    "rootRef": null,
+    "rawSnapshotsRestricted": true,
+    "redactBeforeExternalModelCalls": true,
+    "exportSecrets": false,
+    "publishIssuesAutomatically": false
+  },
+  "validationPolicy": {
+    "requiredBeforeExecution": [
+      "executionEnabled=true explicitly in resolved run configuration",
+      "resolved deployment and business hashes",
+      "verified isolated database and service targets",
+      "reviewed lesson bundles and six profile instances for each lesson",
+      "test identities and enrollment for every planned trial",
+      "model versions, prompt hashes, and metering or conservative token bounds",
+      "numeric batch/trial cost caps and batch model call cap",
+      "calibration passed before official trials",
+      "restricted output storage and redaction verified",
+      "browser exclusive restart and fault-injection prerequisites for relevant U checks"
+    ],
+    "sampleMustNotBeRunAsIs": true
+  }
+}

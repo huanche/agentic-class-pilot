@@ -1,0 +1,9 @@
+[Unit]
+Description=Recover an unexpectedly exited mainland teacher container
+Requires=docker.service
+After=agentic-mainland-start.service docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/agentic-teacher-recover
+TimeoutStartSec=90

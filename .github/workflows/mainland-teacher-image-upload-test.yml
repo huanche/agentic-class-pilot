@@ -1,0 +1,143 @@
+
+name: Mainland Teacher Image Upload Test
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: mainland-teacher-image-upload
+  cancel-in-progress: false
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+
+    env:
+      IMAGE: zmzm1443/agentic-teacher:main-df839c6
+      EXPECTED_IMAGE_ID: sha256:ff22e32dbb0c0b31cd1ca5edd8447f68238a23016b4fe18a40e3e630caeded9d
+
+      SERVER_HOST: ${{ secrets.MAINLAND_SERVER_HOST }}
+      SERVER_SSH_KEY: ${{ secrets.MAINLAND_SERVER_SSH_KEY }}
+      SERVER_KNOWN_HOSTS: ${{ secrets.MAINLAND_SSH_KNOWN_HOSTS }}
+
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+
+    steps:
+      - name: Upload existing teacher image to mainland
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          umask 077
+
+          echo "====== 1. 检查配置 ======"
+
+          for name in SERVER_HOST SERVER_SSH_KEY SERVER_KNOWN_HOSTS DOCKERHUB_USERNAME DOCKERHUB_TOKEN; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "::error::$name 未配置"
+              exit 1
+            fi
+          done
+
+          if [[ "$SERVER_HOST" == "43.132.155.8" ]]; then
+            echo "::error::禁止向香港生产服务器上传"
+            exit 1
+          fi
+
+          DIR=$(mktemp -d)
+          trap 'docker logout >/dev/null 2>&1 || true; rm -rf -- "$DIR"' EXIT
+
+          printf '%s\n' "$SERVER_SSH_KEY" > "$DIR/key"
+          printf '%s\n' "$SERVER_KNOWN_HOSTS" > "$DIR/known_hosts"
+
+          chmod 600 "$DIR/key" "$DIR/known_hosts"
+
+          ssh-keygen -y -f "$DIR/key" >/dev/null
+
+          ssh-keygen -F "$SERVER_HOST" \
+            -f "$DIR/known_hosts" >/dev/null || {
+              echo "::error::SSH 主机密钥记录不存在"
+              exit 1
+            }
+
+          echo "====== 2. 登录 Docker Hub ======"
+
+          printf '%s' "$DOCKERHUB_TOKEN" |
+            docker login \
+              --username "$DOCKERHUB_USERNAME" \
+              --password-stdin >/dev/null
+
+          echo "====== 3. 下载指定教师镜像 ======"
+
+          docker pull --platform linux/amd64 "$IMAGE"
+
+          ACTUAL_ID=$(docker image inspect \
+            -f '{{.Id}}' "$IMAGE")
+
+          if [[ "$ACTUAL_ID" != "$EXPECTED_IMAGE_ID" ]]; then
+            echo "::error::远端镜像 ID 与国内已验证版本不一致"
+            echo "停止上传，避免覆盖现有镜像标签"
+            exit 1
+          fi
+
+          echo "镜像 ID 校验通过"
+
+          echo "====== 4. 压缩镜像 ======"
+
+          ARCHIVE="$DIR/teacher.tar.gz"
+
+          docker save "$IMAGE" | gzip -1 > "$ARCHIVE"
+
+          test -s "$ARCHIVE"
+
+          BYTES=$(stat -c '%s' "$ARCHIVE")
+
+          if (( BYTES > 6 * 1024 * 1024 * 1024 )); then
+            echo "::error::镜像压缩包超过 6 GiB"
+            exit 1
+          fi
+
+          echo "镜像压缩大小：$BYTES 字节"
+
+          SHA=$(sha256sum "$ARCHIVE" | cut -d' ' -f1)
+
+          echo "====== 5. 准备受限 SSH 连接 ======"
+
+          SSH_OPTS=(
+            -F /dev/null
+            -i "$DIR/key"
+            -T
+            -o BatchMode=yes
+            -o IdentitiesOnly=yes
+            -o IdentityAgent=none
+            -o PasswordAuthentication=no
+            -o KbdInteractiveAuthentication=no
+            -o StrictHostKeyChecking=yes
+            -o HostKeyAlgorithms=ssh-ed25519
+            -o UserKnownHostsFile="$DIR/known_hosts"
+            -o ConnectTimeout=15
+            -o ServerAliveInterval=20
+            -o ServerAliveCountMax=15
+          )
+
+          echo "====== 6. 上传并导入教师镜像 ======"
+
+          {
+            printf 'AGENTIC-IMAGE-V1 %s %s\n' "$SHA" "$IMAGE"
+            cat "$ARCHIVE"
+          } | timeout 1500s ssh \
+                "${SSH_OPTS[@]}" \
+                "agentic-ci@$SERVER_HOST" \
+                image-upload
+
+          echo "====== 7. 检查国内教师端状态 ======"
+
+          ssh "${SSH_OPTS[@]}" \
+            "agentic-ci@$SERVER_HOST" \
+            teacher-check
+
+          echo "====== GitHub 镜像上传测试成功 ======"
+          echo "只导入镜像，没有执行教师容器部署"

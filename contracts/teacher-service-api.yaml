@@ -340,6 +340,25 @@ paths:
         '403': { description: Invalid service key or ownership }
         '404': { description: Active course not found }
         '503': { description: Platform authorization unavailable }
+  /api/internal/platform/courses/{courseId}/lesson-titles:
+    get:
+      operationId: getTeacherLessonTitles
+      summary: Teacher-owned lesson titles for an authorized platform course view
+      security: [{ platformServiceKey: [], platformSubject: [] }]
+      parameters:
+        - { name: courseId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Lesson ID to title mapping, including unpublished lessons
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [titles]
+                properties:
+                  titles: { type: object, additionalProperties: { type: string } }
+        '403': { description: Invalid service key or ownership }
+        '503': { description: Platform authorization or course storage unavailable }
 components:
   securitySchemes:
     platformServiceKey: { type: apiKey, in: header, name: X-Platform-Service-Key }

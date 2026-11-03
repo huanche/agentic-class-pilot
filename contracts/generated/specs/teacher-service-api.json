@@ -871,6 +871,57 @@
         "summary": "Current visible published classroom for student launch"
       }
     },
+    "/api/internal/platform/courses/{courseId}/lesson-titles": {
+      "get": {
+        "operationId": "getTeacherLessonTitles",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "courseId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "titles": {
+                      "additionalProperties": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "titles"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Lesson ID to title mapping, including unpublished lessons"
+          },
+          "403": {
+            "description": "Invalid service key or ownership"
+          },
+          "503": {
+            "description": "Platform authorization or course storage unavailable"
+          }
+        },
+        "security": [
+          {
+            "platformServiceKey": [],
+            "platformSubject": []
+          }
+        ],
+        "summary": "Teacher-owned lesson titles for an authorized platform course view"
+      }
+    },
     "/api/internal/platform/courses/{courseId}/materials/{materialId}/visibility": {
       "get": {
         "description": "Teacher-owned half of the student material authorization. Missing course or material reports visible=false; the platform keeps the 403 its legacy query produced.",

@@ -1,0 +1,678 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "学生端 · 重登与换电脑恢复历史全程",
+    "locale": "zh-CN",
+    "output": ".archify/sequence-student-request-20261030-152337/student-request.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/huanche/agentic-class-pilot.git",
+      "revision": "0c8a765394241dd691f6b4518d6392771c84b221",
+      "provider": "github",
+      "link_mode": "local-only"
+    }
+  },
+  "participants": [
+    {
+      "id": "ui",
+      "type": "frontend",
+      "label": "学生界面",
+      "sublabel": "重登 / 新设备",
+      "sources": [
+        {
+          "path": "student_agent/frontend/src/components/StudentApp.js",
+          "line": 120,
+          "end_line": 173
+        },
+        {
+          "path": "student_agent/frontend/src/components/StudentApp.js",
+          "line": 224,
+          "end_line": 246
+        },
+        {
+          "path": "student_agent/frontend/src/components/StudentApp.js",
+          "line": 431,
+          "end_line": 440
+        }
+      ]
+    },
+    {
+      "id": "browser",
+      "type": "database",
+      "label": "浏览器缓存",
+      "sublabel": "localStorage 线索",
+      "sources": [
+        {
+          "path": "student_agent/frontend/src/components/StudentApp.js",
+          "line": 8,
+          "end_line": 28
+        },
+        {
+          "path": "student_agent/frontend/src/components/StudentApp.js",
+          "line": 120,
+          "end_line": 171
+        },
+        {
+          "path": "student_agent/frontend/src/integration/session-recovery.mjs",
+          "line": 1,
+          "end_line": 22
+        }
+      ]
+    },
+    {
+      "id": "platform",
+      "type": "security",
+      "label": "平台 API",
+      "sublabel": "登录与课时权限",
+      "sources": [
+        {
+          "path": "platform/backend/app/api/routes/login.py",
+          "line": 24,
+          "end_line": 52
+        },
+        {
+          "path": "platform/backend/app/api/routes/student_bridge.py",
+          "line": 193,
+          "end_line": 251
+        },
+        {
+          "path": "platform/backend/app/api/routes/student_bridge.py",
+          "line": 449,
+          "end_line": 483
+        }
+      ]
+    },
+    {
+      "id": "api",
+      "type": "backend",
+      "label": "学生 API",
+      "sublabel": "鉴权后恢复历史",
+      "sources": [
+        {
+          "path": "student_agent/backend/main.py",
+          "line": 150,
+          "end_line": 205
+        },
+        {
+          "path": "student_agent/backend/main.py",
+          "line": 353,
+          "end_line": 407
+        },
+        {
+          "path": "student_agent/backend/main.py",
+          "line": 587,
+          "end_line": 611
+        }
+      ]
+    },
+    {
+      "id": "memory",
+      "type": "backend",
+      "label": "会话内存",
+      "sublabel": "进程内 sessions",
+      "sources": [
+        {
+          "path": "student_agent/backend/main.py",
+          "line": 192,
+          "end_line": 205
+        },
+        {
+          "path": "student_agent/backend/main.py",
+          "line": 208,
+          "end_line": 249
+        },
+        {
+          "path": "student_agent/backend/main.py",
+          "line": 587,
+          "end_line": 611
+        }
+      ]
+    },
+    {
+      "id": "db",
+      "type": "database",
+      "label": "PostgreSQL",
+      "sublabel": "最新持久会话",
+      "sources": [
+        {
+          "path": "student_agent/agent/persistence.py",
+          "line": 29,
+          "end_line": 103
+        },
+        {
+          "path": "student_agent/agent/persistence.py",
+          "line": 106,
+          "end_line": 136
+        },
+        {
+          "path": "student_agent/agent/database.py",
+          "line": 21,
+          "end_line": 90
+        }
+      ]
+    },
+    {
+      "id": "graph",
+      "type": "backend",
+      "label": "对话流程",
+      "sublabel": "LangGraph 固定图",
+      "sources": [
+        {
+          "path": "student_agent/agent/graph.py",
+          "line": 50,
+          "end_line": 98
+        },
+        {
+          "path": "student_agent/agent/graph.py",
+          "line": 127,
+          "end_line": 182
+        }
+      ]
+    },
+    {
+      "id": "model",
+      "type": "cloud",
+      "label": "模型 API",
+      "sublabel": "可配置提供方",
+      "sources": [
+        {
+          "path": "student_agent/agent/graph.py",
+          "line": 50,
+          "end_line": 64
+        }
+      ]
+    }
+  ],
+  "messages": [
+    {
+      "id": "login",
+      "from": "ui",
+      "to": "platform",
+      "y": 160,
+      "label": "01 重新登录",
+      "variant": "security",
+      "note": "主例：原历史已保存，新设备没有浏览器历史缓存。"
+    },
+    {
+      "id": "user-read",
+      "from": "platform",
+      "to": "db",
+      "y": 264,
+      "label": "02 读取账号",
+      "variant": "security"
+    },
+    {
+      "id": "user-row",
+      "from": "db",
+      "to": "platform",
+      "y": 304,
+      "label": "03 用户记录",
+      "variant": "return"
+    },
+    {
+      "id": "login-write",
+      "from": "platform",
+      "to": "db",
+      "y": 344,
+      "label": "04 写登录会话",
+      "variant": "security"
+    },
+    {
+      "id": "login-stored",
+      "from": "db",
+      "to": "platform",
+      "y": 384,
+      "label": "05 提交完成",
+      "variant": "return"
+    },
+    {
+      "id": "login-ok",
+      "from": "platform",
+      "to": "ui",
+      "y": 424,
+      "label": "06 登录成功",
+      "variant": "return",
+      "note": "返回访问令牌并设置登录 Cookie。"
+    },
+    {
+      "id": "entry",
+      "from": "ui",
+      "to": "platform",
+      "y": 528,
+      "label": "07 进入原课程",
+      "variant": "security"
+    },
+    {
+      "id": "entry-scope",
+      "from": "platform",
+      "to": "db",
+      "y": 568,
+      "label": "08 核验选课与发布",
+      "variant": "security"
+    },
+    {
+      "id": "entry-rows",
+      "from": "db",
+      "to": "platform",
+      "y": 608,
+      "label": "09 有效课程",
+      "variant": "return"
+    },
+    {
+      "id": "entry-url",
+      "from": "platform",
+      "to": "ui",
+      "y": 648,
+      "label": "10 带令牌的入口",
+      "variant": "return",
+      "note": "launch_token 属于当前登录用户和课程。"
+    },
+    {
+      "id": "catalog-start",
+      "from": "ui",
+      "to": "api",
+      "y": 752,
+      "label": "11 POST start",
+      "variant": "emphasis"
+    },
+    {
+      "id": "catalog-auth",
+      "from": "api",
+      "to": "platform",
+      "y": 792,
+      "label": "12 读取课程目录",
+      "variant": "security"
+    },
+    {
+      "id": "catalog-query",
+      "from": "platform",
+      "to": "db",
+      "y": 832,
+      "label": "13 查发布目录",
+      "variant": "default"
+    },
+    {
+      "id": "catalog-data",
+      "from": "db",
+      "to": "platform",
+      "y": 872,
+      "label": "14 课时目录",
+      "variant": "return"
+    },
+    {
+      "id": "catalog-context",
+      "from": "platform",
+      "to": "api",
+      "y": 912,
+      "label": "15 可信目录",
+      "variant": "return"
+    },
+    {
+      "id": "catalog-return",
+      "from": "api",
+      "to": "ui",
+      "y": 952,
+      "label": "16 200 课时列表",
+      "variant": "return",
+      "note": "这里只创建目录会话，不删除旧课时记录。"
+    },
+    {
+      "id": "browser-lookup",
+      "from": "ui",
+      "to": "browser",
+      "y": 1056,
+      "label": "17 查原课时缓存",
+      "variant": "default"
+    },
+    {
+      "id": "browser-miss",
+      "from": "browser",
+      "to": "ui",
+      "y": 1096,
+      "label": "18 MISS：缓存为空",
+      "variant": "return",
+      "note": "用户选中原课时；没有旧 sid 或快照也能继续。"
+    },
+    {
+      "id": "resume",
+      "from": "ui",
+      "to": "api",
+      "y": 1200,
+      "label": "19 POST resume",
+      "variant": "emphasis",
+      "note": "只提交 launch_token 和 lesson_id。"
+    },
+    {
+      "id": "resume-auth",
+      "from": "api",
+      "to": "platform",
+      "y": 1304,
+      "label": "20 校验课时与令牌",
+      "variant": "security"
+    },
+    {
+      "id": "resume-scope",
+      "from": "platform",
+      "to": "db",
+      "y": 1344,
+      "label": "21 查选课及发布",
+      "variant": "security"
+    },
+    {
+      "id": "resume-scope-rows",
+      "from": "db",
+      "to": "platform",
+      "y": 1384,
+      "label": "22 允许访问",
+      "variant": "return"
+    },
+    {
+      "id": "resume-context",
+      "from": "platform",
+      "to": "api",
+      "y": 1424,
+      "label": "23 当前课时上下文",
+      "variant": "return",
+      "note": "平台校验服务密钥、令牌签名、过期时间和课时权限。"
+    },
+    {
+      "id": "latest",
+      "from": "api",
+      "to": "db",
+      "y": 1528,
+      "label": "24 查最近会话",
+      "variant": "emphasis",
+      "note": "按用户、课程、课时、发布版本和课堂绑定查询。"
+    },
+    {
+      "id": "latest-sid",
+      "from": "db",
+      "to": "api",
+      "y": 1632,
+      "label": "25 持久会话 sid",
+      "variant": "return"
+    },
+    {
+      "id": "memory-lookup",
+      "from": "api",
+      "to": "memory",
+      "y": 1672,
+      "label": "26 查进程会话",
+      "variant": "default"
+    },
+    {
+      "id": "memory-miss",
+      "from": "memory",
+      "to": "api",
+      "y": 1712,
+      "label": "27 MISS：服务无缓存",
+      "variant": "return",
+      "note": "内存 HIT 也要重新读取数据库快照。"
+    },
+    {
+      "id": "snapshot-read",
+      "from": "api",
+      "to": "db",
+      "y": 1816,
+      "label": "28 读最新快照",
+      "variant": "emphasis"
+    },
+    {
+      "id": "snapshot-data",
+      "from": "db",
+      "to": "api",
+      "y": 1856,
+      "label": "29 历史消息与状态",
+      "variant": "return",
+      "note": "复核身份和课时匹配，再更新课程信息与新令牌。"
+    },
+    {
+      "id": "memory-fill",
+      "from": "api",
+      "to": "memory",
+      "y": 1960,
+      "label": "30 回填会话",
+      "variant": "emphasis"
+    },
+    {
+      "id": "memory-ready",
+      "from": "memory",
+      "to": "api",
+      "y": 2000,
+      "label": "31 可继续学习",
+      "variant": "return"
+    },
+    {
+      "id": "resume-return",
+      "from": "api",
+      "to": "ui",
+      "y": 2040,
+      "label": "32 200 历史状态",
+      "variant": "return",
+      "note": "进行中直接显示对话；已结束可展开历史会话。"
+    },
+    {
+      "id": "browser-fill",
+      "from": "ui",
+      "to": "browser",
+      "y": 2144,
+      "label": "33 更新签名快照",
+      "variant": "default"
+    },
+    {
+      "id": "browser-ready",
+      "from": "browser",
+      "to": "ui",
+      "y": 2184,
+      "label": "34 缓存已更新",
+      "variant": "return",
+      "note": "缓存只作后续定位线索，数据库仍是历史依据。"
+    },
+    {
+      "id": "send",
+      "from": "ui",
+      "to": "api",
+      "y": 2288,
+      "label": "35 发送新消息",
+      "variant": "emphasis",
+      "note": "以下主例为准备已就绪、尚未结束的课堂讨论。"
+    },
+    {
+      "id": "turn-memory",
+      "from": "api",
+      "to": "memory",
+      "y": 2392,
+      "label": "36 取会话并加锁",
+      "variant": "default"
+    },
+    {
+      "id": "turn-state",
+      "from": "memory",
+      "to": "api",
+      "y": 2432,
+      "label": "37 当前对话状态",
+      "variant": "return"
+    },
+    {
+      "id": "invoke",
+      "from": "api",
+      "to": "graph",
+      "y": 2472,
+      "label": "38 执行对话图",
+      "variant": "emphasis"
+    },
+    {
+      "id": "evaluate",
+      "from": "graph",
+      "to": "model",
+      "y": 2512,
+      "label": "39 评估学生回答",
+      "variant": "emphasis"
+    },
+    {
+      "id": "evaluation",
+      "from": "model",
+      "to": "graph",
+      "y": 2552,
+      "label": "40 评估结果",
+      "variant": "return",
+      "note": "代码规则推进学习阶段。"
+    },
+    {
+      "id": "respond",
+      "from": "graph",
+      "to": "model",
+      "y": 2656,
+      "label": "41 生成导师回复",
+      "variant": "emphasis"
+    },
+    {
+      "id": "response",
+      "from": "model",
+      "to": "graph",
+      "y": 2696,
+      "label": "42 导师回复",
+      "variant": "return"
+    },
+    {
+      "id": "graph-return",
+      "from": "graph",
+      "to": "api",
+      "y": 2736,
+      "label": "43 本轮更新",
+      "variant": "return"
+    },
+    {
+      "id": "persist",
+      "from": "api",
+      "to": "db",
+      "y": 2776,
+      "label": "44 保存消息与快照",
+      "variant": "emphasis",
+      "note": "学生发言、AI 回复、掌握度及状态事件同步写入。"
+    },
+    {
+      "id": "persisted",
+      "from": "db",
+      "to": "api",
+      "y": 2880,
+      "label": "45 提交完成",
+      "variant": "return",
+      "note": "底层分多次提交，不宣称整轮原子事务。"
+    },
+    {
+      "id": "turn-update",
+      "from": "api",
+      "to": "memory",
+      "y": 2984,
+      "label": "46 提交内存状态",
+      "variant": "default"
+    },
+    {
+      "id": "turn-updated",
+      "from": "memory",
+      "to": "api",
+      "y": 3024,
+      "label": "47 更新完成",
+      "variant": "return"
+    },
+    {
+      "id": "reply",
+      "from": "api",
+      "to": "ui",
+      "y": 3064,
+      "label": "48 200 JSON",
+      "variant": "return"
+    },
+    {
+      "id": "turn-cache",
+      "from": "ui",
+      "to": "browser",
+      "y": 3104,
+      "label": "49 更新本地快照",
+      "variant": "default"
+    },
+    {
+      "id": "render",
+      "from": "browser",
+      "to": "ui",
+      "y": 3144,
+      "label": "50 显示本轮回复",
+      "variant": "return"
+    }
+  ],
+  "segments": [
+    {
+      "from": 150,
+      "to": 730,
+      "label": "① 当前用户重新登录与可信入口"
+    },
+    {
+      "from": 738,
+      "to": 1034,
+      "label": "② 新设备先取得课时目录"
+    },
+    {
+      "from": 1042,
+      "to": 2266,
+      "label": "③ 无浏览器缓存也可鉴权恢复"
+    },
+    {
+      "from": 2274,
+      "to": 3168,
+      "label": "④ 继续对话并保存新的历史"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "主结论：历史不依赖同一台电脑",
+      "items": [
+        "先前成功保存的课堂历史在数据库中；重登或换电脑后，从平台进入原课程并选择原课时，即可请求恢复。",
+        "主例展开浏览器缓存 MISS、进程内存 MISS；缓存 HIT 和失败分支见同目录 student-session-recovery.html。",
+        "重新登录带新 launch_token 时，先显示目录，再由用户选择课时；不会擅自选择一节课。没有新令牌的普通刷新可用浏览器记录定位原课时。"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "浏览器缓存、内存与数据库的职责",
+      "items": [
+        "localStorage 保存课时定位线索、旧会话编号和签名快照；正式课堂恢复总是 POST /api/session/resume，不直接用旧快照覆盖历史。",
+        "服务先查询 latest_session_key，再读最新 agent_state；sessions 命中也会在会话锁内刷新数据库状态。",
+        "恢复保留课堂消息、课后消息、反馈和学习进度；已结束课堂通过“查看历史会话”查看两类消息。",
+        "恢复成功后刷新浏览器快照。本地存储写入失败被 api helper 忽略，不改变已恢复的服务器历史。"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "鉴权与恢复范围",
+      "items": [
+        "当前用户通过平台登录；平台为已选课且已发布的课程签发 launch_token。resume 再向平台核验令牌及所选课时。",
+        "数据库历史按用户、课程、课时、发布版本和课堂绑定匹配；结果还需再次复核，不能仅凭用户提交的 sid 或签名快照决定身份。",
+        "课程重发或课堂绑定变化时，不将旧版本状态直接嫁接到新版本；旧记录仍保留，本图不表示跨版本历史归档功能。",
+        "后续 POST message 读取恢复后的 sid 并检查阶段；当前实现没有每轮重新向平台验证 launch_token，不能将恢复鉴权扩展解释成逐轮鉴权。"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "异常与异步行为",
+      "items": [
+        "401 / 403 / 409 / 503 会显示恢复错误并保留浏览器记录；前端不把这些错误当成空历史。404 会进入无历史分支，细节见分支图。",
+        "resume 查到 sid 却无法取得快照时返回 503，不创建空课堂代替该历史。begin 使用同一个 restore_lesson 逻辑兜底。",
+        "主例历史准备已就绪，恢复无需模型重算；准备仍 pending 时，resume 会登记后台知识点任务，正常响应后执行，状态轮询沿用原逻辑。",
+        "学习事件属于响应前同步持久化；未见独立异步 Trace exporter，本图没有虚构 Trace 队列或服务。"
+      ]
+    },
+    {
+      "dot": "slate",
+      "title": "当前源码证据与运行范围",
+      "items": [
+        "依据当前工作区尚未提交的恢复修改；原仓库 HEAD e5d957e 只作基线，不作为新增行为的提交证据。",
+        "图中源码引用绑定本地证据快照 0c8a76539424，文件位于 .archify/sequence-student-request-20261030-152337/source-snapshot-20261030-161852；快照只用于离线校验。",
+        "相关变更：backend/main.py、agent/persistence.py、StudentApp.js、integration/session-recovery.mjs、globals.css、start-platform.ps1 和学生端 README；测试与前端测试配置另有更新。",
+        "没有启动平台、学生端或数据库服务，也没有连接运行中的数据库；此图不是实际执行轨迹，现有运行服务尚未使用这些工作区改动。"
+      ]
+    }
+  ]
+}

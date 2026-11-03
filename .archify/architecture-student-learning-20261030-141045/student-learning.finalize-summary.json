@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "command": "finalize",
+  "status": "pass",
+  "type": "architecture",
+  "quality": "showcase",
+  "specification": {
+    "path": "E:\\LMS系统参考\\项目\\agentic-class-pilot-running\\.archify\\architecture-student-learning-20261030-141045\\candidate.json",
+    "sha256": "c3d8d586eb42dcb93cfaf7d9dc010781eb75f85f342000d4b9d4421789807f42",
+    "bytes": 3280
+  },
+  "artifact": {
+    "path": "E:\\LMS系统参考\\项目\\agentic-class-pilot-running\\.archify\\architecture-student-learning-20261030-141045\\student-learning.html",
+    "sha256": "73a9d45c428bd444350fec2cb11978cd5fae767656ffe4e35429273f6592b8bc",
+    "bytes": 846084
+  },
+  "gates": {
+    "validate": "pass",
+    "deliver": "pass",
+    "check": "pass",
+    "browser-check": "pass"
+  },
+  "diagnostics": [],
+  "diagnosticSummary": {
+    "total": 0,
+    "shown": 0,
+    "truncated": false
+  },
+  "evidence": {
+    "receipt": "E:\\LMS系统参考\\项目\\agentic-class-pilot-running\\.archify\\architecture-student-learning-20261030-141045\\student-learning.finalize.json",
+    "summaryReceipt": "E:\\LMS系统参考\\项目\\agentic-class-pilot-running\\.archify\\architecture-student-learning-20261030-141045\\student-learning.finalize-summary.json",
+    "browserCheckReceipt": "E:\\LMS系统参考\\项目\\agentic-class-pilot-running\\.archify\\architecture-student-learning-20261030-141045\\student-learning.browser-check.json"
+  },
+  "update": {
+    "status": "current",
+    "installedVersion": "3.2.0",
+    "availableVersion": "3.2.0",
+    "releaseNotes": null,
+    "checkedAt": "2026-10-30T06:10:49.367Z",
+    "source": "network",
+    "noticeRequired": false,
+    "noticeText": null
+  },
+  "visualReview": "not-requested",
+  "durationMs": 4132,
+  "browserCheck": {
+    "requested": true,
+    "ran": true
+  }
+}

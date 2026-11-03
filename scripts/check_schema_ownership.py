@@ -15,6 +15,10 @@ HISTORICAL = {
     "final08_report_versions.py",
     "final09_remove_self_rating.py",
     "pub10_published_lesson_knowledge.py",
+    # These revisions reached main before student-owned migrations were
+    # introduced. Preserve Alembic history; reject any subsequent platform DDL.
+    "cmd11_reliable_student_commands.py",
+    "rec12_student_learning_records.py",
 }
 PRIVATE_DDL = re.compile(r"\b(?:teacher|student)\s*\.|\bmentra_[a-z_]+\b|\b(?:teacher|student)\s+schema\b", re.I)
 

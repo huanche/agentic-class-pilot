@@ -16,6 +16,168 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/internal/platform/courses/{course_id}/chat-sessions": {
+      "post": {
+        "operationId": "getStudentChatSessions",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "course_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "limit": {
+                    "maximum": 500,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "userIds": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "maxItems": 10000,
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "userIds"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Sessions belonging to the supplied enrolled students"
+          },
+          "403": {
+            "description": "Invalid service credentials"
+          },
+          "503": {
+            "description": "Student data unavailable"
+          }
+        },
+        "security": [
+          {
+            "studentServiceKey": []
+          }
+        ],
+        "summary": "Bounded chat sessions for platform-authorized students"
+      }
+    },
+    "/api/internal/platform/courses/{course_id}/chat-sessions/{session_key}/messages": {
+      "post": {
+        "operationId": "getStudentChatMessages",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "course_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "session_key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "limit": {
+                    "maximum": 5000,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "offset": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "phase": {
+                    "maxLength": 64,
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "userIds": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "maxItems": 10000,
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "userIds"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Ordered messages from the authorized session"
+          },
+          "403": {
+            "description": "Invalid service credentials"
+          },
+          "404": {
+            "description": "Session not found among authorized students"
+          },
+          "503": {
+            "description": "Student data unavailable"
+          }
+        },
+        "security": [
+          {
+            "studentServiceKey": []
+          }
+        ],
+        "summary": "Messages from one authorized student session"
+      }
+    },
     "/api/internal/platform/courses/{course_id}/learning-data": {
       "post": {
         "operationId": "getStudentCourseLearningData",

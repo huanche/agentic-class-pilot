@@ -40,6 +40,20 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: student_p2_test
+          POSTGRES_PASSWORD: student_ci_only
+          POSTGRES_DB: postgres
+        ports:
+          - 55439:5432
+        options: >-
+          --health-cmd "pg_isready -U student_p2_test -d postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      STUDENT_TEST_DATABASE_URL: postgresql://student_p2_test:student_ci_only@127.0.0.1:55439/postgres
     steps:
       - uses: actions/checkout@v4
 
@@ -54,6 +68,7 @@ jobs:
         run: |
           npm ci
           npx playwright install --with-deps chromium --only-shell
+          npm run test:unit
           npm run test:e2e
 
       - name: Build frontend (static export)
@@ -76,12 +91,12 @@ jobs:
 
       - name: Test student backend and lesson contract
         run: |
-          python -m pip install -r student_agent/backend/requirements.txt pytest
+          python -m pip install -r student_agent/backend/requirements.txt pytest alembic sqlalchemy sqlmodel
           python -m pytest -q student_agent/backend/tests
 
   deploy:
     # PR builds stop after the build check; only main pushes / manual runs deploy.
-    if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request' && vars.HONGKONG_DEPLOY_ENABLED == 'true'
     needs: build
     runs-on: ubuntu-latest
     steps:

@@ -1,0 +1,13 @@
+{
+    admin off
+}
+
+agenticclasspilot.com {
+    encode zstd gzip
+    reverse_proxy https://43.138.178.158 {
+        header_up Host agenticclasspilot.com
+        transport http {
+            tls_server_name agenticclasspilot.com
+        }
+    }
+}

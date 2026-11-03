@@ -11,7 +11,7 @@ from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel, Field
 from psycopg.types.json import Jsonb
 
-from agent.database import _db
+from backend.infrastructure.database import _db
 
 router = APIRouter()
 log = logging.getLogger(__name__)
@@ -131,3 +131,86 @@ def user_course_progress(
         "endedSessions": int(ended[0] or 0),
         "stars": int(stars[0] or 0),
     }
+
+
+class ChatSessionsRequest(BaseModel):
+    userIds: list[str] = Field(max_length=10000)
+    limit: int = Field(default=300, ge=1, le=500)
+
+
+@router.post("/api/internal/platform/courses/{course_id}/chat-sessions")
+def course_chat_sessions(
+    course_id: str, body: ChatSessionsRequest,
+    x_student_service_key: str | None = Header(default=None),
+) -> list[dict[str, Any]]:
+    """Return only sessions for student IDs already authorized by the platform."""
+    _check_platform_service_key(x_student_service_key)
+    if not body.userIds:
+        return []
+    try:
+        with _db() as connection:
+            rows = connection.execute(
+                "SELECT s.session_key, s.user_id, s.classroom_id, s.started_at, "
+                "s.last_active_at, s.ended_at, "
+                "COALESCE(s.lesson_id, s.snapshot->>'lessonId', state.payload->>'lessonId'), "
+                "(SELECT count(*) FROM student.student_messages m "
+                " WHERE m.session_key=s.session_key) "
+                "FROM student.student_sessions s "
+                "LEFT JOIN LATERAL (SELECT event.payload FROM student.learning_events event "
+                " WHERE event.session_key=s.session_key AND event.event_type='agent_state' "
+                " ORDER BY event.created_at DESC, event.id DESC LIMIT 1) state ON true "
+                "WHERE s.course_id=%s AND s.user_id=ANY(%s) AND s.revoked_at IS NULL "
+                "ORDER BY s.last_active_at DESC, s.session_key DESC LIMIT %s",
+                (course_id, body.userIds, body.limit),
+            ).fetchall()
+    except Exception as error:
+        log.exception("Student chat session read failed")
+        raise HTTPException(503, "Student chat records unavailable") from error
+    return [{
+        "sessionKey": row[0], "studentId": row[1], "classroomId": row[2],
+        "startedAt": row[3].isoformat(), "lastActiveAt": row[4].isoformat(),
+        "ended": row[5] is not None, "lessonId": row[6],
+        "messageCount": int(row[7]),
+    } for row in rows]
+
+
+class ChatMessagesRequest(BaseModel):
+    userIds: list[str] = Field(max_length=10000)
+    phase: str | None = Field(default=None, max_length=64)
+    limit: int = Field(default=1000, ge=1, le=5000)
+    offset: int = Field(default=0, ge=0)
+
+
+@router.post("/api/internal/platform/courses/{course_id}/chat-sessions/{session_key}/messages")
+def course_chat_messages(
+    course_id: str, session_key: str, body: ChatMessagesRequest,
+    x_student_service_key: str | None = Header(default=None),
+) -> list[dict[str, Any]]:
+    """Keep existence of other students' sessions private from the caller."""
+    _check_platform_service_key(x_student_service_key)
+    if not body.userIds:
+        raise HTTPException(404, "Student chat session not found")
+    try:
+        with _db() as connection:
+            allowed = connection.execute(
+                "SELECT 1 FROM student.student_sessions WHERE session_key=%s "
+                "AND course_id=%s AND user_id=ANY(%s) AND revoked_at IS NULL",
+                (session_key, course_id, body.userIds),
+            ).fetchone()
+            if not allowed:
+                raise HTTPException(404, "Student chat session not found")
+            phase_filter = " AND phase=%s" if body.phase is not None else ""
+            params = (session_key, course_id, body.phase, body.limit, body.offset) if body.phase is not None else (
+                session_key, course_id, body.limit, body.offset)
+            rows = connection.execute(
+                "SELECT seq, role, phase, content, created_at "
+                "FROM student.student_messages WHERE session_key=%s AND course_id=%s"
+                + phase_filter + " ORDER BY seq LIMIT %s OFFSET %s", params,
+            ).fetchall()
+    except HTTPException:
+        raise
+    except Exception as error:
+        log.exception("Student chat message read failed")
+        raise HTTPException(503, "Student chat records unavailable") from error
+    return [{"seq": row[0], "role": row[1], "phase": row[2],
+             "content": row[3], "createdAt": row[4].isoformat()} for row in rows]

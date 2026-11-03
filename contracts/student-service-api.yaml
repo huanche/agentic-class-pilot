@@ -99,6 +99,60 @@ paths:
                   videoRevision: { type: string }
         '403': { description: Invalid service credentials }
         '503': { description: Student job storage unavailable }
+  /api/internal/platform/courses/{course_id}/chat-sessions:
+    post:
+      operationId: getStudentChatSessions
+      summary: Bounded chat sessions for platform-authorized students
+      security: [{ studentServiceKey: [] }]
+      parameters:
+        - { name: course_id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [userIds]
+              properties:
+                userIds: { type: array, maxItems: 10000, items: { type: string } }
+                limit: { type: integer, minimum: 1, maximum: 500 }
+      responses:
+        '200':
+          description: Sessions belonging to the supplied enrolled students
+          content:
+            application/json:
+              schema: { type: array, items: { type: object, additionalProperties: true } }
+        '403': { description: Invalid service credentials }
+        '503': { description: Student data unavailable }
+  /api/internal/platform/courses/{course_id}/chat-sessions/{session_key}/messages:
+    post:
+      operationId: getStudentChatMessages
+      summary: Messages from one authorized student session
+      security: [{ studentServiceKey: [] }]
+      parameters:
+        - { name: course_id, in: path, required: true, schema: { type: string } }
+        - { name: session_key, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [userIds]
+              properties:
+                userIds: { type: array, maxItems: 10000, items: { type: string } }
+                phase: { type: [string, 'null'], maxLength: 64 }
+                limit: { type: integer, minimum: 1, maximum: 5000 }
+                offset: { type: integer, minimum: 0 }
+      responses:
+        '200':
+          description: Ordered messages from the authorized session
+          content:
+            application/json:
+              schema: { type: array, items: { type: object, additionalProperties: true } }
+        '403': { description: Invalid service credentials }
+        '404': { description: Session not found among authorized students }
+        '503': { description: Student data unavailable }
 components:
   securitySchemes:
     studentServiceKey:

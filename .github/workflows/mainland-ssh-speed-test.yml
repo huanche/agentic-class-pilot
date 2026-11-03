@@ -1,0 +1,134 @@
+
+name: Mainland SSH Upload Speed Test
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  speed-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+
+    steps:
+      - name: Measure SSH upload speed
+        shell: bash
+        env:
+          SERVER_HOST: ${{ secrets.MAINLAND_SERVER_HOST }}
+          SERVER_SSH_KEY: ${{ secrets.MAINLAND_SERVER_SSH_KEY }}
+          SERVER_KNOWN_HOSTS: ${{ secrets.MAINLAND_SSH_KNOWN_HOSTS }}
+
+        run: |
+          set -Eeuo pipefail
+          umask 077
+
+          echo "====== 1. 检查连接配置 ======"
+
+          for name in SERVER_HOST SERVER_SSH_KEY SERVER_KNOWN_HOSTS; do
+            [[ -n "${!name:-}" ]] || {
+              echo "::error::$name 未配置"
+              exit 1
+            }
+          done
+
+          [[ "$SERVER_HOST" != "43.132.155.8" ]] || {
+            echo "::error::禁止连接香港生产服务器"
+            exit 1
+          }
+
+          DIR=$(mktemp -d)
+          trap 'rm -rf -- "$DIR"' EXIT
+
+          printf '%s\n' "$SERVER_SSH_KEY" > "$DIR/key"
+          printf '%s\n' "$SERVER_KNOWN_HOSTS" > "$DIR/known_hosts"
+          chmod 600 "$DIR/key" "$DIR/known_hosts"
+
+          ssh-keygen -y -f "$DIR/key" >/dev/null
+
+          ssh-keygen -F "$SERVER_HOST" \
+            -f "$DIR/known_hosts" >/dev/null
+
+          echo "====== 2. 准备 16 MiB 测试数据 ======"
+
+          IMAGE=zmzm1443/agentic-teacher:main-df839c6
+
+          # 故意使用错误 SHA，服务器收到全部数据后应拒绝。
+          INVALID_SHA=$(printf '%064d' 0)
+
+          SSH_OPTS=(
+            -F /dev/null
+            -i "$DIR/key"
+            -T
+            -o BatchMode=yes
+            -o IdentitiesOnly=yes
+            -o IdentityAgent=none
+            -o Compression=no
+            -o PasswordAuthentication=no
+            -o KbdInteractiveAuthentication=no
+            -o StrictHostKeyChecking=yes
+            -o HostKeyAlgorithms=ssh-ed25519
+            -o UserKnownHostsFile="$DIR/known_hosts"
+            -o ConnectTimeout=15
+            -o ServerAliveInterval=15
+            -o ServerAliveCountMax=4
+          )
+
+          echo "====== 3. 测量公网 SSH 上传 ======"
+
+          START=$(date +%s)
+
+          set +e
+
+          {
+            printf 'AGENTIC-IMAGE-V1 %s %s\n' \
+              "$INVALID_SHA" "$IMAGE"
+            dd if=/dev/zero bs=1M count=16 status=none
+          } | timeout 240s ssh \
+                "${SSH_OPTS[@]}" \
+                "agentic-ci@$SERVER_HOST" \
+                image-upload \
+                > "$DIR/result.log" 2>&1
+
+          RESULT=$?
+
+          set -e
+
+          END=$(date +%s)
+          SECONDS_USED=$((END - START))
+
+          (( SECONDS_USED > 0 )) || SECONDS_USED=1
+
+          echo "传输耗时：${SECONDS_USED} 秒"
+
+          echo "====== 4. 分析接收结果 ======"
+
+          if grep -Fq "镜像文件 SHA-256 校验失败" \
+            "$DIR/result.log"; then
+
+            echo "服务器已完整收到 16 MiB 数据"
+            echo "错误 SHA 校验：按预期拒绝"
+            echo "没有导入镜像"
+
+            awk -v seconds="$SECONDS_USED" \
+              'BEGIN {
+                printf "平均速度：%.1f KiB/s\n",
+                       16384 / seconds
+                printf "按此速度传输 357 MB 约需：%.1f 分钟\n",
+                       (357353952 / 1048576) *
+                       seconds / 16 / 60
+              }'
+
+            echo "====== SSH 速度测试成功 ======"
+            exit 0
+          fi
+
+          if [[ "$RESULT" -eq 124 ]]; then
+            echo "::error::16 MiB 上传超过 240 秒"
+          else
+            echo "::error::未收到预期的校验拒绝结果，退出码 $RESULT"
+          fi
+
+          echo "====== 诊断日志 ======"
+          tail -n 12 "$DIR/result.log"
+          exit 1

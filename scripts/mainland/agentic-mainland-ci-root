@@ -1,0 +1,54 @@
+#!/bin/bash
+set -euo pipefail
+umask 077
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin
+
+case "${1:-}" in
+  web-prepare)
+    [[ $# -eq 1 ]] || exit 64
+    exec timeout 1380s /usr/local/sbin/agentic-teacher-tcr-prepare --web
+    ;;
+  web-deploy-v2)
+    [[ $# -eq 1 ]] || exit 64
+    IFS= read -r -t 10 SHA || exit 64
+    [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || exit 64
+    IFS= read -r -t 10 POLICY_HASH || exit 64
+    [[ "$POLICY_HASH" =~ ^[0-9a-f]{64}$ ]] || exit 64
+    ACTUAL_HASH=$(sha256sum /usr/local/sbin/agentic-web-deploy)
+    [[ "${ACTUAL_HASH%% *}" == "$POLICY_HASH" ]] || { echo 'Web deploy policy differs from the reviewed source' >&2; exit 1; }
+    exec timeout 2400s /usr/local/sbin/agentic-web-deploy "$SHA"
+    ;;
+  seed-baseline)
+    [[ $# -eq 1 ]] || exit 64
+    exec timeout 1620s /usr/local/sbin/agentic-teacher-tcr-prepare --seed-baseline
+    ;;
+  prepare)
+    [[ $# -eq 1 ]] || exit 64
+    exec timeout 1380s /usr/local/sbin/agentic-teacher-tcr-prepare
+    ;;
+  check)
+    [[ $# -eq 1 ]] || exit 64
+    /usr/local/sbin/agentic-teacher-image-import check
+    exec /usr/local/sbin/agentic-teacher-deploy check
+    ;;
+
+  upload)
+    [[ $# -eq 1 ]] || exit 64
+    exec /usr/local/sbin/agentic-teacher-image-import
+    ;;
+
+  deploy)
+    [[ $# -eq 1 ]] || exit 64
+
+    IFS= read -r -t 10 TAG || exit 64
+    [[ "$TAG" =~ ^main-[0-9a-f]{7}$ ]] || exit 64
+
+    exec /usr/local/sbin/agentic-teacher-deploy \
+      deploy-local ccr.ccs.tencentyun.com/agentedu-mainland/agentic-teacher "$TAG"
+    ;;
+
+  *)
+    echo "不允许的操作" >&2
+    exit 64
+    ;;
+esac

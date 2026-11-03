@@ -5,6 +5,8 @@ from .get_teacher_classroom_visibility_response_200 import GetTeacherClassroomVi
 from .get_teacher_job_course_ref_kind import GetTeacherJobCourseRefKind
 from .get_teacher_job_course_ref_response_200 import GetTeacherJobCourseRefResponse200
 from .get_teacher_latest_classroom_response_200 import GetTeacherLatestClassroomResponse200
+from .get_teacher_lesson_titles_response_200 import GetTeacherLessonTitlesResponse200
+from .get_teacher_lesson_titles_response_200_titles import GetTeacherLessonTitlesResponse200Titles
 from .get_teacher_material_visibility_response_200 import GetTeacherMaterialVisibilityResponse200
 from .get_teacher_publication_counts_response_200 import GetTeacherPublicationCountsResponse200
 from .get_teacher_publication_verdict_response_200 import GetTeacherPublicationVerdictResponse200
@@ -43,6 +45,8 @@ __all__ = (
     "GetTeacherJobCourseRefKind",
     "GetTeacherJobCourseRefResponse200",
     "GetTeacherLatestClassroomResponse200",
+    "GetTeacherLessonTitlesResponse200",
+    "GetTeacherLessonTitlesResponse200Titles",
     "GetTeacherMaterialVisibilityResponse200",
     "GetTeacherPublicationCountsResponse200",
     "GetTeacherPublicationVerdictResponse200",

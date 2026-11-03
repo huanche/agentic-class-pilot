@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "8460e17d-f42e-4f4f-bc18-c31d0bdeaa25",
+  "status": "current",
+  "command": "deliver",
+  "type": "architecture",
+  "input": "E:\\LMS系统参考\\项目\\agentic-class-pilot-running\\.archify\\architecture-student-learning-20261030-141045\\candidate.json",
+  "output": "E:\\LMS系统参考\\项目\\agentic-class-pilot-running\\.archify\\architecture-student-learning-20261030-141045\\student-learning.html",
+  "specification": {
+    "sha256": "c3d8d586eb42dcb93cfaf7d9dc010781eb75f85f342000d4b9d4421789807f42",
+    "bytes": 3280
+  },
+  "artifact": {
+    "sha256": "73a9d45c428bd444350fec2cb11978cd5fae767656ffe4e35429273f6592b8bc",
+    "bytes": 846084
+  }
+}

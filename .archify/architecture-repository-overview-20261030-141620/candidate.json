@@ -1,0 +1,456 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Agentic Class Pilot · 仓库高层运行时架构",
+    "locale": "zh-CN",
+    "output": ".archify/architecture-repository-overview-20261030-141620/repository-overview.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/huanche/agentic-class-pilot.git",
+      "revision": "e5d957e00662f539aba90da43d074766dc2878d2",
+      "provider": "github"
+    }
+  },
+  "components": [
+    {
+      "id": "browser",
+      "type": "frontend",
+      "label": "浏览器学习端",
+      "sublabel": "平台入口 + 学生静态前端",
+      "pos": [
+        40,
+        70
+      ],
+      "size": [
+        170,
+        72
+      ],
+      "sources": [
+        {
+          "path": "student_agent/frontend/src/components/StudentApp.js",
+          "line": 8,
+          "end_line": 28
+        },
+        {
+          "path": "platform/backend/app/main.py",
+          "line": 68,
+          "end_line": 95
+        },
+        {
+          "path": "student_agent/frontend/src/integration/platform-player-adapter.js",
+          "line": 23,
+          "end_line": 42
+        }
+      ]
+    },
+    {
+      "id": "gateway",
+      "type": "backend",
+      "label": "统一请求网关",
+      "sublabel": "本机 Node HTTP · :8088",
+      "pos": [
+        330,
+        70
+      ],
+      "size": [
+        170,
+        72
+      ],
+      "sources": [
+        {
+          "path": "platform/scripts/local-gateway.mjs",
+          "line": 4,
+          "end_line": 25
+        },
+        {
+          "path": "platform/scripts/local-gateway.mjs",
+          "line": 35,
+          "end_line": 37
+        }
+      ]
+    },
+    {
+      "id": "student",
+      "type": "backend",
+      "label": "学生 Agent API",
+      "sublabel": "FastAPI · :8001",
+      "pos": [
+        620,
+        70
+      ],
+      "size": [
+        170,
+        72
+      ],
+      "sources": [
+        {
+          "path": "student_agent/backend/main.py",
+          "line": 518,
+          "end_line": 558
+        },
+        {
+          "path": "student_agent/backend/main.py",
+          "line": 83,
+          "end_line": 104
+        },
+        {
+          "path": "student_agent/backend/main.py",
+          "line": 177,
+          "end_line": 186
+        }
+      ]
+    },
+    {
+      "id": "graph",
+      "type": "backend",
+      "label": "学习对话引擎",
+      "sublabel": "LangGraph · 评估与回复",
+      "pos": [
+        910,
+        70
+      ],
+      "size": [
+        170,
+        72
+      ],
+      "sources": [
+        {
+          "path": "student_agent/agent/graph.py",
+          "line": 76,
+          "end_line": 98
+        },
+        {
+          "path": "student_agent/agent/graph.py",
+          "line": 127,
+          "end_line": 182
+        }
+      ],
+      "tag": "学生 API 进程内"
+    },
+    {
+      "id": "llm",
+      "type": "cloud",
+      "label": "可配置模型 API",
+      "sublabel": "OpenAI 兼容协议",
+      "pos": [
+        1200,
+        70
+      ],
+      "size": [
+        170,
+        72
+      ],
+      "sources": [
+        {
+          "path": "student_agent/agent/graph.py",
+          "line": 50,
+          "end_line": 64
+        }
+      ],
+      "tag": "归属随端点配置"
+    },
+    {
+      "id": "platform",
+      "type": "security",
+      "label": "平台身份与课程 API",
+      "sublabel": "FastAPI · :8080",
+      "pos": [
+        330,
+        340
+      ],
+      "size": [
+        170,
+        72
+      ],
+      "sources": [
+        {
+          "path": "platform/backend/app/api/routes/student_bridge.py",
+          "line": 227,
+          "end_line": 251
+        },
+        {
+          "path": "platform/backend/app/api/routes/student_bridge.py",
+          "line": 449,
+          "end_line": 483
+        },
+        {
+          "path": "platform/backend/app/services/browser_sessions.py",
+          "line": 22,
+          "end_line": 40
+        }
+      ]
+    },
+    {
+      "id": "postgres",
+      "type": "database",
+      "label": "共享 PostgreSQL",
+      "sublabel": "public / teacher / student",
+      "pos": [
+        620,
+        340
+      ],
+      "size": [
+        170,
+        72
+      ],
+      "sources": [
+        {
+          "path": "platform/compose.local.yml",
+          "line": 4,
+          "end_line": 19
+        },
+        {
+          "path": "student_agent/agent/persistence.py",
+          "line": 29,
+          "end_line": 79
+        },
+        {
+          "path": "teacher_agent/lib/server/course-space-database.ts",
+          "line": 58,
+          "end_line": 77
+        }
+      ]
+    },
+    {
+      "id": "teacher",
+      "type": "backend",
+      "label": "课程与播放器服务",
+      "sublabel": "教师 Agent · Next.js :3200",
+      "pos": [
+        910,
+        340
+      ],
+      "size": [
+        170,
+        72
+      ],
+      "sources": [
+        {
+          "path": "teacher_agent/scripts/dev-3200-platform.ps1",
+          "line": 11,
+          "end_line": 35
+        },
+        {
+          "path": "teacher_agent/lib/server/course-space-storage.ts",
+          "line": 228,
+          "end_line": 258
+        },
+        {
+          "path": "teacher_agent/lib/server/platform-auth.ts",
+          "line": 15,
+          "end_line": 68
+        }
+      ]
+    },
+    {
+      "id": "mail",
+      "type": "cloud",
+      "label": "邮件服务",
+      "sublabel": "本机 Mailpit / SMTP",
+      "pos": [
+        330,
+        600
+      ],
+      "size": [
+        170,
+        72
+      ],
+      "sources": [
+        {
+          "path": "platform/compose.local.yml",
+          "line": 22,
+          "end_line": 27
+        },
+        {
+          "path": "platform/backend/app/utils.py",
+          "line": 34,
+          "end_line": 57
+        }
+      ]
+    },
+    {
+      "id": "objects",
+      "type": "database",
+      "label": "课程对象存储",
+      "sublabel": "MinIO · S3 兼容",
+      "pos": [
+        910,
+        600
+      ],
+      "size": [
+        170,
+        72
+      ],
+      "sources": [
+        {
+          "path": "teacher_agent/lib/server/course-object-storage.ts",
+          "line": 15,
+          "end_line": 55
+        },
+        {
+          "path": "teacher_agent/lib/server/course-object-storage.ts",
+          "line": 83,
+          "end_line": 109
+        },
+        {
+          "path": "platform/compose.local.yml",
+          "line": 29,
+          "end_line": 40
+        }
+      ],
+      "tag": "按配置启用"
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "自管服务与数据 · 本机集成启动配置",
+      "wraps": [
+        "gateway",
+        "student",
+        "graph",
+        "platform",
+        "postgres",
+        "teacher",
+        "mail",
+        "objects"
+      ],
+      "pad": 40
+    },
+    {
+      "kind": "region",
+      "label": "学生 Agent 进程",
+      "wraps": [
+        "student",
+        "graph"
+      ],
+      "pad": 16
+    }
+  ],
+  "connections": [
+    {
+      "id": "main-request",
+      "from": "browser",
+      "to": "gateway",
+      "label": "① 发送消息",
+      "variant": "emphasis"
+    },
+    {
+      "id": "main-route",
+      "from": "gateway",
+      "to": "student",
+      "label": "② 会话路由",
+      "variant": "emphasis"
+    },
+    {
+      "id": "main-invoke",
+      "from": "student",
+      "to": "graph",
+      "label": "③ 执行图",
+      "variant": "emphasis"
+    },
+    {
+      "id": "main-model",
+      "from": "graph",
+      "to": "llm",
+      "label": "④ 模型调用",
+      "variant": "emphasis"
+    },
+    {
+      "id": "login-route",
+      "from": "gateway",
+      "to": "platform",
+      "label": "登录与选课"
+    },
+    {
+      "id": "context",
+      "from": "student",
+      "to": "platform",
+      "label": "启动时验权",
+      "variant": "security"
+    },
+    {
+      "id": "save-learning",
+      "from": "student",
+      "to": "postgres",
+      "label": "⑤ 保存状态",
+      "variant": "emphasis"
+    },
+    {
+      "id": "identity-db",
+      "from": "platform",
+      "to": "postgres",
+      "label": "身份与发布"
+    },
+    {
+      "id": "course-db",
+      "from": "teacher",
+      "to": "postgres",
+      "label": "课程数据"
+    },
+    {
+      "id": "send-mail",
+      "from": "platform",
+      "to": "mail",
+      "label": "SMTP"
+    },
+    {
+      "id": "save-object",
+      "from": "teacher",
+      "to": "objects",
+      "label": "启用时读写"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "主要请求：学生的一轮 AI 对话",
+      "items": [
+        "浏览器 → 网关 → 学生 API → LangGraph → 模型；结果原路返回。",
+        "学生 API 调用 commit 保存消息、掌握度和状态，成功后返回更新状态。",
+        "LangGraph 为进程内组件，不是独立部署服务；阶段切换由代码规则控制。"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "信任入口：平台授权，Agent 执行业务",
+      "items": [
+        "平台登录创建 HttpOnly Cookie 会话，已选课且课程已发布才签发短期 HMAC launch_token。",
+        "学生 API 在创建课堂 / 获取课时内容时，携服务密钥和令牌向平台核验；不表示每轮消息都重新核验。",
+        "教师服务启用平台身份模式时清除伪造身份头，再向平台授权接口核验；失败拒绝访问。",
+        "本图以学生为主要使用者；保留教师 Agent 是因为它实际承载已发布课程和播放器。"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "支持路径：课程、播放与持久化",
+      "items": [
+        "网关 /api/v1/* → 平台，/api/session/* 与 /app → 学生端，其余业务 API 与播放器 → 教师端。",
+        "平台读取已发布课程与所选课时资料，浏览器以 iframe 嵌入教师服务播放器。",
+        "共享 PostgreSQL 按 schema 组织数据；平台负责迁移，教师本机模式设置 teacher search_path。",
+        "正式学习消息、反馈和快照写入数据库；默认恢复使用当前浏览器 localStorage 快照。"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "依赖与配置边界",
+      "items": [
+        "模型 API 由环境配置决定，代码默认 DeepSeek；实际提供方、网络位置与数据处理归属未由本图验证。",
+        "MinIO 已列入本机 Compose，但对象读写只在 COURSE_OBJECT_STORAGE_MODE=minio 时启用；默认 database 保存字节。",
+        "Mailpit 是自管本机邮件依赖，正式 SMTP 可替换；教师生成中的图像、语音等提供方未展开。",
+        "自管范围表示配置归属，不表示生产网络已隔离；未读取真实环境密钥或探测运行服务。"
+      ]
+    },
+    {
+      "dot": "slate",
+      "title": "证据范围与配置差异",
+      "items": [
+        "基于 HEAD e5d957e 的已提交代码；每个核心节点附带可追溯源码位置。",
+        "本图采用 start-local.ps1 实际调用的 Node :8088 网关和学生 :8001，不混用模板 Compose。",
+        "另有 Caddy 域名入口：其学生上游配置为 :8000，与本机 :8001 不同；并非两层网关串联。",
+        "工作区已有未跟踪 .archify/、findings.md、progress.md、task_plan.md 和 student_agent/docs/；未将其用作提交证据。"
+      ]
+    }
+  ]
+}

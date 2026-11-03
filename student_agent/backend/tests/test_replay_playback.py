@@ -5,11 +5,13 @@ import sys
 from threading import Lock
 
 import pytest
-from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from backend import main
+from backend.session import service as learning_session
+from backend.infrastructure import platform_access
+from backend.contracts import SessionError
 
 
 @pytest.fixture
@@ -35,9 +37,9 @@ def replay(monkeypatch):
         calls.append((token, lesson_id))
         return context
 
-    monkeypatch.setitem(main.sessions, session["id"], session)
-    monkeypatch.setattr(main, "platform_context", platform)
-    monkeypatch.setattr(main.persistence, "save", lambda *_: pytest.fail("replay must not write learning progress"))
+    monkeypatch.setitem(learning_session.sessions, session["id"], session)
+    monkeypatch.setattr(platform_access, "platform_context", platform)
+    monkeypatch.setattr(learning_session.persistence, "save", lambda *_: pytest.fail("replay must not write learning progress"))
     return TestClient(main.app), session, context, calls
 
 
@@ -93,9 +95,9 @@ def test_replay_preserves_feedback_when_platform_unavailable(replay, monkeypatch
     client, session, _, _ = replay
 
     def unavailable(*_):
-        raise HTTPException(503, "平台服务暂不可用")
+        raise SessionError(503, "平台服务暂不可用")
 
-    monkeypatch.setattr(main, "platform_context", unavailable)
+    monkeypatch.setattr(platform_access, "platform_context", unavailable)
     response = client.post("/api/session/replay-test/playback", json={})
     assert response.status_code == 503
     assert session["phase"] == "done"

@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "command": "finalize",
+  "status": "pass",
+  "type": "architecture",
+  "quality": "showcase",
+  "specification": {
+    "path": "E:\\LMS系统参考\\项目\\agentic-class-pilot-running\\.archify\\architecture-repository-overview-20261030-141620\\candidate.json",
+    "sha256": "4444ca56fadfdd8986f6a53565871d4d931be8d288c8b8a80e6a843e96712b8a",
+    "bytes": 11389
+  },
+  "artifact": {
+    "path": "E:\\LMS系统参考\\项目\\agentic-class-pilot-running\\.archify\\architecture-repository-overview-20261030-141620\\repository-overview.html",
+    "sha256": "609c3514e0e6e7bbbfe8101caff1a6a0284fe6a53a7974cefd890e27b2e04e8a",
+    "bytes": 860027
+  },
+  "gates": {
+    "validate": "pass",
+    "deliver": "pass",
+    "check": "pass",
+    "browser-check": "pass"
+  },
+  "diagnostics": [],
+  "diagnosticSummary": {
+    "total": 0,
+    "shown": 0,
+    "truncated": false
+  },
+  "evidence": {
+    "receipt": "E:\\LMS系统参考\\项目\\agentic-class-pilot-running\\.archify\\architecture-repository-overview-20261030-141620\\repository-overview.finalize.json",
+    "summaryReceipt": "E:\\LMS系统参考\\项目\\agentic-class-pilot-running\\.archify\\architecture-repository-overview-20261030-141620\\repository-overview.finalize-summary.json",
+    "browserCheckReceipt": "E:\\LMS系统参考\\项目\\agentic-class-pilot-running\\.archify\\architecture-repository-overview-20261030-141620\\repository-overview.browser-check.json"
+  },
+  "update": {
+    "status": "current",
+    "installedVersion": "3.2.0",
+    "availableVersion": "3.2.0",
+    "releaseNotes": null,
+    "checkedAt": "2026-10-30T06:10:49.367Z",
+    "source": "cache",
+    "noticeRequired": false,
+    "noticeText": null
+  },
+  "visualReview": "not-requested",
+  "durationMs": 4002,
+  "browserCheck": {
+    "requested": true,
+    "ran": true
+  }
+}

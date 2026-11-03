@@ -6,9 +6,16 @@ const STEPS = [
   { id: "wrapup", title: "课堂总结", detail: "查看个人学习反馈" },
 ];
 
-export const STAGE_TITLES = Object.fromEntries(STEPS.map(({ id, title }) => [id, title]));
+export const STAGE_TITLES = { ...Object.fromEntries(STEPS.map(({ id, title }) => [id, title])),
+  opening: "开场交流", tutoring: "围绕当前问题交流", independent_attempt: "独立尝试", summary: "总结反馈" };
 
-export default function LessonProgress({ id, phase, agentStage, progress, postclassStage }) {
+export default function LessonProgress({ id, phase, agentStage, progress, postclassStage, flowVersion, progressSummary }) {
+  if (flowVersion === "dynamic_dialogue_v1") return <aside id={id} className="lesson-progress" aria-label="课堂阶段进度">
+    <p className="lesson-progress__eyebrow">本课学习活动</p>
+    <strong>{phase === "video" ? "教学视频" : phase === "done" || phase === "replay" ? "课堂已结束" : STAGE_TITLES[agentStage] || "课后交流"}</strong>
+    <p>已有表达的主题 {progressSummary?.discussed || 0} / {progressSummary?.total || 0}</p>
+    <p className="lesson-progress__note">活动记录不代表整课掌握程度。你可以结束交流，查看已有证据和未覆盖内容。</p>
+  </aside>;
   const finished = ["done", "replay", "postclass"].includes(phase);
   const current = phase === "video" ? 0 : Math.max(1, STEPS.findIndex((step) => step.id === agentStage));
   return <aside id={id} className="lesson-progress" aria-label="课堂阶段进度">

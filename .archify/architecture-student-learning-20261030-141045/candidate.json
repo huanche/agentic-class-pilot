@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "学生学习全程 · 高层概念架构",
+    "locale": "zh-CN",
+    "output": ".archify/architecture-student-learning-20261030-141045/student-learning.html",
+    "quality_profile": "showcase"
+  },
+  "components": [
+    {"id":"student","type":"external","icon":"person","label":"学生","sublabel":"唯一使用角色","pos":[40,60],"size":[130,70]},
+    {"id":"login","type":"frontend","label":"登录入口","sublabel":"01 · 登录产品","pos":[290,60],"size":[160,70]},
+    {"id":"classroom","type":"frontend","label":"课堂空间","sublabel":"02 · 进入课堂上课","pos":[540,60],"size":[160,70]},
+    {"id":"chat","type":"frontend","label":"AI 对话界面","sublabel":"03 · 提问与交流","pos":[790,60],"size":[160,70]},
+    {"id":"recap","type":"frontend","label":"课后小结界面","sublabel":"04 · 查看小结","pos":[1040,60],"size":[160,70]},
+    {"id":"identity","type":"security","label":"身份验证能力","sublabel":"认证方式待确认","tag":"概念拆分","pos":[290,300],"size":[160,70]},
+    {"id":"dialogue","type":"backend","label":"对话处理能力","sublabel":"上下文机制待确认","tag":"概念拆分","pos":[790,300],"size":[160,70]},
+    {"id":"summary","type":"backend","label":"小结处理能力","sublabel":"生成与汇总方式待确认","tag":"概念拆分","pos":[1040,300],"size":[160,70]},
+    {"id":"model","type":"cloud","label":"AI 模型能力","sublabel":"提供方及部署待确认","tag":"依赖位置示意","pos":[790,540],"size":[170,70]}
+  ],
+  "boundaries":[
+    {"kind":"region","label":"产品逻辑范围 · 非部署边界","wraps":["login","classroom","chat","recap","identity","dialogue","summary"],"pad":24}
+  ],
+  "connections":[
+    {"id":"enter","from":"student","to":"login","label":"开始","variant":"emphasis"},
+    {"id":"attend","from":"login","to":"classroom","label":"登录成功","variant":"emphasis"},
+    {"id":"ask","from":"classroom","to":"chat","label":"课堂交流","variant":"emphasis"},
+    {"id":"finish","from":"chat","to":"recap","label":"课后查看","variant":"emphasis"},
+    {"id":"verify","from":"login","to":"identity","label":"验证身份"},
+    {"id":"message","from":"chat","to":"dialogue","label":"处理对话"},
+    {"id":"get-recap","from":"recap","to":"summary","label":"获取小结"},
+    {"id":"infer","from":"dialogue","to":"model","label":"调用模型"}
+  ],
+  "cards":[
+    {"dot":"cyan","title":"已确认的学生主路径","items":["登录 → 上课 → 与 AI 对话 → 课后小结","仅包含学生使用范围；各阶段连线表示使用顺序。"]},
+    {"dot":"amber","title":"概念架构的阅读方式","items":["9 个节点：1 个学生角色与 8 个核心功能及能力。","身份验证、对话处理、小结处理是逻辑职责拆分，不代表独立服务。","模型放在框外仅为依赖示意，是否属于外部服务待确认。"]},
+    {"dot":"slate","title":"尚未提供的信息","items":["课堂内容、授课形态及进入课堂方式待确认。","小结内容、生成者、触发时机及与对话的关联待确认。","数据保存方式、存储组件、第三方依赖和实际部署边界待确认。"]}
+  ]
+}

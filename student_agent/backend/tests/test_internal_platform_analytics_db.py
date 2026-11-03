@@ -6,7 +6,7 @@ from urllib.parse import urlparse
 
 import pytest
 
-from agent import database
+from backend.infrastructure import database
 from backend import internal_platform
 
 

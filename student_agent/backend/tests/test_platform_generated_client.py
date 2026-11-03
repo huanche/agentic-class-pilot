@@ -5,10 +5,9 @@ from types import SimpleNamespace
 
 import httpx
 import pytest
-from fastapi import HTTPException
+from backend.contracts import SessionError
 
-from agent import platform_client
-from backend import main
+from backend.infrastructure import platform_client, platform_access
 
 
 USER_ID = "00000000-0000-0000-0000-000000000001"
@@ -52,7 +51,7 @@ def test_generated_learning_context_keeps_platform_rejection(monkeypatch):
         "sync_detailed",
         lambda **kwargs: SimpleNamespace(status_code=403, parsed=None, content=b""),
     )
-    with pytest.raises(HTTPException) as error:
+    with pytest.raises(SessionError) as error:
         platform_client.learning_context("ticket")
     assert error.value.status_code == 403
 
@@ -65,7 +64,7 @@ def test_generated_learning_context_rejects_invalid_success(monkeypatch):
         "sync_detailed",
         lambda **kwargs: SimpleNamespace(status_code=200, parsed=None, content=b"{}"),
     )
-    with pytest.raises(HTTPException) as error:
+    with pytest.raises(SessionError) as error:
         platform_client.learning_context("ticket")
     assert error.value.status_code == 503
 
@@ -78,7 +77,7 @@ def test_runtime_uses_generated_learning_context(monkeypatch):
             "token": token, "lesson": lesson_id, "refresh": refresh
         },
     )
-    assert main.platform_context("ticket", "L2", True) == {
+    assert platform_access.platform_context("ticket", "L2", True) == {
         "token": "ticket", "lesson": "L2", "refresh": True
     }
 
@@ -127,7 +126,7 @@ def test_generated_progress_rejects_platform_error(monkeypatch):
     monkeypatch.setenv("STUDENT_SERVICE_KEY", "test-key")
     monkeypatch.setattr(platform_client, "report_progress_detailed", lambda **kwargs:
                         SimpleNamespace(status_code=403, parsed=None))
-    with pytest.raises(HTTPException) as error:
+    with pytest.raises(SessionError) as error:
         platform_client.report_learning_progress(USER_ID, COURSE_ID, "session-1", "room-1", "ended")
     assert error.value.status_code == 403
 
@@ -140,6 +139,6 @@ def test_generated_progress_sends_once_without_blocking_class(monkeypatch, caplo
                         sent.append(args) or False)
     session = {"id": "session-1", "classroomId": "room-1",
                "context": {"userId": USER_ID, "courseId": COURSE_ID}}
-    main.report_learning_progress(session, "started")
+    platform_access.report_learning_progress(session, "started")
     assert sent == [(USER_ID, COURSE_ID, "session-1", "room-1", "started")]
     assert "teacher sync failed" in caplog.text

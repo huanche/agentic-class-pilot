@@ -2,185 +2,63 @@
 
 import { useEffect, useRef, useState } from "react";
 import { platformPlayerAdapter } from "../integration/platform-player-adapter";
+import { createLearningSession } from "../integration/learning-session.mjs";
 import LessonFeedback from "./LessonFeedback";
 import LessonProgress, { STAGE_TITLES } from "./LessonProgress";
 
-async function api(path, method = "GET", body) {
-  const response = await fetch(`/api${path}`, {
-    method, headers: body ? { "Content-Type": "application/json" } : {},
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    const error = new Error(data.detail || `请求失败 (${response.status})`);
-    error.status = response.status;
-    throw error;
-  }
-  if (data.browserSnapshot && data.browserKey) {
-    try {
-      localStorage.setItem(`student_browser_snapshot:${data.browserKey}`, data.browserSnapshot);
-      localStorage.setItem(`student_browser_session:${data.browserKey}`, data.sessionId);
-      localStorage.setItem("student_browser_last_key", data.browserKey);
-      if (data.browserCourseKey) localStorage.setItem("student_browser_last_course_key", data.browserCourseKey);
-    } catch {
-      // Learning continues even when this browser blocks local storage.
-    }
-  }
-  return data;
-}
-
-function tokenBrowserKey(token) {
-  try {
-    const encoded = token.split(".")[0].replace(/-/g, "+").replace(/_/g, "/");
-    const payload = JSON.parse(atob(encoded.padEnd(Math.ceil(encoded.length / 4) * 4, "=")));
-    return payload.uid && payload.cid ? `${payload.uid}:${payload.cid}` : "";
-  } catch {
-    return "";
-  }
-}
-
-function snapshotState(snapshot) {
-  try {
-    const encoded = snapshot.split(".")[0].replace(/-/g, "+").replace(/_/g, "/");
-    const bytes = Uint8Array.from(atob(encoded.padEnd(Math.ceil(encoded.length / 4) * 4, "=")), (char) => char.charCodeAt(0));
-    return JSON.parse(new TextDecoder().decode(bytes));
-  } catch {
-    return null;
-  }
-}
-
-function savedLessonPhase(courseKey, lessonId) {
-  if (typeof window === "undefined" || !courseKey) return "";
-  try {
-    return snapshotState(localStorage.getItem(`student_browser_snapshot:${courseKey}:${lessonId}`))?.phase || "";
-  } catch {
-    return "";
-  }
-}
-
 export default function StudentApp() {
-  const [courses, setCourses] = useState([]);
-  const [course, setCourse] = useState(null);
-  const [lesson, setLesson] = useState(null);
-  const [phase, setPhase] = useState("loading");
-  const [messages, setMessages] = useState([]);
-  const [postclassMessages, setPostclassMessages] = useState([]);
-  const [postclassStage, setPostclassStage] = useState(null);
+  const controllerRef = useRef(null);
+  if (!controllerRef.current) controllerRef.current = createLearningSession();
+  const controller = controllerRef.current;
+  const [learning, setLearning] = useState(() => controller.getView());
+  const { courses, course, lesson, postclassStage, preparation, preparationError,
+    preparationRequestId, platformUrl, feedback, agentStage, learningProgress,
+    flowVersion, progressSummary, videoUpdated, allowedCommands, activityStatus } = learning;
+  const phase = learning.screen;
+  const busy = learning.busy;
+  const dynamicFlow = flowVersion === "dynamic_dialogue_v1";
+  const paused = activityStatus === "paused";
+  const can = command => !busy && allowedCommands.includes(command);
+  const [optimistic, setOptimistic] = useState(null);
+  const extra = optimistic && optimistic.sessionId === learning.sessionId && optimistic.screen === phase ? optimistic : null;
+  const messages = [...learning.messages, ...(extra && phase === "discussion" && learning.messages.length <= extra.count ? [extra] : [])];
+  const postclassMessages = [...learning.postclassMessages, ...(extra && phase === "postclass" && learning.postclassMessages.length <= extra.count ? [extra] : [])];
   const [input, setInput] = useState("");
-  const [busy, setBusy] = useState(false);
   const [replyPending, setReplyPending] = useState(false);
-  const [error, setError] = useState("");
+  const [localError, setError] = useState("");
+  const error = localError || learning.error;
   const [replayError, setReplayError] = useState("");
   const [replayLoading, setReplayLoading] = useState(false);
   const [videoEnded, setVideoEnded] = useState(false);
-  const [preparation, setPreparation] = useState("idle");
-  const [preparationError, setPreparationError] = useState("");
-  const [preparationRequestId, setPreparationRequestId] = useState("");
-  const [platformUrl, setPlatformUrl] = useState("");
-  const [feedback, setFeedback] = useState(null);
-  const [agentStage, setAgentStage] = useState("");
-  const [learningProgress, setLearningProgress] = useState(null);
-  const [videoUpdated, setVideoUpdated] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [showEarlyEndWarning, setShowEarlyEndWarning] = useState(false);
   const [showVideoAdvanceConfirm, setShowVideoAdvanceConfirm] = useState(false);
   const [progressOpen, setProgressOpen] = useState(true);
   const [conversationSize, setConversationSize] = useState(null);
-  const sessionId = useRef("");
-  const activeLessonId = useRef(null);
-  const browserCourseKey = useRef("");
-  const launchToken = useRef("");
-  const catalogCourses = useRef(null);
   const playerSlot = useRef(null);
   const chatLog = useRef(null);
   const composerInput = useRef(null);
   const conversationStage = useRef(null);
   const conversationResize = useRef(null);
 
-  function showSession(saved) {
-    setReplayError("");
-    setShowEarlyEndWarning(false);
-    setShowVideoAdvanceConfirm(false);
-    setConversationSize(null);
-    sessionId.current = saved.sessionId;
-    activeLessonId.current = saved.lessonId || null;
-    if (saved.browserCourseKey) browserCourseKey.current = saved.browserCourseKey;
-    const visibleCourses = saved.courses || catalogCourses.current || [];
-    catalogCourses.current = visibleCourses;
-    setVideoUpdated(Boolean(saved.videoUpdated));
-    setVideoEnded(false);
-    setCourses(visibleCourses);
-    setMessages(saved.messages || []);
-    setPostclassMessages(saved.postclassMessages || []);
-    setPostclassStage(saved.postclassStage || null);
-    setFeedback(saved.feedback || null);
-    setAgentStage(saved.agentStage || "");
-    setLearningProgress(saved.learningProgress || null);
-    setPreparation(saved.preparation || "ready");
-    setPreparationError(saved.preparationError || "");
-    setPreparationRequestId(saved.preparationRequestId || "");
-    // The catalog contains summaries only. Restore the active lesson from
-    // this session's course, keeping its player URL and classroom binding.
-    const restoredCourse = (saved.courses || []).find((item) => item.lessons.some((entry) => entry.id === saved.lessonId));
-    const selectedCourse = restoredCourse
-      || visibleCourses.find((item) => item.lessons.some((entry) => entry.id === saved.lessonId)) || visibleCourses[0];
-    setCourse(selectedCourse || null);
-    setLesson(selectedCourse?.lessons.find((entry) => entry.id === saved.lessonId) || null);
-    setPhase(saved.phase === "idle" || saved.phase === "courses" ? "lessons" : saved.phase);
-  }
+  useEffect(() => {
+    const unsubscribe = controller.subscribe(setLearning);
+    controller.initialize({ url: window.location.href,
+      replaceUrl: cleanUrl => history.replaceState(null, "", cleanUrl) }).catch(() => {});
+    const refresh = () => { if (!document.hidden) controller.refresh(); };
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      unsubscribe();
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, [controller]);
 
   useEffect(() => {
-    const url = new URL(window.location.href);
-    const freshToken = url.searchParams.get("launch_token");
-    const courseKey = (freshToken && tokenBrowserKey(freshToken))
-      || localStorage.getItem("student_browser_last_course_key") || "demo";
-    browserCourseKey.current = courseKey;
-    const token = freshToken || localStorage.getItem(`student_browser_token:${courseKey}`) || "";
-    launchToken.current = token;
-    if (token) localStorage.setItem(`student_browser_token:${courseKey}`, token);
-    const legacySnapshot = localStorage.getItem(`student_browser_snapshot:${courseKey}`);
-    if (legacySnapshot) {
-      const legacyLessonId = snapshotState(legacySnapshot)?.lessonId;
-      if (legacyLessonId) {
-        const lessonKey = `${courseKey}:${legacyLessonId}`;
-        if (!localStorage.getItem(`student_browser_snapshot:${lessonKey}`)) {
-          localStorage.setItem(`student_browser_snapshot:${lessonKey}`, legacySnapshot);
-        }
-        localStorage.removeItem(`student_browser_snapshot:${courseKey}`);
-        localStorage.removeItem(`student_browser_session:${courseKey}`);
-        localStorage.setItem("student_browser_last_key", lessonKey);
-      }
-    }
-    if (url.searchParams.has("launch_token")) {
-      url.searchParams.delete("launch_token");
-      history.replaceState(null, "", url);
-    }
-    api("/session/platform-entry").catch(() => ({})).then((entry) => {
-      setPlatformUrl(entry.platformUrl || "");
-      if (!token && !entry.demoEnabled) { setPhase("auth"); return; }
-      const resumeKey = freshToken ? `${courseKey}:catalog`
-        : localStorage.getItem("student_browser_last_key") || `${courseKey}:catalog`;
-      const savedId = localStorage.getItem(`student_browser_session:${resumeKey}`);
-      const snapshot = localStorage.getItem(`student_browser_snapshot:${resumeKey}`);
-      const resume = freshToken ? Promise.resolve(null) : entry.freshSessionMode && snapshot
-        ? api("/session/browser-restore", "POST", { snapshot, launch_token: token })
-          .catch((err) => { if (err.status === 400 || err.status === 404) return null; throw err; })
-        : savedId ? api(`/session/${savedId}`).catch((err) => { if (err.status === 404) return null; throw err; }) : Promise.resolve(null);
-      return resume.then((saved) => {
-        if (saved) {
-          showSession(saved);
-          return;
-        }
-        if (!freshToken) {
-          localStorage.removeItem(`student_browser_snapshot:${resumeKey}`);
-          localStorage.removeItem(`student_browser_session:${resumeKey}`);
-        }
-        return api("/session/start", "POST", { launch_token: token })
-          .then((data) => { showSession(data); });
-      })
-        .catch((err) => { setError(err.message); setPhase("auth"); });
-    });
-  }, []);
+    if (["submit_answer", "postclass_answer", "ask_question"].includes(learning.pendingSubmission?.type)
+        && learning.pendingSubmission?.payload?.text) setInput(learning.pendingSubmission.payload.text);
+  }, [learning.pendingSubmission?.commandId]);
 
   useEffect(() => {
     const resetOnViewportResize = () => setConversationSize(null);
@@ -221,7 +99,7 @@ export default function StudentApp() {
     function playerError(err) {
       if (phase === "replay") {
         setReplayError(err.message);
-        setPhase("done");
+        controller.dispatch({ type: "back_feedback" });
       } else setError(err.message);
     }
     try {
@@ -237,28 +115,6 @@ export default function StudentApp() {
     return () => { if (typeof handle === "function") handle(); };
   }, [phase, lesson]);
 
-  useEffect(() => {
-    if (phase !== "video" || !["pending", "error"].includes(preparation) || busy) return;
-    let cancelled = false;
-    let timer;
-    async function poll() {
-      try {
-        const current = await api(`/session/${sessionId.current}`);
-        if (cancelled) return;
-        setPreparation(current.preparation);
-        setLearningProgress(current.learningProgress || null);
-        setPreparationError(current.preparationError || "");
-        setPreparationRequestId(current.preparationRequestId || "");
-        if (!["pending", "error"].includes(current.preparation)) return;
-      } catch {
-        // A temporary network failure must not interrupt the video.
-      }
-      if (!cancelled) timer = setTimeout(poll, 5000);
-    }
-    poll();
-    return () => { cancelled = true; clearTimeout(timer); };
-  }, [phase, preparation, busy]);
-
   useEffect(() => { chatLog.current?.scrollTo({ top: chatLog.current.scrollHeight }); }, [messages, postclassMessages, replyPending, phase]);
   useEffect(() => {
     if (!composerInput.current) return;
@@ -266,117 +122,46 @@ export default function StudentApp() {
     composerInput.current.style.height = `${Math.min(132, Math.max(44, composerInput.current.scrollHeight))}px`;
   }, [input]);
 
+  async function perform(type, extra = {}) {
+    setError("");
+    try { return await controller.dispatch({ type, ...extra }); }
+    catch (err) { if (controller.getView().error !== err.message) setError(err.message); return null; }
+  }
+
   async function chooseLesson(selected) {
     if (busy) return;
-    setBusy(true); setError("");
-    const lessonKey = `${browserCourseKey.current}:${selected.id}`;
-    const snapshot = localStorage.getItem(`student_browser_snapshot:${lessonKey}`);
-    try {
-      if (snapshot) {
-        try {
-          const saved = await api("/session/browser-restore", "POST",
-            { snapshot, launch_token: launchToken.current });
-          if (saved.lessonId === selected.id && saved.phase !== "idle") {
-            showSession(saved);
-            return;
-          }
-        } catch (err) {
-          if (err.status !== 400 && err.status !== 404) throw err;
-          localStorage.removeItem(`student_browser_snapshot:${lessonKey}`);
-          localStorage.removeItem(`student_browser_session:${lessonKey}`);
-        }
-      }
-      if (activeLessonId.current) {
-        const started = await api("/session/start", "POST", { launch_token: launchToken.current });
-        showSession(started);
-      }
-      setCourse((catalogCourses.current || courses).find((item) => item.lessons.some((entry) => entry.id === selected.id)) || course);
-      setLesson(selected);
-      setPhase("lesson");
-    } catch (err) { setError(err.message); }
-    finally { setBusy(false); }
+    setError(""); setConversationSize(null); setVideoEnded(false);
+    try { await controller.loadLesson(selected); } catch (err) { if (controller.getView().error !== err.message) setError(err.message); }
   }
 
-  async function begin(selected) {
-    if (busy) return;
-    setBusy(true); setError("");
+  async function begin() {
     setVideoEnded(false); setShowVideoAdvanceConfirm(false);
-    setPreparation("pending"); setPreparationError("");
-    try {
-      const state = await api(`/session/${sessionId.current}/begin/${encodeURIComponent(selected.id)}`, "POST");
-      const selectedCourse = (state.courses || []).find((item) => item.lessons.some((candidate) => candidate.id === selected.id));
-      const playableLesson = selectedCourse?.lessons.find((candidate) => candidate.id === selected.id);
-      if (!playableLesson?.playerUrl) throw new Error("该课时没有可播放的视频");
-      sessionId.current = state.sessionId;
-      setVideoUpdated(Boolean(state.videoUpdated));
-      activeLessonId.current = selected.id;
-      setCourses(state.courses); setCourse(selectedCourse); setLesson(playableLesson);
-      setMessages(state.messages); setPhase(state.phase);
-      setPostclassMessages(state.postclassMessages || []);
-      setPostclassStage(state.postclassStage || null);
-      setFeedback(state.feedback || null);
-      setAgentStage(state.agentStage || "");
-      setLearningProgress(state.learningProgress || null);
-      setPreparation(state.preparation); setPreparationError(state.preparationError || "");
-      setPreparationRequestId(state.preparationRequestId || "");
-    } catch (err) { setError(err.message); setPhase("lesson"); setPreparation("idle"); }
-    finally { setBusy(false); }
+    await perform("begin");
   }
 
-  async function retryPreparation() {
-    setBusy(true); setError("");
-    try {
-      const current = await api(`/session/${sessionId.current}/prepare`, "POST");
-      setPreparation(current.preparation); setPreparationError(current.preparationError || "");
-      setPreparationRequestId(current.preparationRequestId || "");
-    } catch (err) { setError(err.message); }
-    finally { setBusy(false); }
-  }
-
-  async function goDiscussion() {
-    setShowVideoAdvanceConfirm(false);
-    setBusy(true); setError("");
-    try {
-      const state = await api(`/session/${sessionId.current}/discussion`, "POST");
-      setMessages(state.messages); setPhase(state.phase);
-      setAgentStage(state.agentStage || "");
-      setLearningProgress(state.learningProgress || null);
-      setPreparation(state.preparation); setPreparationError(state.preparationError || "");
-      setPreparationRequestId(state.preparationRequestId || "");
-    } catch (err) { setError(err.message); }
-    finally { setBusy(false); }
-  }
-
+  async function retryPreparation() { await perform("retry_preparation"); }
+  async function goDiscussion() { setShowVideoAdvanceConfirm(false); await perform("start_discussion"); }
   function requestDiscussion() {
     if (busy || preparation === "pending") return;
-    if (videoEnded) goDiscussion();
-    else setShowVideoAdvanceConfirm(true);
+    if (videoEnded) goDiscussion(); else setShowVideoAdvanceConfirm(true);
   }
 
-  async function send(event) {
-    event.preventDefault();
-    if (!input.trim() || busy || (phase === "discussion" && agentStage === "wrapup")) return;
-    const isPostclass = phase === "postclass";
+  async function send(event, type = phase === "postclass" ? "postclass_answer" : "submit_answer") {
+    event?.preventDefault();
+    if (!input.trim() || busy || (dynamicFlow && !can(type)) || (phase === "discussion" && agentStage === "wrapup")) return;
     const text = input.trim();
-    setInput(""); setBusy(true); setReplyPending(true); setError("");
-    const setActiveMessages = isPostclass ? setPostclassMessages : setMessages;
-    setActiveMessages((current) => [...current, { role: "student", text }]);
-    try {
-      const route = isPostclass ? "postclass/message" : "message";
-      const state = await api(`/session/${sessionId.current}/${route}`, "POST", { text });
-      if (isPostclass) {
-        setPostclassMessages(state.postclassMessages || []);
-        setPostclassStage(state.postclassStage);
-        setFeedback(state.feedback);
-      } else {
-        setMessages(state.messages);
-        setAgentStage(state.agentStage || "");
-        setLearningProgress(state.learningProgress || null);
-      }
-    } catch (err) {
-      setActiveMessages((current) => current.slice(0, -1));
-      setInput(text); setError(err.message);
-    } finally { setReplyPending(false); setBusy(false); }
+    setInput(""); setReplyPending(true); setError("");
+    setOptimistic({ role: "student", text, screen: phase, sessionId: learning.sessionId,
+      count: phase === "postclass" ? learning.postclassMessages.length : learning.messages.length });
+    try { await controller.dispatch({ type, text }); }
+    catch (err) { setInput(text); if (controller.getView().error !== err.message) setError(err.message); }
+    finally { setOptimistic(null); setReplyPending(false); }
+  }
+
+  async function help(text) {
+    setReplyPending(true);
+    try { await perform("request_help", { text }); }
+    finally { setReplyPending(false); }
   }
 
   function handleComposerKeyDown(event) {
@@ -386,71 +171,17 @@ export default function StudentApp() {
   }
 
   async function end() {
-    setBusy(true); setError("");
-    try {
-      const state = await api(`/session/${sessionId.current}/end`, "POST");
-      setFeedback(state.feedback); setPhase(state.phase); setShowEarlyEndWarning(false);
-      setAgentStage(state.agentStage); setLearningProgress(state.learningProgress || null);
-    }
-    catch (err) { setError(err.message); }
-    finally { setBusy(false); }
+    if (await perform("finish")) setShowEarlyEndWarning(false);
   }
-
   async function openReplay(refresh = false) {
-    if (busy) return;
-    setBusy(true); setReplayLoading(true); setError(""); setReplayError("");
-    try {
-      let playableLesson = lesson;
-      if (refresh || !playableLesson?.playerUrl) {
-        const playback = await api(`/session/${sessionId.current}/playback`, "POST",
-          { launch_token: launchToken.current });
-        playableLesson = playback.lesson;
-        if (playback.courseId !== course?.id || playableLesson?.id !== activeLessonId.current
-            || (lesson?.classroomId && playableLesson?.classroomId !== lesson.classroomId)) {
-          throw new Error("播放信息与当前课时不匹配，请从平台重新进入课程");
-        }
-      }
-      if (!playableLesson?.playerUrl) throw new Error("本课时暂时没有可播放的视频，请稍后重试或联系教师");
-      setLesson(playableLesson); setVideoEnded(false); setPhase("replay");
-    } catch (err) { setReplayError(err.message); }
-    finally { setBusy(false); setReplayLoading(false); }
+    setReplayLoading(true); setReplayError(""); setError(""); setVideoEnded(false);
+    try { await controller.dispatch({ type: "replay", refresh }); }
+    catch (err) { setReplayError(err.message); }
+    finally { setReplayLoading(false); }
   }
-
-  async function openPostclass() {
-    setBusy(true); setError("");
-    try {
-      const state = await api(`/session/${sessionId.current}/postclass/start`, "POST");
-      setPostclassMessages(state.postclassMessages || []);
-      setPostclassStage(state.postclassStage);
-      setPhase("postclass");
-    } catch (err) { setError(err.message); }
-    finally { setBusy(false); }
-  }
-
+  async function openPostclass() { await perform("continue_after_class"); }
   async function resetLesson() {
-    if (busy || !lesson) return;
-    const lessonId = lesson.id;
-    const courseKey = browserCourseKey.current;
-    setBusy(true); setError("");
-    try {
-      const fresh = await api(`/session/${sessionId.current}/reset`, "POST",
-        { launch_token: launchToken.current });
-      try {
-        const lessonKey = `${courseKey}:${lessonId}`;
-        localStorage.removeItem(`student_browser_snapshot:${lessonKey}`);
-        localStorage.removeItem(`student_browser_session:${lessonKey}`);
-        const legacyKey = `student_browser_snapshot:${courseKey}`;
-        if (snapshotState(localStorage.getItem(legacyKey))?.lessonId === lessonId) {
-          localStorage.removeItem(legacyKey);
-          localStorage.removeItem(`student_browser_session:${courseKey}`);
-        }
-      } catch {
-        // The server has already removed the lesson; old snapshots fail recovery.
-      }
-      setShowResetConfirm(false);
-      showSession(fresh);
-    } catch (err) { setError(err.message); }
-    finally { setBusy(false); }
+    if (await perform("reset_lesson")) setShowResetConfirm(false);
   }
 
   return <main className="app">
@@ -467,7 +198,7 @@ export default function StudentApp() {
       <div className="weeks-summary">已开放 {course?.lessons.length || 0} 节课 · 按教学周次排列</div>
       <div className="week-grid">{course?.lessons.map((item, index) => {
         const isLatest = index === course.lessons.length - 1;
-        const savedPhase = savedLessonPhase(browserCourseKey.current, item.id);
+        const savedPhase = controller.lessonPhase(item.id);
         return <button type="button" className={`week-tile${isLatest ? " week-tile--current" : ""}`} key={item.id} disabled={busy} onClick={() => chooseLesson(item)}>
           <span className="week-tile__top"><span className="week-tile__number">第 {item.week} 周 · 第 {item.lessonNumber} 次课</span><span className="week-tile__status">{savedPhase === "done" ? "已完成" : savedPhase ? "继续学习" : isLatest ? "最新开放" : "已开放"}</span></span>
           <span className="week-tile__title">{item.title}</span>
@@ -476,51 +207,68 @@ export default function StudentApp() {
       })}</div>
       {!course?.lessons.length && <p>本课程暂无已开放课时。</p>}
     </section>}
-    {phase === "lesson" && <section className="view"><header className="view__header"><button className="back" onClick={() => setPhase("lessons")}>← 返回课时</button><h2 className="view__title">{lesson?.title}</h2></header><div className="view__body"><div className="lesson"><p className="lesson__eyebrow">{course?.title} · 第 {lesson?.week} 周</p><h3 className="lesson__title">{lesson?.title}</h3><p className="lesson__summary">{lesson?.summary || "准备好后开始本节课。"}</p><button className="btn btn--primary" onClick={() => begin(lesson)} disabled={busy}>开始或继续上课</button></div></div></section>}
+    {phase === "lesson" && <section className="view"><header className="view__header"><button className="back" onClick={() => controller.dispatch({ type: "catalog" })}>← 返回课时</button><h2 className="view__title">{lesson?.title}</h2></header><div className="view__body"><div className="lesson"><p className="lesson__eyebrow">{course?.title} · 第 {lesson?.week} 周</p><h3 className="lesson__title">{lesson?.title}</h3><p className="lesson__summary">{lesson?.summary || "准备好后开始本节课。"}</p><button className="btn btn--primary" onClick={() => begin(lesson)} disabled={busy}>开始或继续上课</button></div></div></section>}
     {(phase === "video" || phase === "discussion" || phase === "done" || phase === "replay" || phase === "postclass") && <section className="view classroom-view"><header className="view__header"><h2 className="view__title">{lesson?.title || "课堂"}</h2><span className="view__badge">{phase === "video" ? "教学视频" : phase === "discussion" ? STAGE_TITLES[agentStage] || "复述与讨论" : phase === "replay" ? "课后回看" : phase === "postclass" ? "课后对话" : "已结束"}</span></header><div className={`classroom-layout${progressOpen ? "" : " classroom-layout--progress-hidden"}${phase === "video" || phase === "replay" ? " classroom-layout--video" : ""}${phase === "discussion" || phase === "postclass" ? " classroom-layout--conversation" : ""}`}>
       <nav className="classroom-tools" aria-label="课堂工具"><ul className="classroom-tools__list"><li><button className={`classroom-tools__button${progressOpen ? " is-active" : ""}`} type="button" title={progressOpen ? "收起课堂进程" : "打开课堂进程"} aria-label={progressOpen ? "收起课堂进程" : "打开课堂进程"} aria-controls="lesson-progress-panel" aria-expanded={progressOpen} onClick={() => setProgressOpen((open) => !open)}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3" /><path d="M9 9h7M9 12h7M9 15h5" /></svg></button></li></ul></nav>
       <div className="classroom-progress-slot" hidden={!progressOpen}>
-        <LessonProgress id="lesson-progress-panel" phase={phase} agentStage={agentStage} progress={learningProgress} postclassStage={postclassStage} />
+        <LessonProgress id="lesson-progress-panel" phase={phase} agentStage={agentStage} progress={learningProgress} postclassStage={postclassStage} flowVersion={flowVersion} progressSummary={progressSummary} />
         <button className="classroom-progress-close" type="button" aria-label="收起课堂进程" title="收起课堂进程" onClick={() => setProgressOpen(false)}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m14 5-7 7 7 7" /></svg></button>
       </div>
       <div className="view__body classroom-content">
       {phase === "video" && <div className="stage stage--video"><div className="video"><div className="video-player-slot" ref={playerSlot} aria-label="视频播放器挂载区域" /><div className="video-player-actions"><p className="video-player-status">{videoEnded ? "视频播放完毕，可以进入复述与讨论。" : "视频尚未播放完，提前进入下一阶段时会再次确认。"}</p><button className="btn btn--primary" type="button" disabled={busy || preparation === "pending"} onClick={preparation === "error" ? retryPreparation : requestDiscussion}>{preparation === "pending" ? "复述与讨论准备中…" : preparation === "error" ? "重试准备复述与讨论" : "进入复述与讨论 →"}</button>{preparation === "error" && preparationError && <p role="alert">{preparationError}{preparationRequestId && `（问题编号：${preparationRequestId}）`}</p>}</div>{showVideoAdvanceConfirm && !videoEnded && <div className="video-advance-confirm" role="alert"><strong>视频还没有播放完</strong><p>现在进入复述与讨论会跳过剩余的视频内容，是否确定进入下一阶段？</p><div className="video-advance-confirm__actions"><button className="btn btn--ghost" type="button" disabled={busy} onClick={() => setShowVideoAdvanceConfirm(false)}>继续观看视频</button><button className="btn btn--primary" type="button" disabled={busy} onClick={goDiscussion}>{busy ? "正在进入…" : "确定进入复述与讨论"}</button></div></div>}</div></div>}
-      {phase === "replay" && <div className="stage stage--video"><div className="video"><div className="video-player-slot" ref={playerSlot} aria-label="课后视频播放器" /><div className="video-player-actions"><p className="video-player-status">可以按自己的节奏回看本节课。</p><button className="btn btn--primary" type="button" onClick={() => setPhase("done")}>返回学习反馈</button></div></div></div>}
+      {phase === "replay" && <div className="stage stage--video"><div className="video"><div className="video-player-slot" ref={playerSlot} aria-label="课后视频播放器" /><div className="video-player-actions"><p className="video-player-status">可以按自己的节奏回看本节课。</p><button className="btn btn--primary" type="button" onClick={() => controller.dispatch({ type: "back_feedback" })}>返回学习反馈</button></div></div></div>}
       {(phase === "discussion" || phase === "postclass") && <div className="stage stage--summary" ref={conversationStage}>
         <div className="conversation-panel" style={conversationSize ? { width: conversationSize.width, marginLeft: conversationSize.left, marginRight: 0 } : undefined}>
           <div className="conversation-resize-handle conversation-resize-handle--left" role="separator" aria-label="拖动调整对话框左边缘" aria-orientation="vertical" onPointerDown={(event) => startConversationResize(event, "left")} onPointerMove={moveConversationResize} onPointerUp={() => { conversationResize.current = null; }} onPointerCancel={() => { conversationResize.current = null; }} />
           <div className="conversation-resize-handle conversation-resize-handle--right" role="separator" aria-label="拖动调整对话框右边缘" aria-orientation="vertical" onPointerDown={(event) => startConversationResize(event, "right")} onPointerMove={moveConversationResize} onPointerUp={() => { conversationResize.current = null; }} onPointerCancel={() => { conversationResize.current = null; }} />
           <div className="conversation-heading">
             <h3 className="new-stage-title">{phase === "postclass"
-              ? postclassStage === "remediation" ? "继续未完成的学习" : "全部完成 · 自由提问"
+              ? dynamicFlow ? "课后继续交流" : postclassStage === "remediation" ? "继续未完成的学习" : "全部完成 · 自由提问"
               : "复述与讨论"}</h3>
             <p className="conversation-stage" role="status">{phase === "postclass"
               ? "本次课堂已经结束，课后对话会更新你的学习反馈。"
               : `${STAGE_TITLES[agentStage] || "初始复述"}${learningProgress?.currentPoint ? ` · 当前知识点：${learningProgress.currentPoint}` : ""}`}</p>
           </div>
           <div className="chat conversation-log" role="log" aria-live="polite" ref={chatLog}>
-            {(phase === "postclass" ? postclassMessages : messages).map((message, index) => <div className={`msg msg--${message.role === "student" ? "me" : "ai"}`} key={index}>
+            {(phase === "postclass" ? postclassMessages : messages).map((message, index) => <div className={`msg msg--${message.role === "student" ? "me" : "ai"}`} key={message.messageId || index}>
               {message.role !== "student" && <div className="msg__avatar">AI</div>}
               <div className="msg__bubble">{message.role !== "student" && STAGE_TITLES[message.phase]
                 && <span className="msg__stage">{STAGE_TITLES[message.phase]}</span>}{message.text}</div>
             </div>)}
             {replyPending && <div className="msg msg--ai" role="status" aria-label="AI 正在回复"><div className="msg__avatar" aria-hidden="true">AI</div><div className="msg__bubble typing" aria-hidden="true"><span /><span /><span /></div></div>}
           </div>
-          {phase === "discussion" && agentStage === "wrapup"
+          {(phase === "discussion" || (dynamicFlow && phase === "postclass")) && agentStage === "wrapup"
             ? <div className="conversation-complete" role="status"><strong>课堂对话已完成</strong><p>点击下方按钮查看本课反馈。还想继续学习，可以在课后回看视频或与 AI 对话。</p></div>
-            : <form className="composer" onSubmit={send}>
-              <textarea className="composer__input" ref={composerInput} rows={1} value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={handleComposerKeyDown} placeholder={phase === "postclass" && postclassStage === "open" ? "自由向 AI 提问…" : "说说你的理解，或提出问题…"} aria-label="输入复述或讨论" />
-              <button className="composer__send" type="submit" disabled={busy || !input.trim()} aria-label="发送">↑</button>
+            : <form className="composer" onSubmit={event => send(event)}>
+              <textarea className="composer__input" ref={composerInput} rows={1} disabled={dynamicFlow && (paused || !can(phase === "postclass" ? "postclass_answer" : "submit_answer"))} value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={handleComposerKeyDown} placeholder={phase === "postclass" && postclassStage === "open" ? "自由向 AI 提问…" : "说说你的理解，或提出问题…"} aria-label="输入复述或讨论" />
+              <button className="composer__send" type="submit" disabled={busy || !input.trim() || (dynamicFlow && !can(phase === "postclass" ? "postclass_answer" : "submit_answer"))} aria-label="发送">↑</button>
             </form>}
+          {dynamicFlow && <div className="conversation-actions" aria-label="学习操作">
+            {allowedCommands.includes("request_help") && <><button className="btn btn--ghost" type="button" disabled={!can("request_help")} onClick={() => help("请给我一个提示。")}>给个提示</button><button className="btn btn--ghost" type="button" disabled={!can("request_help")} onClick={() => help("请举一个例子帮助我理解。")}>举个例子</button></>}
+            {allowedCommands.includes("ask_question") && <button className="btn btn--ghost" type="button" disabled={!can("ask_question") || !input.trim()} onClick={event => send(event, "ask_question")}>提出问题</button>}
+            {allowedCommands.includes("pause") && <button className="btn btn--ghost" type="button" disabled={!can("pause")} onClick={() => perform("pause")}>暂停学习</button>}
+            {allowedCommands.includes("resume_activity") && <button className="btn btn--primary" type="button" disabled={!can("resume_activity")} onClick={() => perform("resume_activity")}>继续学习</button>}
+            {paused && <span role="status">学习已暂停，当前任务已保留。</span>}
+          </div>}
           <div className="conversation-actions">
-            {phase === "postclass" ? <button className="btn btn--primary" type="button" disabled={busy} onClick={() => setPhase("done")}>返回学习反馈</button>
-              : <><span className="conversation-end-hint">{agentStage === "wrapup" ? "学习反馈已准备好生成" : "提前结束仅供测试使用"}</span><button className={`btn ${agentStage === "wrapup" ? "btn--primary" : "btn--ghost"}`} type="button" disabled={busy} onClick={agentStage === "wrapup" ? end : () => setShowEarlyEndWarning(true)}>{busy && !replyPending ? "正在保存…" : agentStage === "wrapup" ? "结束本课并查看反馈" : "提前结束本课"}</button></>}
+            {phase === "postclass" ? <button className="btn btn--primary" type="button" disabled={busy} onClick={() => controller.dispatch({ type: "back_feedback" })}>返回学习反馈</button>
+              : dynamicFlow ? <button className="btn btn--primary" type="button" disabled={!can("finish")} onClick={end}>结束本课并查看反馈</button> : <><span className="conversation-end-hint">{agentStage === "wrapup" ? "学习反馈已准备好生成" : "提前结束仅供测试使用"}</span><button className={`btn ${agentStage === "wrapup" ? "btn--primary" : "btn--ghost"}`} type="button" disabled={busy} onClick={agentStage === "wrapup" ? end : () => setShowEarlyEndWarning(true)}>{busy && !replyPending ? "正在保存…" : agentStage === "wrapup" ? "结束本课并查看反馈" : "提前结束本课"}</button></>}
           </div>
           {phase === "discussion" && agentStage !== "wrapup" && showEarlyEndWarning && <div className="early-end-warning" role="alert"><strong>提前结束仅限测试使用</strong><p>学生请勿使用此按钮。确认后将跳过正常学习阶段，直接结束本课；尚未完成的复述和讨论会记录为未完成。</p><div className="early-end-warning__actions"><button className="btn btn--ghost" type="button" disabled={busy} onClick={() => setShowEarlyEndWarning(false)}>取消，继续学习</button><button className="btn btn--reset-confirm" type="button" disabled={busy} onClick={end}>{busy ? "正在结束…" : "确认提前结束（仅测试）"}</button></div></div>}
         </div>
       </div>}
-      {phase === "done" && <div className="stage stage--done"><div className="done done--feedback"><span className="done__check" aria-hidden="true">✓</span><p>第 {lesson?.week} 周 · 第 {lesson?.lessonNumber} 次课</p><h3 className="done__title">本节课结束</h3><LessonFeedback feedback={feedback} />{replayError && <p className="replay-error" role="alert">暂时无法回看：{replayError}</p>}<div className="postclass-actions"><button className="btn btn--primary" type="button" disabled={busy} onClick={() => openReplay(Boolean(replayError))}>{replayLoading ? "正在获取播放信息…" : replayError ? "重试回看" : "回看视频"}</button><button className="btn btn--primary" type="button" disabled={busy} onClick={openPostclass}>{postclassStage === "open" ? "与 AI 自由提问" : "继续未完成的学习"}</button><button className="btn btn--ghost" type="button" disabled={busy} onClick={() => setPhase("lessons")}>返回课时列表</button><a className="btn btn--ghost" href={`${platformUrl || "http://localhost:8088"}/student`}>返回首页</a></div><div className="lesson-reset"><button className="btn btn--reset" type="button" disabled={busy} onClick={() => setShowResetConfirm(true)}>重置本课学习进度</button>{showResetConfirm && <div className="lesson-reset__confirm" role="group" aria-label="确认重置本课学习进度"><p>确定重新学习「{lesson?.title}」吗？本课的对话、知识点掌握情况和反馈将被删除，其他课时不受影响。此操作无法撤销。</p><div><button className="btn btn--ghost" type="button" disabled={busy} onClick={() => setShowResetConfirm(false)}>取消</button><button className="btn btn--reset-confirm" type="button" disabled={busy} onClick={resetLesson}>{busy ? "正在重置…" : "确认重置本课"}</button></div></div>}</div></div></div>}
+      {phase === "done" && <div className="stage stage--done"><div className="done done--feedback"><span className="done__check" aria-hidden="true">✓</span><p>第 {lesson?.week} 周 · 第 {lesson?.lessonNumber} 次课</p><h3 className="done__title">本节课结束</h3><LessonFeedback feedback={feedback} />
+        {messages.length > 0 && <details className="conversation-history">
+          <summary>查看历史会话（{messages.length} 条）</summary>
+          <div className="chat conversation-log" role="log" aria-label="历史课堂与课后对话">
+            {messages.map((message, index) => <div className={`msg msg--${message.role === "student" ? "me" : "ai"}`} key={message.messageId || index}>
+              {message.role !== "student" && <div className="msg__avatar">AI</div>}
+              <div className="msg__bubble"><span className="msg__stage">{String(message.phase || "").startsWith("postclass-") ? "课后对话" : STAGE_TITLES[message.phase] || "课堂对话"}</span>{message.text}</div>
+            </div>)}
+          </div>
+        </details>}{replayError && <p className="replay-error" role="alert">暂时无法回看：{replayError}</p>}<div className="postclass-actions"><button className="btn btn--primary" type="button" disabled={busy} onClick={() => openReplay(Boolean(replayError))}>{replayLoading ? "正在获取播放信息…" : replayError ? "重试回看" : "回看视频"}</button><button className="btn btn--primary" type="button" disabled={busy} onClick={openPostclass}>{postclassStage === "open" ? "与 AI 自由提问" : "继续未完成的学习"}</button><button className="btn btn--ghost" type="button" disabled={busy} onClick={() => controller.dispatch({ type: "catalog" })}>返回课时列表</button><a className="btn btn--ghost" href={`${platformUrl || "http://localhost:8088"}/student`}>返回首页</a></div><div className="lesson-reset"><button className="btn btn--reset" type="button" disabled={busy} onClick={() => setShowResetConfirm(true)}>重置本课学习进度</button>{showResetConfirm && <div className="lesson-reset__confirm" role="group" aria-label="确认重置本课学习进度"><p>确定重新学习「{lesson?.title}」吗？本课的对话、知识点掌握情况和反馈将被删除，其他课时不受影响。此操作无法撤销。</p><div><button className="btn btn--ghost" type="button" disabled={busy} onClick={() => setShowResetConfirm(false)}>取消</button><button className="btn btn--reset-confirm" type="button" disabled={busy} onClick={resetLesson}>{busy ? "正在重置…" : "确认重置本课"}</button></div></div>}</div></div></div>}
     </div></div></section>}
-    {error && phase !== "error" && <p className="new-error" role="alert">{error}</p>}
+    {learning.connectionError && !error && <p role="status">连接暂时中断，正在重试同步学习状态。</p>}
+    {error && !replayError && phase !== "error" && <p className="new-error" role="alert">{error}</p>}
   </main>;
 }

@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "command": "finalize",
+  "status": "pass",
+  "type": "sequence",
+  "quality": "showcase",
+  "specification": {
+    "path": "E:\\LMS系统参考\\项目\\agentic-class-pilot-running\\.archify\\sequence-student-request-20261030-152337\\recovery-candidate.json",
+    "sha256": "6cbc5ce7bca2f22ec68503062dc005665d66599a916f0fe579c701c5b27e9c99",
+    "bytes": 7473
+  },
+  "artifact": {
+    "path": "E:\\LMS系统参考\\项目\\agentic-class-pilot-running\\.archify\\sequence-student-request-20261030-152337\\student-session-recovery.html",
+    "sha256": "cfc6719e738938bc68caa0ed154ff872e2625d674d62ede1b778ab41748446d8",
+    "bytes": 841680
+  },
+  "gates": {
+    "validate": "pass",
+    "deliver": "pass",
+    "check": "pass",
+    "browser-check": "pass"
+  },
+  "diagnostics": [],
+  "diagnosticSummary": {
+    "total": 0,
+    "shown": 0,
+    "truncated": false
+  },
+  "evidence": {
+    "receipt": "E:\\LMS系统参考\\项目\\agentic-class-pilot-running\\.archify\\sequence-student-request-20261030-152337\\student-session-recovery.finalize.json",
+    "summaryReceipt": "E:\\LMS系统参考\\项目\\agentic-class-pilot-running\\.archify\\sequence-student-request-20261030-152337\\student-session-recovery.finalize-summary.json",
+    "browserCheckReceipt": "E:\\LMS系统参考\\项目\\agentic-class-pilot-running\\.archify\\sequence-student-request-20261030-152337\\student-session-recovery.browser-check.json"
+  },
+  "update": {
+    "status": "current",
+    "installedVersion": "3.2.0",
+    "availableVersion": "3.2.0",
+    "releaseNotes": null,
+    "checkedAt": "2026-10-30T06:10:49.367Z",
+    "source": "cache",
+    "noticeRequired": false,
+    "noticeText": null
+  },
+  "visualReview": "not-requested",
+  "durationMs": 3572,
+  "browserCheck": {
+    "requested": true,
+    "ran": true
+  }
+}
