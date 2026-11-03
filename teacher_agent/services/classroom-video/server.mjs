@@ -5,7 +5,7 @@ import os from 'node:os';
 import { spawn } from 'node:child_process';
 import { timingSafeEqual, randomUUID } from 'node:crypto';
 import { chromium } from 'playwright-core';
-import { prepareRecording } from './readiness.mjs';
+import { prepareRecordingWithRetry } from './readiness.mjs';
 
 const root = process.env.CLASSROOM_VIDEOS_DIR || '/videos';
 const origin = new URL(process.env.VIDEO_PUBLIC_ORIGIN || 'https://agenticclasspilot.com').origin;
@@ -163,7 +163,7 @@ async function capture(job, plan, clip, onPhase) {
       waitUntil: 'domcontentloaded',
     });
     await page.waitForFunction(() => window.classroomCapture || window.classroomCaptureError);
-    await prepareRecording(page, clip.sceneId, onPhase);
+    await prepareRecordingWithRetry(page, clip.sceneId, onPhase);
     const cdp = await context.newCDPSession(page);
     const frames = [];
     let byteCount = 0, rejectCapture;

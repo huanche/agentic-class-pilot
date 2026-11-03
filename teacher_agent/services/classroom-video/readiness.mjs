@@ -9,8 +9,18 @@ export async function prepareRecording(
 ) {
   await onPhase('loading');
   let timer;
+  let failScript;
+  const scriptFailure = new Promise((_, reject) => { failScript = reject; });
+  const onScriptError = (cause) => {
+    if (!String(cause.stack || '').includes('/onlyoffice-engine/')) return;
+    const error = new Error(`原稿播放器初始化失败: ${cause.message}`);
+    error.code = 'CAPTURE_SOURCE_SCRIPT_ERROR';
+    failScript(error);
+  };
+  page.on('pageerror', onScriptError);
   try {
     await Promise.race([
+      scriptFailure,
       page.evaluate(async (id) => {
         if (window.classroomCaptureError) throw new Error(window.classroomCaptureError);
         if (!window.classroomCapture) throw new Error('课件加载入口尚未就绪');
@@ -22,6 +32,7 @@ export async function prepareRecording(
     ]);
   } finally {
     clearTimeout(timer);
+    page.off('pageerror', onScriptError);
   }
   const alerts = (await page.locator('[role="alert"]:visible').allTextContents())
     .map((s) => s.trim())
@@ -30,4 +41,16 @@ export async function prepareRecording(
   // No screencast or narration may start before the readiness promise AND
   // visible-error check above have completed successfully.
   await onPhase('recording');
+}
+
+/** Retry an engine startup crash once, strictly before recording has begun. */
+export async function prepareRecordingWithRetry(page, sceneId, onPhase, timeout) {
+  try {
+    await prepareRecording(page, sceneId, onPhase, timeout);
+  } catch (error) {
+    if (error.code !== 'CAPTURE_SOURCE_SCRIPT_ERROR') throw error;
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => window.classroomCapture || window.classroomCaptureError);
+    await prepareRecording(page, sceneId, onPhase, timeout);
+  }
 }
