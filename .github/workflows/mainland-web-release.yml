@@ -6,6 +6,11 @@ on:
     paths:
       - 'platform/**'
       - 'student_agent/**'
+      - 'scripts/mainland/agentic-web-deploy'
+      - 'scripts/mainland/agentic-mainland-ci-entry'
+      - 'scripts/mainland/agentic-mainland-ci-root'
+      - '.github/workflows/mainland-web-release.yml'
+      - 'scripts/mainland/test-web-release.py'
   workflow_dispatch:
     inputs:
       prepared_commit:
@@ -24,6 +29,20 @@ jobs:
   release:
     if: inputs.prepared_commit == ''
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: student_p2_test
+          POSTGRES_PASSWORD: student_ci_only
+          POSTGRES_DB: postgres
+        ports:
+          - 55439:5432
+        options: >-
+          --health-cmd "pg_isready -U student_p2_test -d postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      STUDENT_TEST_DATABASE_URL: postgresql://student_p2_test:student_ci_only@127.0.0.1:55439/postgres
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
@@ -44,11 +63,14 @@ jobs:
           cd student_agent/frontend
           npm ci
           npx playwright install --with-deps chromium --only-shell
+          npm run test:unit
           npm run test:e2e
           npm run build
           cd ../..
-          python -m pip install -r student_agent/backend/requirements.txt pytest
+          python -m pip install -r student_agent/backend/requirements.txt pytest alembic sqlalchemy sqlmodel
           python -m pytest -q student_agent/backend/tests
+      - name: Exercise web activation and rollback in an isolated Linux sandbox
+        run: sudo python3 scripts/mainland/test-web-release.py
       - name: Build platform frontend
         working-directory: platform
         run: |
@@ -118,8 +140,8 @@ jobs:
             exit 0
           fi
           git fetch origin main
-          git diff --exit-code "$GITHUB_SHA" origin/main -- platform/ student_agent/
-          timeout 2460s "${SSH[@]}" "agentic-ci@$SERVER_HOST" "web-deploy $GITHUB_SHA"
+          git diff --exit-code "$GITHUB_SHA" origin/main -- platform/ student_agent/ scripts/mainland/ .github/workflows/mainland-web-release.yml
+          timeout 2460s "${SSH[@]}" "agentic-ci@$SERVER_HOST" "web-deploy-v2 $GITHUB_SHA $(sha256sum scripts/mainland/agentic-web-deploy | cut -d' ' -f1)"
   activate-prepared:
     if: github.event_name == 'workflow_dispatch' && inputs.prepared_commit != ''
     runs-on: ubuntu-latest
@@ -142,7 +164,7 @@ jobs:
           [[ "$GITHUB_REF" = refs/heads/main && "$AUTODEPLOY" = true ]]
           [[ "$PREPARED_COMMIT" =~ ^[0-9a-f]{40}$ ]]
           git merge-base --is-ancestor "$PREPARED_COMMIT" origin/main
-          git diff --exit-code "$PREPARED_COMMIT" origin/main -- platform/ student_agent/
+          git diff --exit-code "$PREPARED_COMMIT" origin/main -- platform/ student_agent/ scripts/mainland/ .github/workflows/mainland-web-release.yml
           test "$SERVER_HOST" = 43.138.178.158
           DIR=$(mktemp -d)
           trap 'rm -rf -- "$DIR"' EXIT
@@ -155,4 +177,4 @@ jobs:
             -o StrictHostKeyChecking=yes -o HostKeyAlgorithms=ssh-ed25519 \
             -o UserKnownHostsFile="$DIR/known_hosts" -o ConnectTimeout=15 \
             -o ServerAliveInterval=15 -o ServerAliveCountMax=4 \
-            "agentic-ci@$SERVER_HOST" "web-deploy $PREPARED_COMMIT"
+            "agentic-ci@$SERVER_HOST" "web-deploy-v2 $PREPARED_COMMIT $(sha256sum scripts/mainland/agentic-web-deploy | cut -d' ' -f1)"

@@ -1,5 +1,17 @@
 export default function LessonFeedback({ feedback }) {
   if (!feedback) return <p className="done__sub">本次课堂已结束，暂无知识点反馈。</p>;
+  if (feedback.flowVersion === "dynamic_dialogue_v1") return <section className="lesson-feedback" aria-labelledby="lesson-feedback-title">
+    <h4 id="lesson-feedback-title">本次交流记录</h4>
+    <p className="lesson-feedback__summary">{feedback.summary}</p>
+    <div className="lesson-feedback__list">{feedback.points.map(point => <article key={point.id} className="lesson-feedback__item">
+      <h5>{point.title} · {point.label}</h5>
+      {point.evidence && <p><strong>你的表达：</strong>{point.evidence}</p>}
+      <p>{point.suggestion}</p>
+    </article>)}</div>
+    <p>其中 {feedback.assisted?.length || 0} 条表达前，本任务内已提供提示或讲解；未记录帮助不等于已证明独立掌握。</p>
+    {!!feedback.unresolved?.length && <div><h5>仍需核对</h5><ul>{feedback.unresolved.map(item => <li key={item.observationId}>{item.questions}</li>)}</ul></div>}
+    {!!feedback.contentLimitations?.length && <p>部分来源或图示未完整解析，相关判断仍有限制。</p>}
+  </section>;
   return <section className="lesson-feedback" aria-labelledby="lesson-feedback-title">
     <h4 id="lesson-feedback-title">本节课知识点反馈</h4>
     <p className="lesson-feedback__summary">{feedback.summary}</p>

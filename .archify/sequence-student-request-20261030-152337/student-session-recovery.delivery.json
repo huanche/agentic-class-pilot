@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "545ef9b4-3d3b-4867-b714-2fa48bc5c27b",
+  "status": "current",
+  "command": "deliver",
+  "type": "sequence",
+  "input": "E:\\LMS系统参考\\项目\\agentic-class-pilot-running\\.archify\\sequence-student-request-20261030-152337\\recovery-candidate.json",
+  "output": "E:\\LMS系统参考\\项目\\agentic-class-pilot-running\\.archify\\sequence-student-request-20261030-152337\\student-session-recovery.html",
+  "specification": {
+    "sha256": "1100e649d6a5b5e1df02215d525c35946d446960e85e473aef6539bc125a3eab",
+    "bytes": 14556
+  },
+  "artifact": {
+    "sha256": "4714e7e3b1d4cc30dd07cb009ac6cc07f4408d93ba6d207c5eb31899600bffd4",
+    "bytes": 861281
+  }
+}
