@@ -192,7 +192,7 @@ jobs:
           python -m unittest discover -s scripts/tests -p test_local_dev.py -v
 
   generated-clients:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -240,7 +240,7 @@ jobs:
         run: python -m unittest discover -s scripts/tests -p test_generated_clients.py -v
 
   platform-publication-adapter:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -265,7 +265,7 @@ jobs:
         run: ../platform/.venv/bin/python -m pytest -p no:cacheprovider backend/tests/test_platform_generated_client.py backend/tests/test_internal_platform_knowledge.py backend/tests/test_internal_platform_chat_records.py backend/tests/test_replay_scene_read_mode.py -q
 
   platform-access-boundaries:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     services:
       postgres:
