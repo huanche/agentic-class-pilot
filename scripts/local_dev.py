@@ -111,6 +111,31 @@ def check_infrastructure(config: dict[str, str]) -> None:
         print("[OK] local Mailpit SMTP greeting (no email sent)", flush=True)
 
 
+def warn_if_local_tts_unavailable() -> None:
+    teacher_env = TEACHER / ".env.local"
+    if not teacher_env.is_file():
+        return
+    config = read_env(teacher_env)
+    endpoint = config.get("TTS_LEMONADE_BASE_URL", "").rstrip("/")
+    if not endpoint:
+        return
+    try:
+        url = urlsplit(endpoint)
+        if url.scheme != "http" or url.hostname not in {"127.0.0.1", "localhost"} or not url.port:
+            return
+        health = f"{url.scheme}://{url.hostname}:{url.port}/health"
+        with HTTP.open(health, timeout=2) as response:
+            if response.status == 200:
+                print("[OK] local Kokoro/Lemonade TTS health", flush=True)
+                return
+    except (OSError, ValueError):
+        pass
+    print("[WARN] Teacher TTS points to a local Kokoro/Lemonade service that is not ready. "
+          "Run start-kokoro-local.ps1 in the checkout containing the downloaded model before generating voiced courseware; "
+          "otherwise generation may fail with 'fetch failed'.",
+          flush=True)
+
+
 def check_databases(config: dict[str, str]) -> None:
     import psycopg
     for name, url in (("platform", config["DATABASE_URL"]),
@@ -328,6 +353,7 @@ def main() -> int:
                  "database", "minio", "mail"], PLATFORM, environment(config, "platform"))
     check_databases(config)
     check_infrastructure(config)
+    warn_if_local_tts_unavailable()
     if args.check:
         print("[OK] local configuration and dependencies; no services started or files changed.")
         return 0

@@ -1,7 +1,9 @@
 """Run with platform/.venv/Scripts/python.exe -m unittest discover -s scripts/tests."""
 import fnmatch
 import importlib.util
+import io
 import os
+from contextlib import redirect_stdout
 from pathlib import Path
 import tempfile
 import unittest
@@ -109,6 +111,24 @@ class LocalConfigurationTests(unittest.TestCase):
             with self.assertRaises(local.LocalError):
                 local.check_infrastructure(config)
             probe.assert_not_called()
+
+    def test_local_tts_check_reports_unavailable_service_without_blocking_startup(self):
+        output = io.StringIO()
+        with patch.object(local.Path, "is_file", return_value=True), \
+             patch.object(local, "read_env", return_value={"TTS_LEMONADE_BASE_URL": "http://127.0.0.1:13305/v1"}), \
+             patch.object(local.HTTP, "open", side_effect=OSError("connection refused")) as probe, \
+             redirect_stdout(output):
+            local.warn_if_local_tts_unavailable()
+        self.assertIn("[WARN]", output.getvalue())
+        self.assertIn("fetch failed", output.getvalue())
+        probe.assert_called_once_with("http://127.0.0.1:13305/health", timeout=2)
+
+    def test_local_tts_check_does_not_probe_remote_service(self):
+        with patch.object(local.Path, "is_file", return_value=True), \
+             patch.object(local, "read_env", return_value={"TTS_LEMONADE_BASE_URL": "https://tts.example/v1"}), \
+             patch.object(local.HTTP, "open") as probe:
+            local.warn_if_local_tts_unavailable()
+        probe.assert_not_called()
 
     def test_platform_asset_changes_invalidate_build_fingerprint(self):
         with tempfile.TemporaryDirectory() as directory:
