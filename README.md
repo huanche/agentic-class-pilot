@@ -74,8 +74,9 @@ Copy-Item ".env.example" ".env.local" -ErrorAction SilentlyContinue
 Set-Location "..\student_agent\frontend"
 npm ci
 npm run build
-Set-Location "..\backend"
-..\..\platform\.venv\Scripts\python.exe -m pip install -r requirements.txt
+Set-Location ".."
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r backend\requirements.txt
 ```
 
 如需启用学生 Agent 的大模型对话，在 `student_agent/.env.local` 中配置 `AGENT_LLM_BASE_URL`、`AGENT_LLM_API_KEY` 和 `AGENT_LLM_MODEL`。
@@ -84,11 +85,10 @@ Set-Location "..\backend"
 
 只在本项目中修改和测试教师端，可在仓库根目录运行 `powershell -NoProfile -ExecutionPolicy Bypass -File .\start-teacher-local.ps1`，访问 `http://127.0.0.1:3200`。该开发入口使用本地文件存储，不需要先启动完整平台和数据库，详见 [教师端本地修改与测试](docs/local-teacher-development.md)。
 
-进入平台目录并运行统一启动脚本：
+在仓库根目录运行本地统一启动入口（Windows）：
 
 ```powershell
-Set-Location "..\..\platform"
-powershell -ExecutionPolicy Bypass -File ".\scripts\start-local.ps1"
+powershell -NoProfile -ExecutionPolicy Bypass -File ".\start-local.ps1"
 ```
 
 等待各服务完成编译后，打开：
@@ -99,11 +99,13 @@ http://localhost:8088
 
 启动脚本会完成以下工作：
 
-1. 启动 PostgreSQL、MinIO、Mailpit 和 Caddy。
-2. 执行平台数据库迁移。
-3. 启动平台后端（8080）。
-4. 启动教师 Agent（3200）。
-5. 启动学生 Agent（本机 8001）。
+1. 检查本地配置、依赖和三个数据库角色的真实连接。
+2. 必要时启动本机 PostgreSQL、MinIO、Mailpit；核对已有数据库迁移版本，不自动修改数据库结构。
+3. 构建与当前源码对应的平台和学生前端。
+4. 顺序启动平台（8080）、教师端（3200）、学生端（8001），等待健康检查通过。
+5. 启动仅监听本机的 8088 网关，路由读取 `contracts/routing.yaml`，统一三端公共地址。
+
+配置和数据库排障、检查/停止命令以及上传影响范围见 [完整平台本地启动说明](docs/local-full-stack.md)。日志位于 `.runtime/local-dev/`，失败时会显示对应日志路径。原有生产部署入口保持不变。
 
 可使用以下命令检查服务：
 
@@ -152,6 +154,8 @@ Get-NetTCPConnection -State Listen -LocalPort 8088,8080,3200,8001
 - 生产部署必须替换开发密钥，启用 HTTPS、数据库备份、日志与监控，并使用正式 SMTP 和受控的对象存储权限。
 
 ## 开发边界
+
+三端职责、数据归属、关键流程和跨服务契约的统一导航见[三端架构与接口](docs/architecture-boundaries.md)；数据库、表字典、ER 与实际读写边界见[数据库架构说明](docs/database-architecture.md)。
 
 - 平台负责统一身份、角色权限、课程访问关系、统一入口和服务编排。
 - 教师 Agent 负责课程内容建设、课件与课堂发布、授课和播放器业务。

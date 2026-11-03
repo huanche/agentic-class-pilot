@@ -5,7 +5,10 @@ from backend.infrastructure import content_store
 
 import os
 import json
+import logging
 from uuid import uuid4
+
+from backend.contracts import SessionError
 
 from backend.infrastructure import database
 from backend.content import lesson_content
@@ -323,11 +326,16 @@ def latest_session_key(user_id: str, course_id: str, publication_id: str,
 
 
 def classroom_scenes(classroom_id: str) -> list[dict]:
-    """Reload the published player's source for sessions saved before scene grounding."""
-    _bind_database()
-    with database._db() as connection:
-        row = connection.execute(
-            "SELECT scenes FROM teacher.mentra_classrooms WHERE id = %s",
-            (classroom_id,),
-        ).fetchone()
-    return list(row[0] or []) if row else []
+    """Reload old-session scenes through the platform contract."""
+    from backend.infrastructure import platform_client
+
+    try:
+        return platform_client.fetch_classroom_scenes(classroom_id)
+    except SessionError as error:
+        if error.status_code in (401, 403):
+            raise
+        logging.getLogger(__name__).warning(
+            "replay_scene_api_unavailable classroom_id=%s detail=%s",
+            classroom_id, getattr(error, "detail", ""),
+        )
+        return []

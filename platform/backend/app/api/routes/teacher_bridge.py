@@ -15,10 +15,16 @@ from sqlalchemy import text
 from app.api.deps import CurrentUser, SessionDep, TeacherUser
 from app.core.config import settings
 from app.models import Course
-from app.api.routes.student_bridge import (_classroom_view, _published_classroom,
-    _published_package_payload, ensure_published_knowledge_job)
+from app.api.routes.student_bridge import (
+    _content_from_teacher_snapshot, ensure_published_knowledge_job,
+)
 from app.services.browser_sessions import user_for_cookie
 from app.services.course_access import get_accessible_course, get_owned_course
+from app.services.teacher_course_client import (
+    TeacherCourseConflict,
+    TeacherCourseUnavailable,
+    provision_teacher_course,
+)
 
 router = APIRouter(tags=["teacher-bridge"])
 
@@ -33,27 +39,38 @@ def enqueue_published_lesson_knowledge(
     body: PublishedLessonPreparation, session: SessionDep,
     x_teacher_service_key: str | None = Header(default=None),
 ):
-    """Record the verified published video; student workers do the model work."""
+    """Verify a teacher-owned published video, then enqueue student knowledge."""
     check_service_key(x_teacher_service_key)
-    row = session.execute(text(
-        "SELECT l.course_id, a.payload FROM teacher.mentra_course_artifacts a "
-        "JOIN teacher_course_link l ON l.external_course_id=a.course_id "
-        "WHERE a.id=:artifact AND a.course_id=:course AND a.status='published' "
-        "AND a.payload->>'classVisible'='true' "
-        "AND a.payload->>'classPublicationId' IS NOT NULL"
-    ), {"artifact": body.artifact_id, "course": body.course_id}).first()
-    if not row:
+    from app.services.teacher_learning_content_client import (
+        TeacherLearningContentUnavailable, get_teacher_published_lesson,
+    )
+
+    owner_row = session.execute(
+        text("SELECT owner_id::text FROM course WHERE id::text=:id"),
+        {"id": str(body.course_id)},
+    ).first()
+    try:
+        lesson, reason = get_teacher_published_lesson(
+            body.artifact_id,
+            uuid.UUID(str(owner_row[0])) if owner_row else None,
+        )
+    except TeacherLearningContentUnavailable as error:
+        raise HTTPException(503, "教师服务暂不可用，请稍后重试") from error
+    if lesson is None:
+        if reason == "classroom-missing":
+            raise HTTPException(404, "课堂不存在或尚未发布")
+        if reason == "not-a-lesson-video":
+            raise HTTPException(409, "已发布内容不是课时教学视频")
         raise HTTPException(409, "未找到已发布的教学视频")
-    course_id, artifact = row
-    placement = artifact.get("publicationPlacement") or {}
-    lesson_id = placement.get("lessonId")
-    classroom_id = artifact.get("classroomId")
-    if not lesson_id or not classroom_id:
-        raise HTTPException(409, "已发布内容不是课时教学视频")
-    classroom = _classroom_view(session, classroom_id)
+    platform_course = _platform_course_id(session, lesson["courseId"])
+    if not platform_course:
+        raise HTTPException(409, "未找到已发布的教学视频")
     revision = ensure_published_knowledge_job(
-        session, course_id, lesson_id, classroom, artifact.get("classPublishedAt"))
-    return {"lessonId": lesson_id, "videoRevision": revision}
+        session, uuid.UUID(platform_course), lesson["lessonId"],
+        lesson["classroom"].to_dict(), lesson.get("publishedAt"),
+    )
+    return {"lessonId": lesson["lessonId"], "videoRevision": revision}
+
 
 # API prefixes a teacher (not only an admin) may call on the teacher service.
 # Each of them carries an explicit scope check (course or classroom ownership)
@@ -96,20 +113,6 @@ def check_service_key(value: str | None) -> None:
         raise HTTPException(403, "Invalid service credentials")
 
 
-def classroom_course_id(session: SessionDep, classroom_id: str) -> str | None:
-    """Resolve a classroom to its course for ownership checks.
-
-    Standalone classrooms (persisted before being attached to a course) have no
-    course linkage yet; the caller treats them like unscoped resources.
-    """
-    row = session.execute(
-        text("SELECT course_id FROM teacher.mentra_classrooms WHERE id=:id"), {"id": classroom_id}
-    ).first()
-    if not row:
-        raise HTTPException(404, "Classroom not found")
-    return row[0]
-
-
 class TeacherCourseRegistration(BaseModel):
     course_id: uuid.UUID
     teacher_id: uuid.UUID
@@ -131,9 +134,10 @@ def register_teacher_course(
     """
     check_service_key(x_teacher_service_key)
     from app.models import User
-    source = session.execute(text("SELECT teacher_id,title,payload FROM teacher.mentra_courses WHERE id=:id"), {"id": str(body.course_id)}).first()
-    if not source or source[0] != str(body.teacher_id):
-        raise HTTPException(409, "Teacher course ownership mismatch")
+    # The service key authenticates the teacher service. Its registration
+    # request is the course snapshot; platform owns only the enrollment copy.
+    title = body.title
+    description = body.description
     teacher = session.get(User, body.teacher_id)
     if not teacher or not teacher.is_active or (teacher.role != "teacher" and not teacher.is_superuser):
         raise HTTPException(403, "Invalid teacher")
@@ -141,10 +145,14 @@ def register_teacher_course(
     if course and course.owner_id != body.teacher_id:
         raise HTTPException(409, "Course belongs to another teacher")
     if course:
-        course.title = source[1]
-        course.description = source[2].get("description")
+        course.title = title
+        if description is not None:
+            # A registration without a description refreshes the title only:
+            # teacher payloads may omit it, and wiping the platform copy would
+            # make a retried registration destroy existing metadata.
+            course.description = description
     else:
-        course = Course(id=body.course_id, owner_id=body.teacher_id, title=source[1], description=source[2].get("description"))
+        course = Course(id=body.course_id, owner_id=body.teacher_id, title=title, description=description)
         session.add(course)
     session.flush()
     session.execute(text("INSERT INTO teacher_course_link(course_id,external_course_id) VALUES (:id,:external) ON CONFLICT (course_id) DO UPDATE SET external_course_id=EXCLUDED.external_course_id"), {"id": body.course_id, "external": str(body.course_id)})
@@ -167,8 +175,6 @@ def resolve_course_alias(
     under the legacy id instead of failing with 404.
     """
     check_service_key(x_teacher_service_key)
-    if session.execute(text("SELECT 1 FROM teacher.mentra_courses WHERE id=:id"), {"id": course_id}).first():
-        return {"platformCourseId": course_id, "legacyCourseId": None}
     link = session.execute(
         text("SELECT course_id::text, external_course_id FROM teacher_course_link "
              "WHERE course_id::text=:pid OR external_course_id=:ext"),
@@ -177,10 +183,6 @@ def resolve_course_alias(
     if not link:
         raise HTTPException(404, "课程映射不存在")
     platform_id, legacy_id = str(link[0]), str(link[1])
-    if not session.execute(
-        text("SELECT 1 FROM teacher.mentra_courses WHERE id=:id"), {"id": legacy_id}
-    ).first():
-        raise HTTPException(404, "课程尚未同步到教师服务")
     return {
         "platformCourseId": platform_id,
         "legacyCourseId": legacy_id if legacy_id != course_id else None,
@@ -196,6 +198,118 @@ def authorize_teacher_request(body: TeacherAuthorization, session: SessionDep,
         raise
     except Exception as error:  # database unreachable: fail closed with a distinct 503
         raise HTTPException(503, "平台数据库暂不可用，请稍后重试") from error
+
+
+def _platform_course_id(session: SessionDep, ref: str) -> str | None:
+    """Resolve a platform UUID or legacy teacher id to the platform course UUID.
+
+    Both sources are platform-owned tables: the course record and the
+    registration mapping. Returns None when no platform course exists.
+    """
+    row = session.execute(
+        text("SELECT id::text FROM course WHERE id::text=:ref"), {"ref": ref}).first()
+    if row:
+        return str(row[0])
+    link = session.execute(
+        text("SELECT course_id::text FROM teacher_course_link "
+             "WHERE course_id::text=:ref OR external_course_id=:ref"),
+        {"ref": ref}).first()
+    return str(link[0]) if link else None
+
+
+def _platform_course_owner(session: SessionDep, ref: str) -> str | None:
+    """Resolve a teacher course reference to its owner in platform-owned data."""
+    row = session.execute(
+        text("SELECT c.owner_id::text FROM course c "
+             "LEFT JOIN teacher_course_link l ON l.course_id=c.id "
+             "WHERE c.id::text=:ref OR l.external_course_id=:ref LIMIT 1"),
+        {"ref": ref},
+    ).first()
+    return str(row[0]) if row else None
+
+
+def _job_course_id(session: SessionDep, job_id: str, kind: str, user) -> str:
+    """Resolve a teacher-owned background job through the teacher API."""
+    from app.services.teacher_authz_client import TeacherAuthzUnavailable, job_course_ref
+    try:
+        return job_course_ref(job_id, kind, user.id)
+    except LookupError as error:
+        raise HTTPException(404, "Task not found") from error
+    except TeacherAuthzUnavailable as error:
+        raise HTTPException(503, "教师服务暂不可用，请稍后重试") from error
+
+
+def _student_material_allowed(session: SessionDep, course_ref: str, material_id: str,
+                              user) -> None:
+    """Student may read only enrolled, explicitly published materials."""
+    if not _enrolled(session, course_ref, user):
+        raise HTTPException(403, "Student may only read enrolled published materials")
+    from app.services.teacher_authz_client import TeacherAuthzUnavailable, material_visibility
+    try:
+        visible = material_visibility(course_ref, material_id, user.id)
+    except TeacherAuthzUnavailable as error:
+        raise HTTPException(503, "教师服务暂不可用，请稍后重试") from error
+    if not visible:
+        raise HTTPException(403, "Student may only read enrolled published materials")
+
+
+def _enrolled(session: SessionDep, course_ref: str, user) -> bool:
+    """Enrollment check using only platform-owned tables."""
+    platform_course_id = _platform_course_id(session, course_ref)
+    if not platform_course_id:
+        return False
+    return bool(session.execute(
+        text("SELECT 1 FROM enrollment WHERE course_id=:cid AND student_id=:uid"),
+        {"cid": platform_course_id, "uid": user.id},
+    ).first())
+
+
+def _student_classroom_allowed(session: SessionDep, classroom_id: str, user) -> None:
+    """Student may view only the current published classroom of an enrolled course."""
+    from app.services.teacher_authz_client import TeacherAuthzUnavailable, classroom_visibility
+    try:
+        course_ref, published = classroom_visibility(classroom_id, user.id)
+    except TeacherAuthzUnavailable as error:
+        raise HTTPException(503, "教师服务暂不可用，请稍后重试") from error
+    if not course_ref:
+        raise HTTPException(403, "Classroom is not attached to a course")
+    try:
+        platform_course_id = uuid.UUID(course_ref)
+    except ValueError:
+        link = session.execute(
+            text("SELECT course_id::text FROM teacher_course_link WHERE external_course_id=:external"),
+            {"external": course_ref},
+        ).first()
+        if not link:
+            raise HTTPException(403, "Classroom course is not available to students")
+        platform_course_id = uuid.UUID(str(link[0]))
+    enrolled = session.execute(
+        text("SELECT 1 FROM enrollment WHERE course_id=:course AND student_id=:student"),
+        {"course": platform_course_id, "student": user.id},
+    ).first()
+    if not enrolled or not published:
+        raise HTTPException(403, "Student may only view an enrolled published classroom")
+
+
+def _classroom_course_scoped(session: SessionDep, classroom_id: str, user) -> str | None:
+    """Resolve classroom ownership through the teacher API."""
+    from app.services.teacher_authz_client import TeacherAuthzUnavailable, classroom_visibility
+    try:
+        course_ref, _published = classroom_visibility(classroom_id, user.id)
+    except TeacherAuthzUnavailable as error:
+        raise HTTPException(503, "教师服务暂不可用，请稍后重试") from error
+    if not course_ref:
+        raise HTTPException(404, "Classroom not found")
+    return course_ref
+
+
+def _teacher_course_owner_allowed(session: SessionDep, course_ref: str, user) -> None:
+    """Authorize a teacher against the platform-owned course record."""
+    owner = _platform_course_owner(session, course_ref)
+    if owner is None:
+        raise HTTPException(404, "课程不存在或尚未同步到统一数据库")
+    if owner != str(user.id) and not user.is_superuser:
+        raise HTTPException(403, "无权访问该课程（课程属于其他教师）")
 
 
 def _authorize_teacher_request(body: TeacherAuthorization, session: SessionDep,
@@ -222,16 +336,7 @@ def _authorize_teacher_request(body: TeacherAuthorization, session: SessionDep,
     if user.role == "student" and body.method in {"GET", "HEAD", "OPTIONS"}:
         # A resource URL is readable only after explicit publication in an enrolled active course.
         if parts[:2] == ["api", "course-space"] and len(parts) == 5 and parts[3] == "materials":
-            row = session.execute(text(
-                "SELECT c.payload FROM teacher.mentra_courses c "
-                "JOIN teacher_course_link l ON l.external_course_id=c.id "
-                "JOIN enrollment e ON e.course_id=l.course_id "
-                "WHERE (c.id=:ref OR l.course_id::text=:ref) AND e.student_id=:uid AND c.status='active'"
-            ), {"ref": parts[2], "uid": user.id}).first()
-            material = next((m for m in (row[0].get("materials", []) if row else [])
-                             if m.get("id") == parts[4]), None)
-            if not material or material.get("classVisible") is not True or not material.get("classPublicationId"):
-                raise HTTPException(403, "Student may only read enrolled published materials")
+            _student_material_allowed(session, parts[2], parts[4], user)
             return {"userId": str(user.id), "role": user.role, "isAdmin": False}
         classroom_id: str | None = None
         if parts[:1] in (["classroom-player"], ["classroom"]) and len(parts) > 1:
@@ -241,82 +346,33 @@ def _authorize_teacher_request(body: TeacherAuthorization, session: SessionDep,
         elif parts[:2] == ["api", "classroom"]:
             classroom_id = (parse_qs(split.query).get("id") or [None])[0]
         if classroom_id:
-            course_id = classroom_course_id(session, classroom_id)
-            if not course_id:
-                raise HTTPException(403, "Classroom is not attached to a course")
-            try:
-                platform_course_id = uuid.UUID(course_id)
-            except ValueError:
-                # Legacy courses keep their nanoid in the teacher schema; the
-                # platform UUID comes from the mapping table.
-                link = session.execute(
-                    text("SELECT course_id::text FROM teacher_course_link WHERE external_course_id=:external"),
-                    {"external": course_id}).first()
-                if not link:
-                    raise HTTPException(403, "Classroom course is not available to students")
-                platform_course_id = uuid.UUID(str(link[0]))
-            enrolled = session.execute(
-                text("SELECT 1 FROM enrollment WHERE course_id=:course AND student_id=:student"),
-                {"course": platform_course_id, "student": user.id},
-            ).first()
-            published = session.execute(text(
-                "SELECT 1 FROM teacher.mentra_course_artifacts a "
-                "JOIN teacher_course_link l ON l.external_course_id=a.course_id "
-                "JOIN teacher.mentra_courses c ON c.id=a.course_id "
-                "WHERE l.course_id=:cid AND c.status='active' AND a.status='published' "
-                "AND a.payload->>'classVisible'='true' AND a.payload->>'classPublicationId' IS NOT NULL "
-                "AND a.payload->>'classroomId'=:rid"
-            ), {"cid": platform_course_id, "rid": classroom_id}).first()
-            if not enrolled or not published:
-                raise HTTPException(403, "Student may only view an enrolled published classroom")
+            _student_classroom_allowed(session, classroom_id, user)
             return {"userId": str(user.id), "role": user.role, "isAdmin": False}
     if user.role != "teacher" and not user.is_superuser:
         raise HTTPException(403, "Teacher role required")
     course_id: str | None = None
     if parts[:2] == ["api", "course-space"] and len(parts) > 2:
         if parts[2] == "jobs" and len(parts) > 3:
-            row = session.execute(text("SELECT course_id FROM teacher.mentra_artifact_jobs WHERE id=:id"), {"id": parts[3]}).first()
-            if not row:
-                raise HTTPException(404, "Task not found")
-            course_id = row[0]
+            course_id = _job_course_id(session, parts[3], "artifact", user)
         elif parts[2:4] == ["knowledge-graph", "jobs"] and len(parts) > 4:
-            row = session.execute(text("SELECT course_id FROM teacher.mentra_course_graph_jobs WHERE id=:id"), {"id": parts[4]}).first()
-            if not row:
-                raise HTTPException(404, "Task not found")
-            course_id = row[0]
+            course_id = _job_course_id(session, parts[4], "graph", user)
         else:
             course_id = parts[2]
     elif parts[:2] == ["api", "classes"] and len(parts) > 2:
         course_id = parts[2]
     elif parts[:2] == ["api", "classroom-media"] and len(parts) > 2:
-        course_id = classroom_course_id(session, parts[2])
+        course_id = _classroom_course_scoped(session, parts[2], user)
     elif parts[:2] == ["api", "classroom"]:
         # `GET /api/classroom?id=...` carries the classroom id in the query.
         query_id = (parse_qs(split.query).get("id") or [None])[0]
         if query_id:
-            course_id = classroom_course_id(session, query_id)
+            course_id = _classroom_course_scoped(session, query_id, user)
     elif parts[:1] == ["course-space"] and len(parts) > 1:
         course_id = parts[1]
     elif parts[:1] in (["classroom-player"], ["classroom"]) and len(parts) > 1:
-        course_id = classroom_course_id(session, parts[1])
+        course_id = _classroom_course_scoped(session, parts[1], user)
     if course_id:
-        row = session.execute(text("SELECT teacher_id FROM teacher.mentra_courses WHERE id=:id"), {"id": course_id}).first()
-        if not row:
-            # Platform entry points (建设概览, roster links) carry the platform
-            # UUID; pre-integration courses live under their legacy teacher-agent
-            # id, so resolve through the mapping table before rejecting.
-            link = session.execute(
-                text("SELECT external_course_id FROM teacher_course_link WHERE course_id::text=:pid"),
-                {"pid": course_id},
-            ).first()
-            if link and link[0] != course_id:
-                row = session.execute(
-                    text("SELECT teacher_id FROM teacher.mentra_courses WHERE id=:id"), {"id": link[0]}
-                ).first()
-        if not row:
-            raise HTTPException(404, "课程不存在或尚未同步到统一数据库")
-        if row[0] != str(user.id) and not user.is_superuser:
-            raise HTTPException(403, "无权访问该课程（课程属于其他教师）")
+        _teacher_course_owner_allowed(session, course_id, user)
     # Legacy unscoped classroom/editing APIs have no complete owner model yet.
     # They remain admin-only until their ownership migration is complete.
     if (
@@ -355,21 +411,18 @@ async def open_teacher_workspace(course_id: uuid.UUID, session: SessionDep, user
     # Serialize workspace provisioning per course across workers.
     session.execute(text("SELECT pg_advisory_xact_lock(hashtext(:id))"), {"id": str(course_id)})
     row = session.execute(text("SELECT external_course_id FROM teacher_course_link WHERE course_id=:id"), {"id": course_id}).first()
-    if row and session.execute(text("SELECT 1 FROM teacher.mentra_courses WHERE id=:id AND teacher_id=:owner"), {"id": row[0], "owner": str(course.owner_id)}).first():
-        external_id = row[0]
-    else:
-        existing = session.execute(text("SELECT teacher_id FROM teacher.mentra_courses WHERE id=:id"), {"id": str(course.id)}).first()
-        if existing and existing[0] != str(course.owner_id):
-            raise HTTPException(409, "课程归属不一致，请联系管理员修复")
-        async with httpx.AsyncClient(timeout=30, trust_env=False) as client:
-            try:
-                response = await client.post(f"{settings.TEACHER_URL}/api/course-space", json={"id": str(course.id), "title": course.title, "description": course.description},
-                    headers={"X-Platform-Service-Key": settings.TEACHER_SERVICE_KEY, "X-Platform-Subject": str(course.owner_id)})
-                response.raise_for_status()
-                external_id = response.json()["course"]["id"]
-            except (httpx.HTTPError, KeyError, ValueError) as error:
-                session.rollback()
-                raise HTTPException(502, "教师服务暂不可用，请稍后重试") from error
+    requested_id = str(row[0]) if row else str(course.id)
+    try:
+        external_id = await provision_teacher_course(
+            requested_id, course.owner_id, course.title, course.description
+        )
+    except TeacherCourseConflict as error:
+        session.rollback()
+        raise HTTPException(409, "课程归属不一致，请联系管理员修复") from error
+    except TeacherCourseUnavailable as error:
+        session.rollback()
+        raise HTTPException(502, "教师服务暂不可用，请稍后重试") from error
+    if not row:
         session.execute(text("INSERT INTO teacher_course_link(course_id,external_course_id) VALUES (:id,:external) ON CONFLICT (course_id) DO UPDATE SET external_course_id=EXCLUDED.external_course_id"), {"id": course_id, "external": external_id})
         session.commit()
     return {"url": f"{settings.TEACHER_PUBLIC_URL.rstrip('/')}/teacher-workspace?workspace={external_id}"}
@@ -378,12 +431,21 @@ async def open_teacher_workspace(course_id: uuid.UUID, session: SessionDep, user
 @router.get("/courses/{course_id}/published-content")
 def published_content(course_id: uuid.UUID, session: SessionDep, user: CurrentUser):
     get_accessible_course(session, user, course_id)
-    row = session.execute(text("SELECT p.payload FROM teacher.mentra_knowledge_packages p JOIN teacher_course_link l ON l.external_course_id=p.course_id WHERE l.course_id=:id AND p.status='published' ORDER BY p.version DESC LIMIT 1"), {"id": course_id}).first()
-    # Reading a published knowledge package does not require a player. Keep
-    # this separate from Classroom availability so students see real material
-    # while the teacher is still preparing interactive courseware.
-    return {"knowledgePackage": _published_package_payload(session, course_id) if row else None,
-            "classroomAvailable": bool(_published_classroom(session, course_id))}
+    from app.services.teacher_learning_content_client import (
+        TeacherLearningContentUnavailable, TeacherLearningContentMissing,
+        get_teacher_published_content,
+    )
+    course = session.get(Course, course_id)
+    if course is None:
+        return {"knowledgePackage": None, "classroomAvailable": False}
+    try:
+        snapshot = get_teacher_published_content(course_id, course.owner_id)
+        if snapshot is None:
+            return {"knowledgePackage": None, "classroomAvailable": False}
+        package, lessons = _content_from_teacher_snapshot(snapshot, user.id, course_id)
+        return {"knowledgePackage": package, "classroomAvailable": bool(lessons)}
+    except (TeacherLearningContentUnavailable, TeacherLearningContentMissing) as error:
+        raise HTTPException(503, "教师服务暂不可用，请稍后重试") from error
 
 
 def resolve_platform_course_id(session: SessionDep, course_id: str) -> uuid.UUID:

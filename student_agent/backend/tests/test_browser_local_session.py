@@ -44,3 +44,16 @@ def test_modified_browser_snapshot_is_rejected(monkeypatch):
     with pytest.raises(SessionError) as captured:
         main.browser_restore(main.BrowserRestoreRequest(snapshot="abc.def"), BackgroundTasks())
     assert captured.value.status_code == 400
+
+
+def test_browser_snapshot_uses_independent_key_and_accepts_legacy_signature(monkeypatch):
+    monkeypatch.setenv("STUDENT_SERVICE_KEY", "channel-key")
+    monkeypatch.delenv("STUDENT_TOKEN_SIGNING_KEY", raising=False)
+    session = {"id": "legacy-session", "courses": [], "messages": [], "phase": "idle"}
+    legacy = learning_session._browser_snapshot(session)
+    monkeypatch.setenv("STUDENT_TOKEN_SIGNING_KEY", "snapshot-key")
+    assert learning_session._restore_browser_snapshot(legacy)["id"] == "legacy-session"
+    current = learning_session._browser_snapshot(session)
+    assert current != legacy
+    monkeypatch.setenv("STUDENT_SERVICE_KEY", "different-channel-key")
+    assert learning_session._restore_browser_snapshot(current)["id"] == "legacy-session"

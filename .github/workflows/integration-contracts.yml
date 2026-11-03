@@ -1,0 +1,316 @@
+name: integration-contracts
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'platform/backend/app/api/**'
+      - 'platform/backend/app/services/**'
+      - 'student_agent/agent/**'
+      - 'student_agent/backend/**'
+      - 'contracts/**'
+      - 'scripts/check_integration_contracts.py'
+      - 'scripts/check_schema_ownership.py'
+      - 'scripts/check_runtime_data_ownership.py'
+      - 'scripts/tests/test_integration_contracts.py'
+      - 'scripts/generate_integration_clients.py'
+      - 'scripts/tests/test_generated_clients.py'
+      - 'scripts/tests/generated-clients.test.mjs'
+      - 'scripts/tests/test_client_generation.py'
+      - 'scripts/tests/test_local_dev.py'
+      - 'scripts/tests/local-gateway.test.mjs'
+      - 'scripts/local_dev.py'
+      - 'scripts/local-gateway.mjs'
+      - 'teacher_agent/app/api/**/route.ts'
+      - 'teacher_agent/generated/**'
+      - 'teacher_agent/lib/server/platform-course-members.ts'
+      - 'teacher_agent/tests/server/platform-course-members.test.ts'
+      - 'platform/backend/app/api/main.py'
+      - 'platform/backend/app/api/routes/teacher_bridge.py'
+      - 'platform/backend/app/api/routes/student_bridge.py'
+      - 'platform/backend/app/alembic/**'
+      - 'platform/backend/tests/conftest.py'
+      - 'platform/backend/tests/api/routes/test_learning_context.py'
+      - 'platform/backend/tests/api/routes/test_student_lesson_context.py'
+      - 'platform/backend/tests/api/routes/test_teacher_bridge.py'
+      - 'platform/backend/tests/api/routes/test_student_bridge.py'
+      - 'platform/backend/app/services/course_publication.py'
+      - 'platform/backend/app/services/teacher_publication_client.py'
+      - 'platform/backend/app/services/teacher_course_client.py'
+      - 'platform/backend/app/services/student_knowledge_client.py'
+      - 'platform/backend/app/services/student_analytics_client.py'
+      - 'platform/backend/app/services/teacher_analytics_client.py'
+      - 'platform/backend/app/services/teacher_classroom_client.py'
+      - 'platform/backend/app/core/config.py'
+      - 'platform/.env.example'
+      - 'platform/backend/app/generated/**'
+      - 'platform/backend/tests/unit/test_teacher_publication_client.py'
+      - 'platform/backend/tests/unit/test_student_knowledge_client.py'
+      - 'platform/backend/tests/unit/test_student_analytics_client.py'
+      - 'platform/backend/tests/unit/test_teacher_classroom_client.py'
+      - 'platform/backend/tests/unit/test_student_token_purpose.py'
+      - 'platform/backend/tests/unit/test_teacher_registration_boundary.py'
+      - 'platform/backend/tests/unit/test_teacher_learning_content_client.py'
+      - 'platform/backend/tests/unit/test_teacher_authz_boundary.py'
+      - 'platform/backend/tests/unit/test_teacher_student_state_client.py'
+      - 'platform/backend/tests/unit/test_chat_record_clients.py'
+      - 'student_agent/agent/persistence.py'
+      - 'student_agent/agent/platform_client.py'
+      - 'student_agent/backend/tests/test_replay_scene_read_mode.py'
+      - 'teacher_agent/lib/server/platform-learning-projection.ts'
+      - 'teacher_agent/tests/course-space/platform-content-reads.test.ts'
+      - 'teacher_agent/tests/course-space/platform-publication-counts.test.ts'
+      - 'teacher_agent/tests/course-space/platform-latest-classroom.test.ts'
+      - 'teacher_agent/tests/course-space/platform-published-content.test.ts'
+      - 'teacher_agent/tests/course-space/platform-authz-reads.test.ts'
+      - 'student_agent/backend/internal_platform.py'
+      - 'student_agent/backend/tests/test_internal_platform_knowledge.py'
+      - 'student_agent/backend/tests/test_internal_platform_analytics_db.py'
+      - 'student_agent/backend/tests/test_internal_platform_knowledge_db.py'
+      - 'platform/backend/pyproject.toml'
+      - 'platform/uv.lock'
+      - 'student_agent/agent/platform_client.py'
+      - 'student_agent/backend/main.py'
+      - 'student_agent/backend/tests/test_platform_generated_client.py'
+      - 'student_agent/backend/requirements.txt'
+      - 'student_agent/generated/**'
+      - 'student_agent/start-platform.ps1'
+      - 'platform/backend/app/api/routes/user_model_config.py'
+      - 'platform/scripts/gen_routing.py'
+      - 'platform/deployment/**'
+      - 'student_agent/tests/fixtures/**'
+      - 'student_agent/apps/integration/launch_context.py'
+      - '.github/workflows/integration-contracts.yml'
+  push:
+    paths:
+      - 'platform/backend/app/api/**'
+      - 'platform/backend/app/services/**'
+      - 'student_agent/agent/**'
+      - 'student_agent/backend/**'
+      - 'contracts/**'
+      - 'scripts/check_integration_contracts.py'
+      - 'scripts/check_runtime_data_ownership.py'
+      - 'scripts/tests/test_integration_contracts.py'
+      - 'scripts/generate_integration_clients.py'
+      - 'scripts/tests/test_generated_clients.py'
+      - 'scripts/tests/generated-clients.test.mjs'
+      - 'scripts/tests/test_client_generation.py'
+      - 'scripts/tests/test_local_dev.py'
+      - 'scripts/tests/local-gateway.test.mjs'
+      - 'scripts/local_dev.py'
+      - 'scripts/local-gateway.mjs'
+      - 'teacher_agent/app/api/**/route.ts'
+      - 'teacher_agent/generated/**'
+      - 'teacher_agent/lib/server/platform-course-members.ts'
+      - 'teacher_agent/tests/server/platform-course-members.test.ts'
+      - 'platform/backend/app/api/**'
+      - 'platform/backend/app/alembic/**'
+      - 'platform/backend/tests/conftest.py'
+      - 'platform/backend/tests/api/routes/test_learning_context.py'
+      - 'platform/backend/tests/api/routes/test_student_lesson_context.py'
+      - 'platform/backend/tests/api/routes/test_teacher_bridge.py'
+      - 'platform/backend/tests/api/routes/test_student_bridge.py'
+      - 'platform/backend/app/services/course_publication.py'
+      - 'platform/backend/app/services/teacher_publication_client.py'
+      - 'platform/backend/app/services/teacher_course_client.py'
+      - 'platform/backend/app/services/student_knowledge_client.py'
+      - 'platform/backend/app/services/student_analytics_client.py'
+      - 'platform/backend/app/services/teacher_analytics_client.py'
+      - 'platform/backend/app/services/teacher_classroom_client.py'
+      - 'platform/backend/app/core/config.py'
+      - 'platform/.env.example'
+      - 'platform/backend/app/generated/**'
+      - 'platform/backend/tests/unit/test_teacher_publication_client.py'
+      - 'platform/backend/tests/unit/test_student_knowledge_client.py'
+      - 'platform/backend/tests/unit/test_student_analytics_client.py'
+      - 'platform/backend/tests/unit/test_teacher_classroom_client.py'
+      - 'platform/backend/tests/unit/test_student_token_purpose.py'
+      - 'platform/backend/tests/unit/test_teacher_registration_boundary.py'
+      - 'platform/backend/tests/unit/test_teacher_learning_content_client.py'
+      - 'platform/backend/tests/unit/test_teacher_authz_boundary.py'
+      - 'platform/backend/tests/unit/test_teacher_student_state_client.py'
+      - 'student_agent/agent/persistence.py'
+      - 'student_agent/agent/platform_client.py'
+      - 'student_agent/backend/tests/test_replay_scene_read_mode.py'
+      - 'teacher_agent/lib/server/platform-learning-projection.ts'
+      - 'teacher_agent/tests/course-space/platform-content-reads.test.ts'
+      - 'teacher_agent/tests/course-space/platform-publication-counts.test.ts'
+      - 'teacher_agent/tests/course-space/platform-latest-classroom.test.ts'
+      - 'teacher_agent/tests/course-space/platform-published-content.test.ts'
+      - 'teacher_agent/tests/course-space/platform-authz-reads.test.ts'
+      - 'student_agent/backend/internal_platform.py'
+      - 'student_agent/backend/tests/test_internal_platform_knowledge.py'
+      - 'student_agent/backend/tests/test_internal_platform_analytics_db.py'
+      - 'student_agent/backend/tests/test_internal_platform_knowledge_db.py'
+      - 'platform/backend/pyproject.toml'
+      - 'platform/uv.lock'
+      - 'student_agent/agent/platform_client.py'
+      - 'student_agent/backend/main.py'
+      - 'student_agent/backend/tests/test_platform_generated_client.py'
+      - 'student_agent/backend/requirements.txt'
+      - 'student_agent/generated/**'
+      - 'student_agent/start-platform.ps1'
+      - 'platform/scripts/gen_routing.py'
+      - 'platform/deployment/**'
+      - 'student_agent/tests/fixtures/**'
+      - 'student_agent/apps/integration/launch_context.py'
+      - '.github/workflows/integration-contracts.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: integration-contracts-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: contracts/requirements-dev.txt
+      - name: Install development-only validators
+        run: python -m pip install -r contracts/requirements-dev.txt
+      - name: Validate API declarations and learning-context compatibility
+        run: python scripts/check_integration_contracts.py
+      - name: Keep new teacher and student schema changes in their owning services
+        run: python scripts/check_schema_ownership.py
+      - name: Prevent new cross-owner runtime SQL
+        run: python scripts/check_runtime_data_ownership.py
+      - name: Reject generated gateway routing drift
+        run: python platform/scripts/gen_routing.py --check
+      - name: Run isolated contract regressions (no application or database)
+        run: |
+          python -m unittest discover -s scripts/tests -p test_integration_contracts.py -v
+          python -m unittest discover -s scripts/tests -p test_client_generation.py -v
+          python -m unittest discover -s scripts/tests -p test_local_dev.py -v
+
+  generated-clients:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14.4'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: contracts/tooling/package-lock.json
+      - name: Install isolated pinned generation tools
+        run: |
+          python -m pip install uv==0.12.15 PyYAML==6.0.3
+          npm ci --ignore-scripts --prefix contracts/tooling
+      - name: Reject generated client drift
+        run: python scripts/generate_integration_clients.py --check
+      - name: Check exported teacher provider methods and success statuses
+        run: node contracts/tooling/check-teacher-provider.mjs
+      - name: Typecheck generated TypeScript and compile isolated tests
+        run: |
+          node contracts/tooling/node_modules/typescript/bin/tsc -p contracts/tooling/tsconfig.json
+          node contracts/tooling/node_modules/typescript/bin/tsc -p contracts/tooling/tsconfig.test.json
+      - name: Exercise generated TypeScript with mock fetch only
+        run: node --test scripts/tests/generated-clients.test.mjs
+      - name: Exercise gateway only against an ephemeral local test server
+        env:
+          LOCAL_TEST_PYTHON: python
+        run: node --test scripts/tests/local-gateway.test.mjs
+
+  python-client-compatibility:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      matrix:
+        python: ['3.10', '3.12']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '${{ matrix.python }}'
+      - name: Install SDK test dependencies only
+        run: python -m pip install -r contracts/tooling/requirements-client-tests.txt
+      - name: Exercise generated Python with mock transport only
+        run: python -m unittest discover -s scripts/tests -p test_generated_clients.py -v
+
+  platform-publication-adapter:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14.4'
+      - name: Install locked platform test dependencies
+        run: |
+          python -m pip install uv==0.12.15
+          cd platform && uv sync --frozen --package app --group dev
+      - name: Check generated publication adapter without a database
+        working-directory: platform/backend
+        env:
+          SECRET_KEY: local-ci-only
+          PROJECT_NAME: test
+          FIRST_SUPERUSER: test@example.com
+          FIRST_SUPERUSER_PASSWORD: local-ci-only
+          DATABASE_URL: postgresql://test:test@localhost:1/app_test
+        run: ../.venv/bin/python -m pytest -p no:cacheprovider --confcutdir=tests/unit tests/unit/test_teacher_publication_client.py tests/unit/test_teacher_classroom_client.py tests/unit/test_student_knowledge_client.py tests/unit/test_student_analytics_client.py tests/unit/test_student_token_purpose.py tests/unit/test_teacher_registration_boundary.py tests/unit/test_teacher_learning_content_client.py tests/unit/test_teacher_authz_boundary.py tests/unit/test_teacher_student_state_client.py tests/unit/test_chat_record_clients.py -q
+      - name: Check generated student platform adapter without a database
+        working-directory: student_agent
+        run: ../platform/.venv/bin/python -m pytest -p no:cacheprovider backend/tests/test_platform_generated_client.py backend/tests/test_internal_platform_knowledge.py backend/tests/test_internal_platform_chat_records.py backend/tests/test_replay_scene_read_mode.py -q
+
+  platform-access-boundaries:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: platform
+          POSTGRES_PASSWORD: isolated-ci-only
+          POSTGRES_DB: app_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U platform -d app_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      SECRET_KEY: isolated-ci-only
+      PROJECT_NAME: isolated-test
+      FIRST_SUPERUSER: test@example.com
+      FIRST_SUPERUSER_PASSWORD: isolated-ci-only
+      TEST_DATABASE_URL: postgresql://platform:isolated-ci-only@127.0.0.1:5432/app_test
+      DATABASE_URL: postgresql://platform:isolated-ci-only@127.0.0.1:5432/app_test
+      STUDENT_SERVICE_KEY: isolated-student-key
+      TEACHER_SERVICE_KEY: isolated-teacher-key
+      STUDENT_TOKEN_SIGNING_KEY: isolated-signing-key
+      FASTAPI_ENV: development
+      EMBEDDED_AGENTS_ENABLED: 'true'
+      OPENAI_API_KEY: isolated-ci-only
+      LLM_API_KEY: isolated-ci-only
+      TIKTOKEN_CACHE_DIR: /tmp/tiktoken-cache
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14.4'
+      - name: Install locked platform test dependencies
+        run: |
+          python -m pip install uv==0.12.15
+          cd platform && uv sync --frozen --package app --group dev
+      - name: Prepare tokenizer cache and migrate isolated test database
+        working-directory: platform/backend
+        run: |
+          mkdir -p "$TIKTOKEN_CACHE_DIR"
+          ../.venv/bin/python -c "import tiktoken; tiktoken.get_encoding('cl100k_base')"
+          ../.venv/bin/python -m alembic upgrade head
+      - name: Check course access and cross-service authorization
+        working-directory: platform/backend
+        run: ../.venv/bin/python -m pytest -p no:cacheprovider tests/api/routes/test_learning_context.py tests/api/routes/test_student_lesson_context.py tests/api/routes/test_teacher_bridge.py tests/api/routes/test_student_bridge.py -q

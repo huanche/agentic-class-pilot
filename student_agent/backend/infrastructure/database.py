@@ -1,7 +1,8 @@
 """Database operations for the student classroom.
 
-The platform owns the student schema. Helpers accept a borrowed connection so
-session mutations can share a single transaction without nested commits.
+The student service owns learning records in the student schema. This module
+keeps its database access local to the service. Helpers accept a borrowed
+connection so session mutations can share one transaction.
 """
 from __future__ import annotations
 

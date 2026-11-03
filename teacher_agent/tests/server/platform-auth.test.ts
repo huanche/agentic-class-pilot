@@ -76,10 +76,10 @@ describe('platformMiddleware', () => {
       headers: { cookie: 'agentedu_session=session-token', origin: 'http://teacher.test:3200' },
     });
     const response = await platformMiddleware(request);
-    const [url, init] = fetchMock.mock.calls[0];
-    expect(url).toBe(`${AUTH_URL}/api/v1/internal/teacher/authorize`);
-    expect(init.headers['X-Teacher-Service-Key']).toBe(SERVICE_KEY);
-    expect(JSON.parse(String(init.body))).toEqual({
+    const sent = fetchMock.mock.calls[0][0] as Request;
+    expect(sent.url).toBe(`${AUTH_URL}/api/v1/internal/teacher/authorize`);
+    expect(sent.headers.get('X-Teacher-Service-Key')).toBe(SERVICE_KEY);
+    expect(await sent.json()).toEqual({
       cookie: 'session-token',
       path: '/api/classroom/agent-edit?id=cls-1',
       method: 'POST',
@@ -87,6 +87,7 @@ describe('platformMiddleware', () => {
       service_user_id: undefined,
     });
     expect(response.headers.get('x-middleware-override-headers')).toContain('x-platform-user-id');
+    expect(response.headers.get('Server-Timing')).toMatch(/^platform-auth;dur=\d+\.\d$/);
   });
 
   it('strips spoofed identity and service headers, then injects the platform principal', async () => {
@@ -106,7 +107,7 @@ describe('platformMiddleware', () => {
     ).toLowerCase();
     expect(overrideList).toContain('x-platform-user-id');
     expect(overrideList).toContain('x-platform-admin');
-    const body = JSON.parse(String(fetchMock.mock.calls[0][1].body));
+    const body = await (fetchMock.mock.calls[0][0] as Request).json();
     expect(body.service_user_id).toBeUndefined();
   });
 
@@ -122,12 +123,44 @@ describe('platformMiddleware', () => {
       },
     });
     const response = await platformMiddleware(request);
-    const body = JSON.parse(String(fetchMock.mock.calls[0][1].body));
+    const body = await (fetchMock.mock.calls[0][0] as Request).json();
     expect(body.service_user_id).toBe('platform-course-owner');
     const overrideList = (
       response.headers.get('x-middleware-override-headers') || ''
     ).toLowerCase();
     expect(overrideList).toContain('x-platform-delegated');
+  });
+
+  it('lets the platform query internal teacher facts without an authorize callback', async () => {
+    const response = await platformMiddleware(makeRequest(
+      '/api/internal/platform/classrooms/room-1/visibility', {
+        headers: {
+          'x-platform-service-key': SERVICE_KEY,
+          'x-platform-subject': 'student-user',
+          'x-platform-delegated': 'attacker-value',
+        },
+      },
+    ));
+    expect(response.status).toBe(200);
+    expect(fetchMock).not.toHaveBeenCalled();
+    const overrideList = (response.headers.get('x-middleware-override-headers') || '').toLowerCase();
+    expect(overrideList).toContain('x-platform-delegated');
+    expect(overrideList).not.toContain('x-platform-service-key');
+    expect(overrideList).not.toContain('x-platform-subject');
+  });
+
+  it('never trusts a forged internal delegation header', async () => {
+    fetchMock.mockResolvedValueOnce(authorizeResponse({ detail: 'Teacher role required' }, 403));
+    const response = await platformMiddleware(makeRequest(
+      '/api/internal/platform/classrooms/room-1/visibility', {
+        headers: {
+          'x-platform-service-key': 'wrong',
+          'x-platform-delegated': 'true',
+        },
+      },
+    ));
+    expect(response.status).toBe(403);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it('fails closed with 503 when the platform identity service is unreachable', async () => {

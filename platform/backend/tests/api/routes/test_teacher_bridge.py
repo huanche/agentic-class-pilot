@@ -7,6 +7,7 @@ page), and the legacy admin-only rule for unscoped APIs.
 import hashlib
 import secrets
 import uuid
+from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -14,7 +15,7 @@ from sqlalchemy import text
 from sqlmodel import Session
 
 from app.core.config import settings
-from app.models import User
+from app.models import Course, User
 
 BRIDGE_KEY = "bridge-test-key"
 ALLOWED_ORIGIN = "http://localhost:3200"
@@ -50,15 +51,7 @@ def bridge_settings(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture(scope="module")
 def bridge_world(db: Session):
-    """Teacher/student identities plus teacher-schema rows.
-
-    The teacher schema itself is owned by the final02 migration (run by
-    check_backend.py / pytest_route.py before pytest); tests only insert rows.
-    Self-healing: rows from an earlier aborted run are removed first so a
-    once-broken teardown cannot poison every later run.
-    """
-    db.execute(text("DELETE FROM teacher.mentra_classrooms"))
-    db.execute(text("DELETE FROM teacher.mentra_courses"))
+    """Platform-owned course facts plus a fake teacher-owned visibility API."""
     db.execute(text("DELETE FROM browser_session WHERE user_id IN (SELECT id FROM \"user\" WHERE email LIKE 'bridge-%')"))
     db.execute(text("DELETE FROM \"user\" WHERE email LIKE 'bridge-%'"))
     db.commit()
@@ -69,33 +62,34 @@ def bridge_world(db: Session):
     db.commit()
     course_a, course_b = str(uuid.uuid4()), str(uuid.uuid4())
     classroom_a = str(uuid.uuid4())
-    db.execute(
-        text("INSERT INTO teacher.mentra_courses (id,teacher_id,status,title,payload,created_at,updated_at) "
-             "VALUES (:id,:t,'draft',:ti,CAST(:p AS jsonb),:now,:now)"),
-        [{"id": course_a, "t": str(teacher_a.id), "ti": "Course A", "p": "{}", "now": 1},
-         {"id": course_b, "t": str(teacher_b.id), "ti": "Course B", "p": "{}", "now": 1}],
-    )
-    db.execute(
-        text("INSERT INTO teacher.mentra_classrooms (id,course_id,stage,scenes,payload,created_at,updated_at) "
-             "VALUES (:id,:c,CAST('[]' AS jsonb),CAST('[]' AS jsonb),CAST('{}' AS jsonb),1,1)"),
-        [{"id": classroom_a, "c": course_a}, {"id": str(uuid.uuid4()), "c": None}],
-    )
+    platform_courses = [
+        Course(id=uuid.UUID(course_a), title="Course A", owner_id=teacher_a.id),
+        Course(id=uuid.UUID(course_b), title="Course B", owner_id=teacher_b.id),
+    ]
+    db.add_all(platform_courses)
     db.commit()
-    yield {
-        "teacher_a": teacher_a,
-        "teacher_b": teacher_b,
-        "student": student,
-        "course_a": course_a,
-        "course_b": course_b,
-        "classroom_a": classroom_a,
-        "token_a": issue_session_token(db, teacher_a),
-        "token_b": issue_session_token(db, teacher_b),
-        "token_student": issue_session_token(db, student),
-    }
-    db.execute(text("DELETE FROM teacher.mentra_classrooms"))
-    db.execute(text("DELETE FROM teacher.mentra_courses"))
+    def visibility(classroom_id, _owner_id):
+        if classroom_id == classroom_a:
+            return course_a, True
+        return None, False
+
+    with patch("app.services.teacher_authz_client.classroom_visibility", side_effect=visibility):
+        yield {
+            "teacher_a": teacher_a,
+            "teacher_b": teacher_b,
+            "student": student,
+            "course_a": course_a,
+            "course_b": course_b,
+            "classroom_a": classroom_a,
+            "token_a": issue_session_token(db, teacher_a),
+            "token_b": issue_session_token(db, teacher_b),
+            "token_student": issue_session_token(db, student),
+        }
     db.execute(text("DELETE FROM browser_session WHERE user_id IN (:a,:b,:s)"),
                {"a": teacher_a.id, "b": teacher_b.id, "s": student.id})
+    for course in platform_courses:
+        db.delete(course)
+    db.flush()
     for user in (teacher_a, teacher_b, student):
         db.delete(user)
     db.commit()

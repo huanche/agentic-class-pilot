@@ -15,6 +15,7 @@ from backend.infrastructure import published_knowledge
 from backend.session import service as learning_session
 from backend.session import command_runtime
 from backend.contracts import SessionError
+from backend.internal_platform import router as internal_platform_router
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "frontend" / "out"
@@ -32,6 +33,7 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(title="Student Agent", lifespan=lifespan)
+app.include_router(internal_platform_router)
 
 
 @app.exception_handler(SessionError)

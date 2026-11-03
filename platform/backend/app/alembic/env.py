@@ -31,7 +31,17 @@ target_metadata = SQLModel.metadata
 
 
 def get_url():
-    return str(settings.DATABASE_URL)
+    # Runtime may use a public-schema-only role. Schema migrations need a
+    # separate privileged connection, supplied only to the migration process.
+    # The fallback preserves existing deployments and local development.
+    url = os.environ.get("MIGRATION_DATABASE_URL") or str(settings.DATABASE_URL)
+    if url.startswith("postgres://"):
+        return url.replace("postgres://", "postgresql+psycopg://", 1)
+    if url.startswith("postgresql://"):
+        return url.replace("postgresql://", "postgresql+psycopg://", 1)
+    if url.startswith("postgresql+psycopg://"):
+        return url
+    raise ValueError("Migration database URL must use PostgreSQL with psycopg")
 
 
 def run_migrations_offline():

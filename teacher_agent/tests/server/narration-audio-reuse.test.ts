@@ -65,13 +65,17 @@ afterEach(async () => {
 });
 
 it('synthesizes only changed text and keeps checkpoint audio readable after candidate rollback', async () => {
-  const original = {
+  const original: Scene = {
     id: 'page',
     stageId: 'class',
     type: 'slide',
     order: 1,
     title: '测试',
-    content: { type: 'slide', canvas: { elements: [] } },
+    content: { type: 'slide', canvas: {
+      id: 'canvas-page', viewportSize: 1000, viewportRatio: 0.5625,
+      theme: { backgroundColor: '#fff', themeColors: ['#000'], fontColor: '#000', fontName: 'Inter' },
+      elements: [],
+    } },
     actions: [
       { id: 'a', type: 'speech', text: '第一段完整讲解。' },
       { id: 'b', type: 'speech', text: '第二段完整讲解。' },

@@ -5,7 +5,6 @@ from fastapi import BackgroundTasks
 import pytest
 from pathlib import Path
 import sys
-import io
 from threading import Lock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -14,22 +13,6 @@ from backend.session import service as learning_session
 from backend.infrastructure import platform_access
 from backend.teaching import service as teaching
 from backend.contracts import SessionError
-
-
-@pytest.mark.parametrize("base", ["http://platform:8080", "http://platform:8080/api/v1"])
-def test_platform_context_accepts_shared_or_student_api_base(monkeypatch: pytest.MonkeyPatch, base: str) -> None:
-    seen = []
-
-    class Opener:
-        def open(self, request, timeout):
-            seen.append(request.full_url)
-            return io.BytesIO(b'{}')
-
-    monkeypatch.setenv("PLATFORM_AUTH_URL", base)
-    monkeypatch.setenv("STUDENT_SERVICE_KEY", "test-key")
-    monkeypatch.setattr(platform_access.urllib.request, "build_opener", lambda *args: Opener())
-    assert platform_access.platform_context("ticket", "L2") == {}
-    assert seen == ["http://platform:8080/api/v1/internal/student/learning-context"]
 
 
 def _context(selected: str | None = None) -> dict:

@@ -31,7 +31,9 @@ services:
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-agentedu}
-      MINIO_ROOT_PASSWORD: ${TEACHER_DB_PASSWORD}
+      # 凭据独立（问题6.4）：优先独立的 MINIO_ROOT_PASSWORD；
+      # 旧环境未配置时回落 TEACHER_DB_PASSWORD（过渡兼容）
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-${TEACHER_DB_PASSWORD}}
     ports:
       - "127.0.0.1:59000:9000"
       - "127.0.0.1:59001:9001"
@@ -42,12 +44,18 @@ services:
   gateway:
     image: caddy:2.10-alpine
     command: caddy run --config /etc/caddy/Caddyfile --adapter caddyfile --watch
+    environment:
+      # Caddyfile.local 的站点地址变量；缺失时站点块会被误解析为全局配置。
+      # ":80" 绑定容器全部网卡（只绑 localhost 会与宿主机的端口映射不通）
+      APP_DOMAIN: :80
     ports:
       - "80:80"
       - "443:443"
       - "443:443/udp"
     volumes:
       - ./deployment/Caddyfile.local:/etc/caddy/Caddyfile:ro
+      # 路由片段由 contracts/routing.yaml 生成（单一来源），需一并挂入容器
+      - ./deployment/generated:/etc/caddy/generated:ro
       - caddy_data:/data
       - caddy_config:/config
     extra_hosts:

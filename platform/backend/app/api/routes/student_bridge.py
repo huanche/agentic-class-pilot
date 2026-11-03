@@ -11,23 +11,23 @@ Two surfaces:
 import hashlib
 import hmac
 import json
+import logging
 import re
 import secrets
 import base64
 import time
 import uuid
-from html import unescape
 from urllib.parse import quote
 
 import httpx
 from fastapi import APIRouter, Header, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlmodel import select
 
 from app.api.deps import CurrentUser, SessionDep
 from app.core.config import settings
-from app.models import Enrollment
+from app.models import Course, Enrollment
 from app.services.browser_sessions import user_for_cookie
 from app.services.course_access import get_accessible_course
 from app.services.course_publication import require_published_course
@@ -42,8 +42,21 @@ def check_student_service_key(value: str | None) -> None:
 
 # --- launch tokens: HMAC-signed, self-contained, short-lived -----------------
 
+def _token_signing_key() -> str:
+    """凭证签名密钥：优先用独立的 STUDENT_TOKEN_SIGNING_KEY（问题6.3）。
+
+    未配置时回落到通道密钥 STUDENT_SERVICE_KEY（过渡兼容，不中断现有部署），
+    并记录告警——生产环境应显式配置独立签名密钥。"""
+    if settings.STUDENT_TOKEN_SIGNING_KEY:
+        return settings.STUDENT_TOKEN_SIGNING_KEY
+    logging.getLogger(__name__).warning(
+        "STUDENT_TOKEN_SIGNING_KEY 未配置，凭证签名回落使用通道密钥"
+        "（建议在 .env 中配置独立签名密钥，实现通道认证与凭证签名分离）")
+    return settings.STUDENT_SERVICE_KEY
+
+
 def _launch_signature(payload_json: str) -> str:
-    key = (settings.STUDENT_SERVICE_KEY or "").encode()
+    key = (_token_signing_key() or "").encode()
     return hmac.new(key, payload_json.encode(), hashlib.sha256).hexdigest()
 
 
@@ -75,35 +88,34 @@ def verify_launch_token(token: str, *, refresh_session: bool = False) -> dict:
         raise HTTPException(401, "Invalid launch token") from error
     if not hmac.compare_digest(signature, _launch_signature(payload_json)):
         raise HTTPException(401, "Invalid launch token")
+    # Previously issued launch tokens have no kind. A token signed for any
+    # other purpose must never become a student-workspace credential.
+    if payload.get("kind") not in (None, "launch"):
+        raise HTTPException(401, "Invalid launch token purpose")
     if not refresh_session and int(payload.get("exp", 0)) < time.time():
         raise HTTPException(401, "Launch token expired")
     return payload
 
 
-# --- published-content resolution (read-only cross-schema queries) ------------
+# --- published-content resolution ---------------------------------------------
 
 def _latest_publication(session: SessionDep, course_id: uuid.UUID) -> dict | None:
-    row = session.execute(
-        text("SELECT p.payload->>'version', p.payload->>'id' FROM teacher.mentra_knowledge_packages p "
-             "JOIN teacher_course_link l ON l.external_course_id = p.course_id "
-             "JOIN teacher.mentra_courses c ON c.id=p.course_id AND c.status='active' "
-             "WHERE l.course_id=:id AND p.status='published' ORDER BY p.version DESC LIMIT 1"),
-        {"id": course_id}).first()
-    if not row:
-        return None
-    return {"publicationId": row[1], "version": int(row[0])}
+    from app.services.course_publication import latest_publication
+
+    return latest_publication(session, course_id)
 
 
 def _published_classroom(session: SessionDep, course_id: uuid.UUID) -> str | None:
-    row = session.execute(
-        text("SELECT c.id FROM teacher.mentra_classrooms c "
-             "JOIN teacher.mentra_course_artifacts a ON a.payload->>'classroomId' = c.id "
-             "JOIN teacher_course_link l ON l.external_course_id = a.course_id "
-             "JOIN teacher.mentra_courses course ON course.id=a.course_id AND course.status='active' "
-             "WHERE l.course_id=:id AND a.status='published' AND a.payload->>'classVisible'='true' AND a.payload->>'classPublicationId' IS NOT NULL "
-             "ORDER BY (a.payload->>'classPublishedAt')::bigint DESC NULLS LAST LIMIT 1"),
-        {"id": course_id}).first()
-    return row[0] if row else None
+    course = session.get(Course, course_id)
+    if course is None:
+        return None
+    from app.services.teacher_classroom_client import (
+        TeacherClassroomUnavailable, get_latest_classroom,
+    )
+    try:
+        return get_latest_classroom(course_id, course.owner_id)
+    except TeacherClassroomUnavailable as error:
+        raise HTTPException(503, "教师课堂服务暂不可用，请稍后重试") from error
 
 
 def _knowledge_points_from_markdown(content: str) -> list[dict]:
@@ -264,110 +276,6 @@ class LearningContextRequest(BaseModel):
     refresh_session: bool = False
 
 
-def _published_package_payload(session: SessionDep, course_id: uuid.UUID) -> dict | None:
-    row = session.execute(
-        text("SELECT p.payload FROM teacher.mentra_knowledge_packages p "
-             "JOIN teacher_course_link l ON l.external_course_id = p.course_id "
-             "WHERE l.course_id = :id AND p.status = 'published' "
-             "ORDER BY p.version DESC LIMIT 1"),
-        {"id": course_id}).first()
-    if not row:
-        return None
-    require_published_course(session, course_id)
-    package = dict(row[0])
-    # Resolve the current explicit publications, never legacy bulk-published entries.
-    package["entries"] = published_course_entries(session, course_id)
-    return package
-
-
-def published_course_entries(session: SessionDep, course_id: uuid.UUID) -> list[dict]:
-    row = session.execute(text(
-        "SELECT c.payload FROM teacher.mentra_courses c "
-        "JOIN teacher_course_link l ON l.external_course_id=c.id "
-        "WHERE l.course_id=:id AND c.status='active'"), {"id": course_id}).first()
-    if not row:
-        return []
-    course = row[0] or {}
-    def visible(item):
-        return item.get("classVisible") is True and bool(item.get("classPublicationId"))
-    entries = []
-    for artifact_row in session.execute(text(
-        "SELECT a.payload FROM teacher.mentra_course_artifacts a "
-        "JOIN teacher_course_link l ON l.external_course_id=a.course_id "
-        "WHERE l.course_id=:id AND a.status='published' "
-        "AND a.payload->>'classVisible'='true' AND a.payload->>'classPublicationId' IS NOT NULL "
-        "ORDER BY a.created_at, a.id"), {"id": course_id}).all():
-        item = artifact_row[0]
-        if visible(item):
-            entries.append({"id": item["id"], "title": item.get("title", ""),
-                            "content": item.get("content", ""), "citations": item.get("citations", []),
-                            "scope": ({"type": "lesson", "lessonId": item["publicationPlacement"]["lessonId"]}
-                                      if (item.get("publicationPlacement") or {}).get("lessonId")
-                                      else item.get("scope")), "kind": "artifact",
-                            # 教师确认的类型保存在发布归属中，兼容旧版顶层字段。
-                            "resourceType": (item.get("publicationPlacement") or {}).get("resourceType")
-                                            or item.get("resourceType"),
-                            "publicationId": item["classPublicationId"]})
-    for module in course.get("modules", []):
-        for lesson in module.get("lessons", []):
-            for item in lesson.get("files", []):
-                if visible(item):
-                    entries.append({"id": item["id"], "title": item.get("title", ""),
-                                    "content": item.get("content", ""), "kind": "lesson-file",
-                                    # 课时知识点是 lesson.files，不是独立工件；两条链路都需保留类型。
-                                    "resourceType": (item.get("publicationPlacement") or {}).get("resourceType")
-                                                    or item.get("type"),
-                                    "scope": {"type": "lesson", "lessonId": lesson["id"]},
-                                    "publicationId": item["classPublicationId"]})
-    for item in course.get("materials", []):
-        if visible(item):
-            entries.append({"id": item["id"], "title": item.get("name", ""), "content": "",
-                            "kind": "material", "publicationId": item["classPublicationId"],
-                            "scope": {"type": "lesson", "lessonId": (item.get("publicationPlacement") or {}).get("lessonId")},
-                            "url": f"{settings.TEACHER_PUBLIC_URL.rstrip('/')}/api/course-space/{course['id']}/materials/{item['id']}"})
-    return entries
-
-
-def _classroom_view(session: SessionDep, classroom_id: str) -> dict:
-    row = session.execute(
-        text("SELECT stage, scenes FROM teacher.mentra_classrooms WHERE id = :id"),
-        {"id": classroom_id}).first()
-    if not row:
-        raise HTTPException(404, "课堂不存在或尚未发布")
-    scenes = []
-    for scene in (row[1] or []):
-        content = scene.get("content") or {}
-        canvas = (content.get("canvas") or {}) if isinstance(content, dict) else {}
-        visible_text = []
-        for element in canvas.get("elements") or []:
-            if isinstance(element, dict) and element.get("type") == "text":
-                value = unescape(re.sub(r"<[^>]*>", " ", str(element.get("content") or ""))).strip()
-                if value:
-                    visible_text.append(value)
-        scenes.append({
-            "id": scene.get("id"),
-            "type": scene.get("type", "slide"),
-            "order": int(scene.get("order") or 1),
-            "title": scene.get("title", ""),
-            "visibleText": visible_text,
-            # Text shown to the student and narration ground the new agent;
-            # media assets stay in the player's own data channel.
-            "actions": [
-                {"id": action.get("id"), "type": action.get("type", "speech"),
-                 "text": action.get("text")}
-                for action in (scene.get("actions") or [])
-                if isinstance(action, dict)
-            ],
-        })
-    scenes.sort(key=lambda item: item["order"])
-    return {
-        "id": classroom_id,
-        "title": (row[0] or {}).get("name", ""),
-        "scenes": scenes,
-        "playerUrl": f"{settings.TEACHER_PUBLIC_URL.rstrip('/')}/classroom-player/{classroom_id}",
-    }
-
-
 def ensure_published_knowledge_job(session: SessionDep, course_id: uuid.UUID,
                                    lesson_id: str, classroom: dict,
                                    published_at: int | None) -> str:
@@ -377,97 +285,116 @@ def ensure_published_knowledge_job(session: SessionDep, course_id: uuid.UUID,
         [classroom["id"], published_at, scenes],
         sort_keys=True, ensure_ascii=False,
     ).encode()).hexdigest()
-    session.execute(text(
-        "INSERT INTO student.published_lesson_knowledge "
-        "(course_id, lesson_id, video_revision, classroom_id, scenes) "
-        "VALUES (:course, :lesson, :revision, :classroom, CAST(:scenes AS jsonb)) "
-        "ON CONFLICT (course_id, lesson_id, video_revision) DO NOTHING"
-    ), {"course": str(course_id), "lesson": lesson_id,
-        "revision": revision, "classroom": classroom["id"],
-        "scenes": json.dumps(scenes, ensure_ascii=False)})
-    session.commit()
+    from app.services.student_knowledge_client import (
+        StudentKnowledgeUnavailable, enqueue_student_knowledge,
+    )
+    try:
+        enqueue_student_knowledge(
+            str(course_id), lesson_id, revision, classroom["id"], scenes,
+        )
+    except StudentKnowledgeUnavailable as error:
+        raise HTTPException(503, "学生知识准备服务暂不可用，请稍后重试") from error
     return revision
 
 
-def _published_lessons(session: SessionDep, course_id: uuid.UUID,
-                       user_id: uuid.UUID) -> list[dict]:
-    """Read explicit lesson bindings; never use another lesson's classroom."""
-    course_row = session.execute(text(
-        "SELECT c.payload FROM teacher.mentra_courses c "
-        "JOIN teacher_course_link l ON l.external_course_id=c.id "
-        "WHERE l.course_id=:id AND c.status='active'"), {"id": course_id}).first()
-    if not course_row:
-        return []
-    course = course_row[0] or {}
-    teacher_lessons = {lesson["id"]: lesson for module in course.get("modules", [])
-                       for lesson in module.get("lessons", [])}
-    rows = session.execute(text(
-        "SELECT a.payload FROM teacher.mentra_course_artifacts a "
-        "JOIN teacher_course_link l ON l.external_course_id=a.course_id "
-        "WHERE l.course_id=:id AND a.status='published' "
-        "AND a.payload->>'classVisible'='true' AND a.payload->>'classPublicationId' IS NOT NULL "
-        "AND a.payload->>'classroomId' IS NOT NULL "
-        "ORDER BY (a.payload->>'classPublishedAt')::bigint DESC NULLS LAST, a.created_at DESC, a.id DESC"
-    ), {"id": course_id}).all()
-    selected = {}
-    for row in rows:
-        artifact = row[0]
-        placement = artifact.get("publicationPlacement") or {}
-        scope = artifact.get("scope") or {}
-        lesson_id = placement.get("lessonId") or (scope.get("lessonId") if scope.get("type") == "lesson" else None)
-        if lesson_id not in teacher_lessons or lesson_id in selected:
-            continue
-        lesson = teacher_lessons[lesson_id]
-        classroom = _classroom_view(session, artifact["classroomId"])
-        classroom["playbackToken"] = _issue_playback_grant(user_id, course_id, artifact["classroomId"])
-        selected[lesson_id] = {
-            "id": lesson_id, "title": artifact.get("title") or lesson.get("title"),
-            "order": lesson.get("order", 1), "week": placement.get("week") or lesson.get("week"),
-            "lessonNumber": placement.get("lessonNumber") or lesson.get("lessonNumber"),
-            "teachingHours": placement.get("teachingHours") or lesson.get("teachingHours"),
-            "publishedAt": artifact.get("classPublishedAt"), "classroom": classroom,
+def _content_from_teacher_snapshot(snapshot, user_id: uuid.UUID,
+                                   course_id: uuid.UUID) -> tuple[dict, list[dict]]:
+    """Project the teacher content snapshot into the legacy in-memory shapes.
+
+    Returns (package_payload, published_lessons). The platform keeps the parts
+    it owns: player URLs and every enrollment decision.
+    """
+    from app.generated.platform_teacher_api.types import UNSET
+
+    def scope_of(entry):
+        if entry.scope is UNSET or entry.scope is None:
+            return None
+        return entry.scope.to_dict() if hasattr(entry.scope, "to_dict") else entry.scope
+
+    def citation_of(citation):
+        return citation.to_dict() if hasattr(citation, "to_dict") else citation
+
+    package = {
+        "id": snapshot.publication.publication_id,
+        "version": int(snapshot.publication.version),
+        "entries": [
+            {
+                "id": entry.id,
+                "title": entry.title,
+                "content": entry.content,
+                "citations": [citation_of(citation) for citation in entry.citations]
+                if entry.citations is not UNSET else [],
+                "scope": scope_of(entry),
+                "kind": str(entry.kind),
+                "resourceType": entry.resource_type
+                if entry.resource_type is not UNSET else None,
+                "publicationId": entry.publication_id,
+                **({"url": f"{settings.TEACHER_PUBLIC_URL.rstrip('/')}{entry.url}"}
+                   if entry.url is not UNSET else {}),
+            }
+            for entry in snapshot.entries
+        ],
+    }
+
+    teacher_base = settings.TEACHER_PUBLIC_URL.rstrip("/")
+    lessons = []
+    for item in snapshot.lessons:
+        classroom = item.classroom
+        classroom_view = {
+            "id": classroom.id,
+            "title": classroom.title,
+            "scenes": [
+                {
+                    "id": scene.id,
+                    "type": scene.type_,
+                    "order": int(scene.order),
+                    "title": scene.title,
+                    "visibleText": list(scene.visible_text),
+                    "actions": [
+                        {
+                            "id": action.id,
+                            "type": action.type_ if action.type_ is not UNSET else "speech",
+                            "text": action.text if action.text is not UNSET else None,
+                        }
+                        for action in scene.actions
+                    ],
+                }
+                for scene in classroom.scenes
+            ],
+            "playerUrl": f"{teacher_base}/classroom-player/{classroom.id}",
         }
-    return sorted(selected.values(), key=lambda lesson: (lesson.get("week") or 1000, lesson.get("lessonNumber") or lesson["order"], lesson["id"]))
+        lessons.append({
+            "id": item.id,
+            "title": item.title,
+            "order": item.order,
+            "week": item.week if item.week is not UNSET else None,
+            "lessonNumber": item.lesson_number if item.lesson_number is not UNSET else None,
+            "teachingHours": item.teaching_hours if item.teaching_hours is not UNSET else None,
+            "publishedAt": item.published_at if item.published_at is not UNSET else None,
+            "classroom": classroom_view,
+        })
+    return package, lessons
 
 
-def _grounding_context(session: SessionDep, course_id: uuid.UUID) -> dict:
-    """Course grounding for better student guidance: material excerpts and
-    published-graph knowledge points. Queries join teacher_course_link so
-    legacy nanoid courses resolve. Published graphs only; excerpts capped."""
-    excerpts = []
-    for row in session.execute(
-        text("SELECT e.payload->'chunks' FROM teacher.mentra_material_extractions e "
-             "JOIN teacher_course_link l ON l.external_course_id = e.course_id "
-             "JOIN teacher.mentra_courses c ON c.id=e.course_id "
-             "WHERE l.course_id = :id AND c.status='active' AND EXISTS ("
-             "SELECT 1 FROM jsonb_array_elements(c.payload->'materials') m "
-             "WHERE m->>'id'=e.material_id AND m->>'classVisible'='true' "
-             "AND m->>'classPublicationId' IS NOT NULL)"), {"id": course_id}).fetchall():
-        for chunk in (row[0] or [])[:6]:
-            text_value = (chunk or {}).get("text", "")
-            if text_value.strip():
-                excerpts.append({"source": (chunk or {}).get("source") or "",
-                                 "page": (chunk or {}).get("page"),
-                                 "text": text_value[:600]})
-            if len(excerpts) >= 12:
-                break
-        if len(excerpts) >= 12:
-            break
-
-    concepts = []
-    graph_row = session.execute(
-        text("SELECT g.version FROM teacher.mentra_course_graph_versions g "
-             "JOIN teacher_course_link l ON l.external_course_id = g.course_id "
-             "WHERE l.course_id = :id AND g.status = 'published' ORDER BY g.version DESC LIMIT 1"),
-        {"id": course_id}).first()
-    if graph_row:
-        for node in session.execute(
-            text("SELECT n.id, n.title, n.description FROM teacher.mentra_course_graph_nodes n "
-                 "JOIN teacher_course_link l ON l.external_course_id = n.course_id "
-                 "WHERE l.course_id = :id AND n.graph_version = :v AND n.node_type = 'knowledge-point'"),
-            {"id": course_id, "v": graph_row[0]}).fetchall():
-            concepts.append({"id": node[0], "title": node[1], "description": (node[2] or "")[:400]})
-    return {"materialExcerpts": excerpts, "knowledgePoints": concepts}
+def _load_published_content(session: SessionDep, course_id: uuid.UUID,
+                            user_id: uuid.UUID) -> tuple[dict | None, list[dict]]:
+    """Read one teacher-owned published-content snapshot."""
+    course = session.get(Course, course_id)
+    if course is None:
+        return None, []
+    from app.services.teacher_learning_content_client import (
+        TeacherLearningContentMissing, TeacherLearningContentUnavailable,
+        get_teacher_published_content,
+    )
+    try:
+        snapshot = get_teacher_published_content(course_id, course.owner_id)
+        if snapshot is None:
+            return None, []
+        return _content_from_teacher_snapshot(snapshot, user_id, course_id)
+    except TeacherLearningContentUnavailable as error:
+        raise HTTPException(503, "教师学习内容服务暂不可用，请稍后重试") from error
+    except TeacherLearningContentMissing as error:
+        raise HTTPException(404, "课堂不存在或尚未发布") from error
 
 
 @router.post("/internal/student/learning-context")
@@ -490,11 +417,10 @@ def student_learning_context(body: LearningContextRequest, session: SessionDep,
         ).first()
         if not course:
             raise HTTPException(404, "课程不存在")
-        package_payload = _published_package_payload(session, course_id)
+        package_payload, published_lessons = _load_published_content(
+            session, course_id, user_id)
         if not package_payload:
             raise HTTPException(409, "课程尚未发布学习内容")
-
-        published_lessons = _published_lessons(session, course_id, user_id)
         # 目录只含摘要。未选课时不下发任何课堂正文、材料或知识点。
         lesson_catalog = [
             {**{key: lesson.get(key) for key in (
@@ -546,9 +472,6 @@ def student_learning_context(body: LearningContextRequest, session: SessionDep,
             # 课程级grounding尚未接入学生端，也不能夹带其他课时正文。
             "grounding": {},
         }
-        grant = _issue_playback_grant(user_id, course_id, classroom_id) if classroom_id else None
-        if grant:
-            context["classroom"]["playbackToken"] = grant
         return context
     except HTTPException:
         raise
@@ -556,30 +479,36 @@ def student_learning_context(body: LearningContextRequest, session: SessionDep,
         raise HTTPException(503, "平台数据库暂不可用，请稍后重试") from error
 
 
-def _issue_playback_grant(user_id: uuid.UUID, course_id: uuid.UUID, classroom_id: str) -> str:
-    """Short-lived playback authorization bound to user+course+classroom.
+class ClassroomViewRequest(BaseModel):
+    classroom_id: str = Field(min_length=1)
 
-    The teacher-side authorize hook validates it (stage 5); students cannot
-    open other classrooms by editing URLs.
-    """
-    import time as _time
-    payload = {
-        "kind": "playback", "uid": str(user_id), "cid": str(course_id), "rid": classroom_id,
-        "exp": int(_time.time()) + 1800, "nonce": secrets.token_urlsafe(9),
-    }
-    payload_json = json.dumps(payload, separators=(",", ":"), sort_keys=True)
-    encoded = base64.urlsafe_b64encode(payload_json.encode()).decode().rstrip("=")
-    return f"{encoded}.{_launch_signature(payload_json)}"
 
+@router.post("/internal/student/classroom-view")
+def student_classroom_view(body: ClassroomViewRequest, session: SessionDep,
+                           x_student_service_key: str | None = Header(default=None)):
+    """Old-session replay scenes via the teacher-owned classroom API."""
+    check_student_service_key(x_student_service_key)
+    from app.services.teacher_learning_content_client import (
+        TeacherLearningContentUnavailable, get_teacher_classroom_view,
+    )
+    try:
+        view = get_teacher_classroom_view(body.classroom_id)
+        if view is None:
+            return {"classroomId": body.classroom_id, "scenes": []}
+        return {"classroomId": view.id, "scenes": view.to_dict()["scenes"]}
+    except HTTPException:
+        raise
+    except TeacherLearningContentUnavailable as error:
+        raise HTTPException(503, "教师学习内容服务暂不可用，请稍后重试") from error
 
 
 @router.get("/courses/{course_id}/learning-data")
 def course_learning_data(course_id: uuid.UUID, session: SessionDep, user: CurrentUser):
-    """Teacher-facing per-course learning data from the student schema.
+    """Teacher-facing per-course learning data from the student service.
 
     Real persisted rows only — no fabricated aggregates. Students see their
     own rows; teachers see rows for their enrolled students."""
-    get_accessible_course(session, user, course_id)
+    course = get_accessible_course(session, user, course_id)
     if user.role == "student" and not user.is_superuser:
         learner = str(user.id)
     else:
@@ -594,44 +523,23 @@ def course_learning_data(course_id: uuid.UUID, session: SessionDep, user: Curren
     if not enrolled_ids:
         return {"sessions": [], "mastery": [], "events": []}
 
-    id_list = tuple(enrolled_ids)
-    placeholders = ", ".join(f":u{i}" for i in range(len(id_list)))
-    params = {"course": course_id}
-    for i, value in enumerate(id_list):
-        params[f"u{i}"] = value
-
-    published_row = session.execute(
-        text("SELECT count(DISTINCT a.payload->>'classroomId') FROM teacher.mentra_course_artifacts a "
-             "JOIN teacher_course_link l ON l.external_course_id = a.course_id "
-             "WHERE l.course_id=:course AND a.status='published' "
-             "AND a.payload->>'classroomId' IS NOT NULL"),
-        {"course": course_id}).first()
-    published_lessons = int(published_row[0]) if published_row else 0
-
-    sessions = session.execute(
-        text(f"SELECT session_key, user_id, publication_version, classroom_id, "
-             f"started_at, last_active_at, ended_at IS NOT NULL AS ended "
-             f"FROM student.student_sessions WHERE user_id IN ({placeholders}) "
-             f"AND revoked_at IS NULL AND classroom_id IS NOT NULL "
-             f"AND course_id = CAST(:course AS text) ORDER BY started_at DESC LIMIT 50"), params).fetchall()
-    mastery = session.execute(
-        text(f"SELECT user_id, knowledge_point_id, stars, status, evidence, updated_at "
-             f"FROM student.knowledge_mastery WHERE user_id IN ({placeholders}) "
-             f"AND course_id = CAST(:course AS text) ORDER BY updated_at DESC LIMIT 100"), params).fetchall()
-    events = session.execute(
-        text(f"SELECT event_type, count(*) FROM student.learning_events "
-             f"WHERE user_id IN ({placeholders}) AND course_id = CAST(:course AS text) "
-             f"GROUP BY event_type"), params).fetchall()
-
-    return {
-        "publishedLessons": published_lessons,
-        "sessions": [{"sessionKey": r[0], "userId": r[1], "publicationVersion": r[2],
-                      "classroomId": r[3], "startedAt": str(r[4]), "lastActiveAt": str(r[5]),
-                      "ended": bool(r[6])} for r in sessions],
-        "mastery": [{"userId": r[0], "knowledgePointId": r[1], "stars": r[2],
-                     "status": r[3], "evidence": r[4], "updatedAt": str(r[5])} for r in mastery],
-        "eventSummary": {r[0]: r[1] for r in events},
-    }
+    from app.services.teacher_analytics_client import (
+        TeacherAnalyticsUnavailable, get_teacher_publication_counts,
+    )
+    try:
+        published_lessons = get_teacher_publication_counts(
+            course_id, course.owner_id,
+        )["distinctClassrooms"]
+    except TeacherAnalyticsUnavailable as error:
+        raise HTTPException(503, "教师发布统计暂不可用，请稍后重试") from error
+    from app.services.student_analytics_client import (
+        StudentAnalyticsUnavailable, get_course_learning_data,
+    )
+    try:
+        data = get_course_learning_data(course_id, enrolled_ids)
+    except StudentAnalyticsUnavailable as error:
+        raise HTTPException(503, "学生学情服务暂不可用，请稍后重试") from error
+    return {"publishedLessons": published_lessons, **data}
 
 
 @router.get("/student/status")
@@ -664,51 +572,35 @@ class LearningProgressReport(BaseModel):
 
 
 def _course_learning_progress(session, user_id: uuid.UUID, course_id: uuid.UUID) -> dict:
-    """Real per-course classroom progress from the student schema only."""
-    total_row = session.execute(
-        text("SELECT count(*) FROM teacher.mentra_course_artifacts a "
-             "JOIN teacher_course_link l ON l.external_course_id = a.course_id "
-             "WHERE l.course_id=:id AND a.status='published' "
-             "AND a.payload->>'classroomId' IS NOT NULL"),
-        {"id": str(course_id)}).first()
-    total = int(total_row[0]) if total_row else 0
-    learned_row = session.execute(
-        text("SELECT count(DISTINCT classroom_id), max(last_active_at), count(*) "
-             "FROM student.student_sessions "
-             "WHERE user_id=:u AND course_id=:c AND revoked_at IS NULL AND classroom_id IS NOT NULL"),
-        {"u": str(user_id), "c": str(course_id)}).first()
-    learned = int(learned_row[0]) if learned_row and learned_row[0] else 0
-    last_active = learned_row[1] if learned_row else None
-    session_count = int(learned_row[2]) if learned_row else 0
-    ended_row = session.execute(
-        text("SELECT count(*) FROM student.student_sessions "
-             "WHERE user_id=:u AND course_id=:c AND ended_at IS NOT NULL "
-             "AND revoked_at IS NULL AND classroom_id IS NOT NULL"),
-        {"u": str(user_id), "c": str(course_id)}).first()
-    ended = int(ended_row[0]) if ended_row else 0
-    stars_row = session.execute(
-        text("SELECT coalesce(sum(stars),0) FROM student.knowledge_mastery "
-             "WHERE user_id=:u AND course_id=:c"),
-        {"u": str(user_id), "c": str(course_id)}).first()
-    stars = int(stars_row[0]) if stars_row else 0
-    percent = min(100, round(learned / total * 100)) if total else 0
+    """Real per-course classroom progress from the student service."""
+    from app.services.teacher_analytics_client import (
+        TeacherAnalyticsUnavailable, get_teacher_publication_counts,
+    )
+    course = session.get(Course, course_id)
+    if course is None:
+        raise HTTPException(404, "课程不存在")
+    try:
+        total = get_teacher_publication_counts(
+            course_id, course.owner_id,
+        )["publishedArtifactsWithClassroom"]
+    except TeacherAnalyticsUnavailable as error:
+        raise HTTPException(503, "教师发布统计暂不可用，请稍后重试") from error
+    from app.services.student_analytics_client import (
+        StudentAnalyticsUnavailable, get_user_course_progress,
+    )
+    try:
+        student_metrics = get_user_course_progress(course_id, user_id)
+    except StudentAnalyticsUnavailable as error:
+        raise HTTPException(503, "学生学情服务暂不可用，请稍后重试") from error
+    learned = student_metrics["learnedLessons"]
     return {
         "totalLessons": total,
-        "learnedLessons": learned,
-        "sessionCount": session_count,
-        "endedSessions": ended,
-        "lastActiveAt": str(last_active) if last_active else None,
-        "stars": stars,
-        "percent": percent,
+        **student_metrics,
+        "percent": min(100, round(learned / total * 100)) if total else 0,
     }
 
 
 def _teacher_course_owner(session, course_id: uuid.UUID) -> str | None:
-    row = session.execute(
-        text("SELECT teacher_id FROM teacher.mentra_courses WHERE id=:id"),
-        {"id": str(course_id)}).first()
-    if row:
-        return str(row[0])
     row = session.execute(
         text("SELECT owner_id FROM course WHERE id=:id"),
         {"id": str(course_id)}).first()
@@ -718,30 +610,48 @@ def _teacher_course_owner(session, course_id: uuid.UUID) -> str | None:
 async def _push_student_state_to_teacher(session, course_id: uuid.UUID,
                                          state: dict) -> bool:
     """Best-effort: update 授课管理's 学生与学习状态 via the teacher service."""
+    from app.generated.platform_teacher_api import AuthenticatedClient
+    from app.generated.platform_teacher_api.api.default.update_teacher_student_state import (
+        asyncio_detailed,
+    )
+    from app.generated.platform_teacher_api.models import StudentLearningState
+
     owner = _teacher_course_owner(session, course_id)
-    headers = {
-        "x-platform-service-key": settings.TEACHER_SERVICE_KEY,
-        "x-platform-subject": owner or "",
-    }
     candidates = [str(course_id)]
     link = session.execute(
         text("SELECT external_course_id FROM teacher_course_link WHERE course_id=:id"),
         {"id": str(course_id)}).first()
     if link and str(link[0]) not in candidates:
         candidates.append(str(link[0]))
-    base = settings.TEACHER_URL.rstrip("/")
-    async with httpx.AsyncClient(timeout=5, trust_env=False) as client:
+    if not settings.TEACHER_SERVICE_KEY:
+        return False
+    try:
+        body = StudentLearningState.from_dict(state)
+    except (ValueError, KeyError, TypeError) as error:
+        print(f"[learning-progress] 无效的教师状态数据: {type(error).__name__}")
+        return False
+    async with AuthenticatedClient(
+        base_url=settings.TEACHER_URL.rstrip("/"),
+        token=settings.TEACHER_SERVICE_KEY,
+        prefix="",
+        auth_header_name="X-Platform-Service-Key",
+        headers={"X-Platform-Subject": owner or ""},
+        timeout=httpx.Timeout(5.0),
+        follow_redirects=False,
+        raise_on_unexpected_status=False,
+        httpx_args={"trust_env": False},
+    ) as client:
         for course_ref in candidates:
             try:
-                response = await client.put(
-                    f"{base}/api/classes/{course_ref}/students",
-                    json=state, headers=headers)
-                if response.status_code < 300:
+                response = await asyncio_detailed(
+                    course_ref, client=client, body=body,
+                )
+                if 200 <= response.status_code < 300:
                     return True
                 print(f"[learning-progress] 推送教师服务失败 "
                       f"course={course_ref} HTTP {response.status_code}: "
-                      f"{response.text[:120]}")
-            except httpx.HTTPError as error:
+                    f"{response.content[:120]!r}")
+            except (httpx.HTTPError, ValueError, KeyError, TypeError, AttributeError) as error:
                 print(f"[learning-progress] 推送教师服务异常 "
                       f"course={course_ref}: {type(error).__name__}: {error}")
     return False

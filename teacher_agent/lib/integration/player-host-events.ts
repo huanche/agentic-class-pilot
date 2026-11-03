@@ -1,6 +1,6 @@
 import { postSaasHostMessage } from './host-bridge';
 
-export type PlayerHostEvent = 'SCENE_COMPLETED' | 'PLAYBACK_ENDED';
+export type PlayerHostEvent = 'PLAYER_READY' | 'SCENE_COMPLETED' | 'PLAYBACK_ENDED';
 
 function classroomIdFromPath() {
   if (typeof window === 'undefined') return undefined;

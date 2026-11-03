@@ -1,0 +1,161 @@
+openapi: 3.1.0
+info:
+  title: Student Service API
+  version: 1.0.0
+  description: Platform-to-student backend operations owned by the student service.
+servers:
+  - url: http://127.0.0.1:8001
+paths:
+  /api/internal/platform/courses/{course_id}/learning-data:
+    post:
+      operationId: getStudentCourseLearningData
+      summary: Bounded student-owned rows for an authorized platform course view
+      security: [{ studentServiceKey: [] }]
+      parameters:
+        - { name: course_id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [userIds]
+              properties:
+                userIds:
+                  type: array
+                  maxItems: 10000
+                  items: { type: string }
+      responses:
+        '200':
+          description: Bounded sessions, mastery rows and event counts for the supplied users
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [sessions, mastery, eventSummary]
+                properties:
+                  sessions: { type: array, items: { type: object } }
+                  mastery: { type: array, items: { type: object } }
+                  eventSummary: { type: object, additionalProperties: { type: integer } }
+        '403': { description: Invalid service credentials }
+        '503': { description: Student data unavailable }
+  /api/internal/platform/courses/{course_id}/users/{user_id}/progress:
+    get:
+      operationId: getStudentCourseProgress
+      summary: Student-owned metrics for one user in one course
+      security: [{ studentServiceKey: [] }]
+      parameters:
+        - { name: course_id, in: path, required: true, schema: { type: string } }
+        - { name: user_id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Raw student-owned progress metrics without teacher publication count
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [learnedLessons, lastActiveAt, sessionCount, endedSessions, stars]
+                properties:
+                  learnedLessons: { type: integer }
+                  lastActiveAt: { type: [string, 'null'] }
+                  sessionCount: { type: integer }
+                  endedSessions: { type: integer }
+                  stars: { type: integer }
+        '403': { description: Invalid service credentials }
+        '503': { description: Student data unavailable }
+  /api/internal/platform/published-lesson-knowledge:
+    post:
+      operationId: enqueuePublishedLessonKnowledgeAtStudent
+      summary: Idempotently queue preparation for one verified published lesson revision
+      description: The platform verifies publication and supplies the teacher-owned snapshot; the student service owns the durable job table.
+      security: [{ studentServiceKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [courseId, lessonId, videoRevision, classroomId, scenes]
+              properties:
+                courseId: { type: string, minLength: 1, maxLength: 128 }
+                lessonId: { type: string, minLength: 1, maxLength: 128 }
+                videoRevision: { type: string, pattern: '^[0-9a-f]{64}$' }
+                classroomId: { type: string, minLength: 1, maxLength: 128 }
+                scenes:
+                  type: array
+                  maxItems: 1000
+                  items: { type: object }
+      responses:
+        '200':
+          description: Queued or already present
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [courseId, lessonId, videoRevision]
+                properties:
+                  courseId: { type: string }
+                  lessonId: { type: string }
+                  videoRevision: { type: string }
+        '403': { description: Invalid service credentials }
+        '503': { description: Student job storage unavailable }
+  /api/internal/platform/courses/{course_id}/chat-sessions:
+    post:
+      operationId: getStudentChatSessions
+      summary: Bounded chat sessions for platform-authorized students
+      security: [{ studentServiceKey: [] }]
+      parameters:
+        - { name: course_id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [userIds]
+              properties:
+                userIds: { type: array, maxItems: 10000, items: { type: string } }
+                limit: { type: integer, minimum: 1, maximum: 500 }
+      responses:
+        '200':
+          description: Sessions belonging to the supplied enrolled students
+          content:
+            application/json:
+              schema: { type: array, items: { type: object, additionalProperties: true } }
+        '403': { description: Invalid service credentials }
+        '503': { description: Student data unavailable }
+  /api/internal/platform/courses/{course_id}/chat-sessions/{session_key}/messages:
+    post:
+      operationId: getStudentChatMessages
+      summary: Messages from one authorized student session
+      security: [{ studentServiceKey: [] }]
+      parameters:
+        - { name: course_id, in: path, required: true, schema: { type: string } }
+        - { name: session_key, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [userIds]
+              properties:
+                userIds: { type: array, maxItems: 10000, items: { type: string } }
+                phase: { type: [string, 'null'], maxLength: 64 }
+                limit: { type: integer, minimum: 1, maximum: 5000 }
+                offset: { type: integer, minimum: 0 }
+      responses:
+        '200':
+          description: Ordered messages from the authorized session
+          content:
+            application/json:
+              schema: { type: array, items: { type: object, additionalProperties: true } }
+        '403': { description: Invalid service credentials }
+        '404': { description: Session not found among authorized students }
+        '503': { description: Student data unavailable }
+components:
+  securitySchemes:
+    studentServiceKey:
+      type: apiKey
+      in: header
+      name: X-Student-Service-Key

@@ -1,0 +1,1184 @@
+{
+  "components": {
+    "schemas": {
+      "PublishedClassroomView": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "scenes": {
+            "items": {
+              "properties": {
+                "actions": {
+                  "items": {
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "text": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "type": {
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "order": {
+                  "type": "number"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string"
+                },
+                "visibleText": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "id",
+                "type",
+                "order",
+                "title",
+                "visibleText",
+                "actions"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "scenes"
+        ],
+        "type": "object"
+      },
+      "PublishedEntry": {
+        "properties": {
+          "citations": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "content": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "artifact",
+              "lesson-file",
+              "material"
+            ],
+            "type": "string"
+          },
+          "publicationId": {
+            "type": "string"
+          },
+          "resourceType": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "scope": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "additionalProperties": true,
+                "type": "object"
+              }
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "content",
+          "kind",
+          "publicationId"
+        ],
+        "type": "object"
+      },
+      "PublishedLearningContent": {
+        "properties": {
+          "course": {
+            "properties": {
+              "id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "type": "object"
+          },
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/PublishedEntry"
+            },
+            "type": "array"
+          },
+          "lessons": {
+            "items": {
+              "$ref": "#/components/schemas/PublishedLesson"
+            },
+            "type": "array"
+          },
+          "publication": {
+            "properties": {
+              "publicationId": {
+                "type": "string"
+              },
+              "version": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "publicationId",
+              "version"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "publication",
+          "course",
+          "entries",
+          "lessons"
+        ],
+        "type": "object"
+      },
+      "PublishedLesson": {
+        "properties": {
+          "classroom": {
+            "$ref": "#/components/schemas/PublishedClassroomView"
+          },
+          "id": {
+            "type": "string"
+          },
+          "lessonNumber": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "order": {
+            "type": "number"
+          },
+          "publishedAt": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "teachingHours": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "week": {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "order",
+          "classroom"
+        ],
+        "type": "object"
+      },
+      "StudentLearningState": {
+        "properties": {
+          "className": {
+            "type": "string"
+          },
+          "completedResourceIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "endedCount": {
+            "type": "number"
+          },
+          "lastActiveAt": {
+            "type": "number"
+          },
+          "learnedLessons": {
+            "type": "number"
+          },
+          "name": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "progress": {
+            "type": "number"
+          },
+          "sessionCount": {
+            "type": "number"
+          },
+          "stars": {
+            "type": "number"
+          },
+          "status": {
+            "enum": [
+              "not-started",
+              "learning",
+              "completed",
+              "needs-attention"
+            ],
+            "type": "string"
+          },
+          "studentId": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "studentNumber": {
+            "type": "string"
+          },
+          "totalLessons": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "studentId",
+          "name",
+          "status"
+        ],
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "platformServiceKey": {
+        "in": "header",
+        "name": "X-Platform-Service-Key",
+        "type": "apiKey"
+      },
+      "platformSubject": {
+        "in": "header",
+        "name": "X-Platform-Subject",
+        "type": "apiKey"
+      }
+    }
+  },
+  "info": {
+    "description": "Platform-to-teacher service calls. Publication verdict is additive and does not switch existing platform reads.",
+    "title": "Teacher Service API",
+    "version": "1.0.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/classes/{courseId}/students": {
+      "put": {
+        "operationId": "updateTeacherStudentState",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "courseId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StudentLearningState"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "student": {
+                      "$ref": "#/components/schemas/StudentLearningState"
+                    },
+                    "studentCount": {
+                      "type": "integer"
+                    },
+                    "success": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "student",
+                    "studentCount"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Upserted student state. Do not double-run real learning events for shadow comparison."
+          },
+          "400": {
+            "description": "Invalid student state"
+          },
+          "401": {
+            "description": "Invalid delegated identity"
+          },
+          "403": {
+            "description": "Invalid service key or ownership"
+          },
+          "404": {
+            "description": "Active course not found"
+          },
+          "503": {
+            "description": "Platform authorization unavailable"
+          }
+        },
+        "security": [
+          {
+            "platformServiceKey": [],
+            "platformSubject": []
+          }
+        ]
+      }
+    },
+    "/api/course-space": {
+      "post": {
+        "description": "Platform provisioning profile. The stable course id is required here to preserve idempotency; the general teacher UI supports additional fields.",
+        "operationId": "provisionTeacherCourse",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "description": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "title": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "title"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "course": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id"
+                      ],
+                      "type": "object"
+                    },
+                    "success": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "course"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Existing course (idempotent provisioning)."
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "course": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id"
+                      ],
+                      "type": "object"
+                    },
+                    "success": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "course"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Newly provisioned course."
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Invalid delegated identity"
+          },
+          "403": {
+            "description": "Invalid service key or ownership"
+          },
+          "409": {
+            "description": "Course ownership conflict"
+          },
+          "502": {
+            "description": "Platform registration unavailable"
+          },
+          "503": {
+            "description": "Platform authorization or course storage unavailable"
+          }
+        },
+        "security": [
+          {
+            "platformServiceKey": [],
+            "platformSubject": []
+          }
+        ]
+      }
+    },
+    "/api/health": {
+      "get": {
+        "operationId": "getTeacherServiceHealth",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "capabilities": {
+                      "additionalProperties": true,
+                      "type": "object"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "version": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "status",
+                    "version",
+                    "capabilities"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Service response; HTTP 200 alone does not prove database readiness."
+          }
+        },
+        "security": []
+      }
+    },
+    "/api/internal/platform/artifacts/{artifactId}/published-lesson": {
+      "get": {
+        "description": "Serves the platform's published-lesson-knowledge registration without teacher-schema reads. reason mirrors the legacy failure messages: not-published and not-a-lesson-video surface as 409, classroom-missing as 404 on the platform side.",
+        "operationId": "getTeacherPublishedLesson",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "artifactId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "lesson": {
+                      "oneOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "properties": {
+                            "classroom": {
+                              "$ref": "#/components/schemas/PublishedClassroomView"
+                            },
+                            "classroomId": {
+                              "type": "string"
+                            },
+                            "courseId": {
+                              "type": "string"
+                            },
+                            "lessonId": {
+                              "type": "string"
+                            },
+                            "publishedAt": {
+                              "type": [
+                                "number",
+                                "null"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "courseId",
+                            "lessonId",
+                            "classroomId",
+                            "classroom"
+                          ],
+                          "type": "object"
+                        }
+                      ]
+                    },
+                    "published": {
+                      "type": "boolean"
+                    },
+                    "reason": {
+                      "enum": [
+                        "not-published",
+                        "not-a-lesson-video",
+                        "classroom-missing",
+                        null
+                      ],
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "published",
+                    "reason",
+                    "lesson"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Published lesson verdict"
+          },
+          "403": {
+            "description": "Invalid service delegation"
+          },
+          "503": {
+            "description": "Teacher storage unavailable"
+          }
+        },
+        "security": [
+          {
+            "platformServiceKey": [],
+            "platformSubject": []
+          }
+        ],
+        "summary": "The teacher-verified published lesson video and its classroom projection"
+      }
+    },
+    "/api/internal/platform/classrooms/{classroomId}/content": {
+      "get": {
+        "description": "Null classroom when the snapshot is missing; the platform's legacy replay query returned empty scenes for that case.",
+        "operationId": "getTeacherClassroomContent",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "classroomId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "classroom": {
+                      "oneOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "$ref": "#/components/schemas/PublishedClassroomView"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "classroom"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Projected classroom, if any"
+          },
+          "403": {
+            "description": "Invalid service delegation"
+          },
+          "503": {
+            "description": "Teacher storage unavailable"
+          }
+        },
+        "security": [
+          {
+            "platformServiceKey": [],
+            "platformSubject": []
+          }
+        ],
+        "summary": "Projected scenes of one classroom for old-session replay"
+      }
+    },
+    "/api/internal/platform/classrooms/{classroomId}/visibility": {
+      "get": {
+        "description": "Teacher-owned half of the student player authorization. courseId is the teacher service's own course reference; the platform resolves it to the enrollment record. Classroom→course linkage requires the teacher course database, like the legacy authorize queries.",
+        "operationId": "getTeacherClassroomVisibility",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "classroomId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "courseId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "published": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "courseId",
+                    "published"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Visibility verdict"
+          },
+          "403": {
+            "description": "Invalid service delegation"
+          },
+          "503": {
+            "description": "Teacher storage unavailable"
+          }
+        },
+        "security": [
+          {
+            "platformServiceKey": [],
+            "platformSubject": []
+          }
+        ],
+        "summary": "Whether a classroom is the current published classroom of an active course"
+      }
+    },
+    "/api/internal/platform/course-space/jobs/{jobId}/course-ref": {
+      "get": {
+        "description": "Lets the platform scope job access without reading teacher job tables. kind selects the job family (artifact or graph).",
+        "operationId": "getTeacherJobCourseRef",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "jobId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "default": "artifact",
+              "enum": [
+                "artifact",
+                "graph"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "courseId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "courseId"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Owning course reference"
+          },
+          "403": {
+            "description": "Invalid service delegation"
+          },
+          "404": {
+            "description": "Task not found"
+          },
+          "503": {
+            "description": "Teacher storage unavailable"
+          }
+        },
+        "security": [
+          {
+            "platformServiceKey": [],
+            "platformSubject": []
+          }
+        ],
+        "summary": "Resolve a background job to its owning course"
+      }
+    },
+    "/api/internal/platform/courses/{courseId}/latest-classroom": {
+      "get": {
+        "description": "Returns null for an inactive course or when no published visible artifact references an existing classroom. The platform remains responsible for enrollment.",
+        "operationId": "getTeacherLatestClassroom",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "courseId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "classroomId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "classroomId"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Current published classroom identity, if any"
+          },
+          "403": {
+            "description": "Invalid service delegation"
+          },
+          "503": {
+            "description": "Teacher or platform authorization unavailable"
+          }
+        },
+        "security": [
+          {
+            "platformServiceKey": [],
+            "platformSubject": []
+          }
+        ],
+        "summary": "Current visible published classroom for student launch"
+      }
+    },
+    "/api/internal/platform/courses/{courseId}/lesson-titles": {
+      "get": {
+        "operationId": "getTeacherLessonTitles",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "courseId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "titles": {
+                      "additionalProperties": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "titles"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Lesson ID to title mapping, including unpublished lessons"
+          },
+          "403": {
+            "description": "Invalid service key or ownership"
+          },
+          "503": {
+            "description": "Platform authorization or course storage unavailable"
+          }
+        },
+        "security": [
+          {
+            "platformServiceKey": [],
+            "platformSubject": []
+          }
+        ],
+        "summary": "Teacher-owned lesson titles for an authorized platform course view"
+      }
+    },
+    "/api/internal/platform/courses/{courseId}/materials/{materialId}/visibility": {
+      "get": {
+        "description": "Teacher-owned half of the student material authorization. Missing course or material reports visible=false; the platform keeps the 403 its legacy query produced.",
+        "operationId": "getTeacherMaterialVisibility",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "courseId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "materialId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "visible": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "visible"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Visibility verdict"
+          },
+          "403": {
+            "description": "Invalid service delegation"
+          },
+          "503": {
+            "description": "Teacher storage unavailable"
+          }
+        },
+        "security": [
+          {
+            "platformServiceKey": [],
+            "platformSubject": []
+          }
+        ],
+        "summary": "Whether a course material is explicitly published and currently visible"
+      }
+    },
+    "/api/internal/platform/courses/{courseId}/publication": {
+      "get": {
+        "description": "A negative verdict includes inactive courses and withdrawn knowledge packages. The platform remains responsible for enrollment and identity checks.",
+        "operationId": "getTeacherPublicationVerdict",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "courseId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "publication": {
+                      "oneOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "properties": {
+                            "publicationId": {
+                              "type": "string"
+                            },
+                            "version": {
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "publicationId",
+                            "version"
+                          ],
+                          "type": "object"
+                        }
+                      ]
+                    },
+                    "published": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "published",
+                    "publication"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Current teacher publication verdict"
+          },
+          "401": {
+            "description": "Invalid delegated identity"
+          },
+          "403": {
+            "description": "Service delegation missing or denied"
+          },
+          "503": {
+            "description": "Platform authorization or course storage unavailable"
+          }
+        },
+        "security": [
+          {
+            "platformServiceKey": [],
+            "platformSubject": []
+          }
+        ],
+        "summary": "Resolve the teacher-owned current publication for a platform course alias"
+      }
+    },
+    "/api/internal/platform/courses/{courseId}/publication-counts": {
+      "get": {
+        "description": "Counts published artifacts with a classroom ID, including archived course history, matching the platform's existing analytics queries.",
+        "operationId": "getTeacherPublicationCounts",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "courseId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "distinctClassrooms": {
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "publishedArtifactsWithClassroom": {
+                      "minimum": 0,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "distinctClassrooms",
+                    "publishedArtifactsWithClassroom"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Counts under the course"
+          },
+          "403": {
+            "description": "Invalid service delegation"
+          },
+          "404": {
+            "description": "Teacher course not found"
+          },
+          "503": {
+            "description": "Teacher storage unavailable"
+          }
+        },
+        "security": [
+          {
+            "platformServiceKey": [],
+            "platformSubject": []
+          }
+        ],
+        "summary": "Teacher-owned published classroom and artifact counts"
+      }
+    },
+    "/api/internal/platform/courses/{courseId}/published-content": {
+      "get": {
+        "description": "Mirrors the platform's legacy published-content queries with identical filtering, ordering and error semantics. A 404 means a published lesson references a missing classroom snapshot (the platform surfaces the same failure its legacy SQL raised). The platform stays responsible for enrollment, playback grants and player URLs; draft content is never exposed.",
+        "operationId": "getTeacherPublishedContent",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "courseId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "content": {
+                      "oneOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "$ref": "#/components/schemas/PublishedLearningContent"
+                        }
+                      ]
+                    },
+                    "published": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "published",
+                    "content"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Published content snapshot, or published=false when nothing is published"
+          },
+          "403": {
+            "description": "Invalid service delegation"
+          },
+          "404": {
+            "description": "A published lesson references a missing classroom snapshot"
+          },
+          "503": {
+            "description": "Teacher storage unavailable"
+          }
+        },
+        "security": [
+          {
+            "platformServiceKey": [],
+            "platformSubject": []
+          }
+        ],
+        "summary": "One-shot read-only published learning content for the student learning context"
+      }
+    }
+  },
+  "servers": [
+    {
+      "url": "http://127.0.0.1:3200"
+    }
+  ]
+}

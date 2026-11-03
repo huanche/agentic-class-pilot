@@ -55,16 +55,21 @@ def _browser_snapshot(session: dict) -> str:
                    "stateVersion": session.get("stateVersion", 0)}
     raw = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode()
     encoded = base64.urlsafe_b64encode(raw).decode().rstrip("=")
-    secret = os.environ["STUDENT_SERVICE_KEY"].encode()
+    secret = (os.environ.get("STUDENT_TOKEN_SIGNING_KEY")
+              or os.environ["STUDENT_SERVICE_KEY"]).encode()
     signature = hmac.new(secret, b"browser-session:" + encoded.encode(), hashlib.sha256).hexdigest()
     return f"{encoded}.{signature}"
 
 
 def _restore_browser_snapshot(value: str) -> dict:
     encoded, separator, signature = value.partition(".")
-    secret = os.environ.get("STUDENT_SERVICE_KEY", "").encode()
-    expected = hmac.new(secret, b"browser-session:" + encoded.encode(), hashlib.sha256).hexdigest()
-    if not secret or not separator or not hmac.compare_digest(signature, expected):
+    keys = (os.environ.get("STUDENT_TOKEN_SIGNING_KEY", ""),
+            os.environ.get("STUDENT_SERVICE_KEY", ""))
+    valid = any(key and hmac.compare_digest(
+        signature,
+        hmac.new(key.encode(), b"browser-session:" + encoded.encode(), hashlib.sha256).hexdigest(),
+    ) for key in keys)
+    if not separator or not valid:
         raise SessionError(400, "浏览器学习记录无效，请重新进入课程")
     try:
         raw = base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4))

@@ -1,0 +1,457 @@
+openapi: 3.1.0
+info:
+  title: Teacher Service API
+  version: 1.0.0
+  description: Platform-to-teacher service calls. Publication verdict is additive and does not switch existing platform reads.
+servers:
+  - url: http://127.0.0.1:3200
+paths:
+  /api/internal/platform/courses/{courseId}/latest-classroom:
+    get:
+      operationId: getTeacherLatestClassroom
+      summary: Current visible published classroom for student launch
+      description: Returns null for an inactive course or when no published visible artifact references an existing classroom. The platform remains responsible for enrollment.
+      security: [{ platformServiceKey: [], platformSubject: [] }]
+      parameters:
+        - { name: courseId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Current published classroom identity, if any
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [classroomId]
+                properties:
+                  classroomId: { type: [string, 'null'] }
+        '403': { description: Invalid service delegation }
+        '503': { description: Teacher or platform authorization unavailable }
+  /api/internal/platform/courses/{courseId}/publication-counts:
+    get:
+      operationId: getTeacherPublicationCounts
+      summary: Teacher-owned published classroom and artifact counts
+      description: Counts published artifacts with a classroom ID, including archived course history, matching the platform's existing analytics queries.
+      security: [{ platformServiceKey: [], platformSubject: [] }]
+      parameters:
+        - { name: courseId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Counts under the course
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [distinctClassrooms, publishedArtifactsWithClassroom]
+                properties:
+                  distinctClassrooms: { type: integer, minimum: 0 }
+                  publishedArtifactsWithClassroom: { type: integer, minimum: 0 }
+        '403': { description: Invalid service delegation }
+        '404': { description: Teacher course not found }
+        '503': { description: Teacher storage unavailable }
+  /api/internal/platform/courses/{courseId}/publication:
+    get:
+      operationId: getTeacherPublicationVerdict
+      summary: Resolve the teacher-owned current publication for a platform course alias
+      description: A negative verdict includes inactive courses and withdrawn knowledge packages. The platform remains responsible for enrollment and identity checks.
+      security: [{ platformServiceKey: [], platformSubject: [] }]
+      parameters:
+        - { name: courseId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Current teacher publication verdict
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [published, publication]
+                properties:
+                  published: { type: boolean }
+                  publication:
+                    oneOf:
+                      - { type: 'null' }
+                      - type: object
+                        required: [publicationId, version]
+                        properties:
+                          publicationId: { type: string }
+                          version: { type: integer }
+        '401': { description: Invalid delegated identity }
+        '403': { description: Service delegation missing or denied }
+        '503': { description: Platform authorization or course storage unavailable }
+  /api/internal/platform/courses/{courseId}/published-content:
+    get:
+      operationId: getTeacherPublishedContent
+      summary: One-shot read-only published learning content for the student learning context
+      description: >-
+        Mirrors the platform's legacy published-content queries with identical
+        filtering, ordering and error semantics. A 404 means a published lesson
+        references a missing classroom snapshot (the platform surfaces the same
+        failure its legacy SQL raised). The platform stays responsible for
+        enrollment, playback grants and player URLs; draft content is never exposed.
+      security: [{ platformServiceKey: [], platformSubject: [] }]
+      parameters:
+        - { name: courseId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Published content snapshot, or published=false when nothing is published
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [published, content]
+                properties:
+                  published: { type: boolean }
+                  content:
+                    oneOf:
+                      - { type: 'null' }
+                      - $ref: '#/components/schemas/PublishedLearningContent'
+        '403': { description: Invalid service delegation }
+        '404': { description: A published lesson references a missing classroom snapshot }
+        '503': { description: Teacher storage unavailable }
+  /api/internal/platform/classrooms/{classroomId}/visibility:
+    get:
+      operationId: getTeacherClassroomVisibility
+      summary: Whether a classroom is the current published classroom of an active course
+      description: >-
+        Teacher-owned half of the student player authorization. courseId is the
+        teacher service's own course reference; the platform resolves it to the
+        enrollment record. Classroom→course linkage requires the teacher course
+        database, like the legacy authorize queries.
+      security: [{ platformServiceKey: [], platformSubject: [] }]
+      parameters:
+        - { name: classroomId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Visibility verdict
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [courseId, published]
+                properties:
+                  courseId: { type: [string, 'null'] }
+                  published: { type: boolean }
+        '403': { description: Invalid service delegation }
+        '503': { description: Teacher storage unavailable }
+  /api/internal/platform/courses/{courseId}/materials/{materialId}/visibility:
+    get:
+      operationId: getTeacherMaterialVisibility
+      summary: Whether a course material is explicitly published and currently visible
+      description: >-
+        Teacher-owned half of the student material authorization. Missing
+        course or material reports visible=false; the platform keeps the 403
+        its legacy query produced.
+      security: [{ platformServiceKey: [], platformSubject: [] }]
+      parameters:
+        - { name: courseId, in: path, required: true, schema: { type: string } }
+        - { name: materialId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Visibility verdict
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [visible]
+                properties:
+                  visible: { type: boolean }
+        '403': { description: Invalid service delegation }
+        '503': { description: Teacher storage unavailable }
+  /api/internal/platform/course-space/jobs/{jobId}/course-ref:
+    get:
+      operationId: getTeacherJobCourseRef
+      summary: Resolve a background job to its owning course
+      description: >-
+        Lets the platform scope job access without reading teacher job tables.
+        kind selects the job family (artifact or graph).
+      security: [{ platformServiceKey: [], platformSubject: [] }]
+      parameters:
+        - { name: jobId, in: path, required: true, schema: { type: string } }
+        - { name: kind, in: query, required: false, schema: { type: string, enum: [artifact, graph], default: artifact } }
+      responses:
+        '200':
+          description: Owning course reference
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [courseId]
+                properties:
+                  courseId: { type: string }
+        '403': { description: Invalid service delegation }
+        '404': { description: Task not found }
+        '503': { description: Teacher storage unavailable }
+  /api/internal/platform/classrooms/{classroomId}/content:
+    get:
+      operationId: getTeacherClassroomContent
+      summary: Projected scenes of one classroom for old-session replay
+      description: >-
+        Null classroom when the snapshot is missing; the platform's legacy
+        replay query returned empty scenes for that case.
+      security: [{ platformServiceKey: [], platformSubject: [] }]
+      parameters:
+        - { name: classroomId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Projected classroom, if any
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [classroom]
+                properties:
+                  classroom:
+                    oneOf:
+                      - { type: 'null' }
+                      - $ref: '#/components/schemas/PublishedClassroomView'
+        '403': { description: Invalid service delegation }
+        '503': { description: Teacher storage unavailable }
+  /api/internal/platform/artifacts/{artifactId}/published-lesson:
+    get:
+      operationId: getTeacherPublishedLesson
+      summary: The teacher-verified published lesson video and its classroom projection
+      description: >-
+        Serves the platform's published-lesson-knowledge registration without
+        teacher-schema reads. reason mirrors the legacy failure messages:
+        not-published and not-a-lesson-video surface as 409, classroom-missing
+        as 404 on the platform side.
+      security: [{ platformServiceKey: [], platformSubject: [] }]
+      parameters:
+        - { name: artifactId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Published lesson verdict
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [published, reason, lesson]
+                properties:
+                  published: { type: boolean }
+                  reason: { type: [string, 'null'], enum: [not-published, not-a-lesson-video, classroom-missing, null] }
+                  lesson:
+                    oneOf:
+                      - { type: 'null' }
+                      - type: object
+                        required: [courseId, lessonId, classroomId, classroom]
+                        properties:
+                          courseId: { type: string }
+                          lessonId: { type: string }
+                          classroomId: { type: string }
+                          publishedAt: { type: [number, 'null'] }
+                          classroom: { $ref: '#/components/schemas/PublishedClassroomView' }
+        '403': { description: Invalid service delegation }
+        '503': { description: Teacher storage unavailable }
+  /api/health:
+    get:
+      operationId: getTeacherServiceHealth
+      security: []
+      responses:
+        '200':
+          description: Service response; HTTP 200 alone does not prove database readiness.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, status, version, capabilities]
+                properties:
+                  success: { type: boolean }
+                  status: { type: string }
+                  version: { type: string }
+                  capabilities: { type: object, additionalProperties: true }
+  /api/course-space:
+    post:
+      operationId: provisionTeacherCourse
+      description: Platform provisioning profile. The stable course id is required here to preserve idempotency; the general teacher UI supports additional fields.
+      security: [{ platformServiceKey: [], platformSubject: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, title]
+              properties:
+                id: { type: string }
+                title: { type: string, minLength: 1 }
+                description: { type: [string, 'null'] }
+      responses:
+        '200':
+          description: Existing course (idempotent provisioning).
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, course]
+                properties:
+                  success: { type: boolean }
+                  course:
+                    type: object
+                    required: [id]
+                    properties:
+                      id: { type: string }
+                    additionalProperties: true
+        '201':
+          description: Newly provisioned course.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, course]
+                properties:
+                  success: { type: boolean }
+                  course:
+                    type: object
+                    required: [id]
+                    properties:
+                      id: { type: string }
+                    additionalProperties: true
+        '400': { description: Invalid input }
+        '401': { description: Invalid delegated identity }
+        '403': { description: Invalid service key or ownership }
+        '409': { description: Course ownership conflict }
+        '502': { description: Platform registration unavailable }
+        '503': { description: Platform authorization or course storage unavailable }
+  /api/classes/{courseId}/students:
+    put:
+      operationId: updateTeacherStudentState
+      security: [{ platformServiceKey: [], platformSubject: [] }]
+      parameters:
+        - { name: courseId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StudentLearningState'
+      responses:
+        '200':
+          description: Upserted student state. Do not double-run real learning events for shadow comparison.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, student, studentCount]
+                properties:
+                  success: { type: boolean }
+                  student: { $ref: '#/components/schemas/StudentLearningState' }
+                  studentCount: { type: integer }
+        '400': { description: Invalid student state }
+        '401': { description: Invalid delegated identity }
+        '403': { description: Invalid service key or ownership }
+        '404': { description: Active course not found }
+        '503': { description: Platform authorization unavailable }
+  /api/internal/platform/courses/{courseId}/lesson-titles:
+    get:
+      operationId: getTeacherLessonTitles
+      summary: Teacher-owned lesson titles for an authorized platform course view
+      security: [{ platformServiceKey: [], platformSubject: [] }]
+      parameters:
+        - { name: courseId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Lesson ID to title mapping, including unpublished lessons
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [titles]
+                properties:
+                  titles: { type: object, additionalProperties: { type: string } }
+        '403': { description: Invalid service key or ownership }
+        '503': { description: Platform authorization or course storage unavailable }
+components:
+  securitySchemes:
+    platformServiceKey: { type: apiKey, in: header, name: X-Platform-Service-Key }
+    platformSubject: { type: apiKey, in: header, name: X-Platform-Subject }
+  schemas:
+    PublishedLearningContent:
+      type: object
+      required: [publication, course, entries, lessons]
+      properties:
+        publication:
+          type: object
+          required: [publicationId, version]
+          properties:
+            publicationId: { type: string }
+            version: { type: integer }
+        course:
+          type: object
+          required: [id]
+          properties:
+            id: { type: string }
+        entries:
+          type: array
+          items: { $ref: '#/components/schemas/PublishedEntry' }
+        lessons:
+          type: array
+          items: { $ref: '#/components/schemas/PublishedLesson' }
+    PublishedEntry:
+      type: object
+      required: [id, title, content, kind, publicationId]
+      properties:
+        id: { type: string }
+        title: { type: string }
+        content: { type: string }
+        citations: { type: array, items: { type: object, additionalProperties: true } }
+        scope:
+          oneOf:
+            - { type: 'null' }
+            - { type: object, additionalProperties: true }
+        kind: { type: string, enum: [artifact, lesson-file, material] }
+        resourceType: { type: [string, 'null'] }
+        publicationId: { type: string }
+        url: { type: string }
+    PublishedLesson:
+      type: object
+      required: [id, title, order, classroom]
+      properties:
+        id: { type: string }
+        title: { type: string }
+        order: { type: number }
+        week: { type: [number, 'null'] }
+        lessonNumber: { type: [number, 'null'] }
+        teachingHours: { type: [number, 'null'] }
+        publishedAt: { type: [number, 'null'] }
+        classroom: { $ref: '#/components/schemas/PublishedClassroomView' }
+    PublishedClassroomView:
+      type: object
+      required: [id, title, scenes]
+      properties:
+        id: { type: string }
+        title: { type: string }
+        scenes:
+          type: array
+          items:
+            type: object
+            required: [id, type, order, title, visibleText, actions]
+            properties:
+              id: { type: string }
+              type: { type: string }
+              order: { type: number }
+              title: { type: string }
+              visibleText: { type: array, items: { type: string } }
+              actions:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: { type: string }
+                    type: { type: string }
+                    text: { type: [string, 'null'] }
+    StudentLearningState:
+      type: object
+      required: [studentId, name, status]
+      properties:
+        studentId: { type: string, minLength: 1 }
+        name: { type: string, minLength: 1 }
+        status: { type: string, enum: [not-started, learning, completed, needs-attention] }
+        studentNumber: { type: string }
+        className: { type: string }
+        progress: { type: number }
+        completedResourceIds: { type: array, items: { type: string } }
+        lastActiveAt: { type: number }
+        learnedLessons: { type: number }
+        totalLessons: { type: number }
+        sessionCount: { type: number }
+        endedCount: { type: number }
+        stars: { type: number }

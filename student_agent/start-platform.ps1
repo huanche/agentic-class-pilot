@@ -27,6 +27,9 @@ if (Test-Path -LiteralPath $studentEnv) {
   Get-Content -LiteralPath $studentEnv | ForEach-Object {
     if ($_ -match '^([^#=]+)=(.*)$') { $modelConfig[$matches[1]] = $matches[2].Trim('"') }
   }
+  if ($modelConfig['STUDENT_PLATFORM_CLIENT_MODE']) {
+    $env:STUDENT_PLATFORM_CLIENT_MODE = $modelConfig['STUDENT_PLATFORM_CLIENT_MODE']
+  }
   if (-not $env:STUDENT_AGENT_API_KEY -and $modelConfig['AGENT_LLM_API_KEY']) {
     $env:STUDENT_AGENT_API_KEY = $modelConfig['AGENT_LLM_API_KEY']
     $env:STUDENT_AGENT_BASE_URL = $modelConfig['AGENT_LLM_BASE_URL']

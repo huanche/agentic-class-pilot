@@ -1,4 +1,5 @@
 import { nanoid } from 'nanoid';
+import { enqueuePublishedLessonKnowledge } from '@/generated/teacher_platform_api';
 import type { CoursePublicationPlacement, CourseSpace } from '@/lib/course-space/types';
 import {
   readServerCourse,
@@ -12,15 +13,13 @@ import { publishCourseChannel } from './course-channel-publication';
 
 async function queuePublishedVideo(courseId: string, artifactId: string, classroomId?: string) {
   if (!classroomId || process.env.PLATFORM_AUTH_ENABLED !== 'true') return;
-  const response = await fetch(
-    `${process.env.PLATFORM_AUTH_URL}/api/v1/internal/teacher/published-lesson-knowledge`,
-    { method: 'POST', headers: {
-      'Content-Type': 'application/json',
-      'X-Teacher-Service-Key': process.env.PLATFORM_SERVICE_KEY || '',
-    }, body: JSON.stringify({ course_id: courseId, artifact_id: artifactId }),
-      cache: 'no-store', signal: AbortSignal.timeout(10000) },
-  );
-  if (!response.ok) throw new Error('视频已发布，但知识点准备任务登记失败，请再次点击发布重试');
+  const result = await enqueuePublishedLessonKnowledge({
+    baseUrl: `${(process.env.PLATFORM_AUTH_URL || '').replace(/\/$/, '')}/api/v1`,
+    headers: { 'X-Teacher-Service-Key': process.env.PLATFORM_SERVICE_KEY || '' },
+    body: { course_id: courseId, artifact_id: artifactId },
+    cache: 'no-store', signal: AbortSignal.timeout(10000),
+  });
+  if (!result.response?.ok) throw new Error('视频已发布，但知识点准备任务登记失败，请再次点击发布重试');
 }
 export type PublicationRequest = Omit<CoursePublicationPlacement, 'confirmedAt'> & {
   newLessonTitle?: string;

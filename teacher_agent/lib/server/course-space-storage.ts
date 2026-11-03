@@ -486,11 +486,16 @@ export async function deleteCourseArtifact(artifactId: string) {
   return true;
 }
 
-export async function listCourseArtifacts(courseId: string) {
+/** Read artifact records without generating derivatives or writing storage. */
+export async function listStoredCourseArtifacts(courseId: string) {
   const databaseArtifacts = await databaseAdapter.listArtifacts(courseId);
-  const artifacts = (databaseArtifacts ?? (await listJson<CourseArtifactRecord>(ARTIFACTS_DIR)))
+  return (databaseArtifacts ?? (await listJson<CourseArtifactRecord>(ARTIFACTS_DIR)))
     .filter((artifact) => artifact.courseId === courseId)
     .sort((a, b) => b.createdAt - a.createdAt);
+}
+
+export async function listCourseArtifacts(courseId: string) {
+  const artifacts = await listStoredCourseArtifacts(courseId);
   return Promise.all(
     artifacts.map(async (artifact) => {
       let changed = false;

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
   CourseSpace,
   CourseArtifactRecord,
@@ -51,6 +51,10 @@ const placement = (lessonId: string, week: number) => ({
   resourceType: 'courseware' as const,
 });
 describe('explicit course publication binding', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
   it('keeps an early preview private until every page has completed', async () => {
     db.job = { status: 'running', backgroundGeneration: { completedPages: 1, totalPages: 5 } };
     await expect(publishCourseResource('c', 'artifact', 'a1', placement('l1', 1))).rejects.toThrow(
@@ -60,6 +64,7 @@ describe('explicit course publication binding', () => {
     expect(db.packageSave).not.toHaveBeenCalled();
   });
   beforeEach(() => {
+    vi.stubEnv('PLATFORM_AUTH_ENABLED', 'false');
     vi.clearAllMocks();
     db.job = undefined;
     db.packages = [];
@@ -132,6 +137,21 @@ describe('explicit course publication binding', () => {
     expect(db.packages[0].entries.map((entry) => entry.content)).toEqual(['讲解1']);
     expect(db.artifacts.a2.status).toBe('review');
     expect(db.artifacts.a2.classVisible).toBeUndefined();
+  });
+  it('registers a published video through the generated platform contract', async () => {
+    vi.stubEnv('PLATFORM_AUTH_ENABLED', 'true');
+    vi.stubEnv('PLATFORM_AUTH_URL', 'http://platform.test');
+    vi.stubEnv('PLATFORM_SERVICE_KEY', 'test-key');
+    const fetchMock = vi.fn().mockResolvedValue(new Response(
+      JSON.stringify({ lessonId: 'l1', videoRevision: 'v1' }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    ));
+    vi.stubGlobal('fetch', fetchMock);
+    await publishCourseResource('c', 'artifact', 'a1', placement('l1', 1));
+    const request = fetchMock.mock.calls[0][0] as Request;
+    expect(request.url).toBe('http://platform.test/api/v1/internal/teacher/published-lesson-knowledge');
+    expect(request.headers.get('X-Teacher-Service-Key')).toBe('test-key');
+    await expect(request.json()).resolves.toEqual({ course_id: 'c', artifact_id: 'a1' });
   });
   it('does not initialize a course for an invalid publication', async () => {
     db.course.status = 'draft';

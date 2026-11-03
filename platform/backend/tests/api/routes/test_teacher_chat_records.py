@@ -1,18 +1,13 @@
-"""Exercise chat record authorization through the actual HTTP endpoints.
+"""Teacher chat record authorization using an isolated platform test database."""
 
-These tests use the isolated app_test database from tests/conftest.py. Apply
-the normal migrations to that test database before running them.
-"""
-
-import json
 import uuid
 
 from fastapi.testclient import TestClient
-from sqlalchemy import text
 from sqlmodel import Session
 
 from app import crud
 from app.models import Course, Enrollment, UserCreate
+from app.services import student_chat_records_client, teacher_lesson_titles_client
 from tests.utils.user import user_authentication_headers
 from tests.utils.utils import random_email, random_lower_string
 
@@ -26,82 +21,74 @@ def create_user(db: Session, role: str):
     return user, email, password
 
 
-def test_teacher_chat_records_are_scoped_to_owned_courses(client: TestClient, db: Session) -> None:
+def test_teacher_chat_records_are_scoped_to_owned_courses(client: TestClient, db: Session, monkeypatch) -> None:
     teacher_a, email_a, password_a = create_user(db, "teacher")
     teacher_b, email_b, password_b = create_user(db, "teacher")
     student, student_email, student_password = create_user(db, "student")
-    course_a = Course(title="教师 A 的课程", owner_id=teacher_a.id)
-    course_b = Course(title="教师 B 的课程", owner_id=teacher_b.id)
+    course_a = Course(title="Teacher A course", owner_id=teacher_a.id)
+    course_b = Course(title="Teacher B course", owner_id=teacher_b.id)
     db.add_all([course_a, course_b])
     db.commit()
     db.refresh(course_a)
     db.refresh(course_b)
-    db.add_all([Enrollment(course_id=course_a.id, student_id=student.id),
-                Enrollment(course_id=course_b.id, student_id=student.id)])
+    db.add_all([
+        Enrollment(course_id=course_a.id, student_id=student.id),
+        Enrollment(course_id=course_b.id, student_id=student.id),
+    ])
     db.commit()
+    key_a, key_b = str(uuid.uuid4()), str(uuid.uuid4())
+    revoked = False
+    calls = []
 
-    session_a, session_b = str(uuid.uuid4()), str(uuid.uuid4())
-    keys = [session_a, session_b]
-    try:
-        for key, course in ((session_a, course_a), (session_b, course_b)):
-            db.execute(text("""
-                INSERT INTO student.student_sessions
-                (session_key, user_id, course_id, publication_id, publication_version, classroom_id)
-                VALUES (:key, :student, :course, 'test-publication', 1, 'test-classroom')
-            """), {"key": key, "student": str(student.id), "course": str(course.id)})
-            db.execute(text("""
-                INSERT INTO student.student_messages
-                (session_key, user_id, course_id, publication_id, seq, role, phase, content)
-                VALUES (:key, :student, :course, 'test-publication', 1, 'student', 'recall', :content)
-            """), {"key": key, "student": str(student.id), "course": str(course.id),
-                    "content": "学生复述 A" if key == session_a else "学生复述 B"})
-            db.execute(text("""
-                INSERT INTO student.learning_events
-                (session_key, user_id, course_id, publication_id, event_type, event_id, payload)
-                VALUES (:key, :student, :course, 'test-publication', 'agent_state', 'test', CAST(:payload AS jsonb))
-            """), {"key": key, "student": str(student.id), "course": str(course.id),
-                    "payload": json.dumps({"lessonId": "lesson-test"})})
-        db.commit()
+    def sessions(course_id, user_ids, limit):
+        calls.append(("sessions", course_id, user_ids))
+        assert user_ids == [str(student.id)]
+        if course_id == course_a.id and not revoked:
+            return [{"sessionKey": key_a, "studentId": str(student.id), "classroomId": "room-a",
+                     "startedAt": "2026-01-01T00:00:00", "lastActiveAt": "2026-01-01T00:00:00",
+                     "ended": False, "lessonId": "lesson-a", "messageCount": 1}]
+        return []
 
-        headers_a = user_authentication_headers(client=client, email=email_a, password=password_a)
-        headers_b = user_authentication_headers(client=client, email=email_b, password=password_b)
-        student_headers = user_authentication_headers(client=client, email=student_email, password=student_password)
+    def messages(course_id, session_key, user_ids, phase, limit, offset):
+        calls.append(("messages", course_id, user_ids))
+        assert user_ids == [str(student.id)]
+        if course_id != course_a.id or session_key != key_a or revoked:
+            raise student_chat_records_client.StudentChatMissing()
+        if phase is not None and phase != "recall":
+            return []
+        return [{"seq": 1, "role": "student", "phase": "recall", "content": "student reply",
+                 "createdAt": "2026-01-01T00:00:00"}]
 
-        # Supplying an invalid bearer token forces authentication even if a test
-        # client retained a browser cookie from the preceding login.
-        assert client.get(f"{BASE}/courses", headers={"Authorization": "Bearer invalid"}).status_code in (401, 403)
-        assert client.get(f"{BASE}/courses", headers=student_headers).status_code == 403
-        courses = client.get(f"{BASE}/courses", headers=headers_a)
-        assert courses.status_code == 200
-        assert str(course_a.id) in [row["id"] for row in courses.json()]
-        assert str(course_b.id) not in [row["id"] for row in courses.json()]
+    monkeypatch.setattr(student_chat_records_client, "get_chat_sessions", sessions)
+    monkeypatch.setattr(student_chat_records_client, "get_chat_messages", messages)
+    monkeypatch.setattr(teacher_lesson_titles_client, "get_lesson_titles",
+                        lambda course_id, owner_id: {"lesson-a": "Lesson A"})
 
-        sessions = client.get(f"{BASE}/courses/{course_a.id}/sessions", headers=headers_a)
-        assert sessions.status_code == 200
-        assert [row["sessionKey"] for row in sessions.json()] == [session_a]
-        assert sessions.json()[0]["lessonId"] == "lesson-test"
-        # Newer student sessions keep the authoritative lesson on the session
-        # itself, while older records only have it in the event snapshot.
-        db.execute(text("UPDATE student.student_sessions SET lesson_id = 'new-lesson' WHERE session_key = :key"), {"key": session_a})
-        db.commit()
-        assert client.get(f"{BASE}/courses/{course_a.id}/sessions", headers=headers_a).json()[0]["lessonId"] == "new-lesson"
-        assert client.get(f"{BASE}/courses/{course_b.id}/sessions", headers=headers_a).status_code == 403
-        assert client.get(f"{BASE}/courses/{course_a.id}/sessions", headers=headers_b).status_code == 403
+    headers_a = user_authentication_headers(client=client, email=email_a, password=password_a)
+    headers_b = user_authentication_headers(client=client, email=email_b, password=password_b)
+    student_headers = user_authentication_headers(client=client, email=student_email, password=student_password)
 
-        path = f"{BASE}/courses/{course_a.id}/sessions/{session_a}/messages"
-        result = client.get(path, headers=headers_a)
-        assert result.status_code == 200
-        assert [(row["phase"], row["content"]) for row in result.json()] == [("recall", "学生复述 A")]
-        assert client.get(path, params={"phase": "reinforce"}, headers=headers_a).json() == []
-        assert client.get(f"{BASE}/courses/{course_a.id}/sessions/{session_b}/messages", headers=headers_a).status_code == 404
-        assert client.get(path, headers=student_headers).status_code == 403
-        assert client.post(path, headers=headers_a).status_code == 405
-        db.execute(text("UPDATE student.student_sessions SET revoked_at = now() WHERE session_key = :key"), {"key": session_a})
-        db.commit()
-        assert client.get(path, headers=headers_a).status_code == 404
-        assert client.get(f"{BASE}/courses/{course_a.id}/sessions", headers=headers_a).json() == []
-    finally:
-        for key in keys:
-            for table in ("student_messages", "learning_events", "student_sessions"):
-                db.execute(text(f"DELETE FROM student.{table} WHERE session_key = :key"), {"key": key})
-        db.commit()
+    assert client.get(f"{BASE}/courses", headers={"Authorization": "Bearer invalid"}).status_code in (401, 403)
+    assert client.get(f"{BASE}/courses", headers=student_headers).status_code == 403
+    courses = client.get(f"{BASE}/courses", headers=headers_a)
+    assert courses.status_code == 200
+    assert str(course_a.id) in [row["id"] for row in courses.json()]
+    assert str(course_b.id) not in [row["id"] for row in courses.json()]
+
+    result = client.get(f"{BASE}/courses/{course_a.id}/sessions", headers=headers_a)
+    assert result.status_code == 200
+    assert [row["sessionKey"] for row in result.json()] == [key_a]
+    assert result.json()[0]["lesson"] == "Lesson A"
+    assert client.get(f"{BASE}/courses/{course_a.id}/sessions", headers=headers_b).status_code == 403
+    assert client.get(f"{BASE}/courses/{course_b.id}/sessions", headers=headers_a).status_code == 403
+
+    path = f"{BASE}/courses/{course_a.id}/sessions/{key_a}/messages"
+    assert client.get(path, headers=headers_a).json()[0]["content"] == "student reply"
+    assert client.get(path, params={"phase": "reinforce"}, headers=headers_a).json() == []
+    assert client.get(f"{BASE}/courses/{course_a.id}/sessions/{key_b}/messages", headers=headers_a).status_code == 404
+    assert client.get(path, headers=student_headers).status_code == 403
+    assert client.post(path, headers=headers_a).status_code == 405
+    revoked = True
+    assert client.get(path, headers=headers_a).status_code == 404
+    assert client.get(f"{BASE}/courses/{course_a.id}/sessions", headers=headers_a).json() == []
+    assert calls

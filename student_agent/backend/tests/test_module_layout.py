@@ -72,6 +72,7 @@ def test_eager_module_dependencies_are_acyclic_and_transport_stays_at_the_entry(
         visit(module)
         if module != "backend.main":
             assert "backend.main" not in dependencies(module), module
+        if module not in {"backend.main", "backend.internal_platform"}:
             tree = ast.parse(path.read_text(encoding="utf-8"))
             assert not any(isinstance(n, ast.ImportFrom) and (n.module or "").startswith("fastapi")
                            for n in ast.walk(tree)), path

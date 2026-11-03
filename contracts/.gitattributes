@@ -1,0 +1,2 @@
+# Byte-for-byte generation checks must survive core.autocrlf=true on Windows.
+generated/** text eol=lf

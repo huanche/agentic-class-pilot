@@ -331,6 +331,10 @@ async function executeLegacy(
     await check();
     stored = JSON.parse(await fs.readFile(inputFile(jobId), 'utf8')) as StoredInput;
     const { input, baseUrl, teacherId } = stored;
+    // Browser-facing media links keep baseUrl; only server-to-server generation
+    // requests may bypass the public gateway when an internal origin is set.
+    const generationApiOrigin =
+      process.env.COURSEWARE_INTERNAL_API_ORIGIN?.replace(/\/+$/, '') || baseUrl;
     const { stage, outlines } = input;
     stage.generationModelPolicy = 'server';
     stage.generationPlan = { version: 1, outlines, complete: false, serverJobId: jobId };
@@ -388,7 +392,7 @@ async function executeLegacy(
           return metrics.measure(
             endpoint.endsWith('scene-content') ? 'content' : 'actions',
             async () => {
-              const response = await fetch(`${baseUrl}${endpoint}`, {
+              const response = await fetch(`${generationApiOrigin}${endpoint}`, {
                 method: 'POST',
                 headers,
                 body: JSON.stringify(body),

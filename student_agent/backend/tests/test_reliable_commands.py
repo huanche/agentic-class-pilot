@@ -472,32 +472,23 @@ def test_authorization_uses_identity_endpoint_without_refetching_lesson(active, 
     assert post(active, command(active[1])).status_code == 200
 
 
-def test_platform_progress_ignores_revoked_rows_and_new_idle_session(active, pg):
-    """Execute the real platform aggregate against PostgreSQL without importing its app startup."""
-    import ast
-    import re
-    import uuid
-    source = (Path(__file__).resolve().parents[3] /
-              "platform/backend/app/api/routes/student_bridge.py").read_text(encoding="utf-8")
-    function = next(n for n in ast.parse(source).body if isinstance(n, ast.FunctionDef)
-                    and n.name == "_course_learning_progress")
-    namespace = {"uuid": uuid, "text": lambda query: query}
-    exec(compile(ast.Module(body=[function], type_ignores=[]), "platform-progress", "exec"), namespace)
-    with pg() as connection:
-        class Session:
-            def execute(self, query, params):
-                if "teacher.mentra_course_artifacts" in query:
-                    return type("Total", (), {"first": lambda self: (1,)})()
-                cursor = connection.execute(re.sub(r":([a-zA-Z_]\w*)", r"%(\1)s", query), params)
-                return type("Rows", (), {"first": lambda self: cursor.fetchone()})()
-        before = namespace["_course_learning_progress"](Session(), "student", "course")
+def test_student_progress_ignores_revoked_rows_and_new_idle_session(active, pg, monkeypatch):
+    """Exercise the student-owned aggregate through its real database connection."""
+    from backend import internal_platform
+
+    monkeypatch.setenv("STUDENT_SERVICE_KEY", "progress-test-key")
+    def progress():
+        return internal_platform.user_course_progress("course", "student", "progress-test-key")
+
+    before = progress()
     assert before["learnedLessons"] == 1 and before["sessionCount"] == 1
+    # Opening a session without a classroom must not inflate lesson progress.
+    database.upsert_session("idle-session", "student", "course", "pub", 1)
+    assert progress()["sessionCount"] == 1
     assert post(active, command(active[1], "finish")).status_code == 200
     assert post(active, command(stored(), "reset_lesson")).status_code == 200
-    with pg() as connection:
-        after = namespace["_course_learning_progress"](Session(), "student", "course")
+    after = progress()
     assert after["learnedLessons"] == after["endedSessions"] == after["sessionCount"] == 0
-    assert after["percent"] == 0
 
 
 def test_drain_mode_keeps_existing_receipts_and_recovery_available(active, monkeypatch):

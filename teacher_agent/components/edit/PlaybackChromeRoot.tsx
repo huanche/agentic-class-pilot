@@ -162,6 +162,11 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
         void document.exitFullscreen().catch(() => {});
       }
     }, [currentPlaybackActionIndex, currentScene, playbackCompleted, scenes, videoOnly]);
+    // Player-only embed (student agent iframe): announce liveness once so the
+    // host can distinguish a mounted player from a failed/blank iframe.
+    useEffect(() => {
+      postPlayerHostEvent('PLAYER_READY');
+    }, []);
     const [liveSpeech, setLiveSpeech] = useState<string | null>(null); // From buffer (discussion/QA)
     const [speechProgress, setSpeechProgress] = useState<number | null>(null); // StreamBuffer reveal progress (0–1)
     const [discussionTrigger, setDiscussionTrigger] = useState<TriggerEvent | null>(null);

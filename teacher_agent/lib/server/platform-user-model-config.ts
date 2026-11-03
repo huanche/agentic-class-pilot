@@ -15,6 +15,7 @@
 import { type NextRequest } from 'next/server';
 
 import { createLogger } from '@/lib/logger';
+import { getUserModelConfig } from '@/generated/teacher_platform_api';
 
 import { isPlatformAuthEnabled } from './platform-course-bridge';
 
@@ -64,15 +65,13 @@ export async function fetchPlatformUserModelConfig(
     if (Date.now() - hit.at < ttl) return hit.config;
   }
   try {
-    const response = await fetch(
-      `${process.env.PLATFORM_AUTH_URL}/api/v1/internal/user/${encodeURIComponent(userId)}/model-config`,
-      {
-        headers: { 'X-Teacher-Service-Key': process.env.PLATFORM_SERVICE_KEY || '' },
-        cache: 'no-store',
-        signal: AbortSignal.timeout(5000),
-      },
-    );
-    const config = response.ok ? ((await response.json()) as PlatformUserModelConfig) : null;
+    const result = await getUserModelConfig({
+      baseUrl: `${(process.env.PLATFORM_AUTH_URL || '').replace(/\/$/, '')}/api/v1`,
+      path: { user_id: userId },
+      headers: { 'X-Teacher-Service-Key': process.env.PLATFORM_SERVICE_KEY || '' },
+      cache: 'no-store', signal: AbortSignal.timeout(5000),
+    });
+    const config = result.response?.ok ? (result.data as PlatformUserModelConfig) : null;
     cache.set(userId, { config, at: Date.now() });
     return config;
   } catch (error) {

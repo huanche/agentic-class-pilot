@@ -142,9 +142,9 @@ describe('POST /api/chat/pi model and thinking resolution', () => {
     expect(mocks.runPiDirectorLoop).not.toHaveBeenCalled();
   });
 
-  it('returns 400 when only some requested agent IDs resolve', async () => {
+  it('returns 400 when the requested agent ID does not resolve', async () => {
     const body = makeBody();
-    body.config.agentIds.push('missing-agent');
+    body.config.agentIds = ['missing-agent'];
     const { POST } = await import('@/app/api/chat/pi/route');
     const response = await POST(makeRequest(body));
 
@@ -154,6 +154,22 @@ describe('POST /api/chat/pi model and thinking resolution', () => {
       errorCode: 'INVALID_REQUEST',
       error: 'Unknown classroom agents in config.agentIds: missing-agent',
     });
+    expect(mocks.runPiDirectorLoop).not.toHaveBeenCalled();
+  });
+
+  it('returns 410 for the removed multi-agent discussion mode', async () => {
+    const body = makeBody();
+    body.config.agentIds.push('missing-agent');
+    const { POST } = await import('@/app/api/chat/pi/route');
+    const response = await POST(makeRequest(body));
+
+    expect(response.status).toBe(410);
+    await expect(response.json()).resolves.toMatchObject({
+      success: false,
+      errorCode: 'INVALID_REQUEST',
+      error: 'Classroom live multi-agent discussion has been removed',
+    });
+    expect(mocks.resolveModel).not.toHaveBeenCalled();
     expect(mocks.runPiDirectorLoop).not.toHaveBeenCalled();
   });
 

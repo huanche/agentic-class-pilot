@@ -8,6 +8,7 @@ import urllib.error
 import urllib.request
 
 from backend.contracts import SessionError
+from backend.infrastructure import platform_client
 
 logger = logging.getLogger(__name__)
 
@@ -37,8 +38,7 @@ def _post(path: str, payload: dict) -> dict:
 
 
 def platform_context(token: str, lesson_id: str | None = None, refresh_session: bool = False) -> dict:
-    return _post("/internal/student/learning-context", {
-        "launch_token": token, "lesson_id": lesson_id, "refresh_session": refresh_session})
+    return platform_client.learning_context(token, lesson_id, refresh_session)
 
 
 def authorize_student(token: str) -> dict:
@@ -51,29 +51,18 @@ def report_learning_progress(session: dict, event: str) -> bool:
     context = session.get("context") or {}
     if not all((context.get("userId"), context.get("courseId"), session.get("classroomId"))):
         return False
-    base = os.environ.get("PLATFORM_AUTH_URL", "").rstrip("/")
-    key = os.environ.get("STUDENT_SERVICE_KEY", "")
-    if not base or not key:
+    if not os.environ.get("PLATFORM_AUTH_URL") or not os.environ.get("STUDENT_SERVICE_KEY"):
         logger.warning("Learning progress sync skipped: platform connection is unconfigured")
         return False
-    if not base.endswith("/api/v1"):
-        base += "/api/v1"
-    payload = {"user_id": context["userId"], "course_id": context["courseId"],
-               "session_key": session["id"], "classroom_id": session["classroomId"],
-               "event": event}
-    request = urllib.request.Request(
-        base + "/internal/student/learning-progress",
-        data=json.dumps(payload).encode(),
-        headers={"Content-Type": "application/json", "X-Student-Service-Key": key},
-        method="POST",
-    )
     try:
-        with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(request, timeout=8) as response:
-            result = json.load(response)
-            if not result.get("pushedToTeacher"):
-                logger.warning("Learning progress saved but teacher sync failed: course=%s student=%s",
-                               context["courseId"], context["userId"])
-            return bool(result.get("pushedToTeacher"))
+        pushed = platform_client.report_learning_progress(
+            str(context["userId"]), str(context["courseId"]),
+            str(session["id"]), str(session["classroomId"]), event,
+        )
+        if not pushed:
+            logger.warning("Learning progress saved but teacher sync failed: course=%s student=%s",
+                           context["courseId"], context["userId"])
+        return pushed
     except Exception:
         logger.exception("Learning progress sync failed: course=%s student=%s event=%s",
                          context["courseId"], context["userId"], event)
