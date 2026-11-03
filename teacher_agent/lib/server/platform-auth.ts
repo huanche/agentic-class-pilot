@@ -24,6 +24,8 @@ export async function platformMiddleware(request: NextRequest): Promise<NextResp
   headers.delete('x-platform-user-id');
   headers.delete('x-platform-admin');
   headers.delete('x-platform-delegated');
+  headers.delete('x-platform-role');
+  headers.delete('x-classroom-render-version');
   const serviceKey = process.env.PLATFORM_SERVICE_KEY;
   const supplied = request.headers.get('x-platform-service-key');
   const isService = Boolean(serviceKey && supplied === serviceKey);
@@ -56,9 +58,10 @@ export async function platformMiddleware(request: NextRequest): Promise<NextResp
       const fallback = response.status === 401 ? '请先登录平台' : '无权访问该资源';
       return NextResponse.json({ success: false, error: detail || fallback }, { status: response.status });
     }
-    const principal = await response.json() as { userId: string; isAdmin: boolean };
+    const principal = await response.json() as { userId: string; isAdmin: boolean; role?: string };
     headers.set('x-platform-user-id', principal.userId);
     headers.set('x-platform-admin', principal.isAdmin ? 'true' : 'false');
+    headers.set('x-platform-role', principal.role || 'teacher');
     if (isService) headers.set('x-platform-delegated', 'true');
     headers.delete('x-platform-service-key');
     headers.delete('x-platform-subject');

@@ -22,6 +22,7 @@ import { generatePBLV2Project } from '@/lib/pbl/v2/agents/planner';
 import { sanitizeEnhancedGeneratedContent } from '@/lib/learning-skills/enhanced-courseware-quality';
 import { alignActionsToPptNarration } from '@/lib/import/ppt-narration';
 import { withSceneContentDuration } from '@/lib/generation/course-duration';
+import { bindNativePptxActions, nativePptxNarrationContract } from '@/lib/onlyoffice/narration';
 import {
   bindPptxAnimationsToActions,
   pptxAnimationNarrationContract,
@@ -77,6 +78,7 @@ export function createOpenmaicCoursewareSteps(
     async content(outline: SceneOutline, signal: AbortSignal): Promise<OpenmaicContent> {
       const imported = input.importedSlides?.[outline.order - 1];
       if (
+        outline.type === 'slide' &&
         input.preferImportedCanvas &&
         imported &&
         !input.formulaEnhancedOrders?.includes(outline.order)
@@ -137,6 +139,7 @@ export function createOpenmaicCoursewareSteps(
         : (content as GeneratedSceneContent);
       // A target guides the first draft. This path never rewrites speech after TTS to fit a stopwatch.
       const seconds = outline.durationBudget?.targetSeconds;
+      const nativeClicks = input.stage.nativePptx?.clicks?.[outline.id];
       let actionOutline = seconds
         ? {
             ...outline,
@@ -145,7 +148,11 @@ export function createOpenmaicCoursewareSteps(
         : outline;
       actionOutline = {
         ...actionOutline,
-        description: actionOutline.description + pptxAnimationNarrationContract(imported?.canvas),
+        description:
+          actionOutline.description +
+          (nativeClicks
+            ? nativePptxNarrationContract(nativeClicks)
+            : pptxAnimationNarrationContract(imported?.canvas)),
       };
       const actions = await generateSceneActions(
         actionOutline,
@@ -167,16 +174,21 @@ export function createOpenmaicCoursewareSteps(
           userProfile: input.requirements.userBio,
         },
       );
-      const aligned = alignActionsToPptNarration(
-        actions,
-        input.narrationScripts?.[outline.order - 1],
-        'elements' in generated ? generated.elements : [],
-        { preserveGeneratedLength: !!outline.durationBudget },
-      );
+      const aligned =
+        outline.type === 'slide'
+          ? alignActionsToPptNarration(
+              actions,
+              input.narrationScripts?.[outline.order - 1],
+              'elements' in generated ? generated.elements : [],
+              { preserveGeneratedLength: !!outline.durationBudget },
+            )
+          : actions;
       const built = buildCompleteScene(
         outline,
         generated,
-        bindPptxAnimationsToActions(aligned, imported?.canvas),
+        nativeClicks && imported
+          ? bindNativePptxActions(aligned, imported.canvas, nativeClicks)
+          : bindPptxAnimationsToActions(aligned, imported?.canvas),
         input.stage.id,
       );
       if (!built) throw new Error(`无法组装页面：${outline.title}`);

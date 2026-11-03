@@ -10,7 +10,9 @@ describe('slide reveal action', () => {
 
   it('reveals the target on the timeline and waits for the entrance animation', async () => {
     vi.useFakeTimers();
-    const engine = new ActionEngine({} as never);
+    const engine = new ActionEngine({
+      getState: () => ({ stage: null, scenes: [], currentSceneId: null }),
+    } as never);
     const execution = engine.execute({
       id: 'reveal-1',
       type: 'reveal',

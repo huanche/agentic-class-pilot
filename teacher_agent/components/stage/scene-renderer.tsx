@@ -1,6 +1,9 @@
 'use client';
 
 import { useMemo } from 'react';
+import { useStageStore } from '@/lib/store/stage';
+import { nativePptxPage } from '@/lib/onlyoffice/native-player';
+import { NativePptxView } from './native-pptx-view';
 import type { Scene, StageMode } from '@/lib/types/stage';
 import { SlideEditor as SlideRenderer } from '../slide-renderer/Editor';
 import { QuizView } from '../scene-renderers/quiz-view';
@@ -11,6 +14,8 @@ interface SceneRendererProps {
   readonly scene: Scene;
   readonly mode: StageMode;
   readonly studentPlayer?: boolean;
+  readonly onSceneComplete?: () => void;
+  readonly nativeLoadTimeoutMs?: number;
 }
 
 /**
@@ -18,11 +23,22 @@ interface SceneRendererProps {
  * directly as a top-level takeover — SceneRenderer is only on the playback
  * path, so it does not branch on `mode === 'edit'`.
  */
-export function SceneRenderer({ scene, mode, studentPlayer }: SceneRendererProps) {
+export function SceneRenderer({
+  scene,
+  mode,
+  studentPlayer,
+  onSceneComplete,
+  nativeLoadTimeoutMs,
+}: SceneRendererProps) {
+  const stage = useStageStore((s) => s.stage);
   const renderer = useMemo(() => {
     switch (scene.type) {
       case 'slide':
         if (scene.content.type !== 'slide') return <div>Invalid slide content</div>;
+        if (nativePptxPage(stage, scene))
+          return (
+            <NativePptxView key={scene.id} scene={scene} loadTimeoutMs={nativeLoadTimeoutMs} />
+          );
         return <SlideRenderer mode={mode} />;
       case 'quiz':
         if (scene.content.type !== 'quiz') return <div>Invalid quiz content</div>;
@@ -33,6 +49,7 @@ export function SceneRenderer({ scene, mode, studentPlayer }: SceneRendererProps
             sceneId={scene.id}
             stageId={scene.stageId}
             studentPlayer={studentPlayer}
+            onContinue={onSceneComplete}
           />
         );
       case 'interactive':
@@ -44,7 +61,7 @@ export function SceneRenderer({ scene, mode, studentPlayer }: SceneRendererProps
       default:
         return <div>Unknown scene type</div>;
     }
-  }, [scene, mode, studentPlayer]);
+  }, [scene, mode, studentPlayer, stage, onSceneComplete, nativeLoadTimeoutMs]);
 
   return <div className="w-full h-full">{renderer}</div>;
 }

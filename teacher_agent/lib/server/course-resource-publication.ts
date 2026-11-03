@@ -9,6 +9,7 @@ import {
   updateCourseJobIfPresent,
 } from './course-space-storage';
 import { publishCourseChannel } from './course-channel-publication';
+import { videoEnabled, preparedVideoForPublication, pinPublishedVideo } from './classroom-video';
 
 async function queuePublishedVideo(courseId: string, artifactId: string, classroomId?: string) {
   if (!classroomId || process.env.PLATFORM_AUTH_ENABLED !== 'true') return;
@@ -106,6 +107,8 @@ export async function publishCourseResource(
   }
   if (kind !== 'artifact' && input.resourceType === 'courseware')
     throw new Error('只有生成的互动课件可以发布为课件');
+  const videoVersion = videoEnabled() && artifact?.classroomId
+    ? await preparedVideoForPublication(artifact.classroomId) : undefined;
   const ensureStudentPublication = async () => {
     if (course.status === 'active') return;
     const latest = await readServerCourse(course.id);
@@ -123,6 +126,7 @@ export async function publishCourseResource(
     // Retry initialization if a previous publish saved the resource but failed
     // before creating the student package. Preserve the original publication id.
     await ensureStudentPublication();
+    if (videoVersion && artifact?.classroomId) await pinPublishedVideo(artifact.classroomId, videoVersion);
     if (artifact) await queuePublishedVideo(course.id, artifact.id, artifact.classroomId);
     return resource;
   }
@@ -227,6 +231,7 @@ export async function publishCourseResource(
       approvedAt: artifact.approvedAt ?? now,
       activatedAt: now,
     });
+    if (videoVersion && artifact.classroomId) await pinPublishedVideo(artifact.classroomId, videoVersion);
     await updateCourseJobIfPresent(artifact.jobId, {
       status: 'approved',
       message: '教师已确认课时归属并发布',

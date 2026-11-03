@@ -3,6 +3,8 @@ import path from 'path';
 import { NextRequest, NextResponse } from 'next/server';
 import { CLASSROOMS_DIR, isValidClassroomId } from '@/lib/server/classroom-storage';
 import { createLogger } from '@/lib/logger';
+import { CLASSROOM_VIDEOS_DIR, readVideoPlan, videoPointer } from '@/lib/server/classroom-video';
+import { parseByteRange } from '@/lib/server/http-range';
 
 const log = createLogger('ClassroomMedia');
 
@@ -39,12 +41,22 @@ export async function GET(
 
   // Only allow media/ and audio/ subdirectories
   const subDir = pathSegments[0];
-  if (subDir !== 'media' && subDir !== 'audio') {
+  if (subDir !== 'media' && subDir !== 'audio' && subDir !== 'video') {
     return NextResponse.json({ error: 'Invalid path' }, { status: 404 });
   }
 
-  const filePath = path.join(CLASSROOMS_DIR, classroomId, ...pathSegments);
-  const resolvedBase = path.resolve(CLASSROOMS_DIR, classroomId);
+  const isVideo = subDir === 'video';
+  if (isVideo && (pathSegments.length !== 2 || !/^[a-f0-9]{64}\.mp4$/.test(pathSegments[1])))
+    return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  if (isVideo && _req.headers.get('x-platform-role') === 'student') {
+    const pointer = await videoPointer(classroomId, 'published');
+    const plan = pointer && await readVideoPlan(classroomId, pointer.version);
+    if (!plan || !plan.clips.some((c) => `${c.key}.mp4` === pathSegments[1]))
+      return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  }
+  const root = isVideo ? CLASSROOM_VIDEOS_DIR : CLASSROOMS_DIR;
+  const filePath = isVideo ? path.join(root, classroomId, 'clips', pathSegments[1]) : path.join(root, classroomId, ...pathSegments);
+  const resolvedBase = path.resolve(root, classroomId);
 
   try {
     // Resolve symlinks and verify the real path stays within the classroom dir
@@ -62,7 +74,11 @@ export async function GET(
     const contentType = MIME_TYPES[ext] || 'application/octet-stream';
 
     // Stream the file to avoid loading large videos into memory
-    const stream = createReadStream(realPath);
+    const rangeHeader = _req.headers.get('range');
+    const range = rangeHeader ? parseByteRange(rangeHeader, stat.size) : undefined;
+    if (range === null) return new NextResponse(null, { status: 416,
+      headers: { 'Content-Range': `bytes */${stat.size}`, 'Accept-Ranges': 'bytes' } });
+    const stream = createReadStream(realPath, range || undefined);
     const webStream = new ReadableStream({
       start(controller) {
         stream.on('data', (chunk: Buffer | string) => controller.enqueue(chunk));
@@ -75,17 +91,19 @@ export async function GET(
     });
 
     return new NextResponse(webStream, {
-      status: 200,
+      status: range ? 206 : 200,
       headers: {
         'Content-Type': contentType,
-        'Content-Length': String(stat.size),
+        'Content-Length': String(range ? range.end - range.start + 1 : stat.size),
+        'Accept-Ranges': 'bytes',
+        ...(range ? { 'Content-Range': `bytes ${range.start}-${range.end}/${stat.size}` } : {}),
         // Narration files are regenerated in place under stable names (server
         // narration re-runs and browser TTS re-uploads both overwrite
         // `tts_s<order>_<actionId>.<ext>`), so audio must always revalidate —
         // an immutable entry would pin superseded bytes for a day. Slide media
         // is content-final and stays immutable-cacheable.
         'Cache-Control':
-          subDir === 'audio' ? 'private, no-cache' : 'public, max-age=86400, immutable',
+          isVideo ? 'private, max-age=86400, immutable' : subDir === 'audio' ? 'private, no-cache' : 'public, max-age=86400, immutable',
       },
     });
   } catch (error) {

@@ -385,11 +385,13 @@ export async function upsertClassroomDatabaseRecord(
        course_id=COALESCE(EXCLUDED.course_id,mentra_classrooms.course_id),
        artifact_id=COALESCE(EXCLUDED.artifact_id,mentra_classrooms.artifact_id),
        stage=EXCLUDED.stage,scenes=EXCLUDED.scenes,payload=EXCLUDED.payload,updated_at=EXCLUDED.updated_at
-     WHERE NOT $9::boolean
-       OR COALESCE(mentra_classrooms.stage #>> '{generationPlan,serverJobId}', '') = ''
+     WHERE NOT $9::boolean OR (
+       COALESCE(mentra_classrooms.stage #>> '{nativePptx,renderRevision}', '0') =
+         COALESCE(EXCLUDED.stage #>> '{nativePptx,renderRevision}', '0')
+       AND (COALESCE(mentra_classrooms.stage #>> '{generationPlan,serverJobId}', '') = ''
        OR (mentra_classrooms.stage #>> '{generationPlan,serverJobId}' = EXCLUDED.stage #>> '{generationPlan,serverJobId}'
          AND mentra_classrooms.stage #>> '{generationPlan,complete}' = 'true'
-         AND EXCLUDED.stage #>> '{generationPlan,complete}' = 'true')`,
+         AND EXCLUDED.stage #>> '{generationPlan,complete}' = 'true')))`,
     [classroom.id, links.courseId ?? null, links.artifactId ?? null,
       JSON.stringify(classroom.stage), JSON.stringify(classroom.scenes), JSON.stringify(classroom), createdAt, Date.now(), links.browserSnapshot === true],
   ));

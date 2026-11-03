@@ -4,6 +4,7 @@ import path from 'node:path';
 import type { CourseArtifactJob } from '@/lib/course-space/types';
 import type { BackgroundCoursewareInput } from '@/lib/generation/background-courseware';
 import type { Scene } from '@/lib/types/stage';
+import { buildCompleteScene } from '@openmaic/generation';
 
 const state = vi.hoisted(() => ({
   jobs: new Map<string, CourseArtifactJob>(),
@@ -226,6 +227,108 @@ describe('server-owned courseware generation', () => {
     expect(state.jobs.get(job.id)?.status).toBe('cancelled');
     expect(state.snapshots.get(selected.stage.id)?.scenes).toHaveLength(1);
     expect(state.dispose).not.toHaveBeenCalled();
+  });
+  it('repairs a cached PPT canvas on an interactive page while retaining completed pages and valid quiz content', async () => {
+    vi.stubEnv('COURSEWARE_GENERATION_ENGINE', 'openmaic');
+    const selected = input('mixed_fidelity_retry');
+    selected.preferImportedCanvas = true;
+    selected.importedSlides = [
+      {
+        id: 'source',
+        elements: [],
+        viewportSize: 1000,
+        viewportRatio: 0.75,
+        theme: {
+          backgroundColor: '#ffffff',
+          themeColors: [],
+          fontColor: '#111111',
+          fontName: 'Arial',
+        },
+      },
+    ];
+    selected.outlines[1].type = 'interactive';
+    selected.outlines.push({ ...selected.outlines[1], id: 'quiz', order: 3, type: 'quiz' });
+    const job = await createBackgroundCoursewareJob(selected, context);
+    const preserved: Scene = {
+      id: 'completed',
+      stageId: selected.stage.id,
+      type: 'slide',
+      order: 1,
+      title: '原稿',
+      content: { type: 'slide', canvas: selected.importedSlides[0] },
+      actions: [{ id: 'speech', type: 'speech', text: '原讲稿', audioId: 'saved-voice' }],
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    state.snapshots.set(selected.stage.id, {
+      stage: selected.stage,
+      scenes: [structuredClone(preserved)],
+    });
+    const directory = path.join(process.cwd(), '.runtime', 'background-task-tests');
+    await fs.writeFile(
+      path.join(directory, `${job.id}.openmaic-page-2.json`),
+      JSON.stringify({ content: { type: 'slide', canvas: { elements: [] } } }),
+    );
+    await fs.writeFile(
+      path.join(directory, `${job.id}.openmaic-page-3.json`),
+      JSON.stringify({ content: { questions: [] } }),
+    );
+    state.content.mockResolvedValue({ html: '<main><button>调用函数</button></main>' });
+    state.actions.mockImplementation(async (outline, content) => {
+      const scene = buildCompleteScene(outline, content, [], selected.stage.id);
+      if (!scene) throw new Error(`无法组装页面：${outline.title}`);
+      return scene;
+    });
+    await runBackgroundCoursewareJob(job.id);
+    expect(state.jobs.get(job.id)?.status).toBe('review');
+    expect(state.content).toHaveBeenCalledOnce();
+    expect(state.content.mock.calls[0][0].order).toBe(2);
+    expect(state.snapshots.get(selected.stage.id)?.scenes).toMatchObject([
+      preserved,
+      { type: 'interactive', content: { html: expect.stringContaining('button') } },
+      { type: 'quiz', content: { questions: [] } },
+    ]);
+    expect(state.snapshots.get(selected.stage.id)?.scenes[0]).toEqual(preserved);
+  });
+  it('generates interactive and quiz content in the legacy high-fidelity pipeline too', async () => {
+    const selected = input('legacy_mixed_fidelity');
+    selected.preferImportedCanvas = true;
+    selected.outlines = [1, 2, 3, 4, 5].map((order) => ({
+      ...selected.outlines[0],
+      id: `mixed${order}`,
+      order,
+      type: order === 4 ? 'interactive' : order === 5 ? 'quiz' : 'slide',
+    }));
+    selected.importedSlides = selected.outlines.map((outline) => ({
+      id: `source${outline.order}`,
+      elements: [],
+      viewportSize: 1000,
+      viewportRatio: 0.75,
+      theme: { backgroundColor: '#fff', themeColors: [], fontColor: '#111', fontName: 'Arial' },
+    }));
+    vi.mocked(fetch).mockImplementation(async (url, init) => {
+      const body = JSON.parse(init!.body as string);
+      if (String(url).endsWith('scene-content'))
+        return response({
+          content:
+            body.outline.type === 'quiz' ? { questions: [] } : { html: '<main>调用函数</main>' },
+        });
+      const content =
+        body.content.type === 'slide' ? { elements: body.content.canvas.elements } : body.content;
+      return response({ scene: buildCompleteScene(body.outline, content, [], selected.stage.id) });
+    });
+    const job = await createBackgroundCoursewareJob(selected, context);
+    await runBackgroundCoursewareJob(job.id);
+    expect(state.jobs.get(job.id)?.status).toBe('review');
+    expect(
+      state.snapshots.get(selected.stage.id)?.scenes.map((scene) => (scene as Scene).type),
+    ).toEqual(['slide', 'slide', 'slide', 'interactive', 'quiz']);
+    const contentRequests = vi
+      .mocked(fetch)
+      .mock.calls.filter(([url]) => String(url).endsWith('scene-content'));
+    expect(
+      contentRequests.map(([, init]) => JSON.parse(init!.body as string).outline.order),
+    ).toEqual([4, 5]);
   });
   it('samples useful narration, repairs text before full TTS, then measures the accepted page', async () => {
     vi.stubEnv('COURSEWARE_NARRATION_BUDGET_ENABLED', 'true');

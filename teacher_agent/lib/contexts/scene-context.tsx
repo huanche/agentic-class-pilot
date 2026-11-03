@@ -13,11 +13,16 @@ import { useStageStore } from '@/lib/store/stage';
 import type { Scene } from '@/lib/types/stage';
 import { produce } from 'immer';
 
+/** DOM text measurements may update the editable copy without editing the source. */
+export interface SceneDataUpdateOptions {
+  source: 'layout';
+}
+
 interface SceneContextValue<T = unknown> {
   sceneId: string;
   sceneType: Scene['type'];
   sceneData: T;
-  updateSceneData: (updater: (draft: T) => void) => void;
+  updateSceneData: (updater: (draft: T) => void, options?: SceneDataUpdateOptions) => void;
   // Internal: subscribe to scene data changes
   subscribe: (callback: () => void) => () => void;
   getSnapshot: () => T;
@@ -37,7 +42,7 @@ export interface SceneDataController<T = unknown> {
   sceneId: string;
   sceneType: Scene['type'];
   getSnapshot: () => T;
-  updateSceneData: (updater: (draft: T) => void) => void;
+  updateSceneData: (updater: (draft: T) => void, options?: SceneDataUpdateOptions) => void;
 }
 
 /**
@@ -94,19 +99,19 @@ export function SceneProvider({
 
   // Update scene data with Immer (uncontrolled: write back to stage store)
   const storeUpdateSceneData = useCallback(
-    (updater: (draft: unknown) => void) => {
+    (updater: (draft: unknown) => void, options?: SceneDataUpdateOptions) => {
       if (!currentScene) return;
 
       const newContent = produce(currentScene.content, updater);
-      updateScene(currentScene.id, {
-        content: newContent,
-      });
+      const updates = { content: newContent };
+      if (options) updateScene(currentScene.id, updates, options);
+      else updateScene(currentScene.id, updates);
     },
     [currentScene, updateScene],
   );
 
   const updateSceneData = controller
-    ? (controller.updateSceneData as (updater: (draft: unknown) => void) => void)
+    ? (controller.updateSceneData as SceneContextValue['updateSceneData'])
     : storeUpdateSceneData;
 
   const value = useMemo(

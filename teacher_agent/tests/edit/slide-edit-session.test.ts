@@ -117,6 +117,7 @@ describe('useSlideEditSession (auto-save to stage store)', () => {
     expect(updateScene).toHaveBeenCalledWith(
       'scene-1',
       expect.objectContaining({ content: history!.present }),
+      { source: 'layout' },
     );
   });
 

@@ -49,6 +49,8 @@ const log = createLogger('Scene Actions API');
 
 // Generation plus independent review, with at most one content repair.
 export const maxDuration = 180;
+import type { NativePptxClick } from '@/lib/types/stage';
+import { bindNativePptxActions, nativePptxNarrationContract } from '@/lib/onlyoffice/narration';
 
 export async function POST(req: NextRequest) {
   let outlineTitle: string | undefined;
@@ -68,6 +70,7 @@ export async function POST(req: NextRequest) {
       durationFeedback,
       narrationPace,
       narrationRevision,
+      nativeClicks,
     } = body as {
       outline: SceneOutline;
       allOutlines: SceneOutline[];
@@ -87,9 +90,28 @@ export async function POST(req: NextRequest) {
       durationFeedback?: DurationFeedback;
       narrationPace?: NarrationPace;
       narrationRevision?: NarrationRevision;
+      nativeClicks?: NativePptxClick[];
     };
 
     // Validate required fields
+    if (
+      nativeClicks &&
+      (!Array.isArray(nativeClicks) ||
+        nativeClicks.length > 500 ||
+        nativeClicks.some(
+          (c) =>
+            !c ||
+            typeof c.id !== 'string' ||
+            !c.id.startsWith('onlyoffice-click-') ||
+            !Number.isFinite(c.durationMs) ||
+            c.durationMs < 1 ||
+            c.durationMs > 300000 ||
+            typeof c.description !== 'string' ||
+            c.description.length > 1800 ||
+            !Array.isArray(c.sourceEffectIds),
+        ))
+    )
+      return apiError('INVALID_REQUEST', 400, '原稿动画计划无效');
     if (!outline) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'outline is required');
     }
@@ -229,9 +251,9 @@ export async function POST(req: NextRequest) {
           description: `${outline.description}\n\n【高保真 PPT 讲解约束】\n${narrationScript}\n请参考 OpenMAIC 的逐页讲解方式：先理解本页视觉内容，再用自然口语解释“为什么、如何理解或如何应用”，不要逐字朗读页面。选择一个最有帮助的例子、类比或观察提示，并用一句短过渡承接上一页或引出下一页。所有内容必须以本页材料为依据，不得混入其他页面。\n${narrationContract}`,
         }
       : { ...outline };
-    narrationAwareOutline.description += pptxAnimationNarrationContract(
-      importedSlideContent?.canvas,
-    );
+    narrationAwareOutline.description += nativeClicks
+      ? nativePptxNarrationContract(nativeClicks)
+      : pptxAnimationNarrationContract(importedSlideContent?.canvas);
     const actionOutline = withNarrationDuration(
       withEnhancedChoreographyContract({
         ...narrationAwareOutline,
@@ -274,7 +296,9 @@ export async function POST(req: NextRequest) {
     const builtScene = buildCompleteScene(
       outline,
       generationContent,
-      bindPptxAnimationsToActions(actions, importedSlideContent?.canvas),
+      nativeClicks && importedSlideContent
+        ? bindNativePptxActions(actions, importedSlideContent.canvas, nativeClicks)
+        : bindPptxAnimationsToActions(actions, importedSlideContent?.canvas),
       stageId,
     );
     const scene =
@@ -302,6 +326,12 @@ export async function POST(req: NextRequest) {
 
     return apiSuccess({ scene, previousSpeeches: outputPreviousSpeeches, generationTimings });
   } catch (error) {
+    if (
+      error instanceof Error &&
+      (error as { errorCode?: string }).errorCode === 'FOCUS_SPEECH_ALIGNMENT_FAILED' &&
+      !(error instanceof FocusSpeechAlignmentError)
+    )
+      return apiError('FOCUS_SPEECH_ALIGNMENT_FAILED', 422, error.message);
     if (error instanceof FocusSpeechAlignmentError) {
       log.warn(`Focus/speech validation rejected page "${outlineTitle}":`, error.issues);
       return apiError('FOCUS_SPEECH_ALIGNMENT_FAILED', 422, error.message, error.issues.join('\n'));
