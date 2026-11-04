@@ -8,11 +8,13 @@ import json
 import io
 import os
 from pathlib import Path
+import shlex
 import subprocess
 import shutil
 import sys
 import tempfile
 import tarfile
+import time
 from types import SimpleNamespace
 import unittest
 
@@ -27,6 +29,7 @@ class WebReleaseTest(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.ns = {"__name__": "sandbox_deployer"}
         exec(compile(SOURCE, "sandbox_deployer", "exec"), self.ns)
+        self.real_grouped_call = self.ns["_call_process_group"]
         self.real_live_environment = self.ns["live_environment"]
         self.base = self.root / "opt/agentic-mainland-web"
         self.old = self.base / "releases" / ("b" * 40)
@@ -165,6 +168,36 @@ class WebReleaseTest(unittest.TestCase):
         self.assertEqual(self.uv_directories, [self.target / 'platform', self.target / 'student_agent'])
         self.assertEqual((self.base / 'current').resolve(), self.old)
         self.assertTrue((self.root / 'var/lib/agentic-class-pilot/staged-web' / (self.sha + '.json')).is_file())
+
+        # A changed lock/requirements file must update a copy of the active
+        # environment instead of downloading every dependency from scratch.
+        shutil.rmtree(self.target)
+        (self.root / 'var/lib/agentic-class-pilot/staged-web' / (self.sha + '.json')).unlink()
+        (self.old / 'platform/uv.lock').write_text('previous lock')
+        (self.old / 'student_agent/backend/requirements.txt').write_text('previous requirements')
+        for app in ('platform', 'student_agent'):
+            (self.old / app / '.venv/reused-marker').write_text('active environment')
+        self.events.clear()
+        self.uv_directories.clear()
+        self.ns['deploy']()
+        for app in ('platform', 'student_agent'):
+            self.assertEqual((self.target / app / '.venv/reused-marker').read_text(), 'active environment')
+        uv_calls = [event for event in self.events if event[:5] ==
+                    ('runuser', '-u', 'ubuntu', '--', self.ns['UV'])]
+        self.assertTrue(any('sync' in event for event in uv_calls))
+        self.assertTrue(any(event[5:7] == ('pip', 'install') for event in uv_calls))
+        self.assertFalse(any(event[5] == 'venv' for event in uv_calls))
+        self.assertIn(str(self.target / 'platform/.venv/bin/python'),
+                      next(event for event in uv_calls if 'sync' in event))
+        self.assertEqual((self.base / 'current').resolve(), self.old)
+
+    def test_command_timeout_terminates_child_processes(self):
+        marker = self.root / 'orphan-marker'
+        child = f'(sleep 2; touch {shlex.quote(str(marker))}) & wait'
+        with self.assertRaises(subprocess.TimeoutExpired):
+            self.real_grouped_call(['bash', '-c', child], timeout=0.2)
+        time.sleep(2.2)
+        self.assertFalse(marker.exists(), 'a timed-out command left a descendant running')
 
     def test_revision_mismatch_never_stops_services(self):
         self.revision = "pub10"
