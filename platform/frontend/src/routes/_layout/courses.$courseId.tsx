@@ -10,6 +10,7 @@ import PendingItems from "@/components/Pending/PendingItems"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import useAuth from "@/hooks/useAuth"
+import { learningCsrfHeaders } from "@/lib/learningSession"
 import useCustomToast from "@/hooks/useCustomToast"
 
 export const Route = createFileRoute("/_layout/courses/$courseId")({
@@ -28,10 +29,11 @@ async function openTeacherWorkspace(courseId: string) {
 }
 
 async function openStudentWorkspace(courseId: string) {
-  // 与学生首页同一个可信入口：平台签发带 launch_token 的学习地址
+  // 使用平台登录会话校验课程权限，返回不含凭证的学习地址
   const response = await fetch(`/api/v1/courses/${courseId}/student-workspace`, {
     method: "POST",
     credentials: "include",
+    headers: await learningCsrfHeaders(),
   })
   const data = await response.json()
   if (!response.ok) throw new Error(data.detail || "进入学习失败")

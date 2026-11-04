@@ -10,7 +10,7 @@ function fixture(handler, existing = new Map()) {
   const request = async (path, method, body) => {
     calls.push({ path, method, body });
     if (path === "/session/resume") return {
-      sessionId: "s", stateVersion: 5, contentGeneration: 2, messages: [], ...handler.initial };
+      sessionId: "s", userId: "u", stateVersion: 5, contentGeneration: 2, messages: [], ...handler.initial };
     return handler.request(path, method, body);
   };
   const client = createLearningClient({ request, storage: () => storage,
@@ -18,9 +18,9 @@ function fixture(handler, existing = new Map()) {
   return { client, calls, existing };
 }
 
-const view = { sessionId: "s", stateVersion: 7, contentGeneration: 2, messages: [{ text: "saved" }] };
+const view = { sessionId: "s", userId: "u", stateVersion: 7, contentGeneration: 2, messages: [{ text: "saved" }] };
 const done = { status: "completed", commandId: "command-1", sessionView: view };
-async function load(client) { return client.request("/session/resume", "POST", { launch_token: "ticket" }); }
+async function load(client) { return client.request("/session/resume", "POST", { course_id: "course" }); }
 async function send(client, text = "original answer") { return client.request("/session/s/message", "POST", { text }); }
 
 test("network failure keeps the same command id, version and original answer on retry", async () => {
@@ -34,7 +34,7 @@ test("network failure keeps the same command id, version and original answer on 
   assert.deepEqual(await send(client), view);
   assert.deepEqual(calls[1].body, calls[2].body);
   assert.equal(calls[1].body.expectedStateVersion, 5);
-  assert.equal(calls[1].body.launch_token, "ticket");
+  assert.equal(Object.hasOwn(calls[1].body, "launch_token"), false);
 });
 
 test("reload preserves the command after a lost response", async () => {
@@ -47,7 +47,7 @@ test("reload preserves the command after a lost response", async () => {
   assert.deepEqual(await load(second.client), view);
   assert.equal(second.calls[1].path, `/session/s/commands/${original.commandId}/status`);
   assert.equal(second.calls.filter(call => call.path.endsWith("/commands")).length, 0);
-  assert.equal(stored.has("student_pending_command:s"), false);
+  assert.equal(stored.has("student_pending_command:u:s"), false);
 });
 
 test("failed evaluation keeps the accepted state and retries its original command", async () => {
@@ -135,7 +135,7 @@ test("an old receipt cannot erase a newer pending submission from another device
   await load(client);
   await assert.rejects(send(client));
   await send(client);
-  assert.equal(JSON.parse(existing.get("student_pending_command:s")).commandId, "other-device");
+  assert.equal(JSON.parse(existing.get("student_pending_command:u:s")).commandId, "other-device");
   await send(client, "next answer");
   assert.equal(calls.at(-1).body.commandId, "other-device");
   assert.equal(calls.at(-1).body.expectedStateVersion, 7);
@@ -154,12 +154,12 @@ test("new answers bind the task in the authoritative view", async () => {
 test("a P2 pending answer keeps its original payload hash after P3 adds task metadata", async () => {
   const original = { commandId: "pre-p3", expectedStateVersion: 5, contentGeneration: 2,
     type: "submit_answer", payload: { text: "original answer" } };
-  const stored = new Map([["student_pending_command:s", JSON.stringify(original)]]);
+  const stored = new Map([["student_pending_command:u:s", JSON.stringify(original)]]);
   const { client, calls } = fixture({ initial: { stateVersion: 6, currentTaskPublic: { taskId: "task" },
       pendingSubmission: { ...original, status: "failed" } }, request: async () => done }, stored);
   await load(client);
   await send(client);
-  assert.deepEqual(calls.at(-1).body, { ...original, launch_token: "ticket" });
+  assert.deepEqual(calls.at(-1).body, { ...original });
 });
 
 test("concurrent retries share one submission and one receipt polling chain", async () => {

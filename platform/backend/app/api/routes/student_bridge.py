@@ -1,12 +1,8 @@
-"""Student bridge: trusted entry into the independent student agent service.
+"""Student course entry and service-owned learning context.
 
-Two surfaces:
-- POST /api/v1/internal/student/authorize — the student agent validates each
-  request (session cookie or launch token) against the platform.
-- POST /api/v1/courses/{course_id}/student-workspace — an enrolled student of a
-  published course receives a short-lived launch token plus the entry URL.
-  Identity is carried inside the signed token; caller-supplied student ids are
-  never trusted.
+Same-origin classrooms use the platform Cookie BFF. The v2 context accepts
+trusted service identities; legacy launch helpers remain for contract/snapshot
+compatibility and are not used by the public classroom flow.
 """
 import hashlib
 import hmac
@@ -20,16 +16,16 @@ import uuid
 from urllib.parse import quote
 
 import httpx
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import text
-from sqlmodel import select
 
 from app.api.deps import CurrentUser, SessionDep
 from app.core.config import settings
-from app.models import Course, Enrollment
+from app.models import Course, User
 from app.services.browser_sessions import user_for_cookie
-from app.services.course_access import get_accessible_course
+from app.services.browser_learning_auth import BrowserStudent, browser_student
+from app.services.course_access import get_accessible_course, get_student_course
 from app.services.course_publication import require_published_course
 
 router = APIRouter(tags=["student-bridge"])
@@ -237,29 +233,23 @@ def authorize_student_request(body: StudentAuthorization, session: SessionDep,
 
 
 @router.post("/courses/{course_id}/student-workspace")
-def open_student_workspace(course_id: uuid.UUID, session: SessionDep, user: CurrentUser):
-    """Trusted student entry: enrolled + published => short-lived launch URL."""
-    if user.role == "teacher" and not user.is_superuser:
-        raise HTTPException(403, "教师账号不能通过学生接口创建学习会话")
-    get_accessible_course(session, user, course_id)
-    if not user.is_superuser:
-        enrolled = session.exec(
-            select(Enrollment).where(
-                Enrollment.course_id == course_id, Enrollment.student_id == user.id)
-        ).first()
-        if not enrolled:
-            raise HTTPException(403, "尚未选课，无法进入学习")
+def open_student_workspace(course_id: uuid.UUID, session: SessionDep,
+                           identity: BrowserStudent = Depends(browser_student)):
+    """Cookie-authenticated entry with a non-secret course locator."""
+    user = session.get(User, identity.user_id)
+    if not user or not user.is_active:
+        raise HTTPException(403, "账号不可用")
+    get_student_course(session, user, course_id)
     publication = _latest_publication(session, course_id)
     if not publication:
         raise HTTPException(409, "课程尚未发布，请等待教师发布后进入学习")
     # Classroom is optional: a published package alone supports text learning.
-    # The player is an add-on; issue_launch_token tolerates classroom_id=None.
+    # The player is an add-on; the course locator carries no credential.
     classroom_id = _published_classroom(session, course_id)
-    token = issue_launch_token(user.id, course_id, classroom_id or "none", publication)
     player_url = (f"{settings.TEACHER_PUBLIC_URL.rstrip('/')}/classroom-player/"
                   f"{quote(classroom_id)}") if classroom_id else None
-    entry = f"{settings.STUDENT_PUBLIC_URL.rstrip('/')}/app?launch_token={quote(token)}"
-    return {"url": entry, "playerUrl": player_url, "launchToken": token,
+    entry = f"{settings.STUDENT_PUBLIC_URL.rstrip('/')}/app?course_id={course_id}"
+    return {"url": entry, "playerUrl": player_url,
             "publication": publication, "classroomId": classroom_id}
 
 
@@ -412,71 +402,91 @@ def student_learning_context(body: LearningContextRequest, session: SessionDep,
         user_id = uuid.UUID(payload["uid"])
         course_id = uuid.UUID(payload["cid"])
 
-        course = session.execute(
-            text("SELECT title FROM public.course WHERE id = :id"), {"id": course_id}
-        ).first()
-        if not course:
-            raise HTTPException(404, "课程不存在")
-        package_payload, published_lessons = _load_published_content(
-            session, course_id, user_id)
-        if not package_payload:
-            raise HTTPException(409, "课程尚未发布学习内容")
-        # 目录只含摘要。未选课时不下发任何课堂正文、材料或知识点。
-        lesson_catalog = [
-            {**{key: lesson.get(key) for key in (
-                "id", "title", "order", "week", "lessonNumber", "teachingHours")},
-             "segmentCount": len(lesson["classroom"].get("scenes") or [])}
-            for lesson in published_lessons
-        ]
-        selected = next((lesson for lesson in published_lessons if lesson["id"] == body.lesson_id), None)
-        if body.lesson_id and selected is None:
-            raise HTTPException(404, "所选课时不存在或尚未发布")
-        if selected:
-            ensure_published_knowledge_job(session, course_id, selected["id"],
-                                           selected["classroom"], selected.get("publishedAt"))
-        lessons = [selected] if selected else []
-        classroom_id = selected["classroom"]["id"] if selected else None
-        entries = []
-        if selected:
-            for entry in package_payload.get("entries") or []:
-                scope = entry.get("scope") or {}
-                if (scope.get("lessonId") == selected["id"] or
-                        (scope.get("type") == "course" and not scope.get("lessonId")
-                         and entry.get("resourceType") != "knowledge-points")):
-                    entries.append(entry)
-        knowledge_package = {
-            "title": package_payload.get("title") or course[0],
-            "summary": package_payload.get("summary") or "",
-            "entries": entries,
-        }
-        # 知识点只来自教师发布的「知识点」文件（markdown：末级标题=知识点，
-        # 其下列表=应会要点），以 rubric 结构化下发（学生端 evaluation 优先读
-        # rubric）。没有工件 → 不下发 rubric，学生端开场明说「没有登记知识
-        # 点」，按视频内容复习——不做场景大纲/知识图谱等其他兜底
-        # 知识点与所选课时严格同源，目录请求不解析知识点。
-        rubric = _knowledge_artifact_rubric(
-            entries, selected["id"]) if selected else None
-        if rubric:
-            knowledge_package["rubric"] = rubric
-        context = {
-            "schemaVersion": SCHEMA_VERSION,
-            "userId": str(user_id),
-            "courseId": str(course_id),
-            "courseTitle": course[0],
-            "publication": {"id": package_payload.get("id"), "version": int(package_payload.get("version") or 1)},
-            "knowledgePackage": knowledge_package,
-            "selectedLessonId": selected["id"] if selected else None,
-            "lessonCatalog": lesson_catalog,
-            "classroom": selected["classroom"] if selected else None,
-            "lessons": lessons,
-            # 课程级grounding尚未接入学生端，也不能夹带其他课时正文。
-            "grounding": {},
-        }
-        return context
+        return _learning_context_for_user(session, user_id, course_id, body.lesson_id)
     except HTTPException:
         raise
     except Exception as error:
         raise HTTPException(503, "平台数据库暂不可用，请稍后重试") from error
+
+
+def _learning_context_for_user(session, user_id, course_id, lesson_id):
+    course = session.execute(
+        text("SELECT title FROM public.course WHERE id = :id"), {"id": course_id}
+    ).first()
+    if not course:
+        raise HTTPException(404, "课程不存在")
+    package_payload, published_lessons = _load_published_content(
+        session, course_id, user_id)
+    if not package_payload:
+        raise HTTPException(409, "课程尚未发布学习内容")
+    # 目录只含摘要。未选课时不下发任何课堂正文、材料或知识点。
+    lesson_catalog = [
+        {**{key: lesson.get(key) for key in (
+            "id", "title", "order", "week", "lessonNumber", "teachingHours")},
+         "segmentCount": len(lesson["classroom"].get("scenes") or [])}
+        for lesson in published_lessons
+    ]
+    selected = next((lesson for lesson in published_lessons if lesson["id"] == lesson_id), None)
+    if lesson_id and selected is None:
+        raise HTTPException(404, "所选课时不存在或尚未发布")
+    if selected:
+        ensure_published_knowledge_job(session, course_id, selected["id"],
+                                       selected["classroom"], selected.get("publishedAt"))
+    lessons = [selected] if selected else []
+    entries = []
+    if selected:
+        for entry in package_payload.get("entries") or []:
+            scope = entry.get("scope") or {}
+            if (scope.get("lessonId") == selected["id"] or
+                    (scope.get("type") == "course" and not scope.get("lessonId")
+                     and entry.get("resourceType") != "knowledge-points")):
+                entries.append(entry)
+    knowledge_package = {
+        "title": package_payload.get("title") or course[0],
+        "summary": package_payload.get("summary") or "",
+        "entries": entries,
+    }
+    # 知识点只来自教师发布的「知识点」文件（markdown：末级标题=知识点，
+    # 其下列表=应会要点），以 rubric 结构化下发（学生端 evaluation 优先读
+    # rubric）。没有工件 → 不下发 rubric，学生端开场明说「没有登记知识
+    # 点」，按视频内容复习——不做场景大纲/知识图谱等其他兜底
+    # 知识点与所选课时严格同源，目录请求不解析知识点。
+    rubric = _knowledge_artifact_rubric(
+        entries, selected["id"]) if selected else None
+    if rubric:
+        knowledge_package["rubric"] = rubric
+    context = {
+        "schemaVersion": SCHEMA_VERSION,
+        "userId": str(user_id),
+        "courseId": str(course_id),
+        "courseTitle": course[0],
+        "publication": {"id": package_payload.get("id"), "version": int(package_payload.get("version") or 1)},
+        "knowledgePackage": knowledge_package,
+        "selectedLessonId": selected["id"] if selected else None,
+        "lessonCatalog": lesson_catalog,
+        "classroom": selected["classroom"] if selected else None,
+        "lessons": lessons,
+        # 课程级grounding尚未接入学生端，也不能夹带其他课时正文。
+        "grounding": {},
+    }
+    return context
+
+
+class SessionLearningContextRequest(BaseModel):
+    user_id: uuid.UUID
+    course_id: uuid.UUID
+    lesson_id: str | None = Field(default=None, max_length=200)
+
+
+@router.post("/internal/student/learning-context-v2")
+def session_learning_context(body: SessionLearningContextRequest, session: SessionDep,
+                             x_student_service_key: str | None = Header(default=None)):
+    check_student_service_key(x_student_service_key)
+    user = session.get(User, body.user_id)
+    if not user or not user.is_active or (user.role != "student" and not user.is_superuser):
+        raise HTTPException(403, "账号不可用")
+    get_student_course(session, user, body.course_id)
+    return _learning_context_for_user(session, body.user_id, body.course_id, body.lesson_id)
 
 
 class ClassroomViewRequest(BaseModel):

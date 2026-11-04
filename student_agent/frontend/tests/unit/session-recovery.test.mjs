@@ -7,16 +7,16 @@ const previous = { sessionId: "persisted", messages: [{ role: "student", text: "
 test("a new device selects a lesson and gets history without any browser cache", async () => {
   const calls = [];
   const result = await restoreStudentSession({
-    launchToken: "new-login", lessonId: "lesson",
+    courseId: "new-login", lessonId: "lesson",
     api: async (...args) => { calls.push(args); return previous; },
   });
   assert.equal(result, previous);
-  assert.deepEqual(calls, [["/session/resume", "POST", { launch_token: "new-login", lesson_id: "lesson" }]]);
+  assert.deepEqual(calls, [["/session/resume", "POST", { course_id: "new-login", lesson_id: "lesson" }]]);
 });
 
 test("old browser snapshot and session id cannot override the database response", async () => {
   const result = await restoreStudentSession({
-    launchToken: "new-login", lessonId: "lesson", snapshot: "stale", sessionId: "old-id",
+    courseId: "new-login", lessonId: "lesson", snapshot: "stale", sessionId: "old-id",
     api: async (path) => { assert.equal(path, "/session/resume"); return previous; },
   });
   assert.equal(result, previous);
@@ -27,7 +27,7 @@ for (const status of [401, 403, 409, 503]) {
     const failure = Object.assign(new Error("recovery failed"), { status });
     let requests = 0;
     await assert.rejects(restoreStudentSession({
-      launchToken: "token", lessonId: "lesson", snapshot: "preserve-this",
+      courseId: "token", lessonId: "lesson", snapshot: "preserve-this",
       api: async () => { requests++; throw failure; },
     }), error => error === failure);
     assert.equal(requests, 1);
@@ -36,15 +36,15 @@ for (const status of [401, 403, 409, 503]) {
 
 test("only missing history permits the normal new-lesson flow", async () => {
   const result = await restoreStudentSession({
-    launchToken: "token", lessonId: "lesson",
-    api: async () => { throw Object.assign(new Error("not found"), { status: 404 }); },
+    courseId: "token", lessonId: "lesson",
+    api: async () => { throw Object.assign(new Error("not found"), { status: 404, code: "HISTORY_NOT_FOUND" }); },
   });
   assert.equal(result, null);
 });
 
 test("catalog entry does not invent a lesson to restore", async () => {
   assert.equal(await restoreStudentSession({
-    launchToken: "token", lessonId: "catalog", api: async () => assert.fail("not a selected lesson"),
+    courseId: "token", lessonId: "catalog", api: async () => assert.fail("not a selected lesson"),
   }), null);
 });
 

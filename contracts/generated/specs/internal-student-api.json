@@ -586,6 +586,72 @@
         "summary": "课堂学习上下文（版本化数据面，schemaVersion = 1）"
       }
     },
+    "/internal/student/learning-context-v2": {
+      "post": {
+        "operationId": "getSessionLearningContext",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "course_id": {
+                    "format": "uuid",
+                    "type": "string"
+                  },
+                  "lesson_id": {
+                    "maxLength": 200,
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "user_id": {
+                    "format": "uuid",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "user_id",
+                  "course_id"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LearningContextV1"
+                }
+              }
+            },
+            "description": "课程目录或所选课时上下文"
+          },
+          "403": {
+            "description": "服务凭据、账号或课程权限无效"
+          },
+          "404": {
+            "description": "课程或课时不存在"
+          },
+          "409": {
+            "description": "课程未发布"
+          },
+          "503": {
+            "description": "内容服务不可用"
+          }
+        },
+        "security": [
+          {
+            "studentServiceKey": []
+          }
+        ],
+        "summary": "Cookie BFF 已校验身份后的服务端学习上下文"
+      }
+    },
     "/internal/student/learning-progress": {
       "post": {
         "description": "event 仅接受 \"started\" / \"ended\"。",

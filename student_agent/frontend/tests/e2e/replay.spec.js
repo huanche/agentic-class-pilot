@@ -13,17 +13,17 @@ async function boot(page, { entry = "catalog", missingUrl = false, completed = t
   const courses = structuredClone(summary);
   courses[0].lessons[1] = { ...courses[0].lessons[1], playerUrl: missingUrl ? null : playerUrl, classroomId: "room-2" };
   const snapshot = Buffer.from(JSON.stringify({ lessonId: "L2", phase: "done" })).toString("base64url") + ".signature";
-  const saved = { sessionId: "saved", lessonId: "L2", phase: "done", courses, feedback, messages,
+  const saved = { sessionId: "saved", userId: "u", stateVersion: 5, contentGeneration: 0, lessonId: "L2", phase: "done", courses, feedback, messages,
     postclassMessages, postclassStage: "open", preparation: "ready", browserCourseKey: "u:c" };
-  const catalog = { sessionId: "catalog", lessonId: null, phase: "idle", courses: summary,
+  const catalog = { sessionId: "catalog", userId: "u", stateVersion: 0, lessonId: null, phase: "idle", courses: summary,
     messages: [], browserCourseKey: "u:c" };
   const requests = [];
   let attempts = 0;
   await page.addInitScript(({ snapshot, entry, completed }) => {
-    localStorage.setItem("student_browser_last_course_key", "u:c");
-    localStorage.setItem("student_browser_token:u:c", "ticket");
-    localStorage.setItem("student_browser_last_key", entry === "done" ? "u:c:L2" : "u:c:catalog");
-    if (completed) localStorage.setItem("student_browser_snapshot:u:c:L2", snapshot);
+    localStorage.setItem("student_last_course:u", "c");
+
+    localStorage.setItem("student_browser_last_key:u", entry === "done" ? "u:c:L2" : "u:c:catalog");
+    if (completed) localStorage.setItem("student_browser_locator:u:c:L2", JSON.stringify({sessionId:"saved",lessonId:"L2",phase:"done"}));
   }, { snapshot, entry, completed });
   await page.route("**/classroom-player/**", route => route.fulfill({ contentType: "text/html", body: "<p>课堂播放器</p>" }));
   await page.route("**/api/session/**", async route => {
@@ -31,14 +31,20 @@ async function boot(page, { entry = "catalog", missingUrl = false, completed = t
     requests.push(path);
     let body;
     let status = 200;
-    if (path.endsWith("/platform-entry")) body = { freshSessionMode: true, platformUrl: "http://platform.example" };
+    if (path.endsWith("/identity")) body = {userId:"u",csrfToken:"synthetic-csrf"};
+    else if (path.endsWith("/platform-entry")) body = { freshSessionMode: true, platformUrl: "http://platform.example" };
     else if (path.endsWith("/start")) body = path.endsWith("/postclass/start") ? { ...saved, phase: "postclass" } : catalog;
     else if (path.endsWith("/resume")) {
       status = completed ? 200 : 404;
-      body = completed ? saved : { detail: "该课时暂无历史会话" };
+      body = completed ? saved : { detail: "该课时暂无历史会话", code: "HISTORY_NOT_FOUND" };
     }
     else if (path.endsWith("/browser-restore")) body = saved;
     else if (path.includes("/begin/")) body = { ...saved, phase: "video", feedback: null };
+    else if (path.endsWith("/commands")) {
+      const command=route.request().postDataJSON();
+      const view=command.type==="start_discussion" ? {...saved,phase:"discussion",agentStage:"wrapup"} : command.type==="continue_after_class" ? {...saved,postclassStage:"open"} : saved;
+      body={commandId:command.commandId,status:"completed",sessionView:{...view,stateVersion:7}};
+    }
     else if (path.endsWith("/discussion")) body = { ...saved, phase: "discussion", agentStage: "wrapup" };
     else if (path.endsWith("/end")) body = saved;
     else if (path.endsWith("/playback")) {

@@ -13,6 +13,7 @@ export function routeFor(raw, routes, upstreamPorts = ports) {
     const matches = route.type === 'fallback' || (route.path.endsWith('*')
       ? url.pathname.startsWith(route.path.slice(0, -1)) : url.pathname === route.path);
     if (!matches) continue;
+    if (route.type === 'respond') return { status: route.status };
     if (route.type === 'redirect') {
       return { redirect: route.to.replace('{query}', url.search.slice(1)), code: route.code };
     }
@@ -29,6 +30,7 @@ export function createGateway(routes, upstreamPorts = ports) {
     'x-forwarded-proto': 'http', 'x-forwarded-for': req.socket.remoteAddress });
   const server = http.createServer((req, res) => {
     const target = routeFor(req.url, routes, upstreamPorts);
+    if (target.status) { res.writeHead(target.status); res.end(); return; }
     if (target.redirect !== undefined) {
       res.writeHead(target.code, { location: target.redirect }); res.end(); return;
     }

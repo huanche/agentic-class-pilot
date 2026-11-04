@@ -14,10 +14,10 @@ test('PPTX importer and its assets reach the teacher without rewriting the path'
 });
 
 test('PPTX routing preserves ownership of the other services', () => {
-  for (const path of ['/vendor/other/index.js', '/health', '/api/v1/courses']) {
+  for (const path of ['/vendor/other/index.js', '/health', '/api/v1/courses', '/api/session/current']) {
     assert.deepEqual(target(path), {port: 8080, path});
   }
-  for (const path of ['/app/course', '/api/session/current']) {
+  for (const path of ['/app/course']) {
     assert.deepEqual(target(path), {port: 8001, path});
   }
   assert.deepEqual(target('/teacher/vendor/maic-importer/index.js'), {

@@ -13,6 +13,7 @@ from backend.infrastructure.persistence import RecordConflict
 from backend.infrastructure import platform_access
 from backend.teaching import service as teaching
 from backend.contracts import SessionError
+from backend.infrastructure.platform_identity import current_identity
 
 logger = logging.getLogger(__name__)
 _stop = Event()
@@ -27,6 +28,15 @@ def conflict(error: RecordConflict) -> SessionError:
 
 
 def authorize(sid, launch_token):
+    actor = current_identity.get()
+    if actor:
+        record = commands.scope(sid)
+        context = {"userId": actor.user_id, "courseId": actor.course_id,
+                   "publication": {"id": str(record["publication_id"]), "version": record["publication_version"]},
+                   "selectedLessonId": record["lesson_id"],
+                   "lessons": [{"classroom": {"id": record["classroom_id"]}}], "source": "platform_session"}
+        commands.check_access(record, context)
+        return context
     if not launch_token:
         raise SessionError(401, "请从平台重新进入课程", code="ACCESS_EXPIRED")
     record = commands.scope(sid)

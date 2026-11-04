@@ -92,11 +92,15 @@ agenticclasspilot.com {
   # disjoint: platform owns /api/v1/*, the student agent owns /api/session/*,
   # and every other /api/* path is teacher-agent surface (generate,
   # classroom-media, course-space, classes, server-providers, access-code, ...).
+  @internal_api path /api/internal/* /api/v1/internal/*
+  handle @internal_api {
+    respond 404
+  }
   handle /api/v1/* {
     reverse_proxy host.docker.internal:8080
   }
   handle /api/session/* {
-    reverse_proxy host.docker.internal:8000
+    reverse_proxy host.docker.internal:8080
   }
   handle /api/* {
     reverse_proxy host.docker.internal:3200

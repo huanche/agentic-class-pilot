@@ -22,7 +22,7 @@ def fixture_config():
         "POSTGRES_PASSWORD": "example-secret", "TEACHER_DB_PASSWORD": "teacher-secret",
         "STUDENT_DATABASE_URL": "postgresql://student:student-secret@127.0.0.1:55432/education",
         "TEACHER_SERVICE_KEY": "teacher-channel", "STUDENT_SERVICE_KEY": "student-channel",
-        "STUDENT_TOKEN_SIGNING_KEY": "signing-secret", "SECRET_KEY": "application-secret",
+        "STUDENT_TOKEN_SIGNING_KEY": "signing-secret", "PLATFORM_TO_STUDENT_KEY": "forward-channel", "SECRET_KEY": "application-secret",
     }
 
 

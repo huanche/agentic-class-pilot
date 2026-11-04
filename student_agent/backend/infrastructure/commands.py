@@ -85,6 +85,9 @@ def accept(sid, command, context, validate):
         if base.get("phase") in {"postclass", "replay"}:
             base["phase"] = "done"
         base = learning_records.normalize(content_store.hydrate(base, connection=connection))
+        if command["type"] == "start_discussion" and not base.get("dialogue"):
+            from backend.session.service import sync_published_preparation
+            sync_published_preparation(base, persist=False)
         if base.get("lessonContent"):
             content_store.store(base["lessonContent"], connection=connection)
         validate(base, command["type"], command["payload"])

@@ -29,6 +29,7 @@ from backend.infrastructure import published_knowledge
 from backend.content import lesson_content
 from backend.evidence import records as learning_records
 from backend.infrastructure import platform_access
+from backend.infrastructure.platform_identity import current_identity, PlatformIdentity
 from backend.teaching import service as teaching
 from backend.contracts import SessionError
 
@@ -43,6 +44,10 @@ logger = logging.getLogger(__name__)
 sessions: dict[str, dict] = {}
 session_lock = Lock()
 preparing: set[str] = set()
+
+
+def _credential(session, supplied=None) -> PlatformIdentity | str | None:
+    return current_identity.get() or supplied or session.get("launchToken")
 
 
 def _browser_snapshot(session: dict) -> str:
@@ -132,7 +137,7 @@ def refresh_lesson(session: dict, current: dict | None = None) -> bool:
     lesson_id = session.get("lessonId")
     if not original or not lesson_id:
         return False
-    token = session.get("launchToken")
+    token = _credential(session)
     if not token:
         raise SessionError(401, "请从平台重新进入课程以检查最新教学视频")
     current = current or platform_access.platform_context(token, lesson_id, True)
@@ -157,7 +162,7 @@ def refresh_lesson(session: dict, current: dict | None = None) -> bool:
         session.update(context=current, courses=courses, videoRevision=revision)
         return False
     replacement = {"id": session["id"], "context": current, "courses": courses,
-                   "launchToken": token, "lessonId": lesson_id,
+                   "launchToken": token if isinstance(token, str) else None, "lessonId": lesson_id,
                    "classroomId": lesson["classroomId"], "phase": "video", "messages": [],
                    "dialogue": None, "preparation": "pending",
                    "preparationMaterials": lesson_points(current, lesson_id),
@@ -179,6 +184,7 @@ def refresh_lesson(session: dict, current: dict | None = None) -> bool:
 
 
 def get_session(sid: str, *, allow_database: bool = False) -> dict:
+    allow_database = allow_database or current_identity.get() is not None
     with session_lock:
         session = sessions.get(sid)
     if session is None:
@@ -187,7 +193,7 @@ def get_session(sid: str, *, allow_database: bool = False) -> dict:
         try:
             session = persistence.restore(sid)
         except Exception as error:
-            raise SessionError(503, f"恢复课堂失败：{error}") from error
+            raise SessionError(503, "恢复课堂失败，请稍后重试", code="STORAGE_UNAVAILABLE") from error
         if session:
             with session_lock:
                 session = sessions.setdefault(sid, session)
@@ -247,7 +253,7 @@ def restore_lesson(context: dict, token: str, lesson_id: str) -> dict | None:
         # classroom phase while postclassStage tracks the ongoing conversation.
         if saved["phase"] == "postclass":
             saved["phase"] = "done"
-        saved["launchToken"] = token
+        saved["launchToken"] = token if isinstance(token, str) else None
         refresh_lesson(saved, context)
         return saved
 
@@ -296,6 +302,9 @@ def state(session: dict) -> dict:
         result["browserCourseKey"] = course_key
         result["browserKey"] = f"{course_key}:{session.get('lessonId') or 'catalog'}"
         result["browserSnapshot"] = _browser_snapshot(session)
+    if session.get("context"):
+        result["userId"] = str(session["context"]["userId"])
+        result["authProtocol"] = "platform-cookie-v1"
     return result
 
 
@@ -397,7 +406,7 @@ def schedule_preparation(session: dict, tasks: BackgroundWork) -> None:
     tasks.add_task(prepare_in_background, session)
 
 
-def sync_published_preparation(session: dict) -> None:
+def sync_published_preparation(session: dict, *, persist: bool = True) -> None:
     """Populate only this student's dialogue from the published shared result."""
     context = session.get("context") or {}
     if not context or session.get("phase") != "video" or session.get("dialogue"):
@@ -408,10 +417,14 @@ def sync_published_preparation(session: dict) -> None:
     result = published_knowledge.read(str(context["courseId"]), str(lesson_id), revision)
     if result and result["status"] == "ready" and result["points"]:
         binding = lesson_content.bind(session, result)
-        commit(session, {"dialogue": teaching.new_dialogue(result["points"]),
-                         "contentRef": binding["contentRef"], "lessonContent": binding["lessonContent"],
-                         "preparation": "ready", "preparationCoverage": result["coverage"],
-                         "preparationError": "", "preparationErrorCode": ""})
+        changed = {"dialogue": teaching.new_dialogue(result["points"]),
+                   "contentRef": binding["contentRef"], "lessonContent": binding["lessonContent"],
+                   "preparation": "ready", "preparationCoverage": result["coverage"],
+                   "preparationError": "", "preparationErrorCode": ""}
+        if persist:
+            commit(session, changed)
+        else:
+            session.update(changed)
     elif result and result["status"] == "failed":
         session.update(preparation="error", preparationError="知识点整理失败，可点击重试",
                        preparationErrorCode="published_extraction_failed")
@@ -457,8 +470,9 @@ def upgrade_curriculum(session: dict) -> None:
 
 
 def start(launch_token: str = "") -> dict:
-    if launch_token:
-        context = platform_access.platform_context(launch_token)
+    identity = current_identity.get()
+    if identity or launch_token:
+        context = platform_access.platform_context(identity or launch_token)
         courses = catalog(context)
     else:
         context = None
@@ -471,19 +485,20 @@ def start(launch_token: str = "") -> dict:
     sid = secrets.token_urlsafe(24)
     with session_lock:
         sessions[sid] = {"id": sid, "context": context, "courses": courses,
-                         "launchToken": launch_token if context else None,
+                         "launchToken": launch_token if context and not identity else None,
                          "phase": "idle", "lessonId": None, "messages": [],
                          "dialogue": None, "lock": Lock()}
     return state(sessions[sid])
 
 
 def resume(launch_token: str, lesson_id: str, background_tasks: BackgroundWork) -> dict:
+    launch_token = current_identity.get() or launch_token
     if not launch_token:
         raise SessionError(401, "请从平台重新进入课程以恢复历史会话")
     context = platform_access.platform_context(launch_token, lesson_id)
     session = restore_lesson(context, launch_token, lesson_id)
     if session is None:
-        raise SessionError(404, "该课时暂无历史会话")
+        raise SessionError(404, "该课时暂无历史会话", code="HISTORY_NOT_FOUND")
     with session["lock"]:
         schedule_preparation(session, background_tasks)
         schedule_progress_sync(session, "ended" if session["phase"] == "done" else "started", background_tasks)
@@ -547,6 +562,10 @@ def browser_restore(snapshot: str, launch_token: str, background_tasks: Backgrou
 def read(sid: str, background_tasks: BackgroundWork) -> dict:
     session = get_session(sid)
     with session["lock"]:
+        if current_identity.get():
+            projected = dict(session)
+            sync_published_preparation(projected, persist=False)
+            return state(projected)
         sync_published_preparation(session)
         schedule_preparation(session, background_tasks)
         return state(session)
@@ -561,7 +580,7 @@ def begin(sid: str, lesson_id: str, background_tasks: BackgroundWork) -> dict:
     selected_context = None
     selected_courses = None
     if session.get("context") and session["phase"] == "idle":
-        token = session.get("launchToken")
+        token = _credential(session)
         if not token:
             raise SessionError(409, "启动令牌已失效，请从平台重新进入课程")
         selected_context = platform_access.platform_context(token, lesson_id)
@@ -621,7 +640,7 @@ def replay_playback(sid: str, launch_token: str) -> dict:
             raise SessionError(409, "请先结束本课，再回看视频")
         original = session.get("context")
         classroom_id = session.get("classroomId")
-        token = launch_token or session.get("launchToken")
+        token = _credential(session, launch_token)
         if not original:
             course = next((item for item in session["courses"]
                            if any(lesson["id"] == lesson_id for lesson in item["lessons"])), None)
@@ -717,7 +736,7 @@ def reset_lesson(sid: str, launch_token: str, background_tasks: BackgroundWork) 
     lesson_id = session.get("lessonId")
     if not lesson_id:
         raise SessionError(409, "当前没有可重置的课时")
-    token = launch_token or session.get("launchToken")
+    token = _credential(session, launch_token)
     current = None
     if context:
         if not token:

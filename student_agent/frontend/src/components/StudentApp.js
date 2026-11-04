@@ -24,6 +24,17 @@ export default function StudentApp() {
   const messages = [...learning.messages, ...(extra && phase === "discussion" && learning.messages.length <= extra.count ? [extra] : [])];
   const postclassMessages = [...learning.postclassMessages, ...(extra && phase === "postclass" && learning.postclassMessages.length <= extra.count ? [extra] : [])];
   const [input, setInput] = useState("");
+  const draftKey = learning.userId && learning.sessionId
+    ? `student_draft:${learning.userId}:${learning.sessionId}` : "";
+  useEffect(() => {
+    try { setInput(draftKey ? localStorage.getItem(draftKey) || "" : ""); }
+    catch { setInput(""); }
+    setOptimistic(null);
+  }, [draftKey]);
+  function editInput(text) {
+    setInput(text);
+    try { if (draftKey) localStorage.setItem(draftKey, text); } catch {}
+  }
   const [replyPending, setReplyPending] = useState(false);
   const [localError, setError] = useState("");
   const error = localError || learning.error;
@@ -153,7 +164,10 @@ export default function StudentApp() {
     setInput(""); setReplyPending(true); setError("");
     setOptimistic({ role: "student", text, screen: phase, sessionId: learning.sessionId,
       count: phase === "postclass" ? learning.postclassMessages.length : learning.messages.length });
-    try { await controller.dispatch({ type, text }); }
+    try {
+      await controller.dispatch({ type, text });
+      try { if (draftKey) localStorage.removeItem(draftKey); } catch {}
+    }
     catch (err) { setInput(text); if (controller.getView().error !== err.message) setError(err.message); }
     finally { setOptimistic(null); setReplyPending(false); }
   }
@@ -240,7 +254,7 @@ export default function StudentApp() {
           {(phase === "discussion" || (dynamicFlow && phase === "postclass")) && agentStage === "wrapup"
             ? <div className="conversation-complete" role="status"><strong>课堂对话已完成</strong><p>点击下方按钮查看本课反馈。还想继续学习，可以在课后回看视频或与 AI 对话。</p></div>
             : <form className="composer" onSubmit={event => send(event)}>
-              <textarea className="composer__input" ref={composerInput} rows={1} disabled={dynamicFlow && (paused || !can(phase === "postclass" ? "postclass_answer" : "submit_answer"))} value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={handleComposerKeyDown} placeholder={phase === "postclass" && postclassStage === "open" ? "自由向 AI 提问…" : "说说你的理解，或提出问题…"} aria-label="输入复述或讨论" />
+              <textarea className="composer__input" ref={composerInput} rows={1} disabled={dynamicFlow && (paused || !can(phase === "postclass" ? "postclass_answer" : "submit_answer"))} value={input} onChange={(event) => editInput(event.target.value)} onKeyDown={handleComposerKeyDown} placeholder={phase === "postclass" && postclassStage === "open" ? "自由向 AI 提问…" : "说说你的理解，或提出问题…"} aria-label="输入复述或讨论" />
               <button className="composer__send" type="submit" disabled={busy || !input.trim() || (dynamicFlow && !can(phase === "postclass" ? "postclass_answer" : "submit_answer"))} aria-label="发送">↑</button>
             </form>}
           {dynamicFlow && <div className="conversation-actions" aria-label="学习操作">

@@ -83,6 +83,33 @@ paths:
         "404": { description: 课程不存在 }
         "409": { description: 课程尚未发布学习内容 }
         "503": { description: 平台数据库不可用 }
+  /internal/student/learning-context-v2:
+    post:
+      operationId: getSessionLearningContext
+      summary: Cookie BFF 已校验身份后的服务端学习上下文
+      security: [{ studentServiceKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user_id, course_id]
+              properties:
+                user_id: { type: string, format: uuid }
+                course_id: { type: string, format: uuid }
+                lesson_id: { type: [string, "null"], maxLength: 200 }
+      responses:
+        "200":
+          description: 课程目录或所选课时上下文
+          content:
+            application/json:
+              schema:
+                $ref: ./learning-context.schema.json
+        "403": { description: 服务凭据、账号或课程权限无效 }
+        "404": { description: 课程或课时不存在 }
+        "409": { description: 课程未发布 }
+        "503": { description: 内容服务不可用 }
   /internal/student/classroom-view:
     post:
       operationId: getStudentClassroomView
