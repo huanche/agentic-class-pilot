@@ -82,7 +82,7 @@ def _last_discussion_feedback(state: DialogueState) -> str:
                        if a["id"] == point_id), None)
     if not point or not assessment:
         return ""
-    context = {"point": {key: point.get(key) for key in ("title", "content", "description")},
+    context = {"point": {key: point.get(key) for key in ("title", "type", "details", "content", "description")},
                "studentAnswer": state.get("student_text", ""), "assessment": assessment}
     try:
         feedback = model.complete(FINAL_DISCUSSION_FEEDBACK_PROMPT,

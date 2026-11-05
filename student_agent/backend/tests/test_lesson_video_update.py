@@ -82,7 +82,7 @@ def test_failed_version_check_preserves_record(lesson_session, monkeypatch):
 
 def test_old_background_extraction_cannot_overwrite_new_video(lesson_session, monkeypatch):
     _, session, _, _ = lesson_session
-    def finish_old_extraction(materials):
+    def finish_old_extraction(materials, *scope):
         session.update(contentGeneration=1, dialogue=None, preparation="pending")
         return {"points": [{"title": "旧知识点"}]}, {
             "acceptedCount": 1, "rejectedCount": 0, "repairAttempted": False, "partial": False}

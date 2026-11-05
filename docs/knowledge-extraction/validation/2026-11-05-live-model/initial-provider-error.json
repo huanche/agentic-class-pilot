@@ -1,0 +1,37 @@
+{
+  "scenario": "natural",
+  "model": "deepseek-v4-flash",
+  "source": {
+    "courseId": "02b49c92-5d63-47bc-9295-2300b7f69203",
+    "lessonId": "-EXmpqbyvKbisC",
+    "classroomId": "tpPs6lhzy4",
+    "sourceRevision": "96d3825f111bfaeb822b71747b73dd0fdc5a53acdf456a9a1d6709d667e914e0",
+    "title": "数据结构：栈和队列",
+    "courseTitle": "数据结构",
+    "lessonTitle": "第1次课",
+    "moduleTitle": "第1周"
+  },
+  "sourceSceneCount": 13,
+  "materialCount": 13,
+  "materialCharacters": 6024,
+  "sourceManifestHash": "259c4a49a808877100f6767024fa24ad04d2dcd4e2dc739e60458d115826c01f",
+  "productionWrites": false,
+  "status": "failed",
+  "code": "configuration",
+  "modelCalls": 1,
+  "issues": [],
+  "draft": null,
+  "providerErrorType": "OpenAIInvalidRequestError",
+  "providerHttpStatus": 400,
+  "providerErrorMessage": "Thinking mode does not support this tool_choice (request_id: fb450ebb-3335-443f-ad68-1b4e7b8d4869)",
+  "elapsedSeconds": 0.235,
+  "trace": [
+    {
+      "attempt": 1,
+      "feedbackReceived": [],
+      "elapsedSeconds": 0.226,
+      "errorType": "OpenAIInvalidRequestError",
+      "httpStatus": 400
+    }
+  ]
+}
