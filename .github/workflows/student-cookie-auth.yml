@@ -58,5 +58,11 @@ jobs:
       - run: npx playwright install chromium --with-deps
         working-directory: student_agent/frontend
       - run: npm run test:e2e --prefix student_agent/frontend
-      - run: npm ci --prefix platform
-      - run: npm run build --prefix platform/frontend
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.3.14'
+      - name: Build platform frontend with the deployment lockfile
+        working-directory: platform
+        run: |
+          bun install --frozen-lockfile
+          bun run --filter frontend build

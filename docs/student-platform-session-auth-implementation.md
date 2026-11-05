@@ -57,4 +57,4 @@
 
 未执行真实模型/真实视频连续观看超过 10 分钟的人工试用、正式规模压测或生产部署。原截图对应请求的生产日志也未取证，不能把本地验证说成线上问题已经消失。完整发布验收矩阵保留在 [实施方案](student-platform-session-auth-implementation-plan.md)。
 
-2026-11-05云端补充：首轮integration-contracts全部通过；Cookie流水线后端225项通过、2项跳过，学生前端单测/构建/18个浏览器项通过。最后平台前端安装步骤误用frontend目录而未找到工作区根目录的package-lock，已修正为在platform执行npm ci，按同一锁文件复验。
+2026-11-05云端补充：integration-contracts全部通过；Cookie流水线后端225项通过、2项跳过，学生前端单测/构建/18个浏览器项通过。平台前端CI使用与既有platform-deploy一致的Bun冻结安装和workspace构建，固定Bun 1.3.14；沿用包含Linux原生构建组件的bun.lock，不重写已有依赖。npm锁跨平台组件不完整，不能作为此Linux构建入口。
