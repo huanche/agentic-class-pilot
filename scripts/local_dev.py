@@ -67,7 +67,7 @@ def configuration() -> dict[str, str]:
         raise LocalError("This launcher requires ENVIRONMENT=development; refused.")
     required = ("DATABASE_URL", "POSTGRES_PASSWORD", "TEACHER_DB_PASSWORD",
                 "STUDENT_DATABASE_URL", "TEACHER_SERVICE_KEY", "STUDENT_SERVICE_KEY",
-                "STUDENT_TOKEN_SIGNING_KEY", "SECRET_KEY")
+                "STUDENT_TOKEN_SIGNING_KEY", "PLATFORM_TO_STUDENT_KEY", "SECRET_KEY")
     invalid = [k for k in required if not config.get(k, "").strip()
                or config[k].lower().startswith(("change-me", "changethis"))]
     if invalid:

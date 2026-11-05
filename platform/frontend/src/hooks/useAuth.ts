@@ -9,6 +9,7 @@ import {
   UsersService,
 } from "@/client"
 import { handleError } from "@/utils"
+import { learningCsrfHeaders } from "@/lib/learningSession"
 import useCustomToast from "./useCustomToast"
 
 const isLoggedIn = () => {
@@ -61,7 +62,9 @@ const useAuth = () => {
   })
 
   const logout = async () => {
-    await fetch("/api/v1/logout", { method: "POST", credentials: "include" })
+    const response = await fetch("/api/v1/logout", { method: "POST", credentials: "include",
+      headers: await learningCsrfHeaders() })
+    if (!response.ok) throw new Error("退出登录失败，请重试")
     localStorage.removeItem("access_token")
     localStorage.removeItem("platform_session_known")
     queryClient.clear()

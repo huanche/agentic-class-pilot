@@ -14,6 +14,20 @@ USER_ID = "00000000-0000-0000-0000-000000000001"
 COURSE_ID = "00000000-0000-0000-0000-000000000002"
 
 
+def test_cookie_context_uses_generated_v2_without_browser_credentials(monkeypatch):
+    monkeypatch.setenv("PLATFORM_AUTH_URL", "http://platform:8080")
+    monkeypatch.setenv("STUDENT_SERVICE_KEY", "test-channel-key")
+    captured = {}
+    def call(*, client, body):
+        captured.update(body.to_dict())
+        assert client.get_httpx_client().headers["X-Student-Service-Key"] == "test-channel-key"
+        return SimpleNamespace(status_code=200, parsed=object(), content=b'{"schemaVersion":1}')
+    monkeypatch.setattr(platform_client, "session_context_detailed", call)
+    from backend.infrastructure.platform_identity import PlatformIdentity
+    assert platform_access.platform_context(PlatformIdentity(USER_ID, COURSE_ID), "lesson") == {"schemaVersion": 1}
+    assert captured == {"user_id": USER_ID, "course_id": COURSE_ID, "lesson_id": "lesson"}
+
+
 def test_generated_learning_context_uses_service_header_and_exact_body(monkeypatch):
     monkeypatch.setenv("PLATFORM_AUTH_URL", "http://platform:8080/api/v1")
     monkeypatch.setenv("STUDENT_SERVICE_KEY", "test-key")

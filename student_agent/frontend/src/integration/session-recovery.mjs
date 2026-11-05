@@ -1,11 +1,11 @@
 /** Browser records locate a lesson; only the authenticated server restores it. */
-export async function restoreStudentSession({ api, launchToken, lessonId, snapshot, sessionId, demo = false }) {
-  if (launchToken) {
+export async function restoreStudentSession({ api, courseId, lessonId, snapshot, sessionId, demo = false }) {
+  if (courseId) {
     if (!lessonId || lessonId === "catalog") return null;
     try {
-      return await api("/session/resume", "POST", { launch_token: launchToken, lesson_id: lessonId });
+      return await api("/session/resume", "POST", { course_id: courseId, lesson_id: lessonId });
     } catch (error) {
-      if (error.status === 404) return null;
+      if (error.status === 404 && error.code === "HISTORY_NOT_FOUND") return null;
       // A revoked/expired identity or an unavailable database is not empty history.
       throw error;
     }

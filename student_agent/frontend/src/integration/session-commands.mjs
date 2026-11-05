@@ -8,10 +8,10 @@ export function createLearningClient({ request, storage = () => globalThis.local
   }),
   pollLimit = 120 } = {}) {
   const views = new Map();
-  const tokens = new Map();
+  let userId = "";
   const pending = new Map();
   const inFlight = new Map();
-  const key = sid => `student_pending_command:${sid}`;
+  const key = sid => `student_pending_command:${userId}:${sid}`;
   function read(sid) {
     if (pending.has(sid)) return pending.get(sid);
     try { return JSON.parse(storage().getItem(key(sid))); } catch { return null; }
@@ -23,13 +23,18 @@ export function createLearningClient({ request, storage = () => globalThis.local
       else storage().removeItem(key(sid));
     } catch { /* In-memory retry still works if browser storage is unavailable. */ }
   }
-  function observe(view, token) {
+  function observe(view) {
     if (!view?.sessionId) return view;
     const sid = view.sessionId;
     const previous = views.get(sid);
-    if (token) tokens.set(sid, token);
-    if (!tokens.get(sid) && view.browserCourseKey) {
-      try { tokens.set(sid, storage().getItem(`student_browser_token:${view.browserCourseKey}`)); } catch {}
+    if (view.userId && userId && view.userId !== userId) throw new Error("学习账号已变化，请刷新页面");
+    if (!userId && view.userId) userId = view.userId;
+    // Migrate a legacy pending submission only after this view was authorized by the server.
+    if (userId && !read(sid)) {
+      try {
+        const legacy = storage().getItem(`student_pending_command:${sid}`);
+        if (legacy) { save(sid, JSON.parse(legacy)); storage().removeItem(`student_pending_command:${sid}`); }
+      } catch {}
     }
     if (previous && previous.stateVersion > view.stateVersion) return previous;
     views.set(sid, view);
@@ -40,26 +45,26 @@ export function createLearningClient({ request, storage = () => globalThis.local
     }
     return view;
   }
-  async function submit(sid, command, token, options = {}) {
+  async function submit(sid, command, options = {}) {
     const key = `${sid}:${command.commandId}`;
     if (inFlight.has(key)) return inFlight.get(key);
-    const running = perform(sid, command, token, options);
+    const running = perform(sid, command, options);
     inFlight.set(key, running);
     try { return await running; } finally { if (inFlight.get(key) === running) inFlight.delete(key); }
   }
-  async function perform(sid, command, token, options) {
+  async function perform(sid, command, options) {
     const check = () => options.signal?.throwIfAborted();
     check();
     let receipt;
     try {
-      receipt = await request(`/session/${sid}/commands`, "POST", { ...command, launch_token: token }, options);
+      receipt = await request(`/session/${sid}/commands`, "POST", { ...command }, options);
     } catch (error) {
       if (!error.commandResult) {
         if (["VERSION_CONFLICT", "CONTENT_CHANGED", "TASK_CHANGED", "COMMAND_CANCELLED", "SESSION_RESET"].includes(error.code)) {
           save(sid, null);
           // Refresh the authoritative task; never replay the old answer against a new task.
           const latest = await request(`/session/${sid}`, "GET", undefined, options).catch(() => null);
-          if (latest) error.sessionView = observe(latest, token);
+          if (latest) error.sessionView = observe(latest);
         }
         throw error;
       }
@@ -67,13 +72,13 @@ export function createLearningClient({ request, storage = () => globalThis.local
     }
     check();
     for (let attempt = 0; ["pending", "processing"].includes(receipt.status) && attempt < pollLimit; attempt++) {
-      if (receipt.sessionView) observe(receipt.sessionView, token);
+      if (receipt.sessionView) observe(receipt.sessionView);
       await wait(500, options.signal);
       check();
-      receipt = await request(`/session/${sid}/commands/${command.commandId}/status`, "POST", { launch_token: token }, options);
+      receipt = await request(`/session/${sid}/commands/${command.commandId}/status`, "POST", {}, options);
     }
     check();
-    const view = observe(receipt.sessionView, token);
+    const view = observe(receipt.sessionView);
     if (receipt.status === "completed") {
       if (read(sid)?.commandId === command.commandId) save(sid, null);
       return view;
@@ -102,41 +107,43 @@ export function createLearningClient({ request, storage = () => globalThis.local
     return command;
   }
   return {
-    async dispatch(sid, type, payload = {}, token, options = {}) {
+    setIdentity(id) {
+      if (id !== userId) { views.clear(); pending.clear(); inFlight.clear(); }
+      userId = id || "";
+    },
+    async dispatch(sid, type, payload = {}, options = {}) {
       const view = views.get(sid);
-      token = token || tokens.get(sid);
-      if (!token || !Number.isSafeInteger(view?.stateVersion)) throw new Error("此操作需要正式学习会话");
-      return submit(sid, makeCommand(sid, type, { ...payload }), token, options);
+      if (!userId || !Number.isSafeInteger(view?.stateVersion)) throw new Error("此操作需要正式学习会话");
+      return submit(sid, makeCommand(sid, type, { ...payload }), options);
     },
     async request(path, method = "GET", body, options = {}) {
       const match = path.match(/^\/session\/([^/]+)(?:\/(.*))?$/);
       const sid = match?.[1];
       const kind = method === "POST" && kinds[match?.[2]];
       const view = views.get(sid);
-      const token = body?.launch_token || tokens.get(sid);
-      if (kind && token && Number.isSafeInteger(view?.stateVersion)) {
+      if (kind && userId && Number.isSafeInteger(view?.stateVersion)) {
         const payload = kind === "submit_answer" || kind === "postclass_answer" ? { text: body.text } : {};
-        return submit(sid, makeCommand(sid, kind, payload), token, options);
+        return submit(sid, makeCommand(sid, kind, payload), options);
       }
       const incoming = await request(path, method, body, options);
       options.signal?.throwIfAborted();
-      const loaded = observe(incoming, body?.launch_token || tokens.get(sid));
+      const loaded = observe(incoming);
       const submission = loaded?.pendingSubmission;
-      if (submission && ["pending", "processing"].includes(submission.status) && tokens.get(loaded.sessionId)) {
-        try { return await submit(loaded.sessionId, read(loaded.sessionId), tokens.get(loaded.sessionId), options); }
-        catch (error) { return error.sessionView || loaded; }
+      if (submission && ["pending", "processing"].includes(submission.status) && userId) {
+        try { return await submit(loaded.sessionId, read(loaded.sessionId), options); }
+        catch (error) { if ([401, 403].includes(error.status)) throw error; return error.sessionView || loaded; }
       }
       const saved = loaded?.sessionId && read(loaded.sessionId);
-      if (saved && !submission && tokens.get(loaded.sessionId)) {
+      if (saved && !submission && userId) {
         // An acknowledgement may have been lost even though the server already finished.
         try {
           const receipt = await request(`/session/${loaded.sessionId}/commands/${saved.commandId}/status`,
-            "POST", { launch_token: tokens.get(loaded.sessionId) }, options);
+            "POST", {}, options);
           options.signal?.throwIfAborted();
           if (["completed", "cancelled"].includes(receipt.status)
               && read(loaded.sessionId)?.commandId === saved.commandId) save(loaded.sessionId, null);
-          return observe(receipt.sessionView || loaded, tokens.get(loaded.sessionId));
-        } catch { /* Keep the saved identity until the result can be confirmed. */ }
+          return observe(receipt.sessionView || loaded);
+        } catch (error) { if ([401, 403].includes(error.status)) throw error; /* Keep the saved submission until confirmed. */ }
       }
       return loaded;
     },

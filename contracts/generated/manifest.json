@@ -87,6 +87,7 @@
     "python/student_platform_api/api/__init__.py",
     "python/student_platform_api/api/default/__init__.py",
     "python/student_platform_api/api/default/authorize_student_request.py",
+    "python/student_platform_api/api/default/get_session_learning_context.py",
     "python/student_platform_api/api/default/get_student_classroom_view.py",
     "python/student_platform_api/api/default/get_student_learning_context.py",
     "python/student_platform_api/api/default/get_user_model_config.py",
@@ -98,6 +99,7 @@
     "python/student_platform_api/models/authorize_student_request_response_200.py",
     "python/student_platform_api/models/authorize_student_request_response_200_publication_type_0.py",
     "python/student_platform_api/models/authorize_student_request_response_200_source.py",
+    "python/student_platform_api/models/get_session_learning_context_body.py",
     "python/student_platform_api/models/get_student_classroom_view_body.py",
     "python/student_platform_api/models/get_student_classroom_view_response_200.py",
     "python/student_platform_api/models/get_student_classroom_view_response_200_scenes_item.py",
@@ -154,7 +156,7 @@
   "nodeToolLock": "d90658ede303e68bac7cfdbf2e830a6f4437b5854cc50cf7d306cac8cf3c36ca",
   "pythonToolLock": "d87e65a8676d18843d4fe27da803b69d80ad3bdec02e57c69835dc81a315933d",
   "sources": {
-    "internal-student-api.yaml": "c3260e3c501f45b6d1612dfe857123bd9c4fde0d00087a6817c7ace76977673f",
+    "internal-student-api.yaml": "93f7060ce7b0db4bc54c7dbd01b3b3fd5a0bc8669199d6b25a2153517e216444",
     "internal-teacher-api.yaml": "cb4b52429051b51df5bf81c3440358b5314253397a6b6f231565452cc5ee4d98",
     "student-service-api.yaml": "fb3be2cca41dd11bce037c637d50d7200b9607e4c7862ef2a580165814a75d3d",
     "teacher-service-api.yaml": "aff303ffeb96c7648578ff44571f0930c11cbc6c0e8406c72b81dd43ee3963bf"

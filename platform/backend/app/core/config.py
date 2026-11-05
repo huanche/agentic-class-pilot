@@ -43,6 +43,8 @@ class Settings(BaseSettings):
     # accepted for non-GET teacher requests, in addition to FRONTEND_HOST.
     TEACHER_ALLOWED_ORIGINS: str = ""
     STUDENT_SERVICE_KEY: str = ""
+    PLATFORM_TO_STUDENT_KEY: str = ""
+    STUDENT_COMMAND_TIMEOUT_SECONDS: float = 300.0
     # 凭证签名专用密钥：与通道认证密钥分离（问题6.3）。留空时回落到
     # STUDENT_SERVICE_KEY（过渡兼容），并记录告警——生产环境应显式配置。
     STUDENT_TOKEN_SIGNING_KEY: str = ""

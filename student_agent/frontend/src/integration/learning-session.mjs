@@ -16,7 +16,7 @@ export function createLearningSession({ request = requestSession, storage = () =
   const client = createLearningClient({ request, storage, ...commandOptions });
   const listeners = new Set();
   let session = null, catalog = [], selected = null, screen = "loading", platformUrl = "";
-  let token = "", courseKey = "demo", demo = false, busy = false, error = "", connectionError = "";
+  let courseId = "", userId = "", courseKey = "demo", demo = false, busy = false, error = "", connectionError = "";
   let errorVersion;
   let epoch = 0, abort = new AbortController(), timer, refreshInFlight;
   let stableLesson, stableLessonKey;
@@ -31,7 +31,7 @@ export function createLearningSession({ request = requestSession, storage = () =
     const lessonKey = JSON.stringify([lesson, session?.videoRevision]);
     if (lessonKey === stableLessonKey) lesson = stableLesson;
     else { stableLesson = lesson; stableLessonKey = lessonKey; }
-    return { ...(session || {}), screen, courses, course, lesson, platformUrl, busy, error, connectionError,
+    return { ...(session || {}), userId, screen, courses, course, lesson, platformUrl, busy, error, connectionError,
       messages: session?.messages || [], postclassMessages: session?.postclassMessages || [],
       flowVersion: session?.flowVersion || "legacy_recall_v3",
       preparation: session?.preparation || "idle", allowedCommands: session?.allowedCommands || [] };
@@ -83,6 +83,7 @@ export function createLearningSession({ request = requestSession, storage = () =
     } catch (failure) {
       if (!valid(t)) return current;
       if (failure.sessionView) adopt(failure.sessionView, t, { preserveScreen: true });
+      if ([401, 403, 404].includes(failure.status)) { screen = "auth"; connectionError = ""; }
       error = failure.message; errorVersion = session?.stateVersion; emit();
       throw failure;
     } finally {
@@ -92,23 +93,32 @@ export function createLearningSession({ request = requestSession, storage = () =
 
   async function initialize({ url, replaceUrl = () => {} }) {
     return operate(async t => {
-      const entry = browser.entry(url);
-      token = entry.token; courseKey = entry.courseKey;
-      if (entry.fresh) replaceUrl(entry.cleanUrl);
+      const clean = new URL(url);
+      platformUrl = clean.origin;
+      clean.searchParams.delete("launch_token");
+      replaceUrl(clean.toString());
+      const identity = await request("/session/identity", "GET", undefined, { signal: t.signal });
+      if (!valid(t)) return;
+      if (userId && identity.userId !== userId) { session = null; catalog = []; selected = null; }
+      userId = identity.userId;
+      client.setIdentity(userId);
+      const entry = browser.entry(clean.toString(), userId);
+      courseId = entry.courseId; courseKey = entry.courseKey;
+      replaceUrl(entry.cleanUrl);
       const platform = await api(t, "/session/platform-entry").catch(failure => {
         if (t.signal.aborted) throw failure;
         return {};
       });
       if (!valid(t)) return;
       platformUrl = platform.platformUrl || ""; demo = Boolean(platform.demoEnabled);
-      if (!token && !demo) { screen = "auth"; emit(); return; }
-      const saved = entry.fresh ? null : await restoreStudentSession({
-        api: (p, m, b) => api(t, p, m, b), launchToken: token, lessonId: entry.lessonId,
+      if (!courseId && !demo) { screen = "auth"; emit(); return; }
+      const saved = await restoreStudentSession({
+        api: (p, m, b) => api(t, p, m, b), courseId, lessonId: entry.lessonId,
         snapshot: entry.snapshot, sessionId: entry.sessionId, demo });
       if (!valid(t)) return;
       if (saved) return saved;
       if (!entry.fresh) browser.clear(courseKey, entry.lessonId, entry.key);
-      return api(t, "/session/start", "POST", { launch_token: token });
+      return api(t, "/session/start", "POST", { course_id: courseId });
     }, { navigate: true }).catch(failure => { screen = "auth"; emit(); throw failure; });
   }
 
@@ -116,11 +126,11 @@ export function createLearningSession({ request = requestSession, storage = () =
     return operate(async t => {
       const locator = browser.locator(courseKey, lesson.id);
       const saved = await restoreStudentSession({ api: (p, m, b) => api(t, p, m, b),
-        launchToken: token, lessonId: lesson.id, snapshot: locator.snapshot, demo });
+        courseId, lessonId: lesson.id, snapshot: locator.snapshot, demo });
       if (!valid(t)) return;
       if (saved && saved.lessonId === lesson.id && saved.phase !== "idle") return saved;
       if (session?.lessonId) {
-        const started = await api(t, "/session/start", "POST", { launch_token: token });
+        const started = await api(t, "/session/start", "POST", { course_id: courseId });
         if (!valid(t)) return;
         adopt(started, t);
       }
@@ -137,7 +147,7 @@ export function createLearningSession({ request = requestSession, storage = () =
       catch (failure) {
         if (valid(t)) {
           connectionError = failure.message;
-          if ([401, 403, 410].includes(failure.status)) { screen = "auth"; error = failure.message; }
+          if ([401, 403, 404, 410].includes(failure.status)) { screen = "auth"; error = failure.message; session = null; selected = null; catalog = []; }
           emit();
         }
       } finally { if (valid(t)) { refreshInFlight = null; schedule(); } }
@@ -169,7 +179,7 @@ export function createLearningSession({ request = requestSession, storage = () =
       if (type === "replay") {
         let playable = current.lesson;
         if (action.refresh || !playable?.playerUrl) {
-          const result = await api(t, `/session/${sid}/playback`, "POST", { launch_token: token });
+          const result = await api(t, `/session/${sid}/playback`, "POST", {});
           if (result.courseId !== current.course?.id || result.lesson?.id !== session.lessonId
               || (current.lesson?.classroomId && result.lesson?.classroomId !== current.lesson.classroomId)) {
             throw new Error("播放信息与当前课时不匹配，请从平台重新进入课程");
@@ -190,9 +200,9 @@ export function createLearningSession({ request = requestSession, storage = () =
       if (["submit_answer", "postclass_answer"].includes(type)) result = await api(t,
         `/session/${sid}/${type === "submit_answer" ? "message" : "postclass/message"}`, "POST", { text: action.text });
       else if (["request_help", "ask_question", "pause", "resume_activity"].includes(type)) result = await client.dispatch(
-        sid, type, ["request_help", "ask_question"].includes(type) ? { text: action.text } : {}, token, { signal: t.signal });
+        sid, type, ["request_help", "ask_question"].includes(type) ? { text: action.text } : {}, { signal: t.signal });
       else if (routes[type]) result = await api(t, `/session/${sid}/${routes[type]}`, "POST",
-        type === "reset_lesson" ? { launch_token: token } : undefined);
+        undefined);
       else throw new Error("未知的学习操作");
       if (valid(t) && type === "reset_lesson") browser.clear(courseKey, session.lessonId);
       return result;

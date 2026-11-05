@@ -9,12 +9,11 @@ const courses = [{ id: "c", title: "课程", lessons: [
   { id: "L2", title: "课时二", playerUrl: "https://example.test/other" }] }];
 const actions = ["submit_answer", "request_help", "ask_question", "pause", "finish"];
 function fixture(t, { handler, state = {}, stored = new Map(), commandOptions = {} } = {}) {
-  stored.set("student_browser_last_course_key", "u:c");
-  stored.set("student_browser_token:u:c", "ticket");
+  stored.set("student_last_course:u", "c");
   const storage = { getItem: key => stored.get(key) || null,
     setItem: (key, value) => stored.set(key, value), removeItem: key => stored.delete(key) };
   const calls = [], updates = [], timers = new Map(); let timerId = 0, commandId = 0;
-  let server = { sessionId: "s", lessonId: "L1", courses, phase: "discussion", stateVersion: 5,
+  let server = { sessionId: "s", userId: "u", lessonId: "L1", courses, phase: "discussion", stateVersion: 5,
     contentGeneration: 0, flowVersion: "dynamic_dialogue_v1", activityStatus: "active", agentStage: "tutoring",
     currentTaskPublic: { taskId: "task-1" }, allowedCommands: actions, preparation: "ready", messages: [], ...state };
   const request = async (path, method, body, options = {}) => {
@@ -23,8 +22,9 @@ function fixture(t, { handler, state = {}, stored = new Map(), commandOptions = 
       const result = await handler({ path, method, body, options, server, set: value => { server = value; } });
       if (result !== undefined) return result;
     }
+    if (path === "/session/identity") return { userId: "u", csrfToken: "csrf" };
     if (path === "/session/platform-entry") return { platformUrl: "https://platform.test" };
-    if (path === "/session/start") return { sessionId: "catalog", phase: "idle", courses,
+    if (path === "/session/start") return { sessionId: "catalog", userId: "u", phase: "idle", courses,
       stateVersion: 0, messages: [], browserCourseKey: "u:c" };
     if (path === "/session/resume" || path === "/session/s") return structuredClone(server);
     if (path === "/session/s/commands") {
@@ -80,7 +80,7 @@ test("help retry retains the original command identity and task after a lost res
   await f.controller.dispatch({ type: "request_help", text: "举一个例子" });
   const sends = f.calls.filter(c => c.path.endsWith("/commands"));
   assert.deepEqual(sends[0].body, sends[1].body);
-  assert.equal(f.stored.has("student_pending_command:s"), false);
+  assert.equal(f.stored.has("student_pending_command:u:s"), false);
 });
 
 test("status polling is single-flight and unsubscription aborts waiting without deleting the pending command", async t => {
@@ -94,7 +94,7 @@ test("status polling is single-flight and unsubscription aborts waiting without 
   f.unsubscribe(); gate.resolve(); await task;
   assert.equal(f.updates.length, before);
   assert.equal(f.timers.size, 0);
-  assert.equal(JSON.parse(f.stored.get("student_pending_command:s")).commandId, "cmd-1");
+  assert.equal(JSON.parse(f.stored.get("student_pending_command:u:s")).commandId, "cmd-1");
   assert.equal(f.calls.filter(c => c.path.endsWith("/status")).length, 0);
 });
 
@@ -138,7 +138,7 @@ test("switching lessons ignores late history and storage updates from the old se
     browserKey: "u:c:L1", browserSnapshot: "obsolete", messages: [] });
   await old;
   assert.equal(f.controller.getView().lesson.id, "L2");
-  assert.equal(f.stored.get("student_browser_snapshot:u:c:L1"), undefined);
+  assert.equal(f.stored.get("student_browser_locator:u:c:L1"), undefined);
 });
 
 test("preparation refresh and replay refresh preserve player identity and presentation", async t => {
@@ -187,7 +187,7 @@ test("authentication recovery failures are not treated as empty history", async 
 
 test("fresh launch enters catalog and removes its URL token without trusting cached lesson state", async t => {
   const f = fixture(t); let cleanUrl;
-  await f.controller.initialize({ url: "https://app.test/app/?launch_token=ticket&keep=1", replaceUrl: value => { cleanUrl = value; } });
+  await f.controller.initialize({ url: "https://app.test/app/?course_id=c&launch_token=obsolete&keep=1", replaceUrl: value => { cleanUrl = value; } });
   assert.equal(new URL(cleanUrl).searchParams.has("launch_token"), false);
   assert.equal(new URL(cleanUrl).searchParams.get("keep"), "1");
   assert.equal(f.controller.getView().screen, "lessons");
@@ -197,20 +197,19 @@ test("fresh launch enters catalog and removes its URL token without trusting cac
 test("unavailable browser storage still permits authenticated entry and commands", async t => {
   const f = fixture(t);
   f.storage.getItem = f.storage.setItem = f.storage.removeItem = () => { throw new Error("disabled"); };
-  await f.controller.initialize({ url: "https://app.test/app/?launch_token=ticket" });
+  await f.controller.initialize({ url: "https://app.test/app/?course_id=c" });
   await f.controller.loadLesson(courses[0].lessons[0]);
   await f.controller.dispatch({ type: "ask_question", text: "这个条件是什么意思？" });
   assert.equal(f.calls.at(-1).body.type, "ask_question");
 });
 
-test("browser migration and reset clear only the selected lesson locator", () => {
-  const encode = value => Buffer.from(JSON.stringify(value)).toString("base64url") + ".sig";
-  const data = new Map([["student_browser_last_course_key", "u:c"],
-    ["student_browser_snapshot:u:c", encode({ lessonId: "L1", phase: "done" })],
-    ["student_browser_snapshot:u:c:L2", encode({ lessonId: "L2", phase: "done" })]]);
-  const browser = createSessionBrowser(() => ({ getItem: key => data.get(key),
-    setItem: (key, value) => data.set(key, value), removeItem: key => data.delete(key) }));
-  assert.equal(browser.entry("https://app.test/app/").lessonId, "L1");
+test("browser locators are scoped to authenticated users and reset clears only one lesson", () => {
+  const data = new Map([["student_last_course:u", "c"], ["student_browser_last_key:u", "u:c:L1"],
+    ["student_browser_locator:u:c:L1", JSON.stringify({lessonId:"L1",phase:"done"})],
+    ["student_browser_locator:u:c:L2", JSON.stringify({lessonId:"L2",phase:"done"})]]);
+  const browser = createSessionBrowser(() => ({getItem:k=>data.get(k),setItem:(k,v)=>data.set(k,v),removeItem:k=>data.delete(k)}));
+  assert.equal(browser.entry("https://app.test/app/", "u").lessonId, "L1");
+  assert.equal(browser.entry("https://app.test/app/", "other").lessonId, null);
   assert.equal(browser.lessonPhase("u:c", "L1"), "done");
   browser.clear("u:c", "L1");
   assert.equal(browser.lessonPhase("u:c", "L1"), "");
@@ -258,14 +257,14 @@ test("reset removes this lesson locator and returns the server catalog without d
     if (path === "/session/s/commands") return { commandId: "cmd-1", status: "completed", sessionView: {
       sessionId: "fresh", phase: "idle", courses, messages: [], stateVersion: 0, browserCourseKey: "u:c" } };
   } }); await f.start();
-  f.stored.set("student_browser_snapshot:u:c:L1", "old");
+  f.stored.set("student_browser_locator:u:c:L1", "old");
   f.stored.set("student_browser_session:u:c:L1", "s");
-  f.stored.set("student_browser_snapshot:u:c:L2", "another");
+  f.stored.set("student_browser_locator:u:c:L2", "another");
   await f.controller.dispatch({ type: "reset_lesson" });
   assert.equal(f.controller.getView().screen, "lessons");
   assert.equal(f.controller.getView().sessionId, "fresh");
-  assert.equal(f.stored.has("student_browser_snapshot:u:c:L1"), false);
-  assert.equal(f.stored.get("student_browser_snapshot:u:c:L2"), "another");
+  assert.equal(f.stored.has("student_browser_locator:u:c:L1"), false);
+  assert.equal(f.stored.get("student_browser_locator:u:c:L2"), "another");
 });
 
 test("revocation during refresh returns to authenticated entry and stops polling", async t => {

@@ -4,7 +4,7 @@ async function pilot(page, { failHelp = false } = {}) {
   const courses = [{ id: "c", title: "课程", lessons: [{ id: "L", title: "交互试点课时", week: 1 }] }];
   const allowed = ["submit_answer", "request_help", "ask_question", "pause", "finish"];
   const snapshot = Buffer.from(JSON.stringify({ lessonId: "L", phase: "discussion" })).toString("base64url") + ".sig";
-  let current = { sessionId: "s", lessonId: "L", phase: "discussion", courses, flowVersion: "dynamic_dialogue_v1",
+  let current = { sessionId: "s", userId: "u", lessonId: "L", phase: "discussion", courses, flowVersion: "dynamic_dialogue_v1",
     agentStage: "tutoring", activityStatus: "active", allowedCommands: allowed, stateVersion: 1, contentGeneration: 0,
     messages: [{ role: "assistant", text: "原题：说明你的判断依据", messageId: "original" }],
     currentTaskPublic: { taskId: "task-1" }, preparation: "ready",
@@ -12,14 +12,14 @@ async function pilot(page, { failHelp = false } = {}) {
   const commands = [];
   let failed = false;
   await page.addInitScript(() => {
-    localStorage.setItem("student_browser_last_course_key", "u:c");
-    localStorage.setItem("student_browser_token:u:c", "ticket");
-    if (!localStorage.getItem("student_browser_last_key")) localStorage.setItem("student_browser_last_key", "u:c:catalog");
+    localStorage.setItem("student_last_course:u", "c");
+    if (!localStorage.getItem("student_browser_last_key:u")) localStorage.setItem("student_browser_last_key:u", "u:c:catalog");
   });
   await page.route("**/api/session/**", async route => {
     const path = new URL(route.request().url()).pathname;
+    if (path.endsWith("/identity")) return route.fulfill({json:{userId:"u",csrfToken:"test-csrf"}});
     if (path.endsWith("/platform-entry")) return route.fulfill({ json: { platformUrl: "https://platform.test" } });
-    if (path === "/api/session/start") return route.fulfill({ json: { sessionId: "catalog", phase: "idle", courses,
+    if (path === "/api/session/start") return route.fulfill({ json: { sessionId: "catalog", userId: "u", phase: "idle", courses,
       messages: [], stateVersion: 0, browserCourseKey: "u:c" } });
     if (path === "/api/session/resume" || path === "/api/session/s") return route.fulfill({ json: current });
     if (path.endsWith("/commands")) {

@@ -7,6 +7,7 @@ import { UsersService } from "@/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import useAuth from "@/hooks/useAuth";
+import { learningCsrfHeaders } from "@/lib/learningSession";
 import { usePlatformStatus } from "@/hooks/usePlatformStatus";
 
 export const Route = createFileRoute("/_layout/student")({
@@ -58,11 +59,10 @@ function StudentHome() {
   const studentAgentReady = status.data?.studentAgentReady === true;
 
   async function enterCourse(courseId: string) {
-    // Trusted entry only: the platform backend returns the signed launch URL;
-    // the frontend never assembles the student-agent address itself.
+    // The platform authorizes this course using the current browser session.
     const data = await api<{ url: string }>(
       `/courses/${courseId}/student-workspace`,
-      { method: "POST" },
+      { method: "POST", headers: await learningCsrfHeaders() },
     );
     window.location.assign(data.url);
   }

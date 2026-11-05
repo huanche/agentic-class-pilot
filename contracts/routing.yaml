@@ -40,6 +40,12 @@ environments:
     caddyfile: Caddyfile
     upstream: compose
     routes:
+      - type: respond
+        path: /api/internal/*
+        status: 404
+      - type: respond
+        path: /api/v1/internal/*
+        status: 404
       - type: proxy
         path: /api/*
         service: platform
@@ -65,6 +71,12 @@ environments:
     caddyfile: Caddyfile.local
     upstream: local
     routes:
+      - type: respond
+        path: /api/internal/*
+        status: 404
+      - type: respond
+        path: /api/v1/internal/*
+        status: 404
       - comment:
           - Stable public prefixes. The upstream services keep their native paths,
           - which keeps this gateway independent from their business code.
@@ -161,15 +173,18 @@ environments:
           - API routing by path prefix only. A previous Referer-based matcher
           - "(^http://localhost:8088/...) silently broke after the domain migration:"
           - teacher API calls fell through to the platform and 404'd. Ownership is
-          - "disjoint: platform owns /api/v1/*, the student agent owns /api/session/*,"
+          - "disjoint: platform owns /api/v1/* and /api/session/*,"
           - and every other /api/* path is teacher-agent surface (generate,
           - classroom-media, course-space, classes, server-providers, access-code, ...).
         type: proxy
         path: /api/v1/*
         service: platform
       - type: proxy
-        path: /api/session/*
+        path: /api/session/health
         service: student
+      - type: proxy
+        path: /api/session/*
+        service: platform
       - type: proxy
         path: /api/*
         service: teacher
@@ -186,6 +201,12 @@ environments:
     caddyfile: Caddyfile.dev
     upstream: local
     routes:
+      - type: respond
+        path: /api/internal/*
+        status: 404
+      - type: respond
+        path: /api/v1/internal/*
+        status: 404
       - type: redirect
         path: /teacher
         to: /
@@ -271,8 +292,11 @@ environments:
         path: /api/v1/*
         service: platform
       - type: proxy
-        path: /api/session/*
+        path: /api/session/health
         service: student
+      - type: proxy
+        path: /api/session/*
+        service: platform
       - type: proxy
         path: /api/student/*
         service: student

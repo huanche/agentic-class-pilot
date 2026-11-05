@@ -11,7 +11,7 @@ from threading import Event
 from uuid import uuid4
 
 import pytest
-from fastapi.testclient import TestClient
+from conftest import business_client
 
 from backend.infrastructure import commands
 from backend.infrastructure import database
@@ -54,7 +54,7 @@ def active(pg, monkeypatch):
             return json.dumps({"result": "mastered", "evidence": "课后依据"})
         return "导师回复"
     monkeypatch.setattr(model, "complete", complete)
-    return TestClient(main.app), session, context, calls
+    return business_client(main), session, context, calls
 
 
 def command(session, kind="submit_answer", text="原始回答", command_id=None):

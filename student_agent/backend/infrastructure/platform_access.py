@@ -8,6 +8,7 @@ import urllib.error
 import urllib.request
 
 from backend.contracts import SessionError
+from backend.infrastructure.platform_identity import PlatformIdentity
 from backend.infrastructure import platform_client
 
 logger = logging.getLogger(__name__)
@@ -32,12 +33,22 @@ def _post(path: str, payload: dict) -> dict:
         with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(request, timeout=20) as response:
             return json.load(response)
     except urllib.error.HTTPError as error:
-        raise SessionError(error.code, "平台课堂读取失败或启动令牌已过期") from error
+        try:
+            data = json.load(error)
+            detail = data.get("detail", {})
+            if isinstance(detail, str):
+                detail = {"detail": detail, "code": data.get("code")}
+        except (ValueError, TypeError):
+            detail = {}
+        raise SessionError(error.code, detail.get("detail", "平台请求失败，请稍后重试"),
+                           code=detail.get("code")) from error
     except (urllib.error.URLError, TimeoutError) as error:
         raise SessionError(503, "平台服务暂不可用") from error
 
 
-def platform_context(token: str, lesson_id: str | None = None, refresh_session: bool = False) -> dict:
+def platform_context(token: str | PlatformIdentity, lesson_id: str | None = None, refresh_session: bool = False) -> dict:
+    if isinstance(token, PlatformIdentity):
+        return platform_client.session_learning_context(token.user_id, token.course_id, lesson_id)
     return platform_client.learning_context(token, lesson_id, refresh_session)
 
 
