@@ -33,7 +33,7 @@ jobs:
           POSTGRES_DB: postgres
         ports: ['55433:5432']
         options: >-
-          --health-cmd "pg_isready -U student_p2_test"
+          --health-cmd "pg_isready -U student_p2_test -d postgres"
           --health-interval 5s --health-timeout 5s --health-retries 10
     env:
       PROJECT_NAME: cookie-learning-test
@@ -58,5 +58,5 @@ jobs:
       - run: npx playwright install chromium --with-deps
         working-directory: student_agent/frontend
       - run: npm run test:e2e --prefix student_agent/frontend
-      - run: npm ci --prefix platform/frontend
+      - run: npm ci --prefix platform
       - run: npm run build --prefix platform/frontend
