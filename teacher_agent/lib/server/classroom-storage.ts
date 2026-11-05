@@ -211,6 +211,12 @@ export async function persistClassroom(
   return withClassroomWriteLock(data.id, async () => {
     if (options.source === 'browser' && !isCourseDatabaseConfigured()) {
       const current = await readClassroom(data.id);
+      if (
+        current &&
+        (current.stage.nativePptx?.renderRevision ?? 0) !==
+          (data.stage.nativePptx?.renderRevision ?? 0)
+      )
+        throw new ClassroomSnapshotConflictError();
       const plan = current?.stage.generationPlan;
       if (
         plan?.serverJobId &&

@@ -242,6 +242,42 @@ describe('fetchClassroomFromApi at the server-media boundary', () => {
     return fetchClassroomFromApi('stage-1', undefined, deps);
   }
 
+  it('adopts a newer native render revision over a complete cached copy and preserves that copy in a backup', async () => {
+    const payload = serverPayload();
+    Object.assign(payload.stage, {
+      nativePptx: { version: 1, renderRevision: 0, pages: { source: 1 } },
+      generationPlan: { version: 1, complete: true, outlines: [] },
+    });
+    Object.assign(payload.scenes[0], { nativePptxEdited: true });
+    stubNetwork({ payload });
+    await fetchApi();
+    const cached = (await deps.store!.loadDocument('stage-1'))!;
+    cached.scenes[0].title = 'Local copy retained for recovery';
+    await deps.store!.saveDocument(cached);
+
+    const fresh = structuredClone(payload);
+    Object.assign(fresh.stage, {
+      nativePptx: { version: 1, renderRevision: 1, pages: { source: 1 } },
+    });
+    delete (fresh.scenes[0] as unknown as { nativePptxEdited?: true }).nativePptxEdited;
+    stubNetwork({ payload: fresh });
+    const result = await fetchApi();
+    expect(result?.stage.nativePptx?.renderRevision).toBe(1);
+    expect(result?.scenes[0].nativePptxEdited).toBeUndefined();
+    expect(result?.serverSnapshot).toBe(true);
+    const backup = await deps.kv!.get<{ document: typeof cached }>(
+      'classroom-before-native-upgrade:stage-1',
+      'device',
+    );
+    expect(backup?.document.scenes[0].title).toBe('Local copy retained for recovery');
+    expect(backup?.document.scenes[0].nativePptxEdited).toBe(true);
+
+    const edited = (await deps.store!.loadDocument('stage-1'))!;
+    edited.scenes[0].title = 'New genuine teacher edit';
+    await deps.store!.saveDocument(edited);
+    expect((await fetchApi())?.scenes[0].title).toBe('New genuine teacher edit');
+  });
+
   it('merges newly generated server pages into an incomplete cached document and keeps teacher edits', async () => {
     const payload = serverPayload();
     Object.assign(payload.stage, { timing: { budgetVersion: 1, expectedAutomaticPages: 3 } });

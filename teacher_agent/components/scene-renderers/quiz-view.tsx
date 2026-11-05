@@ -54,6 +54,7 @@ interface QuizViewProps {
   readonly sceneId: string;
   readonly stageId: string;
   readonly studentPlayer?: boolean;
+  readonly onContinue?: () => void;
 }
 
 const QuizMathText = memo(function QuizMathText({
@@ -700,7 +701,7 @@ function ScoreBanner({
 
 // ─── Main Component ─────────────────────────────────────────────────────────
 
-export function QuizView({ questions, sceneId, stageId, studentPlayer }: QuizViewProps) {
+export function QuizView({ questions, sceneId, stageId, studentPlayer, onContinue }: QuizViewProps) {
   const { t, locale } = useI18n();
 
   const [phase, setPhase] = useState<Phase>('not_started');
@@ -887,6 +888,7 @@ export function QuizView({ questions, sceneId, stageId, studentPlayer }: QuizVie
     if (phase !== 'reviewing') return;
     if (studentPlayer) postPlayerHostEvent('SCENE_COMPLETED', sceneId);
     const timer = window.setTimeout(() => {
+      if (onContinue) { onContinue(); return; }
       const store = useStageStore.getState();
       const index = store.scenes.findIndex((scene) => scene.id === sceneId);
       const next = store.scenes[index + 1];
@@ -894,7 +896,7 @@ export function QuizView({ questions, sceneId, stageId, studentPlayer }: QuizVie
       else if (studentPlayer) postPlayerHostEvent('PLAYBACK_ENDED', sceneId);
     }, 3000);
     return () => window.clearTimeout(timer);
-  }, [phase, sceneId, studentPlayer]);
+  }, [phase, sceneId, studentPlayer, onContinue]);
 
   const handleRetry = useCallback(async () => {
     if (!attemptId || retrying) return;

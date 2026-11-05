@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>原稿放映测试 · 第九章 指针</title>
+    <link rel="stylesheet" href="/onlyoffice-test/style.css" />
+  </head>
+  <body>
+    <header>
+      <a href="/course-space?workspace=ee72ca27-2830-4b77-91db-18c0af557f2d">← 返回课程</a>
+      <span class="badge">ONLYOFFICE · 独立测试</span>
+    </header>
+    <main>
+      <div class="heading">
+        <div>
+          <p class="eyebrow">原稿第 5—9 页</p>
+          <h1>第九章 · 指针</h1>
+        </div>
+        <div id="status" role="status">正在连接放映服务…</div>
+      </div>
+      <div id="error" role="alert" hidden></div>
+      <section class="player" aria-label="PPTX 原稿放映">
+        <div id="editor"></div>
+      </section>
+      <section class="controls" aria-label="配音和动画控制">
+        <div class="buttons">
+          <button id="play" class="primary" disabled>播放配音与动画</button>
+          <button id="pause" disabled>暂停</button>
+          <button id="stop" disabled>停止</button>
+          <button id="advance" disabled>下一步动画</button>
+          <button id="final" disabled>查看本页最终布局</button>
+        </div>
+        <div class="progress">
+          <span id="position">第 1 / 5 页</span><span id="cue-status">配音准备中</span>
+        </div>
+        <div id="pages" class="pages" aria-label="选择页面"></div>
+        <p id="speech" aria-live="polite">原稿画面由 ONLYOFFICE 放映，配音使用现有 Kokoro。</p>
+        <p id="audio-clock" aria-live="off"></p>
+        <div id="audio-player"></div>
+      </section>
+      <details>
+        <summary>测试记录</summary>
+        <pre id="events"></pre>
+        <button id="download">下载播放记录</button>
+      </details>
+    </main>
+    <script type="module" src="/onlyoffice-test/app.js"></script>
+  </body>
+</html>

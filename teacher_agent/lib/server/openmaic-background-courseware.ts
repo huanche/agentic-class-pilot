@@ -135,9 +135,23 @@ export async function executeOpenmaicCourseware(
           ),
         read: async (order) => {
           try {
-            return JSON.parse(
+            const checkpoint = JSON.parse(
               await fs.readFile(checkpointPath(order), 'utf8'),
             ) as OpenmaicCheckpoint<OpenmaicContent>;
+            const outline = outlines.find((page) => page.order === order);
+            // Older high-fidelity runs cached a PPT canvas even for quiz/interactive/PBL
+            // outlines. Rebuild only that unassembled content; keep saved pages and
+            // valid content/actions checkpoints so retry does not repeat their work.
+            if (
+              !checkpoint.scene &&
+              outline?.type !== 'slide' &&
+              checkpoint.content &&
+              'type' in checkpoint.content &&
+              checkpoint.content.type === 'slide' &&
+              'canvas' in checkpoint.content
+            )
+              return {};
+            return checkpoint;
           } catch (error) {
             if ((error as NodeJS.ErrnoException).code === 'ENOENT') return {};
             throw error;

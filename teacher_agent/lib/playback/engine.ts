@@ -744,6 +744,17 @@ export class PlaybackEngine {
       this.callbacks.onSpeakerChange?.('teacher');
     }
 
+    const sourceReady = this.actionEngine.ensureSourceReady?.(this.scenes[this.sceneIndex]?.id);
+    if (sourceReady) {
+      try {
+        await sourceReady;
+      } catch (error) {
+        log.error('Native source not ready:', error);
+        this.pause();
+        return;
+      }
+      if (this.mode !== 'playing' || !this.isCurrentGeneration(generation)) return;
+    }
     const current = this.getCurrentAction();
     if (!current) {
       if (!this.isCurrentGeneration(generation)) return;

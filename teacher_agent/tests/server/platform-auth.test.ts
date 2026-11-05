@@ -163,6 +163,16 @@ describe('platformMiddleware', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it('preserves the verified student role for published video reads', async () => {
+    fetchMock.mockResolvedValueOnce(
+      authorizeResponse({ userId: 'student-user', role: 'student', isAdmin: false }),
+    );
+    const response = await platformMiddleware(makeRequest('/api/classroom-media/room-1/video/clip.mp4', {
+      headers: { 'x-platform-role': 'teacher' },
+    }));
+    expect(response.headers.get('x-middleware-request-x-platform-role')).toBe('student');
+  });
+
   it('fails closed with 503 when the platform identity service is unreachable', async () => {
     fetchMock.mockRejectedValueOnce(new TypeError('network down'));
     const response = await platformMiddleware(makeRequest('/api/course-space'));

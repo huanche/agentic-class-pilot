@@ -58,6 +58,8 @@ import {
 import katex from 'katex';
 import { createLogger } from '@/lib/logger';
 import { PptxAnimationPlayer } from './pptx-animation-player';
+import { nativeDriver, nativePptxPage, waitNativeDriver } from '@/lib/onlyoffice/native-player';
+import { isNativeClick } from '@/lib/onlyoffice/narration';
 
 const log = createLogger('ActionEngine');
 
@@ -170,14 +172,32 @@ export interface ActionExecutionOptions {
 
 export class ActionEngine {
   private readonly pptxAnimationPlayer = new PptxAnimationPlayer();
+  private currentNativeScene() {
+    const state = this.stageStore.getState();
+    const scene = state.scenes.find((s) => s.id === state.currentSceneId);
+    return nativePptxPage(state.stage, scene) ? scene : undefined;
+  }
+  ensureSourceReady(sceneId?: string): Promise<void> | undefined {
+    if (useCanvasStore.getState().whiteboardOpen) return;
+    const state = this.stageStore.getState();
+    const scene = state.scenes.find((s) => s.id === (sceneId || state.currentSceneId));
+    if (scene && nativePptxPage(state.stage, scene))
+      return waitNativeDriver(scene.id).then(() => {});
+  }
 
   pauseSourceAnimation(): void {
+    const scene = this.currentNativeScene();
+    if (scene) nativeDriver(scene.id)?.pause();
     this.pptxAnimationPlayer.pause();
   }
   resumeSourceAnimation(): Promise<void> | undefined {
+    const scene = this.currentNativeScene();
+    if (scene) nativeDriver(scene.id)?.resume();
     return this.pptxAnimationPlayer.resume();
   }
   cancelSourceAnimation(): void {
+    const scene = this.currentNativeScene();
+    if (scene) nativeDriver(scene.id)?.reset();
     this.pptxAnimationPlayer.cancel();
   }
   setSourceAnimationRate(rate: number): void {
@@ -321,6 +341,29 @@ export class ActionEngine {
   }
 
   private async executeReveal(action: RevealAction, silent = false): Promise<void> {
+    const scene = this.currentNativeScene();
+    if (scene && action.pptxStep) {
+      const driver = await waitNativeDriver(scene.id);
+      if (driver) {
+        const hasNativeClicks = (scene.actions ?? []).some(
+          (a) => a.type === 'reveal' && a.pptxStep && isNativeClick(a.pptxStep.id),
+        );
+        if (hasNativeClicks && !isNativeClick(action.pptxStep.id)) return;
+        if (action.pptxStep.effects.every((e) => e.scope === 'slide')) return;
+        const steps = (scene.actions ?? []).filter(
+          (a) =>
+            a.type === 'reveal' &&
+            a.pptxStep &&
+            (!hasNativeClicks || isNativeClick(a.pptxStep.id)) &&
+            !a.pptxStep.effects.every((e) => e.scope === 'slide'),
+        );
+        const position = steps.findIndex((a) => a.id === action.id);
+        if (position < 0) throw new Error('原稿动画步骤不属于当前页面');
+        await driver.seek(position + 1);
+        return;
+      }
+    }
+    if (action.pptxStep && isNativeClick(action.pptxStep.id)) return;
     if (action.pptxStep) return this.pptxAnimationPlayer.play(action.pptxStep, silent);
     useCanvasStore.getState().revealElement(action.elementId);
     await delay(revealDurationMs(action.duration));
@@ -342,6 +385,9 @@ export class ActionEngine {
   // ==================== Fire-and-forget ====================
 
   private executeSpotlight(action: SpotlightAction, persist = false): void {
+    // Native objects live inside the document engine, not the converted web
+    // canvas. Never draw a guessed highlight over unrelated source geometry.
+    if (this.currentNativeScene()) return;
     useCanvasStore.getState().setSpotlight(action.elementId, {
       dimness: action.dimOpacity ?? 0.5,
     });
@@ -349,6 +395,7 @@ export class ActionEngine {
   }
 
   private executeLaser(action: LaserAction, persist = false): void {
+    if (this.currentNativeScene()) return;
     useCanvasStore.getState().setLaser(action.elementId, {
       color: action.color ?? '#ff0000',
     });
@@ -358,6 +405,8 @@ export class ActionEngine {
   // ==================== Synchronous — Speech ====================
 
   private async executeSpeech(action: SpeechAction): Promise<void> {
+    const scene = this.currentNativeScene();
+    if (scene) await waitNativeDriver(scene.id);
     if (!this.audioPlayer) return;
 
     return new Promise<void>((resolve) => {

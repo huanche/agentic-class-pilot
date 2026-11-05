@@ -50,18 +50,24 @@ export function TextElement({ elementInfo, selectElement }: TextElementProps) {
 
     if (!isScaling) {
       if (!elementInfo.vertical && realHeightCache !== -1) {
-        updateElement({
-          id: elementInfo.id,
-          props: { height: realHeightCache },
-        });
+        updateElement(
+          {
+            id: elementInfo.id,
+            props: { height: realHeightCache },
+          },
+          { source: 'layout' },
+        );
         // eslint-disable-next-line react-hooks/set-state-in-effect -- DOM measurement requires effect
         setRealHeightCache(-1);
       }
       if (elementInfo.vertical && realWidthCache !== -1) {
-        updateElement({
-          id: elementInfo.id,
-          props: { width: realWidthCache },
-        });
+        updateElement(
+          {
+            id: elementInfo.id,
+            props: { width: realWidthCache },
+          },
+          { source: 'layout' },
+        );
 
         setRealWidthCache(-1);
       }
@@ -87,20 +93,26 @@ export function TextElement({ elementInfo, selectElement }: TextElementProps) {
 
       if (!elementInfo.vertical && elementInfo.height !== realHeight) {
         if (!isScaling) {
-          updateElement({
-            id: elementInfo.id,
-            props: { height: realHeight },
-          });
+          updateElement(
+            {
+              id: elementInfo.id,
+              props: { height: realHeight },
+            },
+            { source: 'layout' },
+          );
         } else {
           setRealHeightCache(realHeight);
         }
       }
       if (elementInfo.vertical && elementInfo.width !== realWidth) {
         if (!isScaling) {
-          updateElement({
-            id: elementInfo.id,
-            props: { width: realWidth },
-          });
+          updateElement(
+            {
+              id: elementInfo.id,
+              props: { width: realWidth },
+            },
+            { source: 'layout' },
+          );
         } else {
           setRealWidthCache(realWidth);
         }

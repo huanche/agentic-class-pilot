@@ -20,6 +20,7 @@ import type { DocumentMigrationDeps } from '@/lib/document-store/migration';
 import type { AppDocument, AppDocumentOutline } from '@/lib/document-store/persistence-types';
 import type { SceneOutline } from '@/lib/types/generation';
 import { DSL_VERSION, type PPTElement } from '@openmaic/dsl';
+import { BrowserKVStore } from '@openmaic/storage';
 import {
   collectDocumentMediaElements,
   withDocumentLegacyVideoRecovery,
@@ -243,7 +244,11 @@ export async function runClassroomLoad<TMediaTasks = unknown>({
     if (!preferServerClassroom) await loadFromStorage(classroomId, loadToken);
     if (!isCurrent()) return;
 
-    if (preferServerClassroom || !getCurrentStage() || shouldRefreshFromServer()) {
+    const cachedStage = getCurrentStage();
+    const serverBackedCache =
+      cachedStage?.id === classroomId &&
+      Boolean(cachedStage.nativePptx || cachedStage.generationPlan?.serverJobId);
+    if (preferServerClassroom || !cachedStage || serverBackedCache || shouldRefreshFromServer()) {
       log.info('Loading current server classroom snapshot:', classroomId);
       // The fetch path converts and commits under the per-stage document lock.
       // Once it returns, the document owns every allocation; a later
@@ -368,7 +373,9 @@ export async function fetchClassroomFromApi(
   deps: DocumentMigrationDeps = {},
   replaceExisting = false,
 ): Promise<ClassroomPayload | null> {
-  const res = await fetch(`/api/classroom?id=${encodeURIComponent(classroomId)}`);
+  const res = await fetch(`/api/classroom?id=${encodeURIComponent(classroomId)}`, {
+    cache: 'no-store',
+  });
   if (!res.ok) return null;
 
   const json = (await res.json()) as {
@@ -404,7 +411,19 @@ export async function fetchClassroomFromApi(
       async (existing, store) => {
         let document: AppDocument = { ...payload, dslVersion: DSL_VERSION };
         let serverSnapshot = true;
-        if (existing) {
+        const nativeUpgrade =
+          existing &&
+          (payload.stage.nativePptx?.renderRevision ?? 0) >
+            ((existing.stage as Stage).nativePptx?.renderRevision ?? 0);
+        if (existing && nativeUpgrade) {
+          // Keep the old local copy recoverable before adopting a server repair.
+          // A reload must not silently keep its stale "edited" flags forever.
+          await (deps.kv ?? new BrowserKVStore()).set(
+            `classroom-before-native-upgrade:${classroomId}`,
+            { savedAt: Date.now(), document: existing },
+            'device',
+          );
+        } else if (existing) {
           // The document already owns its media (a concurrent cold load, or a
           // prior open). Reuse it verbatim; if it still carries transport
           // URLs, conversion could not complete and the load must fail rather

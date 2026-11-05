@@ -258,7 +258,11 @@ describe('native PPTX playback clock', () => {
       getCurrentTime: () => 0,
       getDuration: () => 0,
     } as unknown as AudioPlayer;
-    const actionEngine = new ActionEngine({} as never);
+    const actionEngine = new ActionEngine({
+      getState: () => ({ stage: null, scenes: [], currentSceneId: null, mode: 'playback' }),
+      setState: vi.fn(),
+      subscribe: vi.fn(),
+    });
     const scene = {
       id: 'source-page',
       type: 'slide',
