@@ -332,11 +332,11 @@ P1 与 P2 可按代码依赖分开提交，但不让公网出现一半完成的 
 
 以下相对链接均相对于本文位置。
 
-- [平台服务端会话](../../platform/backend/app/services/browser_sessions.py)、[通用身份依赖](../../platform/backend/app/api/deps.py)、[登录与退出](../../platform/backend/app/api/routes/login.py)。
-- [平台学生桥接](../../platform/backend/app/api/routes/student_bridge.py)、[课程访问规则](../../platform/backend/app/services/course_access.py)、[平台路由挂载](../../platform/backend/app/main.py)。
-- [学生 HTTP 入口](../../student_agent/backend/main.py)、[会话编排](../../student_agent/backend/session/service.py)、[可靠命令运行](../../student_agent/backend/session/command_runtime.py)、[命令数据层](../../student_agent/backend/infrastructure/commands.py)、[平台 Adapter](../../student_agent/backend/infrastructure/platform_access.py)。
-- [前端交互模块](../../student_agent/frontend/src/integration/learning-session.mjs)、[命令客户端](../../student_agent/frontend/src/integration/session-commands.mjs)、[浏览器定位](../../student_agent/frontend/src/integration/session-browser.mjs)、[播放器适配器](../../student_agent/frontend/src/integration/platform-player-adapter.js)。
-- [本地网关](../../platform/scripts/local-gateway.mjs)、[生产候选网关](../../scripts/mainland/Caddyfile.production-candidate)、[现行发布记录](../student-production-release-20261103.md)。
+- [平台服务端会话](../../../../platform/backend/app/services/browser_sessions.py)、[通用身份依赖](../../../../platform/backend/app/api/deps.py)、[登录与退出](../../../../platform/backend/app/api/routes/login.py)。
+- [平台学生桥接](../../../../platform/backend/app/api/routes/student_bridge.py)、[课程访问规则](../../../../platform/backend/app/services/course_access.py)、[平台路由挂载](../../../../platform/backend/app/main.py)。
+- [学生 HTTP 入口](../../../backend/main.py)、[会话编排](../../../backend/session/service.py)、[可靠命令运行](../../../backend/session/command_runtime.py)、[命令数据层](../../../backend/infrastructure/commands.py)、[平台 Adapter](../../../backend/infrastructure/platform_access.py)。
+- [前端交互模块](../../../frontend/src/integration/learning-session.mjs)、[命令客户端](../../../frontend/src/integration/session-commands.mjs)、[浏览器定位](../../../frontend/src/integration/session-browser.mjs)、[播放器适配器](../../../frontend/src/integration/platform-player-adapter.js)。
+- [本地网关](../../../../platform/scripts/local-gateway.mjs)、[生产候选网关](../../../../scripts/mainland/Caddyfile.production-candidate)、[现行发布记录](../student-production-release-20261103.md)。
 - [OWASP 会话管理与服务端过期](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html#session-expiration)：服务端控制过期和注销；具体 12 小时取自本项目现行实现。
 - [OWASP CSRF 防护](https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html)：会话绑定校验、来源校验及 SameSite 的防护边界。
 - [OWASP 授权检查](https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Cheat_Sheet.html#validate-the-permissions-on-every-request)：每个受保护请求都应校验权限，避免遗留入口成为旁路。

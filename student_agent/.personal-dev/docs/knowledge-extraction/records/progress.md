@@ -17,7 +17,7 @@
 - 后端完整回归 229 passed / 2 skipped（平台解耦专用测试库未配置）；最终提取、保存与版本回归 47 passed，覆盖真实 Agent→修正→PostgreSQL→学生恢复。
 - 前端单元测试 42 passed；compileall、pip check、git diff --check 通过。
 - 增加已分类提取失败的显式重试标记，防止后台 worker 自动重新开启另一个三次循环；验证显式重试可恢复。
-- 测试随机数据库剩余 0，独立集群已停止。实现说明：docs/knowledge-extraction/implementation/changes-and-tests.md。
+- 测试随机数据库剩余 0，独立集群已停止。实现说明：student_agent/.personal-dev/docs/knowledge-extraction/implementation/changes-and-tests.md。
 - 仅本工作树 lzm2 代码与文档有改动；未提交、未推送、未部署，未使用真实模型验证教学准确率。
 
 ### 2026-11-05 真实课时验收
@@ -27,9 +27,9 @@
 - 独立注入轮删去首个concept的understandingPoints；模型收到具体结构反馈后第二次提交成功，13项（4/7/2），22.363秒。注入前原始提交也通过同一协议，故障明确来自测试器。
 - 两轮独立粒度有差异，未人工修改输出或宣称准确率；未部署、未写正式知识包、未修改学生记录。
 - 相关回归42 passed/5 skipped（数据库用例本轮不运行）；敏感配置检查、实际输出协议校验通过。
-- 报告与JSON：docs/knowledge-extraction/validation/2026-11-05-live-model/；本机脚本与快照在忽略目录.runtime/typed-knowledge-live。
+- 报告与JSON：student_agent/.personal-dev/docs/knowledge-extraction/validation/2026-11-05-live-model/；本机脚本与快照在忽略目录.runtime/typed-knowledge-live。
 
 ### 2026-11-05 文档归类
-- 本次交付统一收拢到 docs/knowledge-extraction/，按 design、research、implementation、validation、records 分类，新增 README 总入口。
+- 本次交付统一收拢到 student_agent/.personal-dev/docs/knowledge-extraction/，按 design、research、implementation、validation、records 分类，新增 README 总入口。
 - 方案、实施记录及实测产物移动后同步更新链接；历史调研复制为背景资料，本次追加的根目录计划与日志迁入 records，原有历史内容保留。
 - 本地 Markdown 链接全部有效，4 份实测 JSON 可解析；移动时校验文件哈希一致。本次不修改业务代码，不重跑模型。

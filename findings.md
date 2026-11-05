@@ -13,7 +13,7 @@
 
 - 项目由 platform、teacher_agent、student_agent 三个服务构成。
 - student_agent/README.md 描述新 FastAPI + LangGraph + Next.js 静态导出结构。
-- docs/student-runtime-mechanism.md 和 platform/docs/student-agent-integration.md 含旧 orchestrator、legacy 目录引用，不能直接作为当前实现依据。
+- student_agent/.personal-dev/docs/student-runtime-mechanism.md 和 platform/docs/student-agent-integration.md 含旧 orchestrator、legacy 目录引用，不能直接作为当前实现依据。
 - 下一步对照 backend/main.py、agent/*.py、StudentApp.js 和平台 student_bridge.py。
 
 ## 当前代码确认
@@ -232,7 +232,7 @@
 - 生产 current=8729686，数据库 pub10；本地唯一 head=rec12。学生/平台 active，动态准入关闭，认证密钥一致，student 非超级用户、schema owner=platform。242 个最新历史快照未发现版本字段初检异常。
 - 发现三个同机备份完成标记，最新 migration-20261102-095415；不能视为本次停写备份或恢复验证。GitHub MAINLAND_WEB_AUTODEPLOY_ENABLED=true，香港关闭。
 - 修复配置存在即健康的假阳性、数据库 CI 静默跳过、不兼容旧写入自动回退、停机发布配置读取以及迁移前 staging 后无法重试的问题。新增受限角色只读 readiness、格式兼容标记、root-only staging/冻结环境、v2 受限激活与安装发布器摘要验证。
-- 生产仍为旧运维脚本/旧库；需另开窗口安装脚本和 sudoers、停写备份、迁移 rec12、权限/入口验收。不得直接 push main 或以 downgrade/香港快照覆盖新写入。完整结论见 docs/student-production-preflight-20261103.md。
+- 生产仍为旧运维脚本/旧库；需另开窗口安装脚本和 sudoers、停写备份、迁移 rec12、权限/入口验收。不得直接 push main 或以 downgrade/香港快照覆盖新写入。完整结论见 student_agent/.personal-dev/docs/student-production-preflight-20261103.md。
 
 ### 上线候选收尾（2026-11-03）
 - git fetch 确认 HEAD 比 origin/main 领先1提交、无分叉；远端最新发布 run 41398718949 在激活阶段因 uv 继承 /home/agentic-ci 工作目录导致权限错误失败。已为 uv 指定候选应用 cwd。

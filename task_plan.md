@@ -12,7 +12,7 @@
 
 本轮不部署生产；最终只提交明确相关文件，不混入原目录其他改动。
 
-验证完成：完整后端回归222项通过、2项跳过；增补数据库/并发身份定向用例通过，前端unit42/e2e18与两端构建通过。详见docs/student-platform-session-auth/implementation.md。
+验证完成：完整后端回归222项通过、2项跳过；增补数据库/并发身份定向用例通过，前端unit42/e2e18与两端构建通过。详见student_agent/.personal-dev/docs/student-platform-session-auth/implementation.md。
 
 ## 正式发布（2026-11-03，用户已授权）
 
@@ -25,7 +25,7 @@
 - [x] 激活候选、恢复原教师容器与上游，维护状态下验收真实学生流程和幂等恢复。
 - [x] 验收后开放入口，恢复原定时器，动态继续关闭，记录正式发布结果。
 
-受限审计目录：大陆/HK `/srv/agentic-student-release/20261103-370c2e2`；大陆maintenance-state.json阶段为open_and_verified，记录原服务、教师容器/上游和备份。14:23:58已验收并开放入口，动态与自动激活仍关闭。运维助手位于本机忽略目录.runtime/student-release-*.py。原始Pub10备份已打.keep，不能删除或覆盖。正式结果见docs/student-production-release-20261103.md。
+受限审计目录：大陆/HK `/srv/agentic-student-release/20261103-370c2e2`；大陆maintenance-state.json阶段为open_and_verified，记录原服务、教师容器/上游和备份。14:23:58已验收并开放入口，动态与自动激活仍关闭。运维助手位于本机忽略目录.runtime/student-release-*.py。原始Pub10备份已打.keep，不能删除或覆盖。正式结果见student_agent/.personal-dev/docs/student-production-release-20261103.md。
 
 ## 上线候选收尾（2026-11-03）
 

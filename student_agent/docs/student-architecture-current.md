@@ -128,4 +128,4 @@ commit 先写数据库再更新内存；失败返回错误。完成时反馈、�
 - 会话缓存与准备任务去重都在单进程内，扩展多 worker/多实例时需重新设计共享状态和任务调度。
 - StudentApp.js 集中了页面与恢复逻辑，backend/main.py 集中了会话与平台交互；业务模块已有拆分，但这两个入口仍较重。
 - 当前主链要求已发布课堂播放器；全班讨论、完整纯文本授课、课程级检索和跨设备自动续学不应算作已完成能力。
-- `docs/student-runtime-mechanism.md` 与 `platform/docs/student-agent-integration.md` 包含旧 orchestrator、legacy、计时与评星机制，阅读时应以本说明所对应的当前源码为准。
+- `student_agent/.personal-dev/docs/student-runtime-mechanism.md` 与 `platform/docs/student-agent-integration.md` 包含旧 orchestrator、legacy、计时与评星机制，阅读时应以本说明所对应的当前源码为准。

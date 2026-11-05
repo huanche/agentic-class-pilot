@@ -26,9 +26,9 @@ flowchart LR
 
 | 文件 | 给谁用 | 怎么使用 |
 | --- | --- | --- |
-| [知识点模板](templates/knowledge-points.v1.template.md) | 教师端生成模块与教师 | 按需重复知识点区块，替换全部占位符，再审核发布 |
-| [现代交换原理格式示例](examples/knowledge-points.v1.example.md) | 双方开发与审核人员 | 演示两个具体知识点及完整应会内容；仅作格式示例，正式课程的材料依据由教师核对 |
-| [示例实际提取结果](examples/knowledge-points.v1.parsed.json) | 平台与学生端开发 | 当前真实解析器生成的 `rubric`，可作接口对照样例 |
+| [知识点模板](../../../docs/templates/knowledge-points.v1.template.md) | 教师端生成模块与教师 | 按需重复知识点区块，替换全部占位符，再审核发布 |
+| [现代交换原理格式示例](../../../docs/examples/knowledge-points.v1.example.md) | 双方开发与审核人员 | 演示两个具体知识点及完整应会内容；仅作格式示例，正式课程的材料依据由教师核对 |
+| [示例实际提取结果](../../../docs/examples/knowledge-points.v1.parsed.json) | 平台与学生端开发 | 当前真实解析器生成的 `rubric`，可作接口对照样例 |
 | 本文 | 双方开发与产品人员 | 查输入约定、提取规则、字段用途及待配合事项 |
 
 模板文件中的 `{{...}}` 是占位符，不能原样发布。模板本身只包含可生成的正文，不把使用说明混进知识点目录。

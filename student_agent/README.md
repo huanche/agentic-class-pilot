@@ -2,7 +2,7 @@
 
 当前正式课堂请求：浏览器 Cookie → 平台 `/api/session/*` BFF → 学生服务内部身份校验。退出或登录到期不清除学习数据库。登录会话沿用 12 小时绝对期限；回答继续沿用 commandId 幂等和状态版本。
 
-新增配置、切换顺序、测试证据与限制见 [实施记录](../docs/student-platform-session-auth/implementation.md)。正式前端及网关需与平台和学生服务一起更新，不能单独发布某一端。
+新增配置、切换顺序、测试证据与限制见 [实施记录](.personal-dev/docs/student-platform-session-auth/implementation.md)。正式前端及网关需与平台和学生服务一起更新，不能单独发布某一端。
 
 # 学生端
 
