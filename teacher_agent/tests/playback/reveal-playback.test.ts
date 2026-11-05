@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ActionEngine } from '@/lib/action/engine';
 import { PlaybackEngine } from '@/lib/playback/engine';
 import { useCanvasStore } from '@/lib/store/canvas';
+import { useStageStore } from '@/lib/store/stage';
 import type { Scene } from '@/lib/types/stage';
 import type { AudioPlayer } from '@/lib/utils/audio-player';
 
@@ -20,7 +21,7 @@ describe('slide reveal during sequential playback', () => {
 
   function buildEngine() {
     const onComplete = vi.fn();
-    const actionEngine = new ActionEngine({} as never);
+    const actionEngine = new ActionEngine(useStageStore);
     const scene = {
       id: 'scene-1',
       stageId: 'stage-1',
