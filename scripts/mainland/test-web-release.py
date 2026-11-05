@@ -23,6 +23,31 @@ SOURCE = globals().get("DEPLOY_SOURCE") or Path(__file__).with_name("agentic-web
 
 
 class WebReleaseTest(unittest.TestCase):
+    def test_release_environment_accepts_only_private_root_owned_configuration(self):
+        path = self.root / 'learning-auth.env'
+        original_path = self.ns['Path']
+        self.ns['Path'] = lambda value: path if str(value) == '/etc/agentic-class-pilot/student-learning-auth.env' else original_path(value)
+        self.assertEqual(self.ns['release_environment']('agentic-student'), self.env)
+        path.write_text('PLATFORM_TO_STUDENT_KEY=' + 'k' * 64 + '\nSTUDENT_URL=http://127.0.0.1:8000\n')
+        path.chmod(0o600)
+        merged = self.ns['release_environment']('agentic-student')
+        self.assertEqual(merged['PLATFORM_TO_STUDENT_KEY'], 'k' * 64)
+        self.assertEqual(merged['STUDENT_DATABASE_URL'], self.env['STUDENT_DATABASE_URL'])
+        path.chmod(0o644)
+        with self.assertRaisesRegex(RuntimeError, 'Untrusted'):
+            self.ns['release_environment']('agentic-student')
+        path.chmod(0o600)
+        path.write_text('DATABASE_URL=not-allowed\n')
+        with self.assertRaisesRegex(RuntimeError, 'Invalid'):
+            self.ns['release_environment']('agentic-student')
+        path.unlink()
+        real = self.root / 'real-auth.env'
+        real.write_text('PLATFORM_TO_STUDENT_KEY=' + 'k' * 64 + '\n')
+        real.chmod(0o600)
+        path.symlink_to(real)
+        with self.assertRaisesRegex(RuntimeError, 'Untrusted'):
+            self.ns['release_environment']('agentic-student')
+
     def setUp(self):
         self.assertEqual(os.geteuid(), 0, "Use sudo for the isolated ownership checks")
         self.temp = tempfile.TemporaryDirectory(prefix="agentic-web-release-test-")
