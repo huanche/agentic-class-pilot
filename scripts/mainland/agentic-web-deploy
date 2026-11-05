@@ -23,7 +23,35 @@ FROZEN = Path('/run/agentic-web-migration')
 
 
 def call(args, **kwargs):
-    return subprocess.run(args, check=True, **kwargs)
+    timeout = kwargs.pop('timeout', None)
+    if timeout is None or args[:5] != ['runuser', '-u', 'ubuntu', '--', UV]:
+        return subprocess.run(args, check=True, timeout=timeout, **kwargs)
+    return _call_process_group(args, timeout=timeout, **kwargs)
+
+
+def _call_process_group(args, timeout, **kwargs):
+    # runuser can leave uv running after its own process is killed. Keep the
+    # whole command in one process group so a timed-out install releases SSH.
+    process = subprocess.Popen(args, start_new_session=True, **kwargs)
+    try:
+        returncode = process.wait(timeout=timeout)
+    except BaseException:
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        try:
+            process.wait(timeout=30)
+        except subprocess.TimeoutExpired:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            process.wait()
+        raise
+    if returncode:
+        raise subprocess.CalledProcessError(returncode, args)
+    return subprocess.CompletedProcess(args, returncode)
 
 
 def output(args, **kwargs):
@@ -205,8 +233,9 @@ def deploy():
         call(['chown', '-R', 'ubuntu:ubuntu', str(release)])
         platform = release / 'platform'
         student = release / 'student_agent'
-        def clone_unchanged_environment(app, files, old_venv, env):
-            if not all((reference / app / f).read_bytes() == (release / app / f).read_bytes() for f in files):
+        def clone_environment(app, files, old_venv, env):
+            unchanged = all((reference / app / f).read_bytes() == (release / app / f).read_bytes() for f in files)
+            if not old_venv.is_dir():
                 return False
             target = release / app / '.venv'
             shutil.copytree(old_venv, target, symlinks=True)
@@ -215,19 +244,32 @@ def deploy():
                 text = pth.read_text()
                 pth.write_text(text.replace(str(reference / app), str(release / app)))
             call(['chown', '-R', 'ubuntu:ubuntu', str(target)])
-            call(['runuser', '-u', 'ubuntu', '--', UV, 'pip', 'check', '--python', str(target / 'bin/python')],
-                 cwd=release / app, env=env, timeout=60)
-            print('DEPENDENCIES_REUSED_WITH_IDENTICAL_METADATA', app, flush=True)
-            return True
-        if not clone_unchanged_environment('platform', ['uv.lock', 'pyproject.toml', 'backend/pyproject.toml'], reference / 'platform/.venv', env_platform):
+            if unchanged:
+                call(['runuser', '-u', 'ubuntu', '--', UV, 'pip', 'check', '--python', str(target / 'bin/python')],
+                     cwd=release / app, env=env, timeout=60)
+                print('DEPENDENCIES_REUSED_WITH_IDENTICAL_METADATA', app, flush=True)
+            else:
+                print('DEPENDENCIES_COPIED_FOR_INCREMENTAL_INSTALL', app, flush=True)
+            return unchanged
+        platform_same = clone_environment('platform', ['uv.lock', 'pyproject.toml', 'backend/pyproject.toml'],
+                                          reference / 'platform/.venv', env_platform)
+        if not platform_same:
+            print('PLATFORM_DEPENDENCY_SYNC_STARTED', flush=True)
             call(['runuser', '-u', 'ubuntu', '--', UV, 'sync', '--frozen', '--no-dev', '--package', 'app',
-                  '--python', str(OLD / 'platform/.venv/bin/python')], cwd=platform, env=env_platform, timeout=900)
+                  '--python', str((platform / '.venv/bin/python') if (platform / '.venv').is_dir()
+                                  else (OLD / 'platform/.venv/bin/python'))],
+                 cwd=platform, env=env_platform, timeout=900)
         student_venv = reference / ('student_agent/.venv-migrate' if reference == OLD else 'student_agent/.venv')
-        if not clone_unchanged_environment('student_agent', ['backend/requirements.txt'], student_venv, env_student):
-            call(['runuser', '-u', 'ubuntu', '--', UV, 'venv', str(student / '.venv'), '--python',
-                  str(OLD / 'student_agent/.venv-migrate/bin/python')], cwd=student, env=env_student, timeout=60)
+        student_same = clone_environment('student_agent', ['backend/requirements.txt'], student_venv, env_student)
+        if not student_same:
+            if not (student / '.venv').is_dir():
+                call(['runuser', '-u', 'ubuntu', '--', UV, 'venv', str(student / '.venv'), '--python',
+                      str(OLD / 'student_agent/.venv-migrate/bin/python')], cwd=student, env=env_student, timeout=60)
+            print('STUDENT_DEPENDENCY_INSTALL_STARTED', flush=True)
             call(['runuser', '-u', 'ubuntu', '--', UV, 'pip', 'install', '--python', str(student / '.venv/bin/python'),
                   '-r', str(student / 'backend/requirements.txt')], cwd=student, env=env_student, timeout=900)
+            call(['runuser', '-u', 'ubuntu', '--', UV, 'pip', 'check', '--python', str(student / '.venv/bin/python')],
+                 cwd=student, env=env_student, timeout=60)
         fd = os.open(receipt, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         with os.fdopen(fd, 'w') as file:
             json.dump(expected, file)
