@@ -47,6 +47,10 @@ def render_route(route: dict, services: dict, upstream_key: str) -> str:
         lines.append(f"  handle {route['path']} {{")
         lines.append(f"    reverse_proxy {upstream}")
         lines.append("  }")
+    elif kind == "respond":
+        lines.append(f"  handle {route['path']} {{")
+        lines.append(f"    respond {route['status']}")
+        lines.append("  }")
     elif kind == "fallback":
         lines.append("  handle {")
         lines.append(f"    reverse_proxy {upstream}")

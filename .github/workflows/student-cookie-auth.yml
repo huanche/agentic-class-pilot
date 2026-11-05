@@ -1,0 +1,68 @@
+name: student-cookie-auth
+
+on:
+  pull_request:
+    paths:
+      - 'platform/backend/**'
+      - 'platform/frontend/**'
+      - 'student_agent/**'
+      - 'contracts/**'
+      - 'tests/test_cookie_learning_boundary.py'
+      - '.github/workflows/student-cookie-auth.yml'
+  push:
+    paths:
+      - 'platform/backend/**'
+      - 'platform/frontend/**'
+      - 'student_agent/**'
+      - 'contracts/**'
+      - 'tests/test_cookie_learning_boundary.py'
+      - '.github/workflows/student-cookie-auth.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  cookie-learning:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: student_p2_test
+          POSTGRES_PASSWORD: test-only-password
+          POSTGRES_DB: postgres
+        ports: ['55433:5432']
+        options: >-
+          --health-cmd "pg_isready -U student_p2_test -d postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PROJECT_NAME: cookie-learning-test
+      SECRET_KEY: synthetic-cookie-test-secret
+      DATABASE_URL: postgresql://unused:unused@127.0.0.1:1/unused_test
+      FIRST_SUPERUSER: test@example.com
+      FIRST_SUPERUSER_PASSWORD: synthetic-test-password
+      STUDENT_TEST_DATABASE_URL: postgresql://student_p2_test:test-only-password@127.0.0.1:55433/postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: uv sync --project platform/backend --frozen
+      - run: uv pip install --python platform/.venv/bin/python -r student_agent/backend/requirements.txt
+      - name: Cookie BFF and real database regression
+        run: platform/.venv/bin/python -m pytest -q student_agent/backend/tests tests/test_cookie_learning_boundary.py
+      - run: npm ci --prefix student_agent/frontend
+      - run: npm run test:unit --prefix student_agent/frontend
+      - run: npm run build --prefix student_agent/frontend
+      - run: npx playwright install chromium --with-deps
+        working-directory: student_agent/frontend
+      - run: npm run test:e2e --prefix student_agent/frontend
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.3.14'
+      - name: Build platform frontend with the deployment lockfile
+        working-directory: platform
+        run: |
+          bun install --frozen-lockfile
+          bun run --filter frontend build

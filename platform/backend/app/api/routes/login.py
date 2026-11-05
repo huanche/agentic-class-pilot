@@ -21,6 +21,16 @@ from app.utils import (
 router = APIRouter(tags=["login"])
 
 
+@router.get("/login/session")
+def browser_session_metadata(request: Request):
+    from app.services.browser_learning_auth import browser_identity
+    from fastapi.responses import JSONResponse
+    identity = browser_identity(request)
+    return JSONResponse({"userId": str(identity.user_id), "csrfToken": identity.csrf,
+                         "expiresAt": identity.expires_at.isoformat()},
+                        headers={"Cache-Control": "no-store"})
+
+
 @router.post("/login/access-token")
 def login_access_token(
     session: SessionDep, form_data: Annotated[OAuth2PasswordRequestForm, Depends()], response: Response
@@ -47,6 +57,8 @@ def login_access_token(
 
 @router.post("/logout")
 def logout(session: SessionDep, request: Request, response: Response) -> Message:
+    from app.services.browser_learning_auth import check_browser_write
+    check_browser_write(request)
     from app.services.browser_sessions import revoke_browser_session
     revoke_browser_session(session, request, response)
     return Message(message="已退出登录")

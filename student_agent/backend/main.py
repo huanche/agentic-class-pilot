@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import re
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -16,6 +17,7 @@ from backend.session import service as learning_session
 from backend.session import command_runtime
 from backend.contracts import SessionError
 from backend.internal_platform import router as internal_platform_router
+from backend.infrastructure.platform_identity import authenticate, current_identity, check_scope, session_scope, local_demo
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "frontend" / "out"
@@ -36,6 +38,53 @@ app = FastAPI(title="Student Agent", lifespan=lifespan)
 app.include_router(internal_platform_router)
 
 
+@app.middleware("http")
+async def platform_session_boundary(request: Request, call_next):
+    from starlette.concurrency import run_in_threadpool
+    path = request.url.path
+    if not path.startswith("/api/session/") or path in {"/api/session/health", "/api/session/ready"}:
+        response = await call_next(request)
+        if response.headers.get("content-type", "").startswith("text/html"):
+            response.headers["Cache-Control"] = "no-cache"
+        return response
+    if local_demo(request):
+        return await call_next(request)
+    marker = None
+    try:
+        actor = authenticate(request.headers)
+        marker = current_identity.set(actor)
+        remainder = path.removeprefix("/api/session/")
+        sid = remainder.split("/")[0]
+        if sid not in {"start", "resume", "browser-restore", "platform-entry"}:
+            if not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", sid):
+                raise SessionError(404, "学习记录不存在", code="LEARNING_RECORD_NOT_FOUND")
+            await run_in_threadpool(check_scope, sid, actor)
+        if remainder == "browser-restore" or re.search(
+                r"/(discussion|message|end|reset|postclass/start|postclass/message)$", remainder):
+            raise SessionError(410, "课堂已更新，请刷新页面", code="LEGACY_ENDPOINT_DISABLED")
+        response = await call_next(request)
+        response.headers["Cache-Control"] = "no-store"
+        return response
+    except SessionError as error:
+        return JSONResponse({"detail": error.detail, "code": error.code},
+                            status_code=error.status_code, headers={"Cache-Control": "no-store"})
+    finally:
+        if marker is not None:
+            current_identity.reset(marker)
+
+
+@app.get("/api/internal/platform/sessions/{sid}/scope")
+def learning_scope(sid: str, request: Request):
+    return session_scope(sid, authenticate(request.headers))
+
+
+@app.get("/api/session/identity")
+def preview_identity(request: Request):
+    if local_demo(request):
+        return {"userId": "", "demoEnabled": True}
+    raise SessionError(404, "请通过平台课堂入口访问", code="ACCESS_DENIED")
+
+
 @app.exception_handler(SessionError)
 async def session_error(_request: Request, error: SessionError):
     content = {"detail": error.detail}
@@ -46,6 +95,7 @@ async def session_error(_request: Request, error: SessionError):
 
 class StartRequest(BaseModel):
     launch_token: str = ""
+    course_id: str = ""
 
 
 class MessageRequest(BaseModel):
@@ -75,11 +125,17 @@ class CommandRequest(StartRequest):
 
 @app.post("/api/session/start")
 def start(body: StartRequest) -> dict:
+    actor = current_identity.get()
+    if actor and (body.launch_token or body.course_id != actor.course_id):
+        raise SessionError(422, "课程参数无效", code="INVALID_PAYLOAD")
     return learning_session.start(body.launch_token)
 
 
 @app.post("/api/session/resume")
 def resume(body: ResumeRequest, background_tasks: BackgroundTasks) -> dict:
+    actor = current_identity.get()
+    if actor and (body.launch_token or body.course_id != actor.course_id):
+        raise SessionError(422, "课程参数无效", code="INVALID_PAYLOAD")
     return learning_session.resume(body.launch_token, body.lesson_id, background_tasks)
 
 
@@ -90,7 +146,7 @@ def browser_restore(body: BrowserRestoreRequest, background_tasks: BackgroundTas
 
 @app.get("/api/session/health")
 def health() -> dict:
-    if not (os.environ.get("PLATFORM_AUTH_URL") and os.environ.get("STUDENT_SERVICE_KEY")):
+    if not (os.environ.get("PLATFORM_AUTH_URL") and os.environ.get("STUDENT_SERVICE_KEY") and os.environ.get("PLATFORM_TO_STUDENT_KEY")):
         raise HTTPException(503, "平台连接尚未配置")
     if not (os.environ.get("STUDENT_AGENT_API_KEY") or os.environ.get("LLM_API_KEY")):
         raise HTTPException(503, "课堂导师模型尚未配置")
@@ -139,7 +195,7 @@ def begin(sid: str, lesson_id: str, background_tasks: BackgroundTasks) -> dict:
 
 @app.post("/api/session/{sid}/commands")
 def execute_command(sid: str, body: CommandRequest):
-    result = command_runtime.execute(sid, body.model_dump(exclude={"launch_token"}), body.launch_token)
+    result = command_runtime.execute(sid, body.model_dump(exclude={"launch_token", "course_id"}), body.launch_token)
     status = 503 if result["status"] == "failed" else 202 if result["status"] in {"pending", "processing"} else 200
     return JSONResponse(status_code=status, content=result)
 

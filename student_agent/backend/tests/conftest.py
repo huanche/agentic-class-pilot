@@ -7,6 +7,22 @@ from uuid import uuid4
 
 import pytest
 
+
+def business_client(main):
+    """Keep legacy teaching/transaction tests at the business-router seam.
+
+    The retired token-facing HTTP contract is not a public authentication test.
+    Actual production middleware and Cookie BFF are exercised separately in
+    tests/test_cookie_learning_boundary.py and test_cookie_commands_database.py.
+    """
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from backend.contracts import SessionError
+    app = FastAPI()
+    app.router.routes.extend(main.app.router.routes)
+    app.add_exception_handler(SessionError, main.session_error)
+    return TestClient(app)
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 

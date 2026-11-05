@@ -68,6 +68,31 @@ def live_environment(unit):
     return values
 
 
+
+def release_environment(unit):
+    """Validate the intended shared auth config before restarting existing writers."""
+    values = live_environment(unit)
+    path = Path('/etc/agentic-class-pilot/student-learning-auth.env')
+    if not path.exists():
+        return values
+    stat = path.stat()
+    if path.is_symlink() or stat.st_uid != 0 or stat.st_mode & 0o777 != 0o600:
+        raise RuntimeError('Untrusted classroom service configuration')
+    allowed = {'PLATFORM_TO_STUDENT_KEY', 'STUDENT_URL', 'PLATFORM_AUTH_URL',
+               'STUDENT_COMMAND_TIMEOUT_SECONDS'}
+    additions = {}
+    for line in path.read_text().splitlines():
+        if not line or line.startswith('#'):
+            continue
+        name, separator, value = line.partition('=')
+        if not separator or name not in allowed or not value or name in additions:
+            raise RuntimeError('Invalid classroom service configuration')
+        additions[name] = value
+    if len(additions.get('PLATFORM_TO_STUDENT_KEY', '')) < 64:
+        raise RuntimeError('Classroom service key is missing or too short')
+    return values | additions
+
+
 def stopped_environment(unit):
     current = (BASE / 'current').resolve()
     path = FROZEN / (unit + '.json')
@@ -195,8 +220,8 @@ def deploy():
         print('WEB_ALREADY_CURRENT', sha, flush=True)
         return
     # Capture the old service env before switching. No credentials enter the release image.
-    env_platform = live_environment(UNITS[0])
-    env_student = live_environment(UNITS[1])
+    env_platform = release_environment(UNITS[0])
+    env_student = release_environment(UNITS[1])
     reference = current.resolve() if current.is_symlink() else OLD
     platform = release / 'platform'
     student = release / 'student_agent'

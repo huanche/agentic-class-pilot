@@ -6,7 +6,7 @@ from pathlib import Path
 import sys
 
 import pytest
-from fastapi.testclient import TestClient
+from conftest import business_client
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from backend.infrastructure import model
@@ -56,7 +56,7 @@ def classroom(monkeypatch):
             return json.dumps({"result": control["result"], "evidence": "课后回答依据"})
         return "本轮导师回复"
     monkeypatch.setattr(model, "complete", complete)
-    client = TestClient(main.app)
+    client = business_client(main)
     started = client.post("/api/session/start", json={"launch_token": "ticket"})
     assert started.status_code == 200
     sid = started.json()["sessionId"]

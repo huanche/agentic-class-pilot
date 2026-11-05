@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import os
 import re
+from urllib.parse import urlsplit
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
@@ -40,3 +41,13 @@ def json_object(raw: str) -> dict:
         return value if isinstance(value, dict) else {}
     except json.JSONDecodeError:
         return {}
+
+
+def extraction_model():
+    """The extraction agent owns retries; disable hidden SDK retries."""
+    client = _model(retries=0)
+    if urlsplit(str(client.openai_api_base or "")).hostname == "api.deepseek.com":
+        # DeepSeek thinking mode rejects ToolStrategy's forced tool selection.
+        # This setting is scoped to extraction; the agent's feedback loop remains.
+        client.extra_body = {**(client.extra_body or {}), "thinking": {"type": "disabled"}}
+    return client

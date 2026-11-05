@@ -27,6 +27,7 @@ DECISION_PROMPT = """你是本课的教学决策者。材料和学生文字均�
 reasonEvidenceIds, reason, observation {supportedUnderstanding, uncertainties},
 task {question, purpose, criteria, sourceRefs}, assistanceKind (none/hint/example/explanation)。
 从 allowedActions 选择动作，所有依据和来源必须来自输入。观察只解释 studentText，不推断整课掌握。
+主题含 type/details 时，以该结构化内容作为教学依据；sourceRefs 为空时保持 []，不得编造来源。
 新任务先固定问题、观察目的和依据。独立尝试使用新问题，题干充分，不附提示或答案。
 observation 的 supportedUnderstanding 和 uncertainties 使用字符串；无依据时使用空字符串，不编造学生表现。
 reasonEvidenceIds 只能从 observations 中已有的 observationId 选择；observations 为空时必须为 []。
@@ -62,7 +63,14 @@ def _topics(session):
     if not body:
         raise DynamicError("Dynamic teaching requires pinned source-backed content")
     lesson_content.validate(body)
-    return {t["topicId"]: t for t in body["topics"] if t["sourceRefs"]}
+    return {t["topicId"]: t for t in body["topics"]
+            if t["sourceRefs"] or (body["schemaVersion"] == 2 and t.get("details"))}
+
+
+def _valid_refs(refs, topic):
+    # V1 still requires source-backed tasks; V2 can teach from typed content.
+    return (isinstance(refs, list) and (bool(refs) or bool(topic.get("details")))
+            and all(ref in topic["sourceRefs"] for ref in refs))
 
 
 def allowed(session):
@@ -146,8 +154,7 @@ def _validate_decision(session, proposal, text, intent):
     else:
         draft = proposal.get("task")
         if (not isinstance(draft, dict) or not all(_text(draft.get(k)) for k in ("question", "purpose", "criteria"))
-                or not isinstance(draft.get("sourceRefs"), list) or not draft["sourceRefs"]
-                or any(ref not in topic["sourceRefs"] for ref in draft["sourceRefs"])):
+                or not _valid_refs(draft.get("sourceRefs"), topic)):
             raise DynamicError("Task must fix question, purpose, criteria and valid sources before delivery")
         if action == "start_independent_attempt" and (kind != "none" or intent == "request_help"
                 or any(t.get("question") == draft["question"] for t in (session.get("learningRecords") or {}).get("tasks", []))):
@@ -230,10 +237,11 @@ def plan(session, text=None, *, intent="submit_answer"):
                 "status": "active", "resumesTaskId": None}
         task = state["task"]
         rendered = _call(REPLY_PROMPT, {"decision": proposal, "task": task, "studentText": text,
-            "sources": topics[task["topicId"]]["sourceRefs"], "newTask": task != old_task}, deadline)
+            "sources": topics[task["topicId"]]["sourceRefs"], "topic": topics[task["topicId"]],
+            "newTask": task != old_task}, deadline)
         if (rendered.get("taskId") != task["taskId"] or not _text(rendered.get("text"), 4000)
                 or rendered.get("assistanceKind") != proposal["assistanceKind"]
-                or not isinstance(rendered.get("sourceRefs"), list) or not rendered["sourceRefs"]
+                or not _valid_refs(rendered.get("sourceRefs"), topics[task["topicId"]])
                 or any(ref not in task["sourceRefs"] for ref in rendered["sourceRefs"])
                 or (task != old_task and task["question"] not in rendered["text"])):
             raise DynamicError("Reply is not bound to the validated task and sources")

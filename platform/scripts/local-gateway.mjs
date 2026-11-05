@@ -7,8 +7,8 @@ export function target(raw) {
   if (path.startsWith('/teacher/')) return {port:3200,path:raw.slice(8)};
   // The browser imports this module from a root URL even on /teacher pages.
   if (path.startsWith('/vendor/maic-importer/')) return {port:3200,path:raw};
-  if (path === '/app' || path.startsWith('/app/') || path.startsWith('/api/session/')) return {port:8001,path:raw};
-  if (path.startsWith('/api/v1/')) return {port:8080,path:raw};
+  if (path === '/app' || path.startsWith('/app/')) return {port:8001,path:raw};
+  if (path.startsWith('/api/v1/') || path.startsWith('/api/session/')) return {port:8080,path:raw};
   if (path.startsWith('/api/') || teacherPages.test(path)) return {port:3200,path:raw};
   return {port:8080,path:raw};
 }
@@ -16,6 +16,7 @@ const server=http.createServer((req,res)=>{
   if (req.url === '/teacher') {res.writeHead(302,{location:'/'});res.end();return;}
   if (req.url.startsWith('/student-agent/app')) {res.writeHead(302,{location:req.url.replace('/student-agent/app','/app')});res.end();return;}
   if (['/brand-mark.png','/mentra-icon.svg','/mentra-logo.svg','/favicon.ico','/icon.svg','/apple-icon.png'].includes(req.url)) {res.writeHead(302,{location:'/app/brand-mark.png'});res.end();return;}
+  if (/^\/api\/(?:v1\/)?internal(?:\/|$)/.test(new URL(req.url, "http://localhost").pathname)) {res.writeHead(404);res.end();return;}
   const dest=target(req.url);
   const headers={...req.headers,'x-forwarded-host':req.headers.host,'x-forwarded-proto':'http','x-forwarded-for':req.socket.remoteAddress};
   const upstream=http.request({host:'127.0.0.1',port:dest.port,path:dest.path,method:req.method,headers}, response=>{

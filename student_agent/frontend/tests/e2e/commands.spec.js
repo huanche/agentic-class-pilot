@@ -6,20 +6,20 @@ async function setup(page, failure) {
   let receipt;
   const courses = [{ id: "c", title: "课程", lessons: [{ id: "lesson", title: "命令回归课时", week: 1 }] }];
   const snapshot = Buffer.from(JSON.stringify({ lessonId: "lesson", phase: "discussion" })).toString("base64url") + ".signature";
-  let current = { sessionId: "s", lessonId: "lesson", phase: "discussion", agentStage: "recall",
+  let current = { sessionId: "s", userId: "u", lessonId: "lesson", phase: "discussion", agentStage: "recall",
     stateVersion: 1, contentGeneration: 0, courses, messages: [], preparation: "ready",
     browserCourseKey: "u:c", browserKey: "u:c:lesson", browserSnapshot: snapshot };
   const statusQueries = [];
   await page.addInitScript(() => {
-    localStorage.setItem("student_browser_last_course_key", "u:c");
-    localStorage.setItem("student_browser_token:u:c", "ticket");
-    if (!localStorage.getItem("student_browser_last_key")) localStorage.setItem("student_browser_last_key", "u:c:catalog");
+    localStorage.setItem("student_last_course:u", "c");
+    if (!localStorage.getItem("student_browser_last_key:u")) localStorage.setItem("student_browser_last_key:u", "u:c:catalog");
   });
   await page.route("**/api/session/**", async route => {
     const path = new URL(route.request().url()).pathname;
+    if (path.endsWith("/identity")) return route.fulfill({json:{userId:"u",csrfToken:"test-csrf"}});
     if (path.endsWith("/platform-entry")) return route.fulfill({ json: { platformUrl: "http://platform.example" } });
     if (path === "/api/session/start") return route.fulfill({ json: {
-      sessionId: "catalog", phase: "idle", courses, messages: [], stateVersion: 0, browserCourseKey: "u:c" } });
+      sessionId: "catalog", userId: "u", phase: "idle", courses, messages: [], stateVersion: 0, browserCourseKey: "u:c" } });
     if (path.endsWith("/resume") || path === "/api/session/s") return route.fulfill({ json: current });
     if (path.endsWith("/status")) {
       statusQueries.push(path);

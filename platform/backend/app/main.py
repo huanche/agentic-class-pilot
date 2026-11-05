@@ -1,6 +1,7 @@
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
+import uuid
 
 import sentry_sdk
 from fastapi import FastAPI, HTTPException
@@ -9,6 +10,8 @@ from fastapi.routing import APIRoute
 from starlette.middleware.cors import CORSMiddleware
 
 from app.api.main import api_router
+from app.api.routes.student_learning import router as student_learning_router
+from app.services.student_learning_gateway import close_client
 from app.core.config import settings
 from app.core.langgraph.graph import langgraph_agent
 from app.core.langgraph.outline import outline_agent
@@ -39,6 +42,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     validate_registry()
     logger.info("graph_pre_warmed", model=settings.DEFAULT_LLM_MODEL)
     yield
+    await close_client()
     if settings.EMBEDDED_AGENTS_ENABLED:
         await langgraph_agent.close()
         await outline_agent.close()
@@ -66,6 +70,22 @@ app.add_middleware(
 )
 
 app.include_router(api_router, prefix=settings.API_V1_STR)
+app.include_router(student_learning_router)
+
+
+@app.exception_handler(HTTPException)
+async def public_http_error(request, error):
+    from fastapi.exception_handlers import http_exception_handler
+    from fastapi.responses import JSONResponse
+    if (request.url.path.startswith("/api/session/")
+            or request.url.path in {"/api/v1/login/session", "/api/v1/logout"}
+            or request.url.path.endswith("/student-workspace")):
+        detail = error.detail
+        data = detail if isinstance(detail, dict) else {"detail": detail}
+        return JSONResponse(data | {"requestId": uuid.uuid4().hex}, status_code=error.status_code,
+                            headers={"Cache-Control": "no-store"})
+    return await http_exception_handler(request, error)
+
 if FRONTEND_DIR.exists():
     # Normal API routes above keep priority. Serve built assets when present and
     # return the SPA shell for client-side routes such as /login and /teacher.

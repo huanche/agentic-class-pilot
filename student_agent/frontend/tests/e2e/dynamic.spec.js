@@ -4,21 +4,21 @@ test("pilot uses server tasks, evidence feedback and the original conversation s
   const courses = [{ id: "c", title: "课程", lessons: [{ id: "lesson", title: "动态试点课时", week: 1 }] }];
   const commands = [];
   const snapshot = Buffer.from(JSON.stringify({ lessonId: "lesson", phase: "discussion" })).toString("base64url") + ".signature";
-  let current = { sessionId: "s", lessonId: "lesson", phase: "discussion", agentStage: "tutoring",
+  let current = { sessionId: "s", userId: "u", lessonId: "lesson", phase: "discussion", agentStage: "tutoring",
     flowVersion: "dynamic_dialogue_v1", currentTaskPublic: { taskId: "task-1" },
     activityStatus: "active", allowedCommands: ["submit_answer", "request_help", "ask_question", "pause", "finish"],
     progressSummary: { discussed: 0, total: 2 }, learningProgress: null,
     stateVersion: 1, contentGeneration: 0, courses, messages: [{ role: "assistant", text: "请解释判断依据", messageId: "m1" }],
     preparation: "ready", browserCourseKey: "u:c", browserKey: "u:c:lesson", browserSnapshot: snapshot };
   await page.addInitScript(() => {
-    localStorage.setItem("student_browser_last_course_key", "u:c");
-    localStorage.setItem("student_browser_token:u:c", "ticket");
-    localStorage.setItem("student_browser_last_key", "u:c:catalog");
+    localStorage.setItem("student_last_course:u", "c");
+    localStorage.setItem("student_browser_last_key:u", "u:c:catalog");
   });
   await page.route("**/api/session/**", async route => {
     const path = new URL(route.request().url()).pathname;
+    if (path.endsWith("/identity")) return route.fulfill({json:{userId:"u",csrfToken:"test-csrf"}});
     if (path.endsWith("/platform-entry")) return route.fulfill({ json: { platformUrl: "http://platform.example" } });
-    if (path.endsWith("/start")) return route.fulfill({ json: { sessionId: "catalog", phase: "idle", courses,
+    if (path.endsWith("/start")) return route.fulfill({ json: { sessionId: "catalog", userId: "u", phase: "idle", courses,
       messages: [], stateVersion: 0, browserCourseKey: "u:c" } });
     if (path.endsWith("/resume") || path === "/api/session/s") return route.fulfill({ json: current });
     if (path.endsWith("/commands")) {

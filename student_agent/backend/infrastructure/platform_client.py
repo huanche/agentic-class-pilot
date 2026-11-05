@@ -14,6 +14,11 @@ from generated.student_platform_api.api.default.get_student_learning_context imp
     sync_detailed,
 )
 from generated.student_platform_api.models import GetStudentLearningContextBody
+from generated.student_platform_api.api.default.get_session_learning_context import (
+    sync_detailed as session_context_detailed,
+)
+from generated.student_platform_api.models import GetSessionLearningContextBody
+
 from generated.student_platform_api.api.default.report_student_learning_progress import (
     sync_detailed as report_progress_detailed,
 )
@@ -22,6 +27,34 @@ from generated.student_platform_api.models import (
     ReportStudentLearningProgressBodyEvent,
     ReportStudentLearningProgressResponse200,
 )
+
+
+def session_learning_context(user_id: str, course_id: str, lesson_id: str | None = None) -> dict:
+    """Trusted service identity; the browser supplies no classroom credential."""
+    base = os.environ.get("PLATFORM_AUTH_URL", "").rstrip("/")
+    key = os.environ.get("STUDENT_SERVICE_KEY", "")
+    if not base or not key:
+        raise SessionError(503, "平台内部连接尚未配置", code="UPSTREAM_UNAVAILABLE")
+    if not base.endswith("/api/v1"):
+        base += "/api/v1"
+    try:
+        with AuthenticatedClient(base_url=base, token=key, prefix="",
+            auth_header_name="X-Student-Service-Key", timeout=httpx.Timeout(20.0, connect=3.0),
+            follow_redirects=False, raise_on_unexpected_status=False,
+            httpx_args={"trust_env": False}) as client:
+            response = session_context_detailed(client=client, body=GetSessionLearningContextBody(
+                user_id=uuid.UUID(user_id), course_id=uuid.UUID(course_id), lesson_id=lesson_id))
+        data = json.loads(response.content)
+    except (httpx.HTTPError, ValueError, TypeError, AttributeError) as error:
+        raise SessionError(503, "平台课堂服务暂不可用", code="UPSTREAM_UNAVAILABLE") from error
+    if response.status_code != 200:
+        detail = data.get("detail", "平台课堂读取失败") if isinstance(data, dict) else "平台课堂读取失败"
+        if isinstance(detail, dict):
+            raise SessionError(int(response.status_code), detail.get("detail", "平台课堂读取失败"), code=detail.get("code"))
+        raise SessionError(int(response.status_code), detail)
+    if not isinstance(data, dict) or response.parsed is None:
+        raise SessionError(503, "平台课堂响应无效", code="UPSTREAM_UNAVAILABLE")
+    return data
 
 
 def learning_context(

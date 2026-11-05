@@ -15,6 +15,7 @@ def test_release_rejects_dynamic_admission(monkeypatch, scopes):
     monkeypatch.setenv("PLATFORM_AUTH_URL", "http://127.0.0.1:8080/api/v1")
     monkeypatch.setenv("STUDENT_SERVICE_KEY", "test")
     monkeypatch.setenv("STUDENT_AGENT_API_KEY", "test")
+    monkeypatch.setenv("PLATFORM_TO_STUDENT_KEY", "test-forward-channel")
     monkeypatch.setenv("STUDENT_DYNAMIC_PILOT_SCOPES", scopes)
     with pytest.raises(release_check.ReleaseCheckError, match="dynamic_teaching_must_be_closed"):
         release_check.check()
@@ -117,6 +118,7 @@ def test_student_role_readiness_checks_schema_permissions_and_indexes(pg, monkey
     monkeypatch.setattr(psycopg, "connect", restricted)
     monkeypatch.setenv("PLATFORM_AUTH_URL", "http://127.0.0.1:8080/api/v1")
     monkeypatch.setenv("STUDENT_AGENT_API_KEY", "test")
+    monkeypatch.setenv("PLATFORM_TO_STUDENT_KEY", "test-forward-channel")
     monkeypatch.setenv("STUDENT_DYNAMIC_PILOT_SCOPES", "[]")
     try:
         assert release_check.check() == {"ok": True, "dynamicTeachingClosed": True}

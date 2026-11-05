@@ -27,9 +27,11 @@ INDEXES = ("student_commands_active_idx", "student_commands_recovery_idx",
 
 
 def check() -> dict:
-    if not (os.environ.get("PLATFORM_AUTH_URL") and os.environ.get("STUDENT_SERVICE_KEY")
+    if not (os.environ.get("PLATFORM_TO_STUDENT_KEY") and os.environ.get("PLATFORM_AUTH_URL") and os.environ.get("STUDENT_SERVICE_KEY")
             and (os.environ.get("STUDENT_AGENT_API_KEY") or os.environ.get("LLM_API_KEY"))):
         raise ReleaseCheckError("required_configuration_missing")
+    if os.environ.get("STUDENT_NEW_DEMO_PLAYER_URL"):
+        raise ReleaseCheckError("demo_must_be_disabled")
     try:
         closed = json.loads(os.environ.get("STUDENT_DYNAMIC_PILOT_SCOPES", "[]")) == []
     except (ValueError, TypeError):

@@ -43,7 +43,7 @@ def test_production_and_subprocess_imports_use_the_new_homes():
 
 
 def test_evidence_and_content_definitions_have_no_transitive_io_or_executor_dependency():
-    pure = {"backend.contracts", "backend.content.context", "backend.content.lesson_content",
+    pure = {"backend.contracts", "backend.content.context", "backend.content.lesson_content", "backend.content.knowledge_schema",
             "backend.content.prompts", "backend.teaching.dynamic_state", "backend.teaching.postclass_state",
             "backend.teaching.progression", "backend.teaching.prompts", "backend.evidence.records",
             "backend.evidence.feedback"}
@@ -83,7 +83,7 @@ def test_cold_imports_legacy_launchers_health_static_location_and_cli_help():
     script = '''
 import importlib, pathlib, runpy, sys, os
 root = pathlib.Path(sys.argv[1])
-os.environ.update(PLATFORM_AUTH_URL='https://platform.example.test/api/v1', STUDENT_SERVICE_KEY='layout-test-key',
+os.environ.update(PLATFORM_AUTH_URL='https://platform.example.test/api/v1', STUDENT_SERVICE_KEY='layout-test-key', PLATFORM_TO_STUDENT_KEY='layout-forward-key',
                   STUDENT_AGENT_API_KEY='layout-model-test-key', STUDENT_DATABASE_URL='postgresql://unused@127.0.0.1/unused')
 original = pathlib.Path.is_file
 pathlib.Path.is_file = lambda p: False if p.name in {'.env', '.env.local'} else original(p)
@@ -99,6 +99,7 @@ from fastapi.testclient import TestClient
 assert TestClient(app).get('/api/session/health').status_code == 200
 if OUT.is_dir():
     assert TestClient(app).get('/app/').status_code == 200
+    assert TestClient(app).get('/app/').headers['cache-control'] == 'no-cache'
 assert '/api/session/{sid}/commands' in app.openapi()['paths']
 sys.argv = ['apps/start.py', '--help']
 runpy.run_path(str(root / 'apps/start.py'), run_name='__main__')

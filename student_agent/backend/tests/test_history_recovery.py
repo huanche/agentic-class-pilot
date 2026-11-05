@@ -8,7 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 from fastapi import BackgroundTasks
-from fastapi.testclient import TestClient
+from conftest import business_client
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from backend import main
@@ -62,7 +62,7 @@ def history(monkeypatch):
     monkeypatch.setattr(learning_session.persistence, "latest_session_key", lookup)
     monkeypatch.setattr(learning_session.persistence, "restore", restore)
     monkeypatch.setattr(learning_session.persistence, "save", lambda *_: pytest.fail("recovery must not write records"))
-    return TestClient(main.app), saved, calls
+    return business_client(main), saved, calls
 
 
 def resume(client, token="new-platform-token"):

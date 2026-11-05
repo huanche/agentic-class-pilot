@@ -195,7 +195,7 @@ class ProviderPayloadTests(unittest.TestCase):
         for lessons, entries in (([], []), ([lesson], []), ([lesson], [knowledge_entry])):
             with self.subTest(classroom=bool(lessons), rubric=bool(entries)):
                 namespace = load_functions(ROOT / "platform/backend/app/api/routes/student_bridge.py",
-                    {"student_learning_context", "_knowledge_artifact_rubric", "_knowledge_points_from_markdown"}, {
+                    {"student_learning_context", "_learning_context_for_user", "_knowledge_artifact_rubric", "_knowledge_points_from_markdown"}, {
                         "Header": lambda **kwargs: None, "HTTPException": HTTPError,
                         "uuid": uuid, "SCHEMA_VERSION": 1, "text": lambda sql: sql,
                         "re": re, "hashlib": hashlib,

@@ -4,7 +4,7 @@ from threading import Event
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
-from fastapi.testclient import TestClient
+from conftest import business_client
 
 from backend.infrastructure import commands
 from backend.infrastructure import persistence
@@ -36,7 +36,7 @@ def pilot(pg, monkeypatch):
     monkeypatch.setattr(platform_access, "platform_context", lambda *a: deepcopy(context))
     monkeypatch.setattr(platform_access, "report_learning_progress", lambda *a: True)
     calls = scripted(monkeypatch)
-    fixture = TestClient(main.app), session, context, calls
+    fixture = business_client(main), session, context, calls
     response = post(fixture, command(session, "start_discussion"))
     assert response.status_code == 200, response.text
     return fixture

@@ -45,12 +45,13 @@ def opening_text(dialogue: dict) -> str:
     return opening(dialogue["points"])
 
 
-def prepare(materials: list[dict]) -> tuple[dict, dict]:
-    result = learning_points(materials)
+def prepare(materials: list[dict], course_id: str | None = None, lesson_id: str | None = None) -> tuple[dict, dict]:
+    result = learning_points(materials, course_id, lesson_id)
     coverage = {"partial": result.partial, "acceptedCount": len(result.points),
                 "rejectedCount": result.rejected_count,
                 "candidateCount": result.candidate_count,
-                "repairAttempted": result.repair_attempted}
+                "repairAttempted": result.repair_attempted, "modelCalls": result.model_calls,
+                "duplicateCount": result.duplicate_count}
     return dict(initial_state(result.points), curriculum_version=CURRICULUM_VERSION), coverage
 
 

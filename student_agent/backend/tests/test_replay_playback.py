@@ -5,7 +5,7 @@ import sys
 from threading import Lock
 
 import pytest
-from fastapi.testclient import TestClient
+from conftest import business_client
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from backend import main
@@ -40,7 +40,7 @@ def replay(monkeypatch):
     monkeypatch.setitem(learning_session.sessions, session["id"], session)
     monkeypatch.setattr(platform_access, "platform_context", platform)
     monkeypatch.setattr(learning_session.persistence, "save", lambda *_: pytest.fail("replay must not write learning progress"))
-    return TestClient(main.app), session, context, calls
+    return business_client(main), session, context, calls
 
 
 def test_replay_fetches_missing_url_without_changing_progress(replay):

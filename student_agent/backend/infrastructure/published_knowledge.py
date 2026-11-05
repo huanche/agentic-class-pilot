@@ -12,13 +12,15 @@ from datetime import datetime, timedelta, timezone
 
 from backend.content.context import classroom_materials
 from backend.infrastructure.database import _db
-from backend.content.knowledge import CURRICULUM_VERSION
+from backend.content.knowledge import EXTRACTION_VERSION, KnowledgePreparationError
+from backend.content.knowledge_schema import submit_knowledge_points
 from backend.content.knowledge import learning_points
 from backend.content.prompts import KNOWLEDGE_EXTRACTION_PROMPT
 
 log = logging.getLogger(__name__)
 EXTRACTOR_HASH = hashlib.sha256(
-    f"{CURRICULUM_VERSION}:{KNOWLEDGE_EXTRACTION_PROMPT}".encode()
+    json.dumps([EXTRACTION_VERSION, KNOWLEDGE_EXTRACTION_PROMPT,
+                submit_knowledge_points.model_json_schema()], sort_keys=True).encode()
 ).hexdigest()
 _stop = threading.Event()
 
@@ -37,7 +39,9 @@ def _archive(connection, row):
     from backend.content import lesson_content
     course, lesson, revision, scenes, points, coverage, compiler = row
     if points and compiler:
-        body = _compiled(course, lesson, revision, compiler, scenes, points, coverage)
+        # Retry diagnostics describe a job attempt, not the old immutable content.
+        frozen_coverage = {k: v for k, v in (coverage or {}).items() if k != "extractionFailure"}
+        body = _compiled(course, lesson, revision, compiler, scenes, points, frozen_coverage)
         content_store.store(body, connection=connection)
 
 
@@ -97,7 +101,8 @@ def process_next() -> bool:
                                "WHERE course_id=%s AND lesson_id=%s AND video_revision=%s", tuple(old[:3]))
         job = connection.execute(
             "SELECT course_id,lesson_id,video_revision,scenes,attempts,points,coverage,extractor_hash "
-            "FROM student.published_lesson_knowledge WHERE ((status IN ('pending','failed') AND next_retry_at<=now()) "
+            "FROM student.published_lesson_knowledge WHERE (((status='pending' OR (status='failed' AND "
+            "COALESCE(coverage->'extractionFailure'->>'manualRetryRequired','false')<>'true')) AND next_retry_at<=now()) "
             "OR (status='running' AND lease_until<now())) ORDER BY created_at "
             "FOR UPDATE SKIP LOCKED LIMIT 1").fetchone()
         if not job:
@@ -118,10 +123,11 @@ def process_next() -> bool:
                            "lease_until=now()+interval '10 minutes',attempts=attempts+1,claim_token=%s,updated_at=now() "
                            "WHERE course_id=%s AND lesson_id=%s AND video_revision=%s", (claim_token, *key))
     try:
-        result = learning_points(classroom_materials(scenes))
+        result = learning_points(classroom_materials(scenes), *key[:2])
         coverage = {"partial": result.partial, "acceptedCount": len(result.points),
                     "rejectedCount": result.rejected_count, "candidateCount": result.candidate_count,
-                    "repairAttempted": result.repair_attempted}
+                    "repairAttempted": result.repair_attempted, "modelCalls": result.model_calls,
+                    "duplicateCount": result.duplicate_count}
         body = _compiled(*key, compiler, scenes, result.points, coverage)
         from psycopg.types.json import Jsonb
         with _db() as connection:
@@ -137,11 +143,15 @@ def process_next() -> bool:
         log.exception("Published lesson knowledge extraction failed: lesson=%s", key[1])
         delay = min(300, 10 * 2 ** min(job[4], 5))
         with _db() as connection:
+            diagnostics = {"code": error.code, "modelCalls": error.model_calls, "manualRetryRequired": True,
+                           "issues": [vars(issue) for issue in error.issues], "draft": error.draft} \
+                if isinstance(error, KnowledgePreparationError) else {"code": type(error).__name__}
             connection.execute("UPDATE student.published_lesson_knowledge SET status='failed',next_retry_at=%s,"
-                               "lease_until=NULL,claim_token=NULL,last_error=%s,updated_at=now() WHERE course_id=%s "
+                               "lease_until=NULL,claim_token=NULL,last_error=%s,"
+                               "coverage=COALESCE(coverage,'{}'::jsonb)||CAST(%s AS jsonb),updated_at=now() WHERE course_id=%s "
                                "AND lesson_id=%s AND video_revision=%s AND status='running' AND claim_token=%s",
                                (datetime.now(timezone.utc) + timedelta(seconds=delay), type(error).__name__,
-                                *key, claim_token))
+                                json.dumps({"extractionFailure": diagnostics}, ensure_ascii=False), *key, claim_token))
     return True
 
 

@@ -13,8 +13,9 @@ Get-Content -LiteralPath $platformEnv | ForEach-Object {
     Set-Item -Path "Env:$($matches[1])" -Value $matches[2].Trim('"')
   }
 }
+if (-not $env:PLATFORM_TO_STUDENT_KEY) { throw 'PLATFORM_TO_STUDENT_KEY is missing from platform .env' }
 if (-not $env:STUDENT_SERVICE_KEY) { throw 'STUDENT_SERVICE_KEY is missing from platform .env' }
-$env:PLATFORM_AUTH_URL = "$($env:PLATFORM_URL.TrimEnd('/'))/api/v1"
+$env:PLATFORM_AUTH_URL = "http://127.0.0.1:8080/api/v1"
 # Keep browser snapshot hints. Authenticated lesson selection restores database
 # history even when this browser is new or its local storage has been cleared.
 $env:STUDENT_FRESH_SESSION_MODE = '1'
