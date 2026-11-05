@@ -12,7 +12,7 @@
 
 本轮不部署生产；最终只提交明确相关文件，不混入原目录其他改动。
 
-验证完成：完整后端回归222项通过、2项跳过；增补数据库/并发身份定向用例通过，前端unit42/e2e18与两端构建通过。详见docs/student-platform-session-auth-implementation.md。
+验证完成：完整后端回归222项通过、2项跳过；增补数据库/并发身份定向用例通过，前端unit42/e2e18与两端构建通过。详见docs/student-platform-session-auth/implementation.md。
 
 ## 正式发布（2026-11-03，用户已授权）
 
