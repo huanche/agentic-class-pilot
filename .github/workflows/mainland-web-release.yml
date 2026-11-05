@@ -7,6 +7,8 @@ on:
       - 'platform/**'
       - 'student_agent/**'
       - 'scripts/mainland/agentic-web-deploy'
+      - 'scripts/mainland/agentic-mainland-backup'
+      - 'scripts/mainland/test-backup-window.py'
       - 'scripts/mainland/agentic-mainland-ci-entry'
       - 'scripts/mainland/agentic-mainland-ci-root'
       - '.github/workflows/mainland-web-release.yml'
@@ -70,7 +72,9 @@ jobs:
           python -m pip install -r student_agent/backend/requirements.txt pytest alembic sqlalchemy sqlmodel
           python -m pytest -q student_agent/backend/tests
       - name: Exercise web activation and rollback in an isolated Linux sandbox
-        run: sudo python3 scripts/mainland/test-web-release.py
+        run: |
+          sudo python3 scripts/mainland/test-web-release.py
+          python3 scripts/mainland/test-backup-window.py
       - name: Build platform frontend
         working-directory: platform
         run: |
