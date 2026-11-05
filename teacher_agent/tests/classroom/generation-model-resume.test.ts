@@ -45,6 +45,9 @@ vi.mock('@/lib/store', () => {
 vi.mock('@/components/stage', () => ({
   Stage: () => createElement('div', null, 'classroom ready'),
 }));
+vi.mock('@/components/course-space/workspace-settings', () => ({
+  EmbeddedSettingsSync: () => null,
+}));
 vi.mock('@/lib/hooks/use-theme', () => ({
   ThemeProvider: ({ children }: { children: ReactNode }) => children,
 }));

@@ -77,4 +77,35 @@ describe('classroom media delivery', () => {
     expect(response.status).toBe(200);
     expect(Buffer.from(await response.arrayBuffer())).toEqual(Buffer.from([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]));
   });
+
+  it('allows a student to seek in published clips and rejects draft clips', async () => {
+    const room = `test-${randomUUID()}`;
+    const roomDir = path.join(root, room);
+    rooms.push(roomDir);
+    const published = 'a'.repeat(64);
+    const draft = 'b'.repeat(64);
+    const version = 'c'.repeat(64);
+    await fs.mkdir(path.join(roomDir, 'clips'), { recursive: true });
+    await fs.mkdir(path.join(roomDir, 'versions'));
+    await Promise.all([
+      fs.writeFile(path.join(roomDir, 'published.json'), JSON.stringify({ version })),
+      fs.writeFile(path.join(roomDir, 'versions', `${version}.json`),
+        JSON.stringify({ clips: [{ key: published }] })),
+      fs.writeFile(path.join(roomDir, 'clips', `${published}.mp4`), Buffer.from([0, 1, 2, 3])),
+      fs.writeFile(path.join(roomDir, 'clips', `${draft}.mp4`), Buffer.from([4, 5, 6, 7])),
+    ]);
+    vi.stubEnv('CLASSROOM_VIDEOS_DIR', root);
+    vi.resetModules();
+    const { GET } = await import('@/app/api/classroom-media/[classroomId]/[...path]/route');
+    const fetchClip = (key: string) => GET(
+      new NextRequest(`http://teacher.test/api/classroom-media/${room}/video/${key}.mp4`, {
+        headers: { 'x-platform-role': 'student', range: 'bytes=1-2' },
+      }),
+      { params: Promise.resolve({ classroomId: room, path: ['video', `${key}.mp4`] }) },
+    );
+    const allowed = await fetchClip(published);
+    expect(allowed.status).toBe(206);
+    expect(Buffer.from(await allowed.arrayBuffer())).toEqual(Buffer.from([1, 2]));
+    expect((await fetchClip(draft)).status).toBe(404);
+  });
 });

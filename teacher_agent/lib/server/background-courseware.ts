@@ -1,6 +1,8 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { withGenerationRetry } from '@openmaic/generation';
+import { videoEnabled, prepareClassroomVideo } from './classroom-video';
+import { createLogger } from '@/lib/logger';
 import type { BackgroundCoursewareInput } from '@/lib/generation/background-courseware';
 import { isActiveCourseJob } from '@/lib/generation/background-courseware';
 import type { CourseArtifactJob } from '@/lib/course-space/types';
@@ -45,6 +47,7 @@ import {
 } from './classroom-media-generation';
 import { createCoursewarePerformance } from './courseware-performance';
 import { createCoursewarePrefetch, settle, unwrap, type Outcome } from './courseware-prefetch';
+import { prepareNativePptxSource } from './native-pptx-source';
 
 // A shared registry also prevents duplicate workers across Next route bundles/HMR.
 const root = globalThis as typeof globalThis & {
@@ -148,6 +151,7 @@ export async function createBackgroundCoursewareJob(
     const occupied = await readClassroom(input.stage.id);
     if (occupied) throw new Error('课堂编号已使用，请重新创建生成会话');
     const now = Date.now();
+    await prepareNativePptxSource(input, context.courseId);
     await writeJsonFileAtomic(inputFile(jobId), {
       input,
       baseUrl: context.baseUrl,
@@ -449,6 +453,7 @@ async function executeLegacy(
             ? `Student: ${input.requirements.userNickname || 'Unknown'} — ${input.requirements.userBio || ''}`
             : undefined,
         narrationScript: input.narrationScripts?.[outline.order - 1],
+        nativeClicks: stage.nativePptx?.clicks?.[outline.id],
         durationFeedback: feedback,
         ...(scriptBudget && input.enableTTS
           ? {
@@ -580,6 +585,7 @@ async function executeLegacy(
         const outline = missing[index];
         const imported = input.importedSlides?.[outline.order - 1];
         if (
+          outline.type === 'slide' &&
           input.preferImportedCanvas &&
           imported &&
           !input.formulaEnhancedOrders?.includes(outline.order)
@@ -824,6 +830,7 @@ async function executeLegacy(
     await report('saving', '保存完整课件到课程文件夹', 98);
     // Finishing and cancelling use one lock: only one can win, and a cancelled
     // task never publishes a late artifact or switches back to completed.
+    let videoReadyToPrepare = false;
     await mutateCourseJob(jobId, async (job) => {
       if (!isActiveCourseJob(job.status)) return job;
       stage.generationPlan!.complete = true;
@@ -846,6 +853,7 @@ async function executeLegacy(
         createdAt: now,
         updatedAt: now,
       });
+      videoReadyToPrepare = true;
       return {
         ...job,
         status: 'review',
@@ -862,6 +870,15 @@ async function executeLegacy(
         },
       };
     });
+    if (videoReadyToPrepare && videoEnabled()) {
+      // A renderer outage must not fail a complete, editable classroom.
+      void prepareClassroomVideo(stage.id, teacherId, baseUrl).catch((error) => {
+        createLogger('BackgroundCourseware').error(
+          'Video pre-generation could not be queued:',
+          error instanceof Error ? error.message : error,
+        );
+      });
+    }
     await fs.unlink(inputFile(jobId)).catch(() => undefined);
   } catch (error) {
     if (pendingPage) await pendingPage.work; // Retain a usable predecessor checkpoint on a later-page failure.

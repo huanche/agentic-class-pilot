@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { platformMiddleware } from '@/lib/server/platform-auth';
+import { renderGrantAllows, verifyRenderGrant } from '@/lib/classroom-video/grant';
 
 /** Convert string to Uint8Array */
 function encode(str: string): Uint8Array {
@@ -44,6 +45,19 @@ async function verifyToken(token: string, accessCode: string): Promise<boolean> 
 }
 
 export async function middleware(request: NextRequest) {
+  const renderSecret = process.env.CLASSROOM_VIDEO_SECRET || process.env.PLATFORM_SERVICE_KEY;
+  const renderToken = request.headers.get('x-classroom-render-grant');
+  if (renderToken && renderSecret) {
+    const grant = await verifyRenderGrant(renderToken, renderSecret);
+    if (grant && renderGrantAllows(grant, request.nextUrl, request.method)) {
+      const headers = new Headers(request.headers);
+      for (const name of ['x-platform-user-id', 'x-platform-admin', 'x-platform-role', 'x-platform-delegated', 'x-platform-service-key', 'x-platform-subject']) headers.delete(name);
+      headers.set('x-classroom-render-version', grant.version);
+      return NextResponse.next({ request: { headers } });
+    }
+    return NextResponse.json({ error: 'Invalid render grant' }, { status: 403 });
+  }
+  request.headers.delete('x-classroom-render-version');
   if (process.env.PLATFORM_AUTH_ENABLED === 'true') {
     // The teacher service owns course creation and teaching-content editing.
     // The platform middleware supplies the authenticated platform identity.

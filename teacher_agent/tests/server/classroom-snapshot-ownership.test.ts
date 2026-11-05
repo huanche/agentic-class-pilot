@@ -32,6 +32,26 @@ afterAll(async () => {
 });
 
 describe('server generation snapshot ownership', () => {
+  it('rejects a stale browser that would reintroduce pre-repair native rendering flags', async () => {
+    const fixed = {
+      ...stage('native-repaired', true),
+      nativePptx: { version: 1, renderRevision: 1 },
+    } as unknown as Stage;
+    await storage.persistClassroom({ id: fixed.id, stage: fixed, scenes }, 'http://localhost');
+    const stale = { ...fixed, nativePptx: { ...fixed.nativePptx!, renderRevision: undefined } };
+    await expect(
+      storage.persistClassroom({ id: fixed.id, stage: stale, scenes }, 'http://localhost', {
+        source: 'browser',
+      }),
+    ).rejects.toThrow('服务器课件已更新');
+    expect((await storage.readClassroom(fixed.id))?.stage.nativePptx?.renderRevision).toBe(1);
+    await storage.persistClassroom(
+      { id: fixed.id, stage: fixed, scenes: [scenes[0]] },
+      'http://localhost',
+      { source: 'browser' },
+    );
+    expect((await storage.readClassroom(fixed.id))?.scenes).toHaveLength(1);
+  });
   it('rejects an old browser document that dropped the job and would erase completed pages', async () => {
     const savedStage = stage('stale-browser', true);
     await storage.persistClassroom(

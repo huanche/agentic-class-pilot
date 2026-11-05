@@ -17,7 +17,11 @@
  * }
  */
 
-import { useSceneData, useSceneSelector } from '@/lib/contexts/scene-context';
+import {
+  useSceneData,
+  useSceneSelector,
+  type SceneDataUpdateOptions,
+} from '@/lib/contexts/scene-context';
 import {
   useCanvasStore,
   type SpotlightOptions,
@@ -129,17 +133,19 @@ export function useCanvasOperations() {
    * @param props Properties to update
    */
   const updateElement = useCallback(
-    (data: UpdateElementData) => {
+    (data: UpdateElementData, options?: SceneDataUpdateOptions) => {
       const { id, props } = data;
       const elementIds = Array.isArray(id) ? id : [id];
 
-      updateSceneData((draft) => {
+      const updater = (draft: SlideContent) => {
         draft.canvas.elements.forEach((el) => {
           if (elementIds.includes(el.id)) {
             Object.assign(el, props);
           }
         });
-      });
+      };
+      if (options) updateSceneData(updater, options);
+      else updateSceneData(updater);
     },
     [updateSceneData],
   );

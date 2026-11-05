@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import isEqual from 'lodash/isEqual';
 import {
   makeScene,
   type PBLContent,
@@ -297,7 +298,7 @@ interface StageState {
   setScenes: (scenes: Scene[]) => void;
   addScene: (scene: Scene) => void;
   insertSceneAfter: (anchorSceneId: string, scene: Scene) => void;
-  updateScene: (sceneId: string, updates: ScenePatch) => void;
+  updateScene: (sceneId: string, updates: ScenePatch, options?: { source: 'layout' }) => void;
   deleteScene: (sceneId: string) => void;
   setCurrentSceneId: (sceneId: string | null) => void;
   setChats: (chats: ChatSession[]) => void;
@@ -572,13 +573,23 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
     markPendingChanges(currentStage.id, { kind: 'structure' });
   },
 
-  updateScene: (sceneId, updates) => {
+  updateScene: (sceneId, updates, options) => {
     const scenes = get().scenes.map((scene) => {
       if (scene.id !== sceneId) return scene;
       const content = mergeSceneContentForUpdate(scene.content, updates.content) ?? scene.content;
+      const nativeEdited =
+        options?.source !== 'layout' &&
+        get().stage?.nativePptx &&
+        updates.content &&
+        scene.content.type === 'slide' &&
+        content.type === 'slide' &&
+        !isEqual(scene.content.canvas, content.canvas);
       // Rebind `type` to the merged content's kind (a type-only patch can no
       // longer desync the discriminant from the content).
-      return makeScene({ ...scene, ...updates }, content);
+      return makeScene(
+        { ...scene, ...updates, ...(nativeEdited ? { nativePptxEdited: true as const } : {}) },
+        content,
+      );
     });
     set({ scenes });
     markPendingChanges(get().stage?.id, { kind: 'scene', sceneId });

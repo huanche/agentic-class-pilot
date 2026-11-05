@@ -1,0 +1,7 @@
+#!/bin/sh
+set -eu
+# Look up the current container at each connection so a teacher deployment can
+# replace its IP without invalidating the platform's loopback endpoint.
+target=$(/usr/bin/docker inspect --format '{{if .State.Running}}{{with index .NetworkSettings.Networks "agentic-migration-internal"}}{{.IPAddress}}{{end}}{{end}}' agentic-teacher-prod)
+test -n "$target"
+exec /usr/bin/socat STDIO "TCP4:$target:3200,connect-timeout=3"

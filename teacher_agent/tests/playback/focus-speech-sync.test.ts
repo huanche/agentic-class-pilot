@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PlaybackEngine } from '@/lib/playback/engine';
 import { ActionEngine } from '@/lib/action/engine';
 import { useCanvasStore } from '@/lib/store/canvas';
+import { useStageStore } from '@/lib/store/stage';
 import type { Action } from '@/lib/types/action';
 import type { Scene } from '@/lib/types/stage';
 import type { AudioPlayer } from '@/lib/utils/audio-player';
@@ -36,7 +37,7 @@ function setup(actions: Action[]) {
     },
     actions,
   } as unknown as Scene;
-  const actionEngine = new ActionEngine({} as never);
+  const actionEngine = new ActionEngine(useStageStore);
   const onComplete = vi.fn();
   const engine = new PlaybackEngine([scene], actionEngine, player, { onComplete });
   return { engine, actionEngine, end: () => ended(), onComplete, scene, player };
@@ -120,7 +121,7 @@ describe('focus follows actual speech playback', () => {
   });
 
   it('keeps the standalone live-action timer unchanged', async () => {
-    const actionEngine = new ActionEngine({} as never);
+    const actionEngine = new ActionEngine(useStageStore);
     await actionEngine.execute({ id: 'f', type: 'spotlight', elementId: 'office' });
     await vi.advanceTimersByTimeAsync(4999);
     expect(useCanvasStore.getState().spotlightElementId).toBe('office');

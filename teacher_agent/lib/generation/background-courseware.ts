@@ -26,6 +26,8 @@ export interface BackgroundCoursewareInput {
   imageMapping?: ImageMapping;
   importedSlides?: Slide[];
   preferImportedCanvas?: boolean;
+  /** Server verifies and snapshots this course material; never accepts a file URL. */
+  nativePptxSource?: { materialId: string; sha256: string };
   narrationScripts?: string[];
   formulaEnhancedOrders?: number[];
   enableTTS: boolean;

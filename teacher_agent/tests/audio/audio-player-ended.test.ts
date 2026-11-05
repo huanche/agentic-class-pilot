@@ -3,6 +3,7 @@ import { AudioPlayer } from '@/lib/utils/audio-player';
 import { PlaybackEngine } from '@/lib/playback/engine';
 import { ActionEngine } from '@/lib/action/engine';
 import { useCanvasStore } from '@/lib/store/canvas';
+import { useStageStore } from '@/lib/store/stage';
 import type { Scene } from '@/lib/types/stage';
 
 vi.mock('@/lib/media/resolve-audio-bytes', () => ({
@@ -87,7 +88,7 @@ describe('ended narration is not resumable', () => {
       ],
     } as unknown as Scene;
     const player = new AudioPlayer();
-    const effects = new ActionEngine({} as never);
+    const effects = new ActionEngine(useStageStore);
     const onSpeechStart = vi.fn();
     const engine = new PlaybackEngine([scene], effects, player, { onSpeechStart });
     engine.start();

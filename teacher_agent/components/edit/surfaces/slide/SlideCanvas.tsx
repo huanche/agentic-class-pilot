@@ -1,6 +1,9 @@
 'use client';
 
 import { useEffect } from 'react';
+import { useStageStore } from '@/lib/store/stage';
+import { nativePptxPage } from '@/lib/onlyoffice/native-player';
+import { NativePptxView } from '@/components/stage/native-pptx-view';
 import Canvas from '@/components/slide-renderer/Editor/Canvas';
 import { SpotlightOverlay } from '@/components/slide-renderer/Editor/SpotlightOverlay';
 import { LaserPointerOverlay } from '@/components/slide-renderer/Editor/LaserPointerOverlay';
@@ -21,6 +24,16 @@ import { RendererEditorCanvas } from './RendererEditorCanvas';
 
 /** Switches between the preserved legacy editor and the renderer editor. */
 export function SlideCanvas() {
+  const stage = useStageStore((s) => s.stage);
+  const scene = useStageStore((s) => s.scenes.find((item) => item.id === s.currentSceneId));
+  if (scene && nativePptxPage(stage, scene)) {
+    return <NativePptxView key={scene.id} scene={scene} preview />;
+  }
+  return <EditableSlideCanvas />;
+}
+
+/** Non-source slides and genuine edits retain the existing editing surface. */
+function EditableSlideCanvas() {
   const { controller, gestureProps } = useSlideCanvasController();
   const useRendererEditor = isEditorRendererEnabled();
   const requestedEditingElementId = useCanvasStore.use.editingElementId();

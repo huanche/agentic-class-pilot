@@ -1,6 +1,9 @@
 'use client';
 
 import { EmbeddedSettingsSync } from '@/components/course-space/workspace-settings';
+import { ClassroomCaptureSurface } from '@/components/classroom-video/capture-surface';
+import { ClassroomVideoViewer } from '@/components/classroom-video/video-viewer';
+import type { ClassroomVideoManifest } from '@/lib/classroom-video/types';
 
 import { Stage } from '@/components/stage';
 import { ThemeProvider } from '@/lib/hooks/use-theme';
@@ -42,7 +45,35 @@ import {
 
 const log = createLogger('Classroom');
 
-export default function ClassroomDetailPage() {
+export default function ClassroomRoute() {
+  const params = useParams();
+  const query = useSearchParams();
+  const pathname = usePathname();
+  const id = params?.id as string;
+  const capture = query.get('capture');
+  if (capture) return <ClassroomCaptureSurface key={`${id}:${capture}`} id={id} version={capture} />;
+  if (query.get('video') === '1') return <ClassroomVideoViewer key={id} id={id} draft={query.get('draft') === '1'} returnTo={query.get('from')} />;
+  if (pathname.startsWith('/classroom-player/')) return <PublishedClassroomGate key={id} id={id} />;
+  return <ClassroomDetailPage />;
+}
+
+function PublishedClassroomGate({ id }: { id: string }) {
+  const [manifest, setManifest] = useState<ClassroomVideoManifest | null | undefined>();
+  const [videoError, setVideoError] = useState('');
+  useEffect(() => {
+    let disposed = false;
+    void fetch(`/api/classroom?id=${encodeURIComponent(id)}&video=published`, { cache: 'no-store' })
+      .then(async (r) => { if (!r.ok) throw new Error('课件读取失败，请重新加载'); return r.json(); })
+      .then((body) => { if (!disposed) setManifest(body.manifest || null); })
+      .catch((e) => { if (!disposed) setVideoError(e.message); });
+    return () => { disposed = true; };
+  }, [id]);
+  if (videoError) return <p role="alert" className="p-8">{videoError}<button className="ml-3 rounded border px-3 py-1" onClick={() => location.reload()}>重新加载</button></p>;
+  if (manifest === undefined) return <p className="p-8">正在读取课件…</p>;
+  return manifest ? <ClassroomVideoViewer id={id} draft={false} initial={manifest} /> : <ClassroomDetailPage />;
+}
+
+function ClassroomDetailPage() {
   const params = useParams();
   const searchParams = useSearchParams();
   const pathname = usePathname();
@@ -110,7 +141,12 @@ export default function ClassroomDetailPage() {
           const { stage: stageBeforeRead, scenes: scenesBeforeRead } = useStageStore.getState();
           const classroom = await (playerOnlyEmbed
             ? fetchClassroomForPlayer(id)
-            : defaultClassroomLoadDeps.fetchClassroom(id, shouldConvert, {}, replaceExisting));
+            : defaultClassroomLoadDeps.fetchClassroom(
+                id,
+                shouldConvert,
+                {},
+                replaceExisting || refreshServer,
+              ));
           if (classroom && !playerOnlyEmbed) {
             const current = useStageStore.getState();
             // Keep edits made while the server read/conversion was in flight.
@@ -127,6 +163,7 @@ export default function ClassroomDetailPage() {
                   scene.order,
                   scene.updatedAt,
                   scene.timing?.measurementKey,
+                  scene.nativePptxEdited,
                 ]),
               );
             if (
@@ -134,7 +171,9 @@ export default function ClassroomDetailPage() {
               current.stage?.id === id &&
               versions(current.scenes) === versions(classroom.scenes) &&
               JSON.stringify(current.stage.generationPlan) ===
-                JSON.stringify(classroom.stage.generationPlan)
+                JSON.stringify(classroom.stage.generationPlan) &&
+              JSON.stringify(current.stage.nativePptx) ===
+                JSON.stringify(classroom.stage.nativePptx)
             )
               return null;
             skipServerSnapshotSyncRef.current = classroom.serverSnapshot === true;
@@ -275,6 +314,30 @@ export default function ClassroomDetailPage() {
     if (!canSyncClassroomSnapshot(classroomId, snapshot)) return;
     snapshotSyncRef.current?.enqueue({ stage: snapshot.stage, scenes: snapshot.scenes });
   }, [classroomId, error, generationComplete, loading, playerOnlyEmbed, syncScenes, syncStage]);
+
+  useEffect(() => {
+    if (!embeddedCourseWorkspace) return;
+    const receive = (event: MessageEvent) => {
+      const message = event.data;
+      if (event.source !== window.parent || event.origin !== location.origin || message?.channel !== 'classroom-video-flush' || message.classroomId !== classroomId) return;
+      void (async () => {
+        try {
+          if (loading || error) throw new Error('课件尚未加载完成');
+          await flushStageSave();
+          const state = useStageStore.getState();
+          if (!canSyncClassroomSnapshot(classroomId, state)) throw new Error('课件尚未完整生成');
+          if (!snapshotSyncRef.current) throw new Error('课件同步尚未就绪');
+          snapshotSyncRef.current.enqueue({ stage: state.stage, scenes: state.scenes });
+          await snapshotSyncRef.current.drain();
+          window.parent.postMessage({ ...message, event: 'saved' }, location.origin);
+        } catch (e) {
+          window.parent.postMessage({ ...message, event: 'error', error: e instanceof Error ? e.message : String(e) }, location.origin);
+        }
+      })();
+    };
+    window.addEventListener('message', receive);
+    return () => window.removeEventListener('message', receive);
+  }, [classroomId, embeddedCourseWorkspace, loading, error]);
 
   const missingGenerationPlan =
     !loading &&
