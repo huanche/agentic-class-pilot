@@ -1,0 +1,1 @@
+agentic-ci ALL=(root) NOPASSWD: /usr/local/sbin/agentic-mainland-ci-root teacher-media-state, /usr/local/sbin/agentic-mainland-ci-root teacher-media-prepare, /usr/local/sbin/agentic-mainland-ci-root teacher-deploy-v3

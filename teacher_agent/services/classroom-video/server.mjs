@@ -15,6 +15,9 @@ if (!secret || secret.length < 32) throw new Error('A private worker key is requ
 const jobs = new Map(),
   queue = [];
 let active = false;
+let drainUntil = 0;
+let submissions = 0;
+const draining = () => drainUntil > Date.now();
 const safeId = (v) => typeof v === 'string' && /^[A-Za-z0-9_-]{1,100}$/.test(v);
 const safeHash = (v) => typeof v === 'string' && /^[a-f0-9]{64}$/.test(v);
 function equal(value) {
@@ -368,9 +371,18 @@ for (const id of await fs.readdir(root).catch(() => [])) {
 http
   .createServer(async (req, res) => {
     if (req.url === '/health' && req.method === 'GET')
-      return reply(res, 200, { success: true, active, queued: queue.length });
-    if (req.url !== '/jobs' || req.method !== 'POST' || !equal(req.headers['x-video-worker-key']))
+      return reply(res, 200, { success: true, active, queued: queue.length, submissions, draining: draining() });
+    if (!equal(req.headers['x-video-worker-key']))
       return reply(res, 403, { error: 'Forbidden' });
+    if (req.url === '/drain' && ['POST', 'DELETE'].includes(req.method)) {
+      // A lease also releases the queue if the operator loses the deploy connection.
+      drainUntil = req.method === 'POST' ? Date.now() + 40 * 60 * 1000 : 0;
+      return reply(res, 200, { draining: draining() });
+    }
+    if (req.url !== '/jobs' || req.method !== 'POST')
+      return reply(res, 403, { error: 'Forbidden' });
+    if (draining()) return reply(res, 503, { error: '视频服务正在更新，请稍后重试' });
+    submissions++;
     try {
       let raw = '';
       for await (const chunk of req) {
@@ -387,23 +399,30 @@ http
       )
         throw new Error('Invalid job');
       const key = `${job.id}:${job.version}`;
+      await fs.access(path.join(root, job.id, 'versions', `${job.version}.json`));
       if (!jobs.has(key)) {
         if (jobs.size >= 10) return reply(res, 429, { error: 'Queue full' });
-        await fs.access(path.join(root, job.id, 'versions', `${job.version}.json`));
-        await atomic(path.join(root, job.id, 'jobs', `${job.version}.json`), {
-          version: job.version,
-          state: 'queued',
-          completed: 0,
-          total: 0,
-          updatedAt: Date.now(),
-        });
         jobs.set(key, job);
+        try {
+          await atomic(path.join(root, job.id, 'jobs', `${job.version}.json`), {
+            version: job.version,
+            state: 'queued',
+            completed: 0,
+            total: 0,
+            updatedAt: Date.now(),
+          });
+        } catch (error) {
+          jobs.delete(key);
+          throw error;
+        }
         queue.push(job);
         void pump();
       }
       reply(res, 202, { accepted: true });
     } catch {
       reply(res, 400, { error: 'Invalid job' });
+    } finally {
+      submissions--;
     }
   })
   .listen(Number(process.env.PORT || 9010), '0.0.0.0');

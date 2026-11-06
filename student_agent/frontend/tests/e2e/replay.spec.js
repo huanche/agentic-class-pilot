@@ -81,6 +81,32 @@ test("replay immediately after ending a lesson", async ({ page }) => {
   expect(requests.filter(path => path.endsWith("/playback"))).toHaveLength(0);
 });
 
+test("embedded player fills the available width and keeps its controls inside the iframe", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 810 });
+  await boot(page);
+  await enterCompleted(page);
+  await page.getByRole("button", { name: "回看视频" }).click();
+  const slot = page.getByLabel("课后视频播放器");
+  const iframe = slot.locator("iframe");
+  const frameBody = page.frameLocator('iframe[title="课程播放器"]').locator("body");
+  const resize = height => frameBody.evaluate((_, height) => {
+    parent.postMessage({ source: "teacher-workspace", type: "PLAYER_LAYOUT", payload: { height } }, location.origin);
+  }, height);
+  await expect(iframe).toBeVisible();
+  expect((await iframe.boundingBox()).width).toBeGreaterThan(1000);
+  await resize(720);
+  await expect(iframe).toHaveCSS("height", "720px");
+  await expect(slot).toHaveAttribute("data-player-sized", "true");
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await resize(342);
+  await expect(iframe).toHaveCSS("height", "342px");
+  expect((await iframe.boundingBox()).width).toBeGreaterThan(350);
+  await resize(0);
+  await expect(iframe).toHaveCSS("height", "342px");
+  await expect(page.getByRole("button", { name: "返回学习反馈" })).toBeVisible();
+});
+
 test("reenter completed lesson from catalog and retain feedback and conversation", async ({ page }) => {
   await boot(page);
   await enterCompleted(page);
