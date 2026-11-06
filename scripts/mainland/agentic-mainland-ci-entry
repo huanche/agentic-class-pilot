@@ -17,6 +17,9 @@ case "$ORIGINAL" in
     exec /usr/bin/sudo -n \
       /usr/local/sbin/agentic-mainland-ci-root prepare
     ;;
+  teacher-media-state|teacher-media-prepare)
+    exec /usr/bin/sudo -n /usr/local/sbin/agentic-mainland-ci-root "$ORIGINAL"
+    ;;
   teacher-check)
     exec /usr/bin/sudo -n \
       /usr/local/sbin/agentic-mainland-ci-root check
@@ -31,6 +34,11 @@ case "$ORIGINAL" in
     if [[ "$ORIGINAL" =~ ^web-deploy-v2\ ([0-9a-f]{40})\ ([0-9a-f]{64})$ ]]; then
       printf '%s\n%s\n' "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}" | \
         /usr/bin/sudo -n /usr/local/sbin/agentic-mainland-ci-root web-deploy-v2
+      exit $?
+    fi
+    if [[ "$ORIGINAL" =~ ^teacher-deploy-v3\ (main-[0-9a-f]{7})\ ([0-9a-f]{40})\ ([0-9a-f]{40})$ ]]; then
+      printf '%s\n' "${BASH_REMATCH[@]:1}" | \
+        /usr/bin/sudo -n /usr/local/sbin/agentic-mainland-ci-root teacher-deploy-v3
       exit $?
     fi
     if [[ "$ORIGINAL" =~ ^teacher-deploy\ (main-[0-9a-f]{7})$ ]]; then

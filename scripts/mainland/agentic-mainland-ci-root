@@ -22,6 +22,24 @@ case "${1:-}" in
     [[ $# -eq 1 ]] || exit 64
     exec timeout 1620s /usr/local/sbin/agentic-teacher-tcr-prepare --seed-baseline
     ;;
+  teacher-media-state)
+    [[ $# -eq 1 ]] || exit 64
+    exec /usr/local/sbin/agentic-teacher-media-release state
+    ;;
+  teacher-media-prepare)
+    [[ $# -eq 1 ]] || exit 64
+    exec timeout 1380s /usr/local/sbin/agentic-teacher-tcr-prepare --media
+    ;;
+  teacher-deploy-v3)
+    [[ $# -eq 1 ]] || exit 64
+    IFS= read -r -t 10 TAG || exit 64
+    IFS= read -r -t 10 VIDEO_SOURCE || exit 64
+    IFS= read -r -t 10 OFFICE_SOURCE || exit 64
+    [[ "$TAG" =~ ^main-[0-9a-f]{7}$ && "$VIDEO_SOURCE" =~ ^[0-9a-f]{40}$ &&
+       "$OFFICE_SOURCE" =~ ^[0-9a-f]{40}$ ]] || exit 64
+    exec timeout 2340s /usr/local/sbin/agentic-teacher-deploy deploy-local \
+      ccr.ccs.tencentyun.com/agentedu-mainland/agentic-teacher "$TAG" "$VIDEO_SOURCE" "$OFFICE_SOURCE"
+    ;;
   prepare)
     [[ $# -eq 1 ]] || exit 64
     exec timeout 1380s /usr/local/sbin/agentic-teacher-tcr-prepare

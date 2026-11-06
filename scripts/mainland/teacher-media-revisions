@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Hash the component and its teacher-side contract, independent of unrelated commits.
+ref=$(git rev-parse --verify "${1:-HEAD}^{commit}")
+revision() {
+  git ls-tree -rz --full-tree "$ref" -- "$@" | sha256sum | cut -c1-40
+}
+printf 'video=%s\n' "$(revision \
+  teacher_agent/services/classroom-video/Dockerfile \
+  teacher_agent/services/classroom-video/package.json \
+  teacher_agent/services/classroom-video/package-lock.json \
+  teacher_agent/services/classroom-video/server.mjs \
+  teacher_agent/services/classroom-video/readiness.mjs \
+  teacher_agent/components/classroom-video/capture-surface.tsx \
+  teacher_agent/lib/playback/engine.ts \
+  teacher_agent/lib/classroom-video/types.ts \
+  teacher_agent/lib/server/classroom-video.ts)"
+printf 'office=%s\n' "$(revision \
+  teacher_agent/services/onlyoffice/Dockerfile \
+  teacher_agent/services/onlyoffice/server.mjs \
+  teacher_agent/services/onlyoffice/public \
+  teacher_agent/services/onlyoffice/pptx-compat.mjs \
+  teacher_agent/components/stage/native-pptx-view.tsx \
+  teacher_agent/lib/onlyoffice \
+  teacher_agent/lib/server/native-pptx-source.ts)"

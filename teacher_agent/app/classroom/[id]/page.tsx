@@ -53,11 +53,12 @@ export default function ClassroomRoute() {
   const capture = query.get('capture');
   if (capture) return <ClassroomCaptureSurface key={`${id}:${capture}`} id={id} version={capture} />;
   if (query.get('video') === '1') return <ClassroomVideoViewer key={id} id={id} draft={query.get('draft') === '1'} returnTo={query.get('from')} />;
-  if (pathname.startsWith('/classroom-player/')) return <PublishedClassroomGate key={id} id={id} />;
+  if (pathname.startsWith('/classroom-player/'))
+    return <PublishedClassroomGate key={id} id={id} embedded={query.get('embedded') === 'player'} />;
   return <ClassroomDetailPage />;
 }
 
-function PublishedClassroomGate({ id }: { id: string }) {
+function PublishedClassroomGate({ id, embedded }: { id: string; embedded: boolean }) {
   const [manifest, setManifest] = useState<ClassroomVideoManifest | null | undefined>();
   const [videoError, setVideoError] = useState('');
   useEffect(() => {
@@ -70,7 +71,11 @@ function PublishedClassroomGate({ id }: { id: string }) {
   }, [id]);
   if (videoError) return <p role="alert" className="p-8">{videoError}<button className="ml-3 rounded border px-3 py-1" onClick={() => location.reload()}>重新加载</button></p>;
   if (manifest === undefined) return <p className="p-8">正在读取课件…</p>;
-  return manifest ? <ClassroomVideoViewer id={id} draft={false} initial={manifest} /> : <ClassroomDetailPage />;
+  return manifest ? (
+    <ClassroomVideoViewer id={id} draft={false} initial={manifest} embedded={embedded} />
+  ) : (
+    <ClassroomDetailPage />
+  );
 }
 
 function ClassroomDetailPage() {

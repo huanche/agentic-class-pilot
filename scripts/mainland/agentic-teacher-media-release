@@ -1,0 +1,274 @@
+#!/usr/bin/python3
+"""Switch the media sidecars under the teacher deployer's lock and rollback."""
+import hashlib
+import hmac
+import ipaddress
+import json
+import os
+from pathlib import Path
+import re
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.request
+
+IMAGE = 'ccr.ccs.tencentyun.com/agentedu-mainland/agentic-teacher'
+STATE = Path('/var/lib/agentic-class-pilot/prepared-images')
+NATIVE_SMOKE = Path('/etc/agentic-class-pilot/media-native-smoke.json')
+NATIVE_SCRIPT = '/usr/local/libexec/agentic-check-native-media.mjs'
+SOURCE_LABEL = 'org.agentedu.media-source'
+INTERNAL = 'agentic-migration-internal'
+VIDEO = 'agentic-video-capture-ready'
+OFFICE = 'agentic-onlyoffice-player'
+DATA = '/home/ubuntu/teacher-agent-data'
+SERVICES = {
+    'video': (VIDEO, 'agentic-classroom-video', INTERNAL, 9010, '/health'),
+    'office': (OFFICE, INTERNAL, 'agentic-onlyoffice-lab', 3213, '/onlyoffice/status'),
+}
+ENV_KEYS = {
+    'video': ('CLASSROOM_VIDEO_WORKER_KEY', 'CLASSROOM_VIDEOS_DIR', 'VIDEO_PUBLIC_ORIGIN',
+              'VIDEO_TEACHER_URL', 'VIDEO_ORIGIN_IP', 'VIDEO_CAPTURE_PROXY_TEACHER',
+              'HOME', 'XDG_CACHE_HOME'),
+    'office': ('TEACHER_INTERNAL_URL', 'ONLYOFFICE_PLAYER_INTERNAL'),
+}
+
+
+def docker(*args):
+    return subprocess.check_output(['/usr/bin/docker', *args], text=True, timeout=90).strip()
+
+
+def inspect(name):
+    return json.loads(docker('inspect', name))[0]
+
+
+def exists(name):
+    return name in docker('ps', '-a', '--format', '{{.Names}}').splitlines()
+
+
+def environment(container):
+    return dict(value.split('=', 1) for value in container['Config']['Env'])
+
+
+def request(service, name, path, method='GET', key=None):
+    _, network, _, port, _ = SERVICES[service]
+    address = ipaddress.IPv4Address(inspect(name)['NetworkSettings']['Networks'][network]['IPAddress'])
+    req = urllib.request.Request(f'http://{address}:{port}{path}', method=method)
+    if key:
+        req.add_header('x-video-worker-key', key)
+    with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(req, timeout=5) as res:
+        return res.read()
+
+
+def health(service, name):
+    body = json.loads(request(service, name, SERVICES[service][4]))
+    if service == 'video' and body.get('success') is True:
+        return body
+    if service == 'office' and body.get('renderer') == 'onlyoffice':
+        if request(service, name, '/onlyoffice/frame.js'):
+            return body
+    raise RuntimeError(f'{service} health response is invalid')
+
+
+def wait_healthy(service, name):
+    for _ in range(20):
+        try:
+            return health(service, name)
+        except (OSError, ValueError, RuntimeError, subprocess.SubprocessError):
+            time.sleep(1)
+    raise RuntimeError(f'{service} did not become healthy')
+
+
+def revision(service, container):
+    label = (container['Config']['Labels'] or {}).get(SOURCE_LABEL, '')
+    if re.fullmatch('[0-9a-f]{40}', label):
+        return label
+    # One-time bootstrap for the pre-workflow images, bound to their actual image IDs.
+    baseline = STATE / 'media-baseline.json'
+    if baseline.is_file():
+        pinned = json.loads(baseline.read_text()).get(service, {})
+        if pinned.get('id') == container['Image'] and re.fullmatch('[0-9a-f]{40}', pinned.get('source', '')):
+            return pinned['source']
+    return '-'
+
+
+def planned(source):
+    result = {}
+    for service, fingerprint in zip(SERVICES, source, strict=True):
+        if not re.fullmatch('[0-9a-f]{40}', fingerprint):
+            raise RuntimeError('Invalid media fingerprint')
+        current = inspect(SERVICES[service][0])
+        if revision(service, current) == fingerprint:
+            continue
+        tag = f'{service}-{fingerprint}'
+        record = STATE / f'{tag}.json'
+        if record.stat().st_uid != 0 or record.stat().st_mode & 0o022:
+            raise RuntimeError('Untrusted prepared media record')
+        prepared = json.loads(record.read_text())
+        image = prepared['id']
+        if (not re.fullmatch('sha256:[0-9a-f]{64}', image) or
+                prepared['image'] != f'{IMAGE}:{tag}' or
+                docker('image', 'inspect', '-f', '{{.Id}}', f'{IMAGE}:{tag}') != image):
+            raise RuntimeError('Prepared media image differs from the verified artifact')
+        result[service] = {'source': fingerprint, 'image': image}
+    return result
+
+
+def drain(method):
+    key = environment(inspect(VIDEO))['CLASSROOM_VIDEO_WORKER_KEY']
+    try:
+        request('video', VIDEO, '/drain', method, key)
+    except urllib.error.HTTPError as error:
+        # The pinned bootstrap worker predates the drain endpoint.
+        if error.code not in (403, 404) or (inspect(VIDEO)['Config']['Labels'] or {}).get(SOURCE_LABEL):
+            raise
+
+
+def wait_idle():
+    for _ in range(600):
+        body = health('video', VIDEO)
+        if not (body['active'] or body['queued'] or body.get('submissions', 0)):
+            return
+        time.sleep(2)
+    raise RuntimeError('Timed out waiting for the video queue to drain')
+
+
+def create(service, target, old, directory):
+    name, network, second, _, _ = SERVICES[service]
+    env = environment(old)
+    env_file = directory / f'{service}.env'
+    env_file.write_text(''.join(f'{key}={env[key]}\n' for key in ENV_KEYS[service] if key in env))
+    args = ['create', '--name', name, '--pull', 'never', '--restart', 'unless-stopped',
+            '--label', f'{SOURCE_LABEL}={target["source"]}', '--env-file', str(env_file),
+            '--network', network]
+    if service == 'video':
+        args += ['--cpus', '1.5', '--memory', '3g', '--shm-size', '256m', '--read-only',
+                 '--tmpfs', '/tmp:rw,nosuid,nodev,size=4g',
+                 '--mount', f'type=bind,src={DATA}/classroom-videos,dst=/videos']
+    else:
+        args += ['--cpus', '0.75', '--memory', '512m',
+                 '--mount', f'type=bind,src={DATA}/classrooms,dst=/classrooms,readonly',
+                 '--mount', 'type=bind,src=/etc/agentic-class-pilot/onlyoffice-player.json,dst=/player-config.json,readonly']
+        primary = old['NetworkSettings']['Networks'][network]['IPAMConfig']['IPv4Address']
+        args += ['--ip', str(ipaddress.IPv4Address(primary))]
+    docker(*args, target['image'])
+    connect = ['network', 'connect']
+    if service == 'office':
+        original = old['NetworkSettings']['Networks'][second]['IPAMConfig']['IPv4Address']
+        connect += ['--ip', str(ipaddress.IPv4Address(original))]
+    docker(*connect, second, name)
+    docker('start', name)
+
+
+def backup_name(service, directory):
+    return f'{SERVICES[service][0]}-rollback-{directory.name}'
+
+
+def switch(directory):
+    plan = json.loads((directory / 'plan.json').read_text())
+    for service, target in plan.items():
+        name = SERVICES[service][0]
+        old = inspect(name)
+        backup = backup_name(service, directory)
+        (directory / f'{service}.attempted').touch()
+        docker('stop', '-t', '25', name)
+        docker('rename', name, backup)
+        create(service, target, old, directory)
+        wait_healthy(service, name)
+        if service == 'video':
+            drain('POST')
+        print(f'MEDIA_SWITCH_OK {service} {target["source"]} {target["image"]}', flush=True)
+
+
+def rollback(directory):
+    failed = []
+    for service, (name, *_) in reversed(list(SERVICES.items())):
+        if not (directory / f'{service}.attempted').exists():
+            continue
+        backup = backup_name(service, directory)
+        try:
+            if exists(backup):
+                if exists(name):
+                    docker('rm', '-f', name)
+                docker('rename', backup, name)
+            if not inspect(name)['State']['Running']:
+                docker('start', name)
+            wait_healthy(service, name)
+            print(f'MEDIA_ROLLBACK_OK {service}', flush=True)
+        except (OSError, ValueError, KeyError, RuntimeError, subprocess.SubprocessError):
+            failed.append(service)
+    if failed:
+        raise RuntimeError('Media rollback failed for ' + ', '.join(failed))
+
+
+def check_native(directory):
+    fixture = json.loads(NATIVE_SMOKE.read_text())
+    room, version, scene = (fixture[field] for field in ('room', 'version', 'scene'))
+    if not (re.fullmatch('[A-Za-z0-9_-]{1,100}', room) and
+            re.fullmatch('[A-Za-z0-9_-]{1,100}', scene) and
+            re.fullmatch('[0-9a-f]{64}', version)):
+        raise RuntimeError('Invalid native QA fixture')
+    teacher = environment(inspect('agentic-teacher-prod'))
+    key = (teacher.get('CLASSROOM_VIDEO_SECRET') or teacher['PLATFORM_SERVICE_KEY']).encode()
+    claims = f'{room}.{version}.{int(time.time() * 1000) + 600000}'
+    signature = hmac.new(key, claims.encode(), hashlib.sha256).hexdigest()
+    worker = inspect(VIDEO)
+    env = environment(worker)
+    env_file = directory / 'native-smoke.env'
+    env_file.write_text(f'VIDEO_CAPTURE_GRANT={claims}.{signature}\n' +
+                        ''.join(f'{k}={env[k]}\n' for k in ('VIDEO_PUBLIC_ORIGIN', 'VIDEO_ORIGIN_IP') if k in env))
+    name = 'agentic-native-smoke-' + directory.name.rsplit('.', 1)[-1]
+    docker('create', '--init', '--name', name, '--pull', 'never',
+           '--network', INTERNAL, '--cpus', '1.5', '--memory', '2g', '--shm-size', '256m',
+           '--env-file', str(env_file), '--env', 'HOME=/tmp',
+           '--mount', f'type=bind,src={NATIVE_SCRIPT},dst=/app/check-native-release.mjs,readonly',
+           worker['Image'], 'node', '/app/check-native-release.mjs', room, version, scene)
+    try:
+        docker('network', 'connect', SERVICES['video'][1], name)
+        result = subprocess.run(['/usr/bin/docker', 'start', '-a', name], check=True, text=True,
+                                capture_output=True, timeout=310)
+        if not result.stdout.startswith('NATIVE_SMOKE_OK:'):
+            raise RuntimeError('Native smoke did not confirm animation')
+        print(result.stdout.strip(), flush=True)
+    finally:
+        docker('rm', '-f', name)
+        env_file.unlink()
+
+
+def main():
+    os.umask(0o077)
+    command, *args = sys.argv[1:]
+    if command == 'state' and not args:
+        for service, (name, *_) in SERVICES.items():
+            print(f'{service}={revision(service, inspect(name))}')
+        return
+    directory = Path(args[0])
+    if command == 'plan':
+        plan = planned(args[1:])
+        (directory / 'plan.json').write_text(json.dumps(plan))
+    elif command == 'quiesce':
+        drain('POST')
+        wait_idle()
+    elif command == 'switch':
+        wait_idle()
+        switch(directory)
+    elif command == 'verify':
+        for service, (name, *_) in SERVICES.items():
+            wait_healthy(service, name)
+        if json.loads((directory / 'plan.json').read_text()):
+            check_native(directory)
+    elif command == 'rollback':
+        rollback(directory)
+    elif command == 'release':
+        drain('DELETE')
+    else:
+        raise RuntimeError('Unknown media deployment command')
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except (OSError, ValueError, KeyError, RuntimeError, subprocess.SubprocessError) as error:
+        # Do not print Docker commands with runtime settings.
+        print('MEDIA_RELEASE_FAILED', type(error).__name__, file=sys.stderr)
+        sys.exit(1)

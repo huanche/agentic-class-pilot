@@ -48,6 +48,7 @@ interface CourseVideoPlayerProps {
   isFullscreen?: boolean;
   captions?: VideoCaption[];
   hideFullscreenControl?: boolean;
+  embedded?: boolean;
 }
 
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
@@ -75,6 +76,7 @@ export function CourseVideoPlayer({
   isFullscreen,
   captions,
   hideFullscreenControl,
+  embedded = false,
 }: CourseVideoPlayerProps) {
   const root = useRef<HTMLDivElement>(null);
   const video = useRef<HTMLVideoElement>(null);
@@ -98,6 +100,7 @@ export function CourseVideoPlayer({
   const restorePlayback = useRef(false);
   const [paused, setPaused] = useState(true);
   const [duration, setDuration] = useState(0);
+  const [aspectRatio, setAspectRatio] = useState('16 / 9');
   const [time, setTime] = useState(0);
   const [buffered, setBuffered] = useState<{ start: number; end: number }[]>([]);
   const [waiting, setWaiting] = useState(true);
@@ -425,7 +428,8 @@ export function CourseVideoPlayer({
       className={`relative flex w-full flex-col overflow-hidden rounded-xl bg-[#101114] text-white outline-none focus-visible:ring-2 focus-visible:ring-[#c93678] ${fullscreen ? 'min-h-0 flex-1 rounded-none' : ''} ${!controlsShown ? 'cursor-none' : ''}`}
     >
       <div
-        className={`relative overflow-hidden bg-black ${fullscreen ? 'min-h-0 flex-1' : styles.videoSurface} ${failed ? styles.failedSurface : ''}`}
+        className={`relative overflow-hidden ${embedded && !fullscreen ? styles.embeddedVideoSurface : 'bg-black'} ${fullscreen ? 'min-h-0 flex-1' : styles.videoSurface} ${failed ? styles.failedSurface : ''}`}
+        style={embedded && !fullscreen ? { aspectRatio } : undefined}
       >
         <video
           ref={video}
@@ -449,6 +453,9 @@ export function CourseVideoPlayer({
           onLoadedMetadata={() => {
             const player = video.current!;
             setDuration(Number.isFinite(player.duration) ? player.duration : 0);
+            if (embedded && player.videoWidth > 0 && player.videoHeight > 0) {
+              setAspectRatio(`${player.videoWidth} / ${player.videoHeight}`);
+            }
             player.playbackRate = preferences.rate;
             player.volume = preferences.volume;
             player.muted = preferences.muted;

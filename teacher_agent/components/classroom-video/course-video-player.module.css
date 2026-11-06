@@ -252,6 +252,36 @@
   aspect-ratio: 16 / 9;
   max-height: max(280px, calc(100dvh - 275px));
 }
+.viewer[data-embedded='true'] {
+  min-height: 0;
+  background: #fff;
+}
+.viewer[data-embedded='true'] .viewerHeader {
+  height: auto;
+  min-height: 46px;
+  gap: 8px;
+  padding: 0 14px;
+}
+.viewer[data-embedded='true'] .viewerWorkspace {
+  max-width: none;
+  padding: 0;
+}
+.viewer[data-embedded='true'] .lessonHeading,
+.viewer[data-embedded='true'] .lessonCaption {
+  display: none;
+}
+.viewer[data-embedded='true'] .frame,
+.viewer[data-embedded='true'] .frameBody > [data-course-video-player] {
+  border: 0;
+  border-radius: 0;
+}
+.embeddedVideoSurface {
+  max-height: none;
+  background: #f1f3f5;
+}
+.embeddedVideoSurface .videoElement {
+  color: #20252b;
+}
 .courseNavigation {
   display: flex;
   flex-shrink: 0;

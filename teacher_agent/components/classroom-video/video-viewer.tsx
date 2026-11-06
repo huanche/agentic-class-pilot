@@ -7,6 +7,7 @@ import { SceneProvider } from '@/lib/contexts/scene-context';
 import { SceneRenderer } from '@/components/stage/scene-renderer';
 import { useStageStore } from '@/lib/store/stage';
 import { postPlayerHostEvent } from '@/lib/integration/player-host-events';
+import { postSaasHostMessage } from '@/lib/integration/host-bridge';
 import { InteractiveIframeHost } from '@/components/scene-renderers/InteractiveIframeHost';
 import styles from './course-video-player.module.css';
 import { CoursePageNavigation } from './course-page-navigation';
@@ -18,11 +19,13 @@ export function ClassroomVideoViewer({
   draft,
   returnTo,
   initial,
+  embedded = false,
 }: {
   id: string;
   draft: boolean;
   returnTo?: string | null;
   initial?: ClassroomVideoManifest;
+  embedded?: boolean;
 }) {
   const [manifest, setManifest] = useState(initial);
   const [error, setError] = useState('');
@@ -36,6 +39,7 @@ export function ClassroomVideoViewer({
   });
   const [autoPlay, setAutoPlay] = useState(false);
   const playerFrame = useRef<HTMLElement>(null);
+  const viewer = useRef<HTMLElement>(null);
   const [fullscreen, setFullscreen] = useState(false);
   const catalogue = useRef<HTMLDialogElement>(null);
   const [catalogueOpen, setCatalogueOpen] = useState(false);
@@ -149,10 +153,27 @@ export function ClassroomVideoViewer({
     }
   };
   const ready = manifest?.status.state === 'ready';
+  useEffect(() => {
+    if (!embedded || !ready) return;
+    postPlayerHostEvent('PLAYER_READY');
+  }, [embedded, ready]);
+  useEffect(() => {
+    const element = viewer.current;
+    if (!embedded || fullscreen || !element) return;
+    const reportHeight = () => {
+      postSaasHostMessage('PLAYER_LAYOUT', {
+        height: Math.ceil(element.getBoundingClientRect().height),
+      });
+    };
+    const observer = new ResizeObserver(reportHeight);
+    observer.observe(element);
+    reportHeight();
+    return () => observer.disconnect();
+  }, [embedded, fullscreen]);
   const preparationPhase = manifest?.status.phase;
   const loadingSource = preparationPhase === 'loading';
   return (
-    <main className={styles.viewer}>
+    <main ref={viewer} className={styles.viewer} data-embedded={embedded}>
       <header className={styles.viewerHeader}>
         {draft && (
           <a
@@ -165,7 +186,9 @@ export function ClassroomVideoViewer({
             <ArrowLeft size={18} />
           </a>
         )}
-        <strong className={styles.courseTitle}>{manifest?.title || '课程课堂'}</strong>
+        <strong className={styles.courseTitle}>
+          {(embedded && scene?.title) || manifest?.title || '课程课堂'}
+        </strong>
         {ready && (
           <button
             type="button"
@@ -271,6 +294,7 @@ export function ClassroomVideoViewer({
                   preferences={preferences}
                   captions={clip.captions}
                   hideFullscreenControl
+                  embedded={embedded}
                   onPreferencesChange={updatePreferences}
                   onEnded={advance}
                   onError={setError}

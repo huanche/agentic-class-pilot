@@ -49,11 +49,15 @@ jobs:
           SHA=$(jq -r .head_sha /tmp/source-run.json)
           [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]
           git merge-base --is-ancestor "$SHA" origin/main
-          git diff --exit-code "$SHA" origin/main -- teacher_agent/
+          git diff --exit-code "$SHA" origin/main -- teacher_agent/ scripts/mainland/ .github/workflows/mainland-teacher-release.yml
+          git checkout --detach "$SHA"
           echo "SOURCE_SHA=$SHA" >> "$GITHUB_ENV"
           echo "IMAGE_TAG=main-${SHA:0:7}" >> "$GITHUB_ENV"
 
-      - name: Publish existing successful build and prepare mainland image
+      - name: Verify media contracts
+        run: node --test teacher_agent/services/classroom-video/readiness.test.mjs teacher_agent/services/onlyoffice/server.test.mjs
+
+      - name: Prepare teacher and changed media images
         env:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -86,13 +90,6 @@ jobs:
             echo "TCR login unavailable; retry $attempt/3 in 5 seconds"
             sleep 5
           done
-          docker tag "$SOURCE" "$TARGET"
-          for attempt in 1 2 3; do
-            if timeout 3600s docker push "$TARGET"; then break; fi
-            if [[ "$attempt" = 3 ]]; then exit 1; fi
-            echo "TCR push interrupted; retry $attempt/3 in 10 seconds"
-            sleep 10
-          done
           printf '%s\n' "$SERVER_SSH_KEY" > "$DIR/key"
           printf '%s\n' "$SERVER_KNOWN_HOSTS" > "$DIR/known_hosts"
           ssh-keygen -y -f "$DIR/key" >/dev/null
@@ -102,13 +99,61 @@ jobs:
             -o StrictHostKeyChecking=yes -o HostKeyAlgorithms=ssh-ed25519
             -o UserKnownHostsFile="$DIR/known_hosts" -o ConnectTimeout=15
             -o ServerAliveInterval=15 -o ServerAliveCountMax=4)
-          python3 - <<'PY' | timeout 1440s "${SSH[@]}" "agentic-ci@$SERVER_HOST" teacher-prepare
+          push_tcr() {
+            local image="$1" attempt
+            for attempt in 1 2 3; do
+              if timeout 1200s docker push "$image"; then return; fi
+              [[ "$attempt" != 3 ]] || return 1
+              sleep 10
+            done
+          }
+          prepare() {
+            local tag="$1" image_id="$2" command="$3"
+            RELEASE_TAG="$tag" RELEASE_IMAGE="$image_id" python3 - <<'PY' |
           import json, os
           print(json.dumps({
-            'tag': os.environ['IMAGE_TAG'], 'image_id': os.environ['IMAGE_ID'],
+            'tag': os.environ['RELEASE_TAG'], 'image_id': os.environ['RELEASE_IMAGE'],
             'username': os.environ['TCR_USERNAME'], 'password': os.environ['TCR_PASSWORD'],
           }))
           PY
+              timeout 1440s "${SSH[@]}" "agentic-ci@$SERVER_HOST" "$command"
+          }
+
+          declare -A desired current
+          while IFS='=' read -r service revision; do desired[$service]=$revision; done < <(bash scripts/mainland/teacher-media-revisions "$SOURCE_SHA")
+          "${SSH[@]}" "agentic-ci@$SERVER_HOST" teacher-media-state > "$DIR/media-state"
+          while IFS='=' read -r service revision; do
+            [[ "$service" == video || "$service" == office ]] || exit 1
+            [[ "$revision" == - || "$revision" =~ ^[0-9a-f]{40}$ ]] || exit 1
+            current[$service]=$revision
+          done < "$DIR/media-state"
+          for service in video office; do
+            fingerprint="${desired[$service]}"
+            [[ "$fingerprint" =~ ^[0-9a-f]{40}$ ]]
+            if [[ "$fingerprint" == "${current[$service]}" ]]; then
+              echo "Keeping $service at $fingerprint"
+              continue
+            fi
+            context=teacher_agent/services/onlyoffice
+            [[ "$service" != video ]] || context=teacher_agent/services/classroom-video
+            media_tag="$service-$fingerprint"
+            image="ccr.ccs.tencentyun.com/agentedu-mainland/agentic-teacher:$media_tag"
+            docker build --platform linux/amd64 --tag "$image" \
+              --label "org.opencontainers.image.revision=$SOURCE_SHA" "$context"
+            if [[ "$service" == video ]]; then
+              python3 scripts/mainland/smoke-video-worker.py "$image"
+            else
+              docker run --rm --network none --entrypoint node \
+                --mount "type=bind,source=$PWD/$context/server.test.mjs,target=/app/native-player/server.test.mjs,readonly" \
+                "$image" --test /app/native-player/server.test.mjs
+            fi
+            push_tcr "$image"
+            prepare "$media_tag" "$(docker image inspect -f '{{.Id}}' "$image")" teacher-media-prepare
+          done
+
+          docker tag "$SOURCE" "$TARGET"
+          push_tcr "$TARGET"
+          prepare "$IMAGE_TAG" "$IMAGE_ID" teacher-prepare
           "${SSH[@]}" "agentic-ci@$SERVER_HOST" teacher-check
           if [[ "$AUTODEPLOY" != true ]]; then
             echo '### Image verified on mainland; deployment remains disabled' >> "$GITHUB_STEP_SUMMARY"
@@ -117,6 +162,6 @@ jobs:
           fi
           # Re-fetch after potentially slow uploads. A later teacher change invalidates this release.
           git fetch origin main
-          git diff --exit-code "$SOURCE_SHA" origin/main -- teacher_agent/
-          timeout 1800s "${SSH[@]}" "agentic-ci@$SERVER_HOST" "teacher-deploy $IMAGE_TAG"
+          git diff --exit-code "$SOURCE_SHA" origin/main -- teacher_agent/ scripts/mainland/ .github/workflows/mainland-teacher-release.yml
+          timeout 2400s "${SSH[@]}" "agentic-ci@$SERVER_HOST" "teacher-deploy-v3 $IMAGE_TAG ${desired[video]} ${desired[office]}"
           echo "### Deployed $TARGET ($IMAGE_ID)" >> "$GITHUB_STEP_SUMMARY"
