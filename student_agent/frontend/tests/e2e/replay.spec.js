@@ -93,7 +93,8 @@ test("embedded player fills the available width and keeps its controls inside th
     parent.postMessage({ source: "teacher-workspace", type: "PLAYER_LAYOUT", payload: { height } }, location.origin);
   }, height);
   await expect(iframe).toBeVisible();
-  expect((await iframe.boundingBox()).width).toBeGreaterThan(1000);
+  await expect(page.getByRole("button", { name: "打开课堂进程" })).toBeVisible();
+  expect((await iframe.boundingBox()).width).toBeGreaterThan(1250);
   await resize(720);
   await expect(iframe).toHaveCSS("height", "720px");
   await expect(slot).toHaveAttribute("data-player-sized", "true");
