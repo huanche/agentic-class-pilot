@@ -40,8 +40,10 @@ def test_teacher_chat_records_are_scoped_to_owned_courses(client: TestClient, db
     revoked = False
     calls = []
 
-    def sessions(course_id, user_ids, limit):
+    def sessions(course_id, user_ids, limit, offset=None, lesson_id=None, classroom_id=None):
         calls.append(("sessions", course_id, user_ids))
+        if offset is not None:
+            assert (offset, lesson_id, classroom_id) == (500, "lesson-a", "room-a")
         assert user_ids == [str(student.id)]
         if course_id == course_a.id and not revoked:
             return [{"sessionKey": key_a, "studentId": str(student.id), "classroomId": "room-a",
@@ -60,6 +62,7 @@ def test_teacher_chat_records_are_scoped_to_owned_courses(client: TestClient, db
                  "createdAt": "2026-01-01T00:00:00"}]
 
     monkeypatch.setattr(student_chat_records_client, "get_chat_sessions", sessions)
+    monkeypatch.setattr(student_chat_records_client, "pagination_available", lambda: True)
     monkeypatch.setattr(student_chat_records_client, "get_chat_messages", messages)
     monkeypatch.setattr(teacher_lesson_titles_client, "get_lesson_titles",
                         lambda course_id, owner_id: {"lesson-a": "Lesson A"})
@@ -79,6 +82,8 @@ def test_teacher_chat_records_are_scoped_to_owned_courses(client: TestClient, db
     assert result.status_code == 200
     assert [row["sessionKey"] for row in result.json()] == [key_a]
     assert result.json()[0]["lesson"] == "Lesson A"
+    assert client.get(f"{BASE}/capabilities", headers=headers_a).json() == {"session_pagination": 1}
+    assert client.get(f"{BASE}/courses/{course_a.id}/sessions", params={"offset": 500, "lesson_id": "lesson-a", "classroom_id": "room-a"}, headers=headers_a).status_code == 200
     assert client.get(f"{BASE}/courses/{course_a.id}/sessions", headers=headers_b).status_code == 403
     assert client.get(f"{BASE}/courses/{course_b.id}/sessions", headers=headers_a).status_code == 403
 

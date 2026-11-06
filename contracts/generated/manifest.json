@@ -6,6 +6,7 @@
     "python/platform_student_api/api/default/enqueue_published_lesson_knowledge_at_student.py",
     "python/platform_student_api/api/default/get_student_chat_messages.py",
     "python/platform_student_api/api/default/get_student_chat_sessions.py",
+    "python/platform_student_api/api/default/get_student_chat_sessions_capabilities.py",
     "python/platform_student_api/api/default/get_student_course_learning_data.py",
     "python/platform_student_api/api/default/get_student_course_progress.py",
     "python/platform_student_api/client.py",
@@ -17,6 +18,7 @@
     "python/platform_student_api/models/get_student_chat_messages_body.py",
     "python/platform_student_api/models/get_student_chat_messages_response_200_item.py",
     "python/platform_student_api/models/get_student_chat_sessions_body.py",
+    "python/platform_student_api/models/get_student_chat_sessions_capabilities_response_200.py",
     "python/platform_student_api/models/get_student_chat_sessions_response_200_item.py",
     "python/platform_student_api/models/get_student_course_learning_data_body.py",
     "python/platform_student_api/models/get_student_course_learning_data_response_200.py",
@@ -158,7 +160,7 @@
   "sources": {
     "internal-student-api.yaml": "93f7060ce7b0db4bc54c7dbd01b3b3fd5a0bc8669199d6b25a2153517e216444",
     "internal-teacher-api.yaml": "cb4b52429051b51df5bf81c3440358b5314253397a6b6f231565452cc5ee4d98",
-    "student-service-api.yaml": "fb3be2cca41dd11bce037c637d50d7200b9607e4c7862ef2a580165814a75d3d",
+    "student-service-api.yaml": "702ffeadf526f15723d3acbf60df3bf698b3f79bacf0e95b1163d0108b5b913d",
     "teacher-service-api.yaml": "aff303ffeb96c7648578ff44571f0930c11cbc6c0e8406c72b81dd43ee3963bf"
   }
 }

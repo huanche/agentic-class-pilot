@@ -6,6 +6,7 @@ from .enqueue_published_lesson_knowledge_at_student_response_200 import EnqueueP
 from .get_student_chat_messages_body import GetStudentChatMessagesBody
 from .get_student_chat_messages_response_200_item import GetStudentChatMessagesResponse200Item
 from .get_student_chat_sessions_body import GetStudentChatSessionsBody
+from .get_student_chat_sessions_capabilities_response_200 import GetStudentChatSessionsCapabilitiesResponse200
 from .get_student_chat_sessions_response_200_item import GetStudentChatSessionsResponse200Item
 from .get_student_course_learning_data_body import GetStudentCourseLearningDataBody
 from .get_student_course_learning_data_response_200 import GetStudentCourseLearningDataResponse200
@@ -21,6 +22,7 @@ __all__ = (
     "GetStudentChatMessagesBody",
     "GetStudentChatMessagesResponse200Item",
     "GetStudentChatSessionsBody",
+    "GetStudentChatSessionsCapabilitiesResponse200",
     "GetStudentChatSessionsResponse200Item",
     "GetStudentCourseLearningDataBody",
     "GetStudentCourseLearningDataResponse200",

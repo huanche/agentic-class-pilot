@@ -33,9 +33,11 @@ def test_student_chat_client_sends_scoped_ids_and_handles_missing(monkeypatch):
     ))
     course_id = uuid.uuid4()
     assert student_chat_records_client.get_chat_sessions(course_id, ["student-a"], 10)[0]["sessionKey"] == "session-a"
+    student_chat_records_client.get_chat_sessions(course_id, ["student-a"], 10, 500, "lesson-a", "room-a")
+    assert json.loads(seen[-1].content) == {"userIds": ["student-a"], "limit": 10, "offset": 500, "lessonId": "lesson-a", "classroomId": "room-a"}
     with pytest.raises(student_chat_records_client.StudentChatMissing):
         student_chat_records_client.get_chat_messages(course_id, "session-b", ["student-a"], None, 10, 0)
-    assert len(seen) == 2
+    assert len(seen) == 3
 
 
 def test_teacher_lesson_titles_client_parses_scoped_response(monkeypatch):

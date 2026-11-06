@@ -25,11 +25,17 @@ class GetStudentChatSessionsBody:
     """
         Attributes:
             user_ids (list[str]):
+            classroom_id (None | str | Unset):
+            lesson_id (None | str | Unset):
             limit (int | Unset):
+            offset (int | None | Unset):
      """
 
     user_ids: list[str]
+    classroom_id: None | str | Unset = UNSET
+    lesson_id: None | str | Unset = UNSET
     limit: int | Unset = UNSET
+    offset: int | None | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
 
@@ -41,7 +47,25 @@ class GetStudentChatSessionsBody:
 
 
 
+        classroom_id: None | str | Unset
+        if isinstance(self.classroom_id, Unset):
+            classroom_id = UNSET
+        else:
+            classroom_id = self.classroom_id
+
+        lesson_id: None | str | Unset
+        if isinstance(self.lesson_id, Unset):
+            lesson_id = UNSET
+        else:
+            lesson_id = self.lesson_id
+
         limit = self.limit
+
+        offset: int | None | Unset
+        if isinstance(self.offset, Unset):
+            offset = UNSET
+        else:
+            offset = self.offset
 
 
         field_dict: dict[str, Any] = {}
@@ -49,8 +73,14 @@ class GetStudentChatSessionsBody:
         field_dict.update({
             "userIds": user_ids,
         })
+        if classroom_id is not UNSET:
+            field_dict["classroomId"] = classroom_id
+        if lesson_id is not UNSET:
+            field_dict["lessonId"] = lesson_id
         if limit is not UNSET:
             field_dict["limit"] = limit
+        if offset is not UNSET:
+            field_dict["offset"] = offset
 
         return field_dict
 
@@ -62,11 +92,44 @@ class GetStudentChatSessionsBody:
         user_ids = cast(list[str], d.pop("userIds"))
 
 
+        def _parse_classroom_id(data: object) -> None | str | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(None | str | Unset, data)
+
+        classroom_id = _parse_classroom_id(d.pop("classroomId", UNSET))
+
+
+        def _parse_lesson_id(data: object) -> None | str | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(None | str | Unset, data)
+
+        lesson_id = _parse_lesson_id(d.pop("lessonId", UNSET))
+
+
         limit = d.pop("limit", UNSET)
+
+        def _parse_offset(data: object) -> int | None | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(int | None | Unset, data)
+
+        offset = _parse_offset(d.pop("offset", UNSET))
+
 
         get_student_chat_sessions_body = cls(
             user_ids=user_ids,
+            classroom_id=classroom_id,
+            lesson_id=lesson_id,
             limit=limit,
+            offset=offset,
         )
 
 
