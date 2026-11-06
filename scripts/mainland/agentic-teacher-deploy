@@ -268,7 +268,7 @@ rollback_on_exit() {
     if (( MEDIA_DRAIN == 1 )); then
       "$MEDIA" release "$MEDIA_TX" || echo '转码队列将在维护期限结束后自动恢复' >&2
     fi
-    rm -f -- "$MEDIA_TX"/{plan.json,video.env,office.env,video.attempted,office.attempted}
+    rm -f -- "$MEDIA_TX"/{plan.json,video.env,office.env,native-smoke.env,video.attempted,office.attempted}
     rmdir -- "$MEDIA_TX"
   fi
   exit "$rc"

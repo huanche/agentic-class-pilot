@@ -30,6 +30,7 @@ on:
       - 'scripts/mainland/agentic-teacher-media-release'
       - 'scripts/mainland/teacher-media-revisions'
       - 'scripts/mainland/smoke-video-worker.py'
+      - 'scripts/mainland/check-native-media-release.mjs'
   pull_request:
     branches: [main]
     paths:

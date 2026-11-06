@@ -1,5 +1,7 @@
 #!/usr/bin/python3
 """Switch the media sidecars under the teacher deployer's lock and rollback."""
+import hashlib
+import hmac
 import ipaddress
 import json
 import os
@@ -13,6 +15,8 @@ import urllib.request
 
 IMAGE = 'ccr.ccs.tencentyun.com/agentedu-mainland/agentic-teacher'
 STATE = Path('/var/lib/agentic-class-pilot/prepared-images')
+NATIVE_SMOKE = Path('/etc/agentic-class-pilot/media-native-smoke.json')
+NATIVE_SCRIPT = '/usr/local/libexec/agentic-check-native-media.mjs'
 SOURCE_LABEL = 'org.agentedu.media-source'
 INTERNAL = 'agentic-migration-internal'
 VIDEO = 'agentic-video-capture-ready'
@@ -197,6 +201,40 @@ def rollback(directory):
         raise RuntimeError('Media rollback failed for ' + ', '.join(failed))
 
 
+def check_native(directory):
+    fixture = json.loads(NATIVE_SMOKE.read_text())
+    room, version, scene = (fixture[field] for field in ('room', 'version', 'scene'))
+    if not (re.fullmatch('[A-Za-z0-9_-]{1,100}', room) and
+            re.fullmatch('[A-Za-z0-9_-]{1,100}', scene) and
+            re.fullmatch('[0-9a-f]{64}', version)):
+        raise RuntimeError('Invalid native QA fixture')
+    teacher = environment(inspect('agentic-teacher-prod'))
+    key = (teacher.get('CLASSROOM_VIDEO_SECRET') or teacher['PLATFORM_SERVICE_KEY']).encode()
+    claims = f'{room}.{version}.{int(time.time() * 1000) + 600000}'
+    signature = hmac.new(key, claims.encode(), hashlib.sha256).hexdigest()
+    worker = inspect(VIDEO)
+    env = environment(worker)
+    env_file = directory / 'native-smoke.env'
+    env_file.write_text(f'VIDEO_CAPTURE_GRANT={claims}.{signature}\n' +
+                        ''.join(f'{k}={env[k]}\n' for k in ('VIDEO_PUBLIC_ORIGIN', 'VIDEO_ORIGIN_IP') if k in env))
+    name = 'agentic-native-smoke-' + directory.name.rsplit('.', 1)[-1]
+    docker('create', '--init', '--name', name, '--pull', 'never',
+           '--network', INTERNAL, '--cpus', '1.5', '--memory', '2g', '--shm-size', '256m',
+           '--env-file', str(env_file), '--env', 'HOME=/tmp',
+           '--mount', f'type=bind,src={NATIVE_SCRIPT},dst=/app/check-native-release.mjs,readonly',
+           worker['Image'], 'node', '/app/check-native-release.mjs', room, version, scene)
+    try:
+        docker('network', 'connect', SERVICES['video'][1], name)
+        result = subprocess.run(['/usr/bin/docker', 'start', '-a', name], check=True, text=True,
+                                capture_output=True, timeout=310)
+        if not result.stdout.startswith('NATIVE_SMOKE_OK:'):
+            raise RuntimeError('Native smoke did not confirm animation')
+        print(result.stdout.strip(), flush=True)
+    finally:
+        docker('rm', '-f', name)
+        env_file.unlink()
+
+
 def main():
     os.umask(0o077)
     command, *args = sys.argv[1:]
@@ -217,6 +255,8 @@ def main():
     elif command == 'verify':
         for service, (name, *_) in SERVICES.items():
             wait_healthy(service, name)
+        if json.loads((directory / 'plan.json').read_text()):
+            check_native(directory)
     elif command == 'rollback':
         rollback(directory)
     elif command == 'release':
