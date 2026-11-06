@@ -1,5 +1,5 @@
 'use client';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { ArrowLeft, List, X, LoaderCircle } from 'lucide-react';
 import { CourseVideoPlayer, type VideoPlaybackPreferences } from './course-video-player';
 import type { ClassroomVideoManifest } from '@/lib/classroom-video/types';
@@ -38,6 +38,7 @@ export function ClassroomVideoViewer({
     captions: true,
   });
   const [autoPlay, setAutoPlay] = useState(false);
+  const [videoSize, setVideoSize] = useState<{ url: string; ratio: number }>();
   const playerFrame = useRef<HTMLElement>(null);
   const viewer = useRef<HTMLElement>(null);
   const [fullscreen, setFullscreen] = useState(false);
@@ -153,6 +154,8 @@ export function ClassroomVideoViewer({
     }
   };
   const ready = manifest?.status.state === 'ready';
+  const theater = !embedded && ready && Boolean(clip);
+  const ratio = videoSize && videoSize.url === clip?.url ? videoSize.ratio : 16 / 9;
   useEffect(() => {
     if (!embedded || !ready) return;
     postPlayerHostEvent('PLAYER_READY');
@@ -173,7 +176,13 @@ export function ClassroomVideoViewer({
   const preparationPhase = manifest?.status.phase;
   const loadingSource = preparationPhase === 'loading';
   return (
-    <main ref={viewer} className={styles.viewer} data-embedded={embedded}>
+    <main
+      ref={viewer}
+      className={styles.viewer}
+      data-embedded={embedded}
+      data-theater={theater}
+      style={{ '--course-video-ratio': ratio } as CSSProperties}
+    >
       <header className={styles.viewerHeader}>
         {draft && (
           <a
@@ -186,9 +195,16 @@ export function ClassroomVideoViewer({
             <ArrowLeft size={18} />
           </a>
         )}
-        <strong className={styles.courseTitle}>
-          {(embedded && scene?.title) || manifest?.title || '课程课堂'}
-        </strong>
+        {theater ? (
+          <div className={styles.theaterTitles}>
+            <p className={styles.courseTitle}>{manifest?.title}</p>
+            <h1>{scene?.title}</h1>
+          </div>
+        ) : (
+          <strong className={styles.courseTitle}>
+            {(embedded && scene?.title) || manifest?.title || '课程课堂'}
+          </strong>
+        )}
         {ready && (
           <button
             type="button"
@@ -271,16 +287,18 @@ export function ClassroomVideoViewer({
         </section>
       ) : (
         <div className={styles.viewerWorkspace}>
-          <div className={styles.lessonHeading}>
-            <div className={styles.lessonMeta}>
-              <span>{sceneKind}</span>
-              <i />
-              <span>
-                {String(index + 1).padStart(2, '0')} / {manifest.scenes.length}
-              </span>
+          {!theater && (
+            <div className={styles.lessonHeading}>
+              <div className={styles.lessonMeta}>
+                <span>{sceneKind}</span>
+                <i />
+                <span>
+                  {String(index + 1).padStart(2, '0')} / {manifest.scenes.length}
+                </span>
+              </div>
+              <h1>{scene?.title}</h1>
             </div>
-            <h1>{scene?.title}</h1>
-          </div>
+          )}
           <section ref={playerFrame} data-course-player-frame className={styles.frame}>
             <div className={styles.frameBody}>
               {clip ? (
@@ -293,8 +311,13 @@ export function ClassroomVideoViewer({
                   isFullscreen={fullscreen}
                   preferences={preferences}
                   captions={clip.captions}
-                  hideFullscreenControl
-                  embedded={embedded}
+                  onAspectRatio={(next) => setVideoSize({ url: clip.url, ratio: next })}
+                  onPrevious={fullscreen && index > 0 ? () => navigate(index - 1) : undefined}
+                  onNext={
+                    fullscreen && index < manifest.scenes.length - 1
+                      ? () => navigate(index + 1)
+                      : undefined
+                  }
                   onPreferencesChange={updatePreferences}
                   onEnded={advance}
                   onError={setError}
@@ -317,31 +340,35 @@ export function ClassroomVideoViewer({
                 )
               )}
             </div>
-            <CoursePageNavigation
-              index={index}
-              total={manifest.scenes.length}
-              fullscreen={fullscreen}
-              onPrevious={() => navigate(index - 1)}
-              onNext={() =>
-                scene && ['interactive', 'pbl'].includes(scene.type)
-                  ? advance()
-                  : navigate(index + 1)
-              }
-              onFullscreen={() => void toggleFullscreen()}
-            />
+            {(!clip || !fullscreen) && (
+              <CoursePageNavigation
+                index={index}
+                total={manifest.scenes.length}
+                fullscreen={fullscreen}
+                onPrevious={() => navigate(index - 1)}
+                onNext={() =>
+                  scene && ['interactive', 'pbl'].includes(scene.type)
+                    ? advance()
+                    : navigate(index + 1)
+                }
+                onFullscreen={clip ? undefined : () => void toggleFullscreen()}
+              />
+            )}
             {/* Stable sibling of every scene: keep the interactive document alive
                 across chapters and inside the same fullscreen ancestor. */}
             <InteractiveIframeHost key={id} />
           </section>
-          <p className={styles.lessonCaption}>
-            {scene?.type === 'interactive'
-              ? '操作完成后，点击“下一页”进入下一节。'
-              : scene?.type === 'quiz'
-                ? '提交答案后可查看解析。'
-                : scene?.type === 'pbl'
-                  ? '完成实践后继续学习。'
-                  : '可拖动进度回看，也可调整播放速度。'}
-          </p>
+          {!theater && (
+            <p className={styles.lessonCaption}>
+              {scene?.type === 'interactive'
+                ? '操作完成后，点击“下一页”进入下一节。'
+                : scene?.type === 'quiz'
+                  ? '提交答案后可查看解析。'
+                  : scene?.type === 'pbl'
+                    ? '完成实践后继续学习。'
+                    : '可拖动进度回看，也可调整播放速度。'}
+            </p>
+          )}
           {index === manifest.scenes.length - 1 &&
             scene &&
             ['interactive', 'pbl'].includes(scene.type) && (

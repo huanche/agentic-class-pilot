@@ -15,7 +15,7 @@ export function CoursePageNavigation({
   fullscreen: boolean;
   onPrevious: () => void;
   onNext: () => void;
-  onFullscreen: () => void;
+  onFullscreen?: () => void;
 }) {
   return (
     <div className={styles.courseNavigation} data-course-navigation>
@@ -44,14 +44,16 @@ export function CoursePageNavigation({
           {index + 1} / {total}
         </span>
       </nav>
-      <button
-        type="button"
-        className={styles.activityButton}
-        onClick={onFullscreen}
-        aria-label={fullscreen ? '退出全屏' : '全屏'}
-      >
-        {fullscreen ? <Minimize size={19} /> : <Maximize size={19} />}
-      </button>
+      {onFullscreen && (
+        <button
+          type="button"
+          className={styles.activityButton}
+          onClick={onFullscreen}
+          aria-label={fullscreen ? '退出全屏' : '全屏'}
+        >
+          {fullscreen ? <Minimize size={19} /> : <Maximize size={19} />}
+        </button>
+      )}
     </div>
   );
 }

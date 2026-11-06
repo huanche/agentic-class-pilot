@@ -47,8 +47,7 @@ interface CourseVideoPlayerProps {
   fullscreenTarget?: RefObject<HTMLElement | null>;
   isFullscreen?: boolean;
   captions?: VideoCaption[];
-  hideFullscreenControl?: boolean;
-  embedded?: boolean;
+  onAspectRatio: (ratio: number) => void;
 }
 
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
@@ -75,8 +74,7 @@ export function CourseVideoPlayer({
   fullscreenTarget,
   isFullscreen,
   captions,
-  hideFullscreenControl,
-  embedded = false,
+  onAspectRatio,
 }: CourseVideoPlayerProps) {
   const root = useRef<HTMLDivElement>(null);
   const video = useRef<HTMLVideoElement>(null);
@@ -100,7 +98,6 @@ export function CourseVideoPlayer({
   const restorePlayback = useRef(false);
   const [paused, setPaused] = useState(true);
   const [duration, setDuration] = useState(0);
-  const [aspectRatio, setAspectRatio] = useState('16 / 9');
   const [time, setTime] = useState(0);
   const [buffered, setBuffered] = useState<{ start: number; end: number }[]>([]);
   const [waiting, setWaiting] = useState(true);
@@ -428,8 +425,9 @@ export function CourseVideoPlayer({
       className={`relative flex w-full flex-col overflow-hidden rounded-xl bg-[#101114] text-white outline-none focus-visible:ring-2 focus-visible:ring-[#c93678] ${fullscreen ? 'min-h-0 flex-1 rounded-none' : ''} ${!controlsShown ? 'cursor-none' : ''}`}
     >
       <div
-        className={`relative overflow-hidden ${embedded && !fullscreen ? styles.embeddedVideoSurface : 'bg-black'} ${fullscreen ? 'min-h-0 flex-1' : styles.videoSurface} ${failed ? styles.failedSurface : ''}`}
-        style={embedded && !fullscreen ? { aspectRatio } : undefined}
+        data-course-video-surface
+        data-fullscreen={fullscreen}
+        className={`relative overflow-hidden ${styles.videoSurface} ${fullscreen ? 'min-h-0 flex-1' : ''} ${failed ? styles.failedSurface : ''}`}
       >
         <video
           ref={video}
@@ -453,8 +451,8 @@ export function CourseVideoPlayer({
           onLoadedMetadata={() => {
             const player = video.current!;
             setDuration(Number.isFinite(player.duration) ? player.duration : 0);
-            if (embedded && player.videoWidth > 0 && player.videoHeight > 0) {
-              setAspectRatio(`${player.videoWidth} / ${player.videoHeight}`);
+            if (player.videoWidth > 0 && player.videoHeight > 0) {
+              onAspectRatio(player.videoWidth / player.videoHeight);
             }
             player.playbackRate = preferences.rate;
             player.volume = preferences.volume;
@@ -653,18 +651,14 @@ export function CourseVideoPlayer({
               )}
             </button>
             {onPrevious && (
-              <span className={styles.previous}>
-                <button className={control} aria-label="上一节" title="上一节" onClick={onPrevious}>
-                  <SkipBack className="size-4.5" />
-                </button>
-              </span>
+              <button className={control} aria-label="上一节" title="上一节" onClick={onPrevious}>
+                <SkipBack className="size-4.5" />
+              </button>
             )}
             {onNext && (
-              <span className={styles.next}>
-                <button className={control} aria-label="下一节" title="下一节" onClick={onNext}>
-                  <SkipForward className="size-4.5" />
-                </button>
-              </span>
+              <button className={control} aria-label="下一节" title="下一节" onClick={onNext}>
+                <SkipForward className="size-4.5" />
+              </button>
             )}
             <span
               aria-live="off"
@@ -787,16 +781,14 @@ export function CourseVideoPlayer({
                 </div>
               )}
             </div>
-            {!hideFullscreenControl && (
-              <button
-                className={control}
-                aria-label={fullscreen ? '退出全屏' : '全屏'}
-                title={fullscreen ? '退出全屏（F）' : '全屏（F）'}
-                onClick={() => void toggleFullscreen()}
-              >
-                {fullscreen ? <Minimize className="size-5" /> : <Maximize className="size-5" />}
-              </button>
-            )}
+            <button
+              className={control}
+              aria-label={fullscreen ? '退出全屏' : '全屏'}
+              title={fullscreen ? '退出全屏（F）' : '全屏（F）'}
+              onClick={() => void toggleFullscreen()}
+            >
+              {fullscreen ? <Minimize className="size-5" /> : <Maximize className="size-5" />}
+            </button>
           </div>
         </div>
         {notice && (
