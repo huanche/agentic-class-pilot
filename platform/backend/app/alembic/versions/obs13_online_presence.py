@@ -17,7 +17,7 @@ STATEMENTS = [
     # backfill pre-existing sessions as long offline — only requests after
     # this migration make a session "online" (DEFAULT now() would mark every
     # stale token as online right after migrating)
-    "UPDATE browser_session SET last_seen_at = '1970-01-01' + interval '0 seconds'",
+    "UPDATE browser_session SET last_seen_at = to_timestamp(0)",
     "CREATE INDEX IF NOT EXISTS ix_browser_session_last_seen ON browser_session(last_seen_at)",
 ]
 
