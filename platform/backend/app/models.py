@@ -33,7 +33,8 @@ class UserBase(SQLModel):
     is_active: bool = True
     is_superuser: bool = False
     full_name: str | None = Field(default=None, max_length=255)
-    # teacher | student — picked at registration
+    # teacher | student — picked at registration; "observer" exists too but is
+    # only granted out-of-band (internal read-only dev console, see deps.py)
     role: str = Field(default="student", max_length=20)
 
 
@@ -382,6 +383,7 @@ class Token(SQLModel):
 # Contents of JWT token
 class TokenPayload(SQLModel):
     sub: str | None = None
+    sid: str | None = None
 
 
 class NewPassword(SQLModel):

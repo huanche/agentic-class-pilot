@@ -1,0 +1,41 @@
+{
+  "description": "Shared sanitize vectors — loaded by BOTH platform and student_agent test suites (docs/logging-standards.md §12/§13)",
+  "sanitize": [
+    {
+      "name": "url query string stripped (tokens/params must not leak)",
+      "input": "call failed: https://api.llm.example.com/v1/chat?api_key=sk-secret&user=42 returned 500",
+      "limit": 500,
+      "forbidden": ["sk-secret", "user=42", "api_key"],
+      "expected_prefix": "call failed: https://api.llm.example.com/v1/chat?…"
+    },
+    {
+      "name": "newlines/tabs collapsed to spaces",
+      "input": "line1\nline2\tpassword=abc123",
+      "limit": 500,
+      "forbidden": ["\n", "\t"],
+      "expected": "line1 line2 password=abc123"
+    },
+    {
+      "name": "truncated to limit",
+      "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "limit": 20,
+      "expected": "aaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "name": "control characters stripped",
+      "input": "bad\u0000value\r\nwith\u000bchars",
+      "limit": 500,
+      "forbidden": ["\u0000", "\u000b", "\r"],
+      "expected": "bad value with chars"
+    }
+  ],
+  "request_id": {
+    "valid": ["abcd1234", "ABCdefGH-_12345678", "0fde0eec-2192-474d-a640-1b9d2f12cd3c"],
+    "invalid": ["short", "has space!!", "", "<script>", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]
+  },
+  "status_levels": {
+    "200": "info", "302": "info", "401": "info", "403": "info", "404": "info",
+    "422": "info", "409": "info", "408": "warning", "429": "warning",
+    "500": "error", "502": "error", "503": "error"
+  }
+}

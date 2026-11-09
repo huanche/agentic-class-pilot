@@ -1,7 +1,7 @@
+import uuid
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
-import uuid
 
 import sentry_sdk
 from fastapi import FastAPI, HTTPException
@@ -11,12 +11,12 @@ from starlette.middleware.cors import CORSMiddleware
 
 from app.api.main import api_router
 from app.api.routes.student_learning import router as student_learning_router
-from app.services.student_learning_gateway import close_client
 from app.core.config import settings
 from app.core.langgraph.graph import langgraph_agent
 from app.core.langgraph.outline import outline_agent
 from app.core.logging import logger
 from app.services.agent_registry import validate_registry
+from app.services.student_learning_gateway import close_client
 
 FRONTEND_DIR = Path(__file__).parent / "frontend"
 
@@ -68,6 +68,15 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# structured request logging — added last so it wraps everything (outermost)
+from app.core.structured_logging import (  # noqa: E402
+    RequestLoggingMiddleware,
+    setup_logging,
+)
+
+setup_logging()
+app.add_middleware(RequestLoggingMiddleware)
 
 app.include_router(api_router, prefix=settings.API_V1_STR)
 app.include_router(student_learning_router)

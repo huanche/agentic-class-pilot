@@ -1,5 +1,6 @@
 from unittest.mock import patch
 
+import pytest
 from fastapi.testclient import TestClient
 from pwdlib.hashers.bcrypt import BcryptHasher
 from sqlmodel import Session
@@ -7,6 +8,7 @@ from sqlmodel import Session
 from app.core.config import settings
 from app.core.security import get_password_hash, verify_password
 from app.crud import create_user
+from app.main import app
 from app.models import User, UserCreate
 from app.utils import generate_password_reset_token
 from tests.utils.user import user_authentication_headers
@@ -44,6 +46,54 @@ def test_use_access_token(
     result = r.json()
     assert r.status_code == 200
     assert "email" in result
+
+
+@pytest.mark.parametrize(
+    ("role", "is_superuser"),
+    [("student", False), ("teacher", False), ("student", True)],
+    ids=["student", "teacher", "administrator"],
+)
+def test_new_login_revokes_previous_browser_and_bearer_sessions(
+    client: TestClient, db: Session, role: str, is_superuser: bool
+) -> None:
+    """A second login is the only active session, for every platform role."""
+    email = random_email()
+    password = "single-session-password"
+    create_user(
+        session=db,
+        user_create=UserCreate(
+            email=email,
+            password=password,
+            role=role,
+            is_superuser=is_superuser,
+        ),
+    )
+
+    first_login = client.post(
+        f"{settings.API_V1_STR}/login/access-token",
+        data={"username": email, "password": password},
+    )
+    assert first_login.status_code == 200
+    first_token = first_login.json()["access_token"]
+
+    replacement_client = TestClient(app)
+    second_login = replacement_client.post(
+        f"{settings.API_V1_STR}/login/access-token",
+        data={"username": email, "password": password},
+    )
+    assert second_login.status_code == 200
+    second_token = second_login.json()["access_token"]
+
+    assert client.post(f"{settings.API_V1_STR}/login/test-token").status_code == 401
+    assert replacement_client.post(f"{settings.API_V1_STR}/login/test-token").status_code == 200
+    assert client.post(
+        f"{settings.API_V1_STR}/login/test-token",
+        headers={"Authorization": f"Bearer {first_token}"},
+    ).status_code == 401
+    assert replacement_client.post(
+        f"{settings.API_V1_STR}/login/test-token",
+        headers={"Authorization": f"Bearer {second_token}"},
+    ).status_code == 200
 
 
 def test_recovery_password(

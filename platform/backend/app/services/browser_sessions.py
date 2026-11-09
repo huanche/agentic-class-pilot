@@ -1,12 +1,13 @@
 """Opaque, revocable browser sessions; credentials never enter frontend storage."""
 import hashlib
 import secrets
-import uuid
 from datetime import UTC, datetime, timedelta
+from typing import Any, cast
 from urllib.parse import urlsplit
 
 from fastapi import HTTPException, Request, Response
 from sqlalchemy import text
+from sqlalchemy.engine import CursorResult
 from sqlmodel import Session
 
 from app.core.config import settings
@@ -19,24 +20,47 @@ def digest(value: str) -> str:
     return hashlib.sha256(value.encode()).hexdigest()
 
 
-def create_browser_session(db: Session, user: User, response: Response) -> None:
+def create_browser_session(db: Session, user: User, response: Response) -> str:
+    """Replace every existing session for this account with one new session.
+
+    The user-row lock serializes simultaneous login attempts across application
+    workers. The returned opaque session identifier is safe to bind into a
+    signed JWT: it is a hash, never the cookie credential itself.
+    """
     token = secrets.token_urlsafe(48)
+    token_hash = digest(token)
     expires = datetime.now(UTC) + timedelta(hours=12)
-    db.execute(text("INSERT INTO browser_session (token_hash,user_id,expires_at) VALUES (:token,:user,:expires)"),
-               {"token": digest(token), "user": user.id, "expires": expires})
+    db.execute(text('SELECT id FROM "user" WHERE id=:user FOR UPDATE'), {"user": user.id})
+    db.execute(text("DELETE FROM browser_session WHERE user_id=:user"), {"user": user.id})
+    db.execute(
+        text(
+            "INSERT INTO browser_session (token_hash,user_id,expires_at) "
+            "VALUES (:token,:user,:expires)"
+        ),
+        {"token": token_hash, "user": user.id, "expires": expires},
+    )
     db.commit()
     response.set_cookie(COOKIE_NAME, token, max_age=43200, httponly=True,
                         secure=settings.PLATFORM_URL.startswith("https:"), samesite="lax", path="/")
+    return token_hash
 
 
 def user_for_cookie(db: Session, token: str | None) -> User:
     if not token:
         raise HTTPException(401, "请先登录平台")
+    token_hash = digest(token)
     row = db.execute(text("SELECT user_id FROM browser_session WHERE token_hash=:token AND expires_at > now()"),
-                     {"token": digest(token)}).first()
+                     {"token": token_hash}).first()
     user = db.get(User, row[0]) if row else None
     if not user or not user.is_active:
         raise HTTPException(401, "登录已失效，请重新登录")
+    # presence: stamp last-seen at most once a minute (dev console 在线统计用)
+    updated = cast(CursorResult[Any], db.execute(
+        text("UPDATE browser_session SET last_seen_at=now() "
+             "WHERE token_hash=:token AND last_seen_at < now() - interval '60 seconds'"),
+        {"token": token_hash}))
+    if updated.rowcount:
+        db.commit()
     return user
 
 

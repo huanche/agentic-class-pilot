@@ -1,8 +1,8 @@
 from datetime import timedelta
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Response, Request
-from fastapi.responses import HTMLResponse
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.security import OAuth2PasswordRequestForm
 
 from app import crud
@@ -22,9 +22,8 @@ router = APIRouter(tags=["login"])
 
 
 @router.get("/login/session")
-def browser_session_metadata(request: Request):
+def browser_session_metadata(request: Request) -> JSONResponse:
     from app.services.browser_learning_auth import browser_identity
-    from fastapi.responses import JSONResponse
     identity = browser_identity(request)
     return JSONResponse({"userId": str(identity.user_id), "csrfToken": identity.csrf,
                          "expiresAt": identity.expires_at.isoformat()},
@@ -47,10 +46,10 @@ def login_access_token(
         raise HTTPException(status_code=400, detail="账号已被停用")
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     from app.services.browser_sessions import create_browser_session
-    create_browser_session(session, user, response)
+    session_id = create_browser_session(session, user, response)
     return Token(
         access_token=security.create_access_token(
-            user.id, expires_delta=access_token_expires
+            user.id, expires_delta=access_token_expires, session_id=session_id
         )
     )
 

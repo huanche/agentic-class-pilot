@@ -265,3 +265,13 @@ def index():
     if not OUT.is_dir():
         raise HTTPException(503, "请先构建前端：npm run build")
     return FileResponse(OUT / "index.html")
+
+
+# structured request logging — added last so it wraps everything (outermost)
+from backend.infrastructure.structured_logging import (  # noqa: E402
+    RequestLoggingMiddleware,
+    setup_logging,
+)
+
+setup_logging()
+app.add_middleware(RequestLoggingMiddleware)
