@@ -183,7 +183,9 @@ with create_engine(context.config.attributes['url']).connect() as connection:
     config.set_main_option("script_location", str(tmp_path))
     config.set_main_option("path_separator", "os")
     config.set_main_option("version_locations", str(ROOT / "platform/backend/app/alembic/versions"))
-    assert ScriptDirectory.from_config(config).get_heads() == ["obs13"]
+    script = ScriptDirectory.from_config(config)
+    assert script.get_revision("rec12").down_revision == "cmd11"
+    assert script.get_revision("cmd11").down_revision == "pub10"
     with pg() as connection:
         connection.execute("DROP TABLE student.student_commands,student.pending_progress_sync,student.lesson_content_versions")
         for column in ("state_version", "content_generation", "snapshot", "lesson_id", "revoked_at", "content_id"):
@@ -195,18 +197,18 @@ with create_engine(context.config.attributes['url']).connect() as connection:
     command.stamp(config, "pub10")
     try:
         with pytest.raises(Exception):
-            command.upgrade(config, "head")
+            command.upgrade(config, "rec12")
         with pg() as connection:
             assert connection.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "pub10"
             assert connection.execute("SELECT count(*) FROM information_schema.columns WHERE table_schema='student' AND table_name='student_sessions' AND column_name='snapshot'").fetchone()[0] == 0
             connection.execute("UPDATE student.learning_events SET payload='{\"lessonId\":\"lesson\",\"stateVersion\":3,\"contentGeneration\":2}'")
-        command.upgrade(config, "head")
-        command.upgrade(config, "head")
+        command.upgrade(config, "rec12")
+        command.upgrade(config, "rec12")
         with pg() as connection:
-            assert connection.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "obs13"
+            assert connection.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "rec12"
             assert connection.execute("SELECT state_version,content_generation,lesson_id,snapshot->>'lessonId' FROM student.student_sessions WHERE session_key='legacy'").fetchone() == (3, 2, "lesson", "lesson")
     finally:
         # Keep the shared disposable fixture usable even when an assertion fails.
         with pg() as connection:
             connection.execute("UPDATE student.learning_events SET payload='{}'")
-        command.upgrade(config, "head")
+        command.upgrade(config, "rec12")
