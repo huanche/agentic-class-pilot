@@ -43,9 +43,6 @@ def advance(state, intent, assessment, *, after_class=False):
         raise ValueError("当前没有待评估的知识点")
     old_stage = result["stage"]
     result["last_point_id"] = point["id"]
-    submitted_assessment = deepcopy(assessment)
-    if assessment and assessment["result"] == "mastered" and assessment["gaps"]:
-        assessment = {**assessment, "result": "partial"}
     outcome = assessment["result"] if assessment else "unclear"
     evidence = assessment["evidence"] if assessment else ""
     if after_class:
@@ -56,8 +53,7 @@ def advance(state, intent, assessment, *, after_class=False):
     point[counter] = point.get(counter, 0) + 1
     point["attempts"] = point["recall_attempts"] + point["reinforce_attempts"]
     point["assessment_history"].append({"stage": stage, "round": point[counter],
-        "result": outcome, "evidence": evidence, "studentText": result["student_text"],
-        "submitted_assessment": submitted_assessment})
+        "result": outcome, "evidence": evidence, "studentText": result["student_text"]})
     result["evaluation"] = {"intent": intent, "assessments": [
         {"id": point["id"], **deepcopy(assessment)}] if assessment else []}
     if assessment:
@@ -70,7 +66,7 @@ def advance(state, intent, assessment, *, after_class=False):
     result["transition"] = "continue"
     if outcome == "mastered":
         point.update(recall_done=True, reinforce_done=True, reinforcement_required=False,
-                     mastered_in=stage)
+                     mastered_in=stage, gaps=[])
         result["transition"] = "mastered_next"
     elif not after_class:
         limit = result["recall_round_limit" if old_stage == "recall" else "reinforce_round_limit"]

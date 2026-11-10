@@ -74,7 +74,7 @@ def test_five_then_eight_rounds_and_only_unmastered_points_are_reinforced():
     for _ in range(5):
         state = typed_state.advance(state, "answer", a)
     assert state["stage"] == "recall" and typed_state.current(state)["type"] == "concept"
-    state = typed_state.advance(state, "answer", {**a, "result": "mastered", "gaps": []})
+    state = typed_state.advance(state, "answer", {**a, "result": "mastered"})
     assert state["stage"] == "reinforce" and typed_state.current(state)["type"] == "memory"
     for _ in range(8):
         state = typed_state.advance(state, "answer", a)
@@ -89,7 +89,7 @@ def test_last_round_mastery_wins_without_extra_confirmation():
     a = assessment().tool_calls[0]["args"]["assessment"]
     for _ in range(4):
         state = typed_state.advance(state, "answer", a)
-    state = typed_state.advance(state, "answer", {**a, "result": "mastered", "gaps": []})
+    state = typed_state.advance(state, "answer", {**a, "result": "mastered"})
     assert state["stage"] == "wrapup" and state["completion_reason"] == "all_mastered"
     assert not state["points"][0]["reinforcement_required"]
 

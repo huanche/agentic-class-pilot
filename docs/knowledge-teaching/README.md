@@ -4,7 +4,7 @@
 
 - [教学方案](plan.md)：先读这份，说明怎么教一轮、什么时候换点和结束。
 - [实施记录](implementation.md)：实际改动、验证结果及限制。
-- [掌握与缺口一致性修复](mastery-gap-fix.md)：整点评估、有缺口按部分掌握、保留原始提交。
+- [掌握与缺口一致性修复记录（已回退）](mastery-gap-fix.md)：保留历史实施说明，当前不生效。
 - [真实课时与模型实测](validation/2026-11-06-live-model/README.md)：三种提问、补强与反馈的实际对话，及仍需改进的地方。
 - [重复追问与切点修复](validation/2026-11-06-reply-fixes/README.md)：原因、改动和真实模型回放。
 - [动态模拟学生重跑](validation/2026-11-10-responsive-student/README.md)：学生根据最新提问与提示回答，检查修复后的追问和切点。

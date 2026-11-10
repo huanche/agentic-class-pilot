@@ -270,3 +270,10 @@
 - 程序推进前规范mastered+非空gaps为partial；提交原文保存assessment_history.submitted_assessment，有效结果保存result/evaluation；不再主动清gap。提示词明确整个点累计证据、全部要求满足再掌握，raw仅审计。
 - 新增验证partial空gap不升级、合法mastered、5次首轮+8次补强、跨命令恢复原始评估、课后继续直到缺口解决。8接口/23相关回归通过。首轮完整回归258通过/2旧fixture失败/3跳过，因旧样例将mastered+gap当合法掌握；纠正样例为空gap并保留原断言后，最终260通过/3跳过。
 - 编译/依赖/diff/文档链接通过。无前端变更、未重复浏览器测试、未重新真实模型实测；不修JSON或教材、不部署。收尾核对独立随机库清空并停止PG。
+
+### 2026-11-10 用户要求回退
+- 将typed_teaching.py、typed_state.py及两个对应测试恢复到多子Agent实测后的行为；教学Agent字节SHA-256与实测d0b4d855cf386ed4047ac9d1eed43c8481aebae41411ef48056717354be0ea0b一致。
+- 后续掌握/缺口修复已撤回，其说明保留为已回退历史，实测数据保留。相关回归19通过，编译通过，清理EOF空行后diff检查通过。
+- 原0745c93 commit未改写，回退未另提交/推送，未部署；独立测试库清空后停PG。
+
+- 用户后续要求单独提交本次回退；已核对仅本次定向回退和说明，保留原commit与子Agent证据，不push、不部署。
