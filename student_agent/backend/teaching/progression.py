@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import copy
 import os
+from backend.teaching import typed_state
 
 FLOW_VERSION = 3
 
@@ -23,6 +24,8 @@ def reinforce_round_limit() -> int:
 
 
 def normalize(state: dict) -> dict:
+    if typed_state.active(state):
+        return copy.deepcopy(state)
     result = copy.deepcopy(state)
     result.setdefault("discussion_turns", 0)
     if result.get("flow_version") == FLOW_VERSION:
@@ -99,6 +102,8 @@ def eligible_points(points: list[dict]) -> list[dict]:
 
 
 def current_point(state: dict) -> dict | None:
+    if typed_state.active(state):
+        return typed_state.current(state)
     stage = state["stage"]
     if stage == "recall":
         return next((p for p in state["points"] if not p["recall_done"]), None)
@@ -212,6 +217,8 @@ def advance(state: dict) -> dict:
 
 
 def progress(state: dict) -> dict:
+    if typed_state.active(state):
+        return typed_state.progress(state)
     current = normalize(state)
     points = current["points"]
     active = current_point(current)

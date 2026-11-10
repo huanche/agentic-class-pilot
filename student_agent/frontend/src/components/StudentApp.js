@@ -17,6 +17,10 @@ export default function StudentApp() {
   const phase = learning.screen;
   const busy = learning.busy;
   const dynamicFlow = flowVersion === "dynamic_dialogue_v1";
+  const typedFlow = Boolean(learning.typedTeaching);
+  const stageTitle = stage => typedFlow
+    ? ({ recall: "逐点学习", reinforce: "补强", wrapup: "总结反馈" }[stage] || "知识点学习")
+    : STAGE_TITLES[stage];
   const paused = activityStatus === "paused";
   const can = command => !busy && allowedCommands.includes(command);
   const [optimistic, setOptimistic] = useState(null);
@@ -222,10 +226,10 @@ export default function StudentApp() {
       {!course?.lessons.length && <p>本课程暂无已开放课时。</p>}
     </section>}
     {phase === "lesson" && <section className="view"><header className="view__header"><button className="back" onClick={() => controller.dispatch({ type: "catalog" })}>← 返回课时</button><h2 className="view__title">{lesson?.title}</h2></header><div className="view__body"><div className="lesson"><p className="lesson__eyebrow">{course?.title} · 第 {lesson?.week} 周</p><h3 className="lesson__title">{lesson?.title}</h3><p className="lesson__summary">{lesson?.summary || "准备好后开始本节课。"}</p><button className="btn btn--primary" onClick={() => begin(lesson)} disabled={busy}>开始或继续上课</button></div></div></section>}
-    {(phase === "video" || phase === "discussion" || phase === "done" || phase === "replay" || phase === "postclass") && <section className="view classroom-view"><header className="view__header"><h2 className="view__title">{lesson?.title || "课堂"}</h2><span className="view__badge">{phase === "video" ? "教学视频" : phase === "discussion" ? STAGE_TITLES[agentStage] || "复述与讨论" : phase === "replay" ? "课后回看" : phase === "postclass" ? "课后对话" : "已结束"}</span></header><div className={`classroom-layout${progressOpen ? "" : " classroom-layout--progress-hidden"}${phase === "video" || phase === "replay" ? " classroom-layout--video" : ""}${phase === "discussion" || phase === "postclass" ? " classroom-layout--conversation" : ""}`}>
+    {(phase === "video" || phase === "discussion" || phase === "done" || phase === "replay" || phase === "postclass") && <section className="view classroom-view"><header className="view__header"><h2 className="view__title">{lesson?.title || "课堂"}</h2><span className="view__badge">{phase === "video" ? "教学视频" : phase === "discussion" ? stageTitle(agentStage) || "复述与讨论" : phase === "replay" ? "课后回看" : phase === "postclass" ? "课后对话" : "已结束"}</span></header><div className={`classroom-layout${progressOpen ? "" : " classroom-layout--progress-hidden"}${phase === "video" || phase === "replay" ? " classroom-layout--video" : ""}${phase === "discussion" || phase === "postclass" ? " classroom-layout--conversation" : ""}`}>
       <nav className="classroom-tools" aria-label="课堂工具"><ul className="classroom-tools__list"><li><button className={`classroom-tools__button${progressOpen ? " is-active" : ""}`} type="button" title={progressOpen ? "收起课堂进程" : "打开课堂进程"} aria-label={progressOpen ? "收起课堂进程" : "打开课堂进程"} aria-controls="lesson-progress-panel" aria-expanded={progressOpen} onClick={() => setProgressOpen((open) => !open)}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3" /><path d="M9 9h7M9 12h7M9 15h5" /></svg></button></li></ul></nav>
       <div className="classroom-progress-slot" hidden={!progressOpen}>
-        <LessonProgress id="lesson-progress-panel" phase={phase} agentStage={agentStage} progress={learningProgress} postclassStage={postclassStage} flowVersion={flowVersion} progressSummary={progressSummary} />
+        <LessonProgress id="lesson-progress-panel" phase={phase} agentStage={agentStage} progress={learningProgress} postclassStage={postclassStage} flowVersion={flowVersion} progressSummary={progressSummary} typedTeaching={typedFlow} />
         <button className="classroom-progress-close" type="button" aria-label="收起课堂进程" title="收起课堂进程" onClick={() => setProgressOpen(false)}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m14 5-7 7 7 7" /></svg></button>
       </div>
       <div className="view__body classroom-content">
@@ -237,22 +241,22 @@ export default function StudentApp() {
           <div className="conversation-resize-handle conversation-resize-handle--right" role="separator" aria-label="拖动调整对话框右边缘" aria-orientation="vertical" onPointerDown={(event) => startConversationResize(event, "right")} onPointerMove={moveConversationResize} onPointerUp={() => { conversationResize.current = null; }} onPointerCancel={() => { conversationResize.current = null; }} />
           <div className="conversation-heading">
             <h3 className="new-stage-title">{phase === "postclass"
-              ? dynamicFlow ? "课后继续交流" : postclassStage === "remediation" ? "继续未完成的学习" : "全部完成 · 自由提问"
-              : "复述与讨论"}</h3>
+              ? typedFlow ? "继续巩固" : dynamicFlow ? "课后继续交流" : postclassStage === "remediation" ? "继续未完成的学习" : "全部完成 · 自由提问"
+              : typedFlow ? "知识点学习" : "复述与讨论"}</h3>
             <p className="conversation-stage" role="status">{phase === "postclass"
               ? "本次课堂已经结束，课后对话会更新你的学习反馈。"
-              : `${STAGE_TITLES[agentStage] || "初始复述"}${learningProgress?.currentPoint ? ` · 当前知识点：${learningProgress.currentPoint}` : ""}`}</p>
+              : `${stageTitle(agentStage) || "初始复述"}${learningProgress?.currentPoint ? ` · 当前知识点：${learningProgress.currentPoint}` : ""}`}</p>
           </div>
           <div className="chat conversation-log" role="log" aria-live="polite" ref={chatLog}>
             {(phase === "postclass" ? postclassMessages : messages).map((message, index) => <div className={`msg msg--${message.role === "student" ? "me" : "ai"}`} key={message.messageId || index}>
               {message.role !== "student" && <div className="msg__avatar">AI</div>}
               <div className="msg__bubble">{message.role !== "student" && STAGE_TITLES[message.phase]
-                && <span className="msg__stage">{STAGE_TITLES[message.phase]}</span>}{message.text}</div>
+                && <span className="msg__stage">{stageTitle(message.phase)}</span>}{message.text}</div>
             </div>)}
             {replyPending && <div className="msg msg--ai" role="status" aria-label="AI 正在回复"><div className="msg__avatar" aria-hidden="true">AI</div><div className="msg__bubble typing" aria-hidden="true"><span /><span /><span /></div></div>}
           </div>
-          {(phase === "discussion" || (dynamicFlow && phase === "postclass")) && agentStage === "wrapup"
-            ? <div className="conversation-complete" role="status"><strong>课堂对话已完成</strong><p>点击下方按钮查看本课反馈。还想继续学习，可以在课后回看视频或与 AI 对话。</p></div>
+          {((phase === "discussion" || (dynamicFlow && phase === "postclass")) && agentStage === "wrapup") || (typedFlow && phase === "postclass" && postclassStage !== "remediation")
+            ? <div className="conversation-complete" role="status"><strong>课堂对话已完成</strong><p>{typedFlow ? "点击下方按钮查看反馈，再选择回看或继续巩固。" : "点击下方按钮查看本课反馈。还想继续学习，可以在课后回看视频或与 AI 对话。"}</p></div>
             : <form className="composer" onSubmit={event => send(event)}>
               <textarea className="composer__input" ref={composerInput} rows={1} disabled={dynamicFlow && (paused || !can(phase === "postclass" ? "postclass_answer" : "submit_answer"))} value={input} onChange={(event) => editInput(event.target.value)} onKeyDown={handleComposerKeyDown} placeholder={phase === "postclass" && postclassStage === "open" ? "自由向 AI 提问…" : "说说你的理解，或提出问题…"} aria-label="输入复述或讨论" />
               <button className="composer__send" type="submit" disabled={busy || !input.trim() || (dynamicFlow && !can(phase === "postclass" ? "postclass_answer" : "submit_answer"))} aria-label="发送">↑</button>
@@ -265,13 +269,13 @@ export default function StudentApp() {
             {paused && <span role="status">学习已暂停，当前任务已保留。</span>}
           </div>}
           <div className="conversation-actions">
-            {phase === "postclass" ? <button className="btn btn--primary" type="button" disabled={busy} onClick={() => controller.dispatch({ type: "back_feedback" })}>返回学习反馈</button>
-              : dynamicFlow ? <button className="btn btn--primary" type="button" disabled={!can("finish")} onClick={end}>结束本课并查看反馈</button> : <><span className="conversation-end-hint">{agentStage === "wrapup" ? "学习反馈已准备好生成" : "提前结束仅供测试使用"}</span><button className={`btn ${agentStage === "wrapup" ? "btn--primary" : "btn--ghost"}`} type="button" disabled={busy} onClick={agentStage === "wrapup" ? end : () => setShowEarlyEndWarning(true)}>{busy && !replyPending ? "正在保存…" : agentStage === "wrapup" ? "结束本课并查看反馈" : "提前结束本课"}</button></>}
+            {phase === "postclass" ? <button className="btn btn--primary" type="button" disabled={!typedFlow && busy} onClick={() => typedFlow ? perform("exit_after_class") : controller.dispatch({ type: "back_feedback" })}>{typedFlow ? "退出巩固并保留进度" : "返回学习反馈"}</button>
+              : dynamicFlow || typedFlow ? <button className="btn btn--primary" type="button" disabled={typedFlow ? busy : !can("finish")} onClick={end}>结束本课并查看反馈</button> : <><span className="conversation-end-hint">{agentStage === "wrapup" ? "学习反馈已准备好生成" : "提前结束仅供测试使用"}</span><button className={`btn ${agentStage === "wrapup" ? "btn--primary" : "btn--ghost"}`} type="button" disabled={busy} onClick={agentStage === "wrapup" ? end : () => setShowEarlyEndWarning(true)}>{busy && !replyPending ? "正在保存…" : agentStage === "wrapup" ? "结束本课并查看反馈" : "提前结束本课"}</button></>}
           </div>
           {phase === "discussion" && agentStage !== "wrapup" && showEarlyEndWarning && <div className="early-end-warning" role="alert"><strong>提前结束仅限测试使用</strong><p>学生请勿使用此按钮。确认后将跳过正常学习阶段，直接结束本课；尚未完成的复述和讨论会记录为未完成。</p><div className="early-end-warning__actions"><button className="btn btn--ghost" type="button" disabled={busy} onClick={() => setShowEarlyEndWarning(false)}>取消，继续学习</button><button className="btn btn--reset-confirm" type="button" disabled={busy} onClick={end}>{busy ? "正在结束…" : "确认提前结束（仅测试）"}</button></div></div>}
         </div>
       </div>}
-      {phase === "done" && <div className="stage stage--done"><div className="done done--feedback"><span className="done__check" aria-hidden="true">✓</span><p>第 {lesson?.week} 周 · 第 {lesson?.lessonNumber} 次课</p><h3 className="done__title">本节课结束</h3><LessonFeedback feedback={feedback} />
+      {phase === "done" && <div className="stage stage--done"><div className="done done--feedback"><span className="done__check" aria-hidden="true">✓</span><p>第 {lesson?.week} 周 · 第 {lesson?.lessonNumber} 次课</p><h3 className="done__title">本节课结束</h3><LessonFeedback feedback={feedback} />{typedFlow && postclassStage === "completed" && <p role="status">本课知识点已全部掌握。</p>}
         {messages.length > 0 && <details className="conversation-history">
           <summary>查看历史会话（{messages.length} 条）</summary>
           <div className="chat conversation-log" role="log" aria-label="历史课堂与课后对话">
@@ -280,7 +284,7 @@ export default function StudentApp() {
               <div className="msg__bubble"><span className="msg__stage">{String(message.phase || "").startsWith("postclass-") ? "课后对话" : STAGE_TITLES[message.phase] || "课堂对话"}</span>{message.text}</div>
             </div>)}
           </div>
-        </details>}{replayError && <p className="replay-error" role="alert">暂时无法回看：{replayError}</p>}<div className="postclass-actions"><button className="btn btn--primary" type="button" disabled={busy} onClick={() => openReplay(Boolean(replayError))}>{replayLoading ? "正在获取播放信息…" : replayError ? "重试回看" : "回看视频"}</button><button className="btn btn--primary" type="button" disabled={busy} onClick={openPostclass}>{postclassStage === "open" ? "与 AI 自由提问" : "继续未完成的学习"}</button><button className="btn btn--ghost" type="button" disabled={busy} onClick={() => controller.dispatch({ type: "catalog" })}>返回课时列表</button><a className="btn btn--ghost" href={`${platformUrl || "http://localhost:8088"}/student`}>返回首页</a></div><div className="lesson-reset"><button className="btn btn--reset" type="button" disabled={busy} onClick={() => setShowResetConfirm(true)}>重置本课学习进度</button>{showResetConfirm && <div className="lesson-reset__confirm" role="group" aria-label="确认重置本课学习进度"><p>确定重新学习「{lesson?.title}」吗？本课的对话、知识点掌握情况和反馈将被删除，其他课时不受影响。此操作无法撤销。</p><div><button className="btn btn--ghost" type="button" disabled={busy} onClick={() => setShowResetConfirm(false)}>取消</button><button className="btn btn--reset-confirm" type="button" disabled={busy} onClick={resetLesson}>{busy ? "正在重置…" : "确认重置本课"}</button></div></div>}</div></div></div>}
+        </details>}{replayError && <p className="replay-error" role="alert">暂时无法回看：{replayError}</p>}<div className="postclass-actions"><button className="btn btn--primary" type="button" disabled={busy} onClick={() => openReplay(Boolean(replayError))}>{replayLoading ? "正在获取播放信息…" : replayError ? "重试回看" : "回看视频"}</button><button className="btn btn--primary" type="button" disabled={busy} onClick={openPostclass}>{typedFlow ? "继续巩固" : postclassStage === "open" ? "与 AI 自由提问" : "继续未完成的学习"}</button><button className="btn btn--ghost" type="button" disabled={busy} onClick={() => controller.dispatch({ type: "catalog" })}>返回课时列表</button><a className="btn btn--ghost" href={`${platformUrl || "http://localhost:8088"}/student`}>返回首页</a></div><div className="lesson-reset"><button className="btn btn--reset" type="button" disabled={busy} onClick={() => setShowResetConfirm(true)}>重置本课学习进度</button>{showResetConfirm && <div className="lesson-reset__confirm" role="group" aria-label="确认重置本课学习进度"><p>确定重新学习「{lesson?.title}」吗？本课的对话、知识点掌握情况和反馈将被删除，其他课时不受影响。此操作无法撤销。</p><div><button className="btn btn--ghost" type="button" disabled={busy} onClick={() => setShowResetConfirm(false)}>取消</button><button className="btn btn--reset-confirm" type="button" disabled={busy} onClick={resetLesson}>{busy ? "正在重置…" : "确认重置本课"}</button></div></div>}</div></div></div>}
     </div></div></section>}
     {learning.connectionError && !error && <p role="status">连接暂时中断，正在重试同步学习状态。</p>}
     {error && !replayError && phase !== "error" && <p className="new-error" role="alert">{error}</p>}

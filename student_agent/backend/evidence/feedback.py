@@ -7,9 +7,12 @@ from backend.teaching.progression import normalize
 from backend.teaching.dynamic_state import read_state as _state
 from backend.teaching.dynamic_state import POLICY
 from backend.contracts import DYNAMIC_FLOW as FLOW
+from backend.teaching import typed_state
 
 
 def lesson_feedback(session: dict) -> dict:
+    if typed_state.active(session.get("dialogue")):
+        return typed_state.feedback(session)
     dialogue = normalize(session["dialogue"])
     ended_early = dialogue.get("completion_reason") == "student_ended_early"
     unfinished_discussion_ids = set(

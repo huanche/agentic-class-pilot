@@ -1,0 +1,193 @@
+[
+  {
+    "case": "challenge-copy/challenge",
+    "masteredWithGaps": [
+      {
+        "call": 3,
+        "assessment": {
+          "result": "mastered",
+          "evidence": "学生说明 rear 表示下一个可插入位置，入队只看 rear 是否到数组末尾，front=3 表明 0~2 已空出但 rear=8 越界，因此报溢出，即假溢出。",
+          "known_parts": [
+            "假溢出示例：front = 3、rear = 8，0~2 空位未用却因 rear 超出末端报溢出"
+          ],
+          "gaps": [
+            "循环队列用取余让指针绕回",
+            "队空条件 front 等于 rear",
+            "队满条件 (rear + 1) % MAXQSIZE 等于 front"
+          ],
+          "next_step": "请学生说明循环队列如何用取余运算让 rear 从 7 绕回 0，从而复用前端空位。"
+        }
+      },
+      {
+        "call": 6,
+        "assessment": {
+          "result": "mastered",
+          "evidence": "学生说明空队列时 front 与 rear 均为空指针，插入第一个结点后两者都指向该结点，因为它既是队头也是队尾，正确描述了链队列初始状态与首次入队后指针的变化。",
+          "known_parts": [
+            "空队列时 front 与 rear 均为 NULL，表示没有结点",
+            "插入第一个结点后 front 与 rear 都指向该结点，它既是队头也是队尾"
+          ],
+          "gaps": [
+            "入队时新结点接在 rear 之后、rear 后移，无队满问题",
+            "出队前判断队空，队空条件为 front 等于 NULL",
+            "链队列是链表操作的受限子集"
+          ],
+          "next_step": "请学生说明队列已有结点时再入队一个结点，新结点接在哪里、rear 如何移动，并解释为什么链队列不会出现队满。"
+        }
+      }
+    ]
+  },
+  {
+    "case": "challenge-copy/challenge",
+    "failedFinalOutput": "你最后这轮把链队列的初始状态和首次入队说清楚了：空队列时 front 和 rear 都是空指针，插入第一个结点后两者都指向它，因为它同时是队头也是队尾，这一点掌握得不错。\n\n本课两个要点到这里都有了明确结论：一是循环队列中假溢出的成因和解决办法，二是链队列空队列与首次入队时 front、rear 的变化。后续可以再巩固的是循环队列判空、判满的边界条件，以及链队列出队时 front 的移动和队列变空后的处理，这些今天还没有展开确认。",
+    "failedStateUnchanged": true
+  },
+  {
+    "case": "challenge-copy/challenge-direct",
+    "masteredWithGaps": [
+      {
+        "call": 15,
+        "assessment": {
+          "result": "mastered",
+          "evidence": "学生说清不带头结点时空队列中 front 与 rear 都指向 NULL，并解释 front==rear 不能单独判空（单结点时 front 与 rear 也可能相等），故判空用 front==NULL；结合前一轮已说明的无队满与出队前判空，链队列实现要点已基本说清。",
+          "known_parts": [
+            "链队列结点动态申请，无固定数组容量，因此不存在队满问题",
+            "仍受内存限制，申请不到结点时入队失败",
+            "出队前必须先判空",
+            "带头结点时队空条件为 front==rear（或 front->next==NULL）",
+            "不带头结点时空队列中 front、rear 均为 NULL，队空条件为 front==NULL",
+            "front==rear 不能单独判空，因为单结点时 front 与 rear 也可能相等"
+          ],
+          "gaps": [
+            "入队只在 rear 之后插入这一操作要点尚未由学生自己说明"
+          ],
+          "next_step": "请学生用一句话说明入队时新结点接在哪个位置、rear 如何随之移动，把链队列的入队操作要点补上。"
+        }
+      }
+    ]
+  },
+  {
+    "case": "challenge-copy/challenge-direct",
+    "failedFinalOutput": "你最后把不带头结点链队列的判空条件说清楚了：空队列时 front 和 rear 都指向 NULL，而 front==rear 在只有一个结点时也可能成立，所以判空要看 front==NULL。这一点已经掌握。\n\n今天两个重点都已说清：循环队列用取模解决假溢出，并靠留一个空位区分队空和队满；链队列没有固定容量、不存在队满，但出队前必须判空，判空条件要分带头结点和不带头结点两种情况。后续复习时，重点把这两种判空条件对应清楚，避免混用。",
+    "failedStateUnchanged": true
+  },
+  {
+    "case": "challenge-copy/copy-shortcut",
+    "failedFinalOutput": "你最后把链队列入队和“不会队满”这两点都说清楚了：新结点接在 rear 后面，再让 rear 指向它；链队列靠动态申请结点，没有固定长度，所以不存在队满。这部分可以收尾了。\n\n今天两个重点都已掌握：一是循环队列里 rear=8 越界、前端空位用不到，用取模让 rear 从 7 回到 0 来解决假溢出；二是链队列的入队操作和不会队满的原因。后面复习时，把“取模为什么能解决假溢出”和“链队列入队后 rear 的位置”各用自己的话再讲一遍，巩固一下就好。",
+    "failedStateUnchanged": true
+  },
+  {
+    "case": "lifecycle-fault/lifecycle",
+    "masteredWithGaps": [
+      {
+        "call": 8,
+        "assessment": {
+          "result": "mastered",
+          "evidence": "学生正确说明入队时把新结点接到 rear 所指结点之后，并让 rear 指向新结点；同时指出结点动态申请、不受固定长度限制，因此不存在数组队列那种队满。",
+          "known_parts": [
+            "入队：新结点接在 rear 之后，再更新 rear 指向新结点",
+            "链队列结点动态申请，不受固定长度限制，无队满问题"
+          ],
+          "gaps": [
+            "尚未说明出队前需判断队空，以及队空条件为 front 等于 NULL"
+          ],
+          "next_step": "转向出队方向：请学生说明链队列出队前要检查什么条件、队空时 front 与 rear 处于什么状态。"
+        }
+      }
+    ]
+  },
+  {
+    "case": "misconceptions/persistent_wrap",
+    "failedFinalOutput": "本轮就到这里。你已经把循环队列的关键关系说清楚了：假溢出不是真的没空间，而是 rear 走到数组末端；用取余能让指针绕回开头；队空和队满在“不留空位”时都会出现 front==rear，程序会先判成空，所以必须额外加计数器或标志位；而留一个空位则直接用 (rear+1)%8==front 判满，不必增加额外存储。链队列这边，你也掌握了出队前先判空、删除最后一个结点后 front 和 rear 都要置空。\n\n这些内容本轮已经确认掌握，不需要再补题。后续复习时，把“留一个空位”的判空、判满条件和指针移动放在一起对照一遍，保持熟练即可。",
+    "failedStateUnchanged": true
+  },
+  {
+    "case": "misconceptions/relapsing_mixed",
+    "masteredWithGaps": [
+      {
+        "call": 9,
+        "assessment": {
+          "result": "mastered",
+          "evidence": "学生说明链队列入队不需判断队满，理由是结点动态申请、链表长度不固定，并主动与顺序队列数组长度固定作对比；还提出内存耗尽是否算队满的疑问，属于合理延伸。",
+          "known_parts": [
+            "链队列入队不需判断队满，因为结点是动态申请的",
+            "入队时新申请结点接在 rear 之后",
+            "顺序队列会满是因为数组长度固定，链表没有固定长度"
+          ],
+          "gaps": [
+            "内存耗尽（申请结点失败）与“队满”概念的区别未说清"
+          ],
+          "next_step": "澄清内存耗尽不等于队满：队满指逻辑容量上限，链队列没有这个上限；申请失败属于系统资源问题。随后请学生说明出队前为什么必须先判断队空，以及链队列的队空条件是什么。"
+        }
+      }
+    ]
+  },
+  {
+    "case": "misconceptions/relapsing_mixed",
+    "failedFinalOutput": "链队列这块你已经说清楚了：入队不用判队满，因为结点是动态申请的，新结点直接接在 rear 后面；顺序队列会满是因为数组长度固定。你提的“内存耗尽算不算队满”是个好延伸——那属于系统内存不足，不是队列逻辑上的队满，实现时通常按申请失败处理，不影响“链队列入队不判队满”这个结论。\n\n今天两个要点都过了：循环队列用取模让 rear 绕回前端，解决假溢出；链队列靠动态结点，入队不判队满。课后可以再想一遍：循环队列判空和判满分别看什么条件，为什么不能只靠 front == rear 区分。",
+    "failedStateUnchanged": true
+  },
+  {
+    "case": "misconceptions/stubborn_wrap",
+    "masteredWithGaps": [
+      {
+        "call": 9,
+        "assessment": {
+          "result": "mastered",
+          "evidence": "学生用自己的话说清了因果链：普通队列 rear 只加一、到 8 就停，0~2 空位用不上，这就是假溢出；循环队列用取余让 rear 绕回，从而复用前端空位。已回应上一轮要求的因果链，且不再重复“整除完”的错误说法。",
+          "known_parts": [
+            "普通顺序队列 rear 只做加一、不绕回，到数组末端就报溢出",
+            "前端 0~2 空位未被使用却报溢出，即假溢出",
+            "循环队列用取余让 rear 绕回，复用前端空位",
+            "能算出 (8+1)%8 并说出取余使指针回到开头"
+          ],
+          "gaps": [
+            "尚未涉及队空、队满的判定条件（front==rear 与留一个空位）"
+          ],
+          "next_step": "进入下一理解点：请学生说明循环队列中如何区分队空与队满，为什么队满要留一个空位。"
+        }
+      },
+      {
+        "call": 12,
+        "assessment": {
+          "result": "mastered",
+          "evidence": "学生明确说出链队列不需要判断队满，理由是结点动态申请、不像数组有固定容量，并进一步想到“内存够不够”这一层，说明理解了链队列无队满问题的原因。",
+          "known_parts": [
+            "链队列入队结点动态申请，不存在固定容量，因此不需要判断队满",
+            "意识到动态申请仍受内存限制，但这不是队列结构意义上的队满"
+          ],
+          "gaps": [
+            "尚未说明出队前必须判断队空，以及队空条件 front 等于 NULL"
+          ],
+          "next_step": "确认“内存不足”与“队满”不是一回事后，请学生说明链队列出队前要检查什么条件、为什么。"
+        }
+      }
+    ]
+  },
+  {
+    "case": "unclear-offtopic/offtopic",
+    "masteredWithGaps": [
+      {
+        "call": 12,
+        "assessment": {
+          "result": "mastered",
+          "evidence": "学生指出链队列结点动态申请，不像数组有固定格子数，因此一般不会队满；并进一步追问内存申请失败是否算另一种满。",
+          "known_parts": [
+            "链队列结点动态申请，容量不受固定数组长度限制，因此不存在顺序队列意义上的队满",
+            "入队只在 rear 后插入新结点"
+          ],
+          "gaps": [
+            "内存申请失败与“队满”的区别（属于空间耗尽/异常，不是队列逻辑上的队满）",
+            "出队前需判断队空，队空条件 front == NULL"
+          ],
+          "next_step": "先肯定学生对“无队满”的理解，并澄清 malloc 失败是空间耗尽而非队满；然后请学生说明链队列出队前要检查什么条件、为什么是 front == NULL。"
+        }
+      }
+    ]
+  },
+  {
+    "case": "unclear-offtopic/offtopic",
+    "failedFinalOutput": "链队列这块你已经抓住了关键：结点是动态申请的，所以不存在数组那种“格子用完”的队满。你担心的“申请不到新结点”确实是一种边界情况，但它属于内存分配失败，不是队列逻辑上的队满，通常单独按错误处理。\n\n今天两个重点都清楚了：循环队列用取余实现绕回，并用留一个空位区分队空和队满；链队列靠动态结点，没有固定容量上限。课后再把这两种队列的判空、判满条件对照着过一遍，就稳了。",
+    "failedStateUnchanged": true
+  }
+]

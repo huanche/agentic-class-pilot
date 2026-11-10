@@ -9,7 +9,22 @@ const STEPS = [
 export const STAGE_TITLES = { ...Object.fromEntries(STEPS.map(({ id, title }) => [id, title])),
   opening: "开场交流", tutoring: "围绕当前问题交流", independent_attempt: "独立尝试", summary: "总结反馈" };
 
-export default function LessonProgress({ id, phase, agentStage, progress, postclassStage, flowVersion, progressSummary }) {
+export default function LessonProgress({ id, phase, agentStage, progress, postclassStage, flowVersion, progressSummary, typedTeaching }) {
+  if (typedTeaching) {
+    const steps = ["教学视频", "逐点学习", "补强未掌握点", "总结反馈"];
+    const index = phase === "video" ? 0 : ["done", "replay", "postclass"].includes(phase) || agentStage === "wrapup"
+      ? 3 : agentStage === "reinforce" ? 2 : 1;
+    return <aside id={id} className="lesson-progress" aria-label="课堂阶段进度">
+      <p className="lesson-progress__eyebrow">本课学习进度</p>
+      <ol className="lesson-progress__steps">{steps.map((title, i) => <li key={title}
+        className={`lesson-progress__step${i === index ? " is-current" : ""}`}
+        aria-current={i === index ? "step" : undefined}>
+        <span className="lesson-progress__marker" aria-hidden="true">{i + 1}</span><div><strong>{title}</strong></div>
+      </li>)}</ol>
+      {progress?.currentPoint && phase === "discussion" && <p>当前知识点：{progress.currentPoint}</p>}
+      {phase === "postclass" && <p>接着尚未掌握的部分学习，可随时退出并保留进度。</p>}
+    </aside>;
+  }
   if (flowVersion === "dynamic_dialogue_v1") return <aside id={id} className="lesson-progress" aria-label="课堂阶段进度">
     <p className="lesson-progress__eyebrow">本课学习活动</p>
     <strong>{phase === "video" ? "教学视频" : phase === "done" || phase === "replay" ? "课堂已结束" : STAGE_TITLES[agentStage] || "课后交流"}</strong>

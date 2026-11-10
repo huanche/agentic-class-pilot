@@ -1,0 +1,71 @@
+[
+  {
+    "case": "stubborn_wrap",
+    "status": "completed",
+    "submittedTurns": 4,
+    "calls": {
+      "teacher": 9,
+      "learner": 4
+    },
+    "points": [
+      {
+        "title": "循环队列与假溢出的解决",
+        "status": "mastered",
+        "recall_attempts": 3,
+        "reinforce_attempts": 0
+      },
+      {
+        "title": "链队列的实现要点",
+        "status": "mastered",
+        "recall_attempts": 1,
+        "reinforce_attempts": 0
+      }
+    ]
+  },
+  {
+    "case": "relapsing_mixed",
+    "status": "failed",
+    "submittedTurns": 2,
+    "calls": {
+      "teacher": 7,
+      "learner": 3
+    },
+    "points": [
+      {
+        "title": "循环队列与假溢出的解决",
+        "status": "mastered",
+        "recall_attempts": 2,
+        "reinforce_attempts": 0
+      },
+      {
+        "title": "链队列的实现要点",
+        "status": "unseen",
+        "recall_attempts": 0,
+        "reinforce_attempts": 0
+      }
+    ]
+  },
+  {
+    "case": "persistent_wrap",
+    "status": "failed",
+    "submittedTurns": 8,
+    "calls": {
+      "teacher": 20,
+      "learner": 9
+    },
+    "points": [
+      {
+        "title": "循环队列与假溢出的解决",
+        "status": "partial",
+        "recall_attempts": 5,
+        "reinforce_attempts": 1
+      },
+      {
+        "title": "链队列的实现要点",
+        "status": "mastered",
+        "recall_attempts": 2,
+        "reinforce_attempts": 0
+      }
+    ]
+  }
+]

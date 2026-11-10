@@ -1,0 +1,46 @@
+{
+  "cases": [
+    {
+      "case": "challenge",
+      "status": "failed",
+      "submittedTurns": 1,
+      "learnerRequests": 2,
+      "teacherRequests": 5,
+      "reinforcementEntered": false
+    },
+    {
+      "case": "copy-shortcut",
+      "status": "failed",
+      "submittedTurns": 2,
+      "learnerRequests": 3,
+      "teacherRequests": 8,
+      "reinforcementEntered": false
+    },
+    {
+      "case": "challenge-direct",
+      "status": "failed",
+      "submittedTurns": 4,
+      "learnerRequests": 5,
+      "teacherRequests": 11,
+      "reinforcementEntered": false
+    },
+    {
+      "case": "shortcut-direct",
+      "status": "completed",
+      "submittedTurns": 4,
+      "learnerRequests": 4,
+      "teacherRequests": 10,
+      "reinforcementEntered": false
+    }
+  ],
+  "checks": [
+    "all learner calls saw latest teacher only through visible dialogue",
+    "all model call results captured",
+    "failed turns did not commit state",
+    "counters match committed turns",
+    "business code hash unchanged",
+    "sensitive-value and links scan passed"
+  ],
+  "productionWrites": false,
+  "databaseUsed": false
+}

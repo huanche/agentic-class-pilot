@@ -1,0 +1,166 @@
+{
+  "summary": "本课 11 个知识点：9 个已掌握，2 个待巩固，0 个尚未学习／评估。",
+  "points": [
+    {
+      "title": "栈与队列的定义及 LIFO/FIFO 特性",
+      "category": "mastered",
+      "label": "已掌握",
+      "knownParts": [
+        "栈：只允许在同一端（栈顶）插入和删除的线性表",
+        "栈遵循后进先出 LIFO：最后入栈的元素最先出栈",
+        "队列：只允许在队尾 rear 插入、在队头 front 删除",
+        "队列遵循先进先出 FIFO：最先入队的元素最先出队",
+        "两者都是相对线性表（任意位置插入删除）而言的受限线性表"
+      ],
+      "gaps": [],
+      "suggestion": ""
+    },
+    {
+      "title": "栈的核心术语与操作",
+      "category": "needs_review",
+      "label": "待巩固",
+      "knownParts": [
+        "Push在栈顶插入元素",
+        "新元素入栈后位于Top（栈顶）"
+      ],
+      "gaps": [
+        "Pop是从栈顶删除元素，而不是取最早放入的元素",
+        "栈顶Top是允许插入和删除的一端，栈底Bottom是不进行操作的另一端",
+        "所有插入删除操作都集中在栈顶一端"
+      ],
+      "suggestion": "不要求复述术语，只让学生凭生活经验判断：一摞盘子A在下、B在中、C在最上，手只能从最上面伸进去，问“你伸手能拿到的是C还是A”。"
+    },
+    {
+      "title": "由操作序列推演出栈序列",
+      "category": "mastered",
+      "label": "已掌握",
+      "knownParts": [
+        "Push A、B、C 后连续 Pop 三次，输出为 CBA",
+        "Push A、Pop A、Push B、Pop B、Push C、Pop C 的输出为 ABC，并不违反 LIFO",
+        "CAB 不可能：C 先出栈时 A、B 仍在栈中且 B 在栈顶，下一步只能弹 B 再弹 A",
+        "1/0 操作序列可转译为出栈序列：1 表示 Push，0 表示 Pop，每步只需盯住当前栈顶",
+        "常见错误是把 FIFO 套用到栈上，误以为先入的 A 一定先出"
+      ],
+      "gaps": [],
+      "suggestion": ""
+    },
+    {
+      "title": "顺序栈的存储结构与空满判断",
+      "category": "mastered",
+      "label": "已掌握",
+      "knownParts": [
+        "顺序栈用连续存储单元自栈底到栈顶依次存放元素，base 指向栈底",
+        "top 指向栈顶元素的下一位置（下一个可插入位置）",
+        "Push 时 top 上移，Pop 时 top 下移",
+        "元素个数为 top−base，base 为 0、top 为 3 时有 3 个元素",
+        "空栈条件 top==base",
+        "栈满条件 top−base>=MAXSTACKSIZE，再入栈发生上溢"
+      ],
+      "gaps": [],
+      "suggestion": ""
+    },
+    {
+      "title": "用栈实现数制转换（八进制）",
+      "category": "mastered",
+      "label": "已掌握",
+      "knownParts": [
+        "八进制转换中d取8，商为0时停止",
+        "1348÷8商168余4，168÷8商21余0，21÷8商2余5，2÷8商0余2",
+        "余数依次入栈为4、0、5、2，栈顶为2",
+        "出栈依次得2、5、0、4，八进制结果为2504",
+        "余数产生顺序为低位到高位，栈的LIFO用于反转输出顺序"
+      ],
+      "gaps": [],
+      "suggestion": ""
+    },
+    {
+      "title": "用栈实现行编辑的退格撤销",
+      "category": "mastered",
+      "label": "已掌握",
+      "knownParts": [
+        "规则：普通字符Push，#弹出前一个字符Pop",
+        "理由：最近输入字符位于栈顶，所以一次Pop即可撤销",
+        "whli##ilr#e 处理过程：whli入栈，两个#依次弹出i、l回到wh，再入i、l、r，#弹出r，入e得while",
+        "括号部分：s入栈后被#删去，再入*、s、右括号",
+        "最终结果 while (*s)"
+      ],
+      "gaps": [],
+      "suggestion": ""
+    },
+    {
+      "title": "顺序队列的指针含义与入队出队",
+      "category": "mastered",
+      "label": "已掌握",
+      "knownParts": [
+        "front指向队头元素，即最早入队、最先出队的元素",
+        "rear指向队尾元素的下一位置，即下一个新元素的插入位置",
+        "入队：写入rear所指位置后rear后移",
+        "出队：取出front所指元素后front后移",
+        "front=2、rear=5时队中为A、B、C，A为队头、C为队尾，5是下次插入位置"
+      ],
+      "gaps": [],
+      "suggestion": ""
+    },
+    {
+      "title": "循环队列与假溢出的解决",
+      "category": "needs_review",
+      "label": "待巩固",
+      "knownParts": [
+        "假溢出：rear到数组末端但前面出队腾出的空位没有复用",
+        "循环队列用取余让指针绕回，容量8时(7+1)%8=0",
+        "队空条件front==rear",
+        "队满条件(rear+1)%MAXQSIZE==front，需预留一个空位",
+        "预留空位是为了避免空和满都表示为front==rear"
+      ],
+      "gaps": [
+        "未说明front=3、rear=8时入队会因rear超出数组末端而报溢出（越界）",
+        "未说明0~2空位用不上的原因：普通顺序队列指针只单向后移，rear不会自动绕回0"
+      ],
+      "suggestion": "换一种呈现方式：给出两个具体格子（下标7和下标8），让学生只判断新元素能不能写进下标8，并只回答“能/不能”，再问普通顺序队列的rear后移是rear=rear+1还是rear=(rear+1)%MAXQSIZE。"
+    },
+    {
+      "title": "链队列的实现要点",
+      "category": "mastered",
+      "label": "已掌握",
+      "knownParts": [
+        "链队列以链表实现，front 指向队头，rear 指向队尾",
+        "入队：在 rear 之后插入，无队满问题（仅受可用内存限制）",
+        "出队：需先判断队空，无头结点表示下队空条件为 front==NULL",
+        "与顺序循环队列对比：后者用数组下标、可能队满，队空判断为 front==rear",
+        "链队列本质是链表操作的子集，只保留队头删除、队尾插入的受限操作"
+      ],
+      "gaps": [],
+      "suggestion": ""
+    },
+    {
+      "title": "设计并验证合法出栈序列",
+      "category": "mastered",
+      "label": "已掌握",
+      "knownParts": [
+        "BAC对应操作序列110010，逐步栈变化[A]→[A,B]→[A]→空→[C]→空，输出BAC",
+        "CBA对应111000，ABC对应101010，ACB对应101100，BCA对应110100",
+        "能区分1/0操作序列与出栈序列",
+        "CAB不可能：C先出后B挡在A上方，只能先出B",
+        "Pop只取当前栈顶，不在空栈Pop"
+      ],
+      "gaps": [],
+      "suggestion": ""
+    },
+    {
+      "title": "设计行编辑整行撤销的栈方案",
+      "category": "mastered",
+      "label": "已掌握",
+      "knownParts": [
+        "普通字符Push入栈",
+        "#对应一次Pop退掉一个字符，空栈时不再Pop",
+        "@用循环Pop直到栈空或直接置空实现整行清空",
+        "明确区分@清整行与#退一字",
+        "ab#c@de#f逐步处理正确，最终df",
+        "说明@后栈回到空状态，后续输入从空栈累积",
+        "ab#c@de最终输出de正确"
+      ],
+      "gaps": [],
+      "suggestion": ""
+    }
+  ]
+}

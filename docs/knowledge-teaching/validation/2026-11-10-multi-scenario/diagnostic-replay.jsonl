@@ -1,0 +1,5 @@
+{"case": "mastered_with_gaps", "modelGapCount": 3, "appliedStatus": "mastered", "appliedGaps": [], "transition": "mastered_next"}
+{"case": "captured_plain_summary", "offlineProviderStatus": 200, "errors": [{"type": "SessionError", "message": "课堂导师暂不可用，进度未改变，请重试"}, {"type": "ValueError", "message": "教学回复格式不正确"}]}
+{"remaining_gaps_should_not_disappear": false, "captured_final_reply_should_be_readable": false}
+{"probe": "only_change_result_to_partial", "originalSchemaAcceptedContradiction": true, "status": "partial", "gaps": ["循环队列用取余让指针绕回", "队空条件 front 等于 rear", "队满条件 (rear + 1) % MAXQSIZE 等于 front"], "transition": "continue"}
+{"probe": "only_wrap_same_summary_as_required_json", "serviceReturned": true, "sameVisibleText": true, "stage": "wrapup"}
