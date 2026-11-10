@@ -46,7 +46,7 @@ def test_evidence_and_content_definitions_have_no_transitive_io_or_executor_depe
     pure = {"backend.contracts", "backend.content.context", "backend.content.lesson_content", "backend.content.knowledge_schema",
             "backend.content.prompts", "backend.teaching.dynamic_state", "backend.teaching.postclass_state",
             "backend.teaching.progression", "backend.teaching.prompts", "backend.evidence.records",
-            "backend.evidence.feedback", "backend.teaching.typed_state"}
+            "backend.evidence.feedback", "backend.teaching.typed_state", "backend.teaching.requirements"}
     for module in pure:
         pending, seen = [module], set()
         while pending:

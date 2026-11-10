@@ -26,6 +26,7 @@ def test_stalled_learner_gets_a_different_explanation_instead_of_the_same_choice
     last = prior_turns[-1]
     point = next(p for p in report["finalPoints"] if p["id"] == last["pointId"])
     state = service.new_dialogue([point])
+    state.pop("mastery_version", None)  # Replay the archived protocol, not a new lesson.
     focus = state["points"][0]
     focus.update(status="partial", recall_done=True, recall_attempts=5, reinforce_attempts=2,
         attempts=7, task_question=last["questionBefore"], known_parts=last["knownParts"],

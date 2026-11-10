@@ -4,6 +4,19 @@
 
 ## 1. State 每个知识点保存什么
 
+2026-11-10起，新建typed会话增加`mastery_version=1`。没有此标记的旧会话保持原协议，不把旧掌握判断自动转成逐项证据；内容协议和原`flow_version=4`不变。
+
+| 新记录 | 内容 |
+| --- | --- |
+| requirements | 从memory.requiredElements、concept.understandingPoints、design.capability/constraints/successCriteria生成，id为字段名:序号；初始unconfirmed，后续needs_help或demonstrated |
+| 每项表现 | evidence、程序保存的studentText、具体gap；未更新项保持原状，新证据可将原先已说清项改为需帮助 |
+| question_targets / latest_question / question_history | 每次实际提问和关联要求、阶段及帮助类型；task_question仍是最初原题 |
+| assessment_history | result为本问结果，point_result为程序汇总整点结果，answer_assessment保留本次工具原文，并记录目标及对应实际问题 |
+
+新工具`AnswerAssessment`只允许answer_result（correct/partial/misconception/unanswered）、evidence、updates和next_step；updates用requirement_id关联当前点，并给出demonstrated或needs_help和依据。模型不能直接提交整点mastered。一答可更新多个要求，未问过/无新证据的项不更新。单纯提问允许assessment=null。
+
+程序根据全部requirements汇总status、known_parts和gaps；只有全部demonstrated才mastered。其余gaps区分“尚未确认”与已发现的问题。反馈中仅未确认的标“本次尚未确认”，不当作学生不会。历史、原题与逐项证据随原snapshot事务保存。
+
 保留已有的知识点内容、掌握状态、判断依据、回答历史和轮数；新增 known_parts、gaps、next_step、help_history 和 task_question，分别保存以下记录：
 
 | 记录 | 内容 | 谁来更新 |
@@ -33,7 +46,7 @@
 
 一次 Agent 运行中：
 
-1. Agent 评估当前回答，调用提交评估工具，提交结果、依据、已会部分和剩余缺口。单纯提问或表达不清时如实记录，不伪造掌握。
+1. Agent评估当前回答，调用提交评估工具，提交本问结果与各要求的证据更新。单纯提问或表达不清时如实记录，不伪造掌握。
 2. 工具在本轮工作副本中更新该点记录，调用程序推进逻辑计数和选点；工具不再调用模型。
 3. 工具返回更新后的当前点、阶段、原题、学习记录和继续/换点/总结动作。
 4. Agent 读取工具结果生成最终回复。换点后，系统提示词同步使用新点的 type；先反馈旧点，再问新点。
@@ -62,7 +75,7 @@
 
 | 位置 | 已接入内容 |
 | --- | --- |
-| teaching/graph.py | 一次 Agent 运行、评估提交工具、学习记录和实际题目上下文 |
+| teaching/typed_teaching.py、typed_state.py、requirements.py | 一次Agent运行、逐项证据工具、整点汇总、实际提问目标和原题记录 |
 | teaching/progression.py | 保留程序固定选点，改为首轮 5 轮和补强 8 轮，取消统一讨论及后期确认 |
 | teaching/prompts.py | 按 type 提问与评估，补强只接缺口，不强制新题确认 |
 | teaching/service.py | 生成第一问，接入本轮 Agent 运行 |

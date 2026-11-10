@@ -1,5 +1,6 @@
 """Program-owned progress for typed lessons. No model, storage or transport calls."""
 from copy import deepcopy
+from backend.teaching import requirements
 
 VERSION = 4
 
@@ -9,7 +10,7 @@ def active(dialogue):
 
 
 def initial(points):
-    return {"flow_version": VERSION, "stage": "recall", "recall_round_limit": 5,
+    return {"flow_version": VERSION, "mastery_version": 1, "stage": "recall", "recall_round_limit": 5,
             "reinforce_round_limit": 8, "transition": "continue", "strategy": "ask",
             "messages": [], "student_text": "", "evaluation": {}, "reply": "",
             "last_point_id": None, "current_task": None,
@@ -17,7 +18,12 @@ def initial(points):
                 recall_attempts=0, reinforce_attempts=0, recall_done=False, reinforce_done=False,
                 reinforcement_required=False, excluded_from_discussion=False, mastered_in=None,
                 assessment_history=[], known_parts=[], gaps=[], next_step="", help_history=[],
-                task_question="") for p in points]}
+                task_question="", requirements=requirements.initial(p), question_targets=[],
+                latest_question="", question_history=[]) for p in points]}
+
+
+def scoped(state):
+    return state.get("mastery_version") == 1
 
 
 def current(state, *, after_class=False):
@@ -41,6 +47,9 @@ def advance(state, intent, assessment, *, after_class=False):
     point = current(result, after_class=after_class)
     if not point:
         raise ValueError("当前没有待评估的知识点")
+    submitted = deepcopy(assessment)
+    if scoped(result):
+        assessment = requirements.apply(point, assessment, result["student_text"])
     old_stage = result["stage"]
     result["last_point_id"] = point["id"]
     outcome = assessment["result"] if assessment else "unclear"
@@ -54,6 +63,11 @@ def advance(state, intent, assessment, *, after_class=False):
     point["attempts"] = point["recall_attempts"] + point["reinforce_attempts"]
     point["assessment_history"].append({"stage": stage, "round": point[counter],
         "result": outcome, "evidence": evidence, "studentText": result["student_text"]})
+    if scoped(result):
+        point["assessment_history"][-1].update(
+            result=submitted["answer_result"] if submitted else "unclear", point_result=outcome,
+            answer_assessment=submitted, target_ids=deepcopy(point["question_targets"]),
+            question=point["latest_question"])
     result["evaluation"] = {"intent": intent, "assessments": [
         {"id": point["id"], **deepcopy(assessment)}] if assessment else []}
     if assessment:
@@ -105,10 +119,14 @@ def feedback(session):
         category = ("mastered" if point["status"] == "mastered" else "not_assessed" if not attempted else "needs_review")
         label = ("已掌握" if category == "mastered" else "尚未学习／评估" if not attempted
                  else "待巩固" if point["gaps"] else "本次尚未确认")
+        if scoped(state) and category == "needs_review":
+            label = "待巩固" if any(r["status"] == "needs_help" for r in point["requirements"]) else "本次尚未确认"
         entries.append({"id": point["id"], "title": point["title"], "category": category, "label": label,
             "status": point["status"], "knownParts": deepcopy(point["known_parts"]), "gaps": deepcopy(point["gaps"]),
             "evidence": point["evidence"], "suggestion": "" if category == "mastered" else point["next_step"] or
                 ("从这个知识点的第一问开始学习。" if not attempted else "接着原题，先说清还不确定的地方。")})
+        if scoped(state):
+            entries[-1]["requirements"] = requirements.public(point)
     counts = {k: sum(p["category"] == k for p in entries) for k in ("mastered", "needs_review", "not_assessed")}
     return {"schemaVersion": 4, "typedTeaching": True, "points": entries, "counts": counts,
             "endedEarly": state.get("completion_reason") == "student_ended_early",

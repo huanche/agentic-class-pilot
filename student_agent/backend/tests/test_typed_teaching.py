@@ -17,9 +17,12 @@ from test_reliable_commands import active
 
 def session(*types):
     points = compile_points(submit_knowledge_points(points=list(types or (MEMORY, CONCEPT, DESIGN))))
+    dialogue = service.new_dialogue(points)
+    # These archived fixtures exercise the earlier, pinned assessment protocol.
+    dialogue.pop("mastery_version", None)
     return {"id": "typed", "phase": "video", "lessonId": "lesson", "videoRevision": "rev",
             "courses": [], "messages": [], "preparation": "ready", "stateVersion": 1,
-            "dialogue": service.new_dialogue(points)}
+            "dialogue": dialogue}
 
 
 def reply(question="当前问题？", assistance="none"):
