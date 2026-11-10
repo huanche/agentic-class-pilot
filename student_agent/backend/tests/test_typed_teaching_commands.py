@@ -29,7 +29,8 @@ def conversation(pg, monkeypatch, request):
             scenario["inspect_request"](json.loads(request.content))
         response = next(packets) if "responses" in scenario else scenario or {
             "text": "接着原题，说明 Push 和 Pop 的作用？", "question": "说明 Push 和 Pop 的作用？", "assistance": "none"}
-        message = response if "tool_calls" in response else {"role": "assistant", "content": json.dumps(response, ensure_ascii=False)}
+        message = ({"role": "assistant", "content": response} if isinstance(response, str) else
+                   response if "tool_calls" in response else {"role": "assistant", "content": json.dumps(response, ensure_ascii=False)})
         transport = import_module(type(request).__module__.split(".")[0])
         return transport.Response(200, request=request, json={"id": "offline", "object": "chat.completion", "created": 0,
             "model": "offline-model", "choices": [{"index": 0, "finish_reason": "tool_calls" if "tool_calls" in message else "stop",
@@ -48,6 +49,8 @@ def conversation(pg, monkeypatch, request):
     if not scenario.get("requirement_progress"):
         # Existing conversations keep the earlier point-level assessment protocol.
         seed["dialogue"].pop("mastery_version", None)
+    if not scenario.get("natural_reply"):
+        seed["dialogue"].pop("reply_version", None)
     persistence.save(seed, 0)  # Arrange the lesson; assertions use only HTTP below.
     client = TestClient(main.app, headers={"X-Platform-Learning-Key": "tdd-forward-key",
         "X-Platform-Protocol": "platform-cookie-v1", "X-Platform-User-Id": "student", "X-Platform-Course-Id": "course"})
@@ -66,6 +69,13 @@ def conversation(pg, monkeypatch, request):
         if expected_status != 200:
             return response.json()
         return response.json()["sessionView"]
+
+    def read_records():
+        response = client.post(f"/api/session/{sid}/learning-records", json={})
+        assert response.status_code == 200, response.text
+        return response.json()
+
+    read.records = read_records
 
     return read, send
 
@@ -398,3 +408,77 @@ def test_completed_point_advances_in_order_and_new_point_uses_its_own_requiremen
     assert done["agentStage"] == "wrapup"
     send("finish")
     assert read()["feedback"]["counts"] == {"mastered": 2, "needs_review": 0, "not_assessed": 0}
+
+
+@pytest.mark.parametrize("conversation", [{"requirement_progress": True, "natural_reply": True,
+    "responses": ["请说明 Push 的含义。", scoped_packet(PUSH_SHOWN, POP_SHOWN), "你已说明 Push 插入、Pop 删除，本课结束。"]}], indirect=True)
+def test_natural_chinese_summary_is_displayed_without_json_parsing(conversation):
+    read, send = conversation
+    opened = send("start_discussion")
+    assert opened["currentTaskPublic"]["question"] == "请说明 Push 的含义。"
+    done = send("submit_answer", "Push插入，Pop删除")
+    assert done["agentStage"] == "wrapup"
+    assert done["messages"][-1]["text"] == "你已说明 Push 插入、Pop 删除，本课结束。"
+    send("finish")
+    assert read()["feedback"]["counts"]["mastered"] == 1
+
+
+def inspect_program_plan(body):
+    context = json.loads(body["messages"][0]["content"].splitlines()[-1])
+    if context["focus"] and context["focus"]["requirements"][0]["status"] == "demonstrated":
+        assert context["teaching_plan"]["target_ids"] == ["requiredElements:2"]
+
+
+@pytest.mark.parametrize("conversation", [{"requirement_progress": True, "natural_reply": True,
+    "inspect_request": inspect_program_plan,
+    "responses": ["请说明 Push。", scoped_packet(PUSH_SHOWN, next_step="继续问已会的Push"),
+                  "Push已说明，请说明Pop。"]}], indirect=True)
+def test_program_chooses_pending_target_and_records_actual_unclassified_reply(conversation):
+    read, send = conversation
+    send("start_discussion")
+    reply = send("submit_answer", "Push 是插入")
+    assert reply["messages"][-1]["text"] == "Push已说明，请说明Pop。"
+    record = read.records()["assistance"][-1]
+    assert record["classificationBasis"] == "unclassified_tutor_text"
+    assert record["guidedPolicy"] is None
+    assert record["plannedAction"] == "ask"
+
+
+@pytest.mark.parametrize("conversation", [{"requirement_progress": True, "natural_reply": True,
+    "responses": ["请说明Push。", scoped_packet(PUSH_SHOWN), "请说明Pop。", "我们继续说明Pop。",
+                  scoped_packet(POP_SHOWN), "你已自己说明了两个操作。"]}], indirect=True)
+def test_plain_reply_keeps_original_task_and_evidence_after_postclass_resume(conversation):
+    read, send = conversation
+    opened = send("start_discussion")
+    send("submit_answer", "Push插入")
+    send("finish")
+    resumed = send("continue_after_class")
+    assert resumed["currentTaskPublic"]["question"] == opened["currentTaskPublic"]["question"]
+    done = send("postclass_answer", "Pop删除当前栈顶")
+    assert done["postclassStage"] == "completed"
+    assert [r["studentText"] for r in read()["feedback"]["points"][0]["requirements"]] == ["Push插入", "Pop删除当前栈顶"]
+
+
+@pytest.mark.parametrize("conversation", [{"requirement_progress": True, "natural_reply": True,
+    "responses": ["请说明Push。", scoped_packet(PUSH_SHOWN, POP_SHOWN), "   ",
+                  scoped_packet(PUSH_SHOWN, POP_SHOWN), "你已说明这两个操作。"]}], indirect=True)
+def test_empty_plain_reply_rolls_back_evidence_until_successful_retry(conversation):
+    read, send = conversation
+    send("start_discussion")
+    send("submit_answer", "Push插入Pop删除", expected_status=503)
+    assert read()["learningProgress"]["recallCompleted"] == 0
+    assert send("submit_answer", "Push插入Pop删除")["agentStage"] == "wrapup"
+
+
+@pytest.mark.parametrize("conversation", [{"requirement_progress": True, "natural_reply": True,
+    "responses": ["请说明Push。",
+        {"role": "assistant", "content": None, "tool_calls": [{"id": "unclear", "type": "function", "function": {
+            "name": "submit_current_assessment", "arguments": json.dumps({"intent": "unclear", "assessment": None})}}]},
+        "你是没有理解题意，还是不知道Push做什么？"]}], indirect=True)
+def test_program_selects_clarification_for_unclear_answer_without_mastery(conversation):
+    read, send = conversation
+    send("start_discussion")
+    send("submit_answer", "懂了")
+    assert read.records()["assistance"][-1]["plannedAction"] == "clarify"
+    send("finish")
+    assert all(r["status"] == "unconfirmed" for r in read()["feedback"]["points"][0]["requirements"])

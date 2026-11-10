@@ -42,6 +42,10 @@
 
 ## 2. 一条回答如何处理
 
+新会话另有`reply_version=1`：程序按requirements原顺序选第一项未完成要求；同一目标且本问含糊/未回答则clarify，同一目标仍未完成则explain，新目标有缺口则correct，否则ask；没有当前点则summarize。计划通过`teaching_plan`交给模型，不采用模型建议的目标或最终正文中的字段。
+
+评估工具与通常两次模型请求保持不变。最终直接接收非空文本，不解析JSON。首次实际全文保存为原题，后续全文、程序目标与planned_action进入question_history/help_history。外部学习记录标unclassified_tutor_text、guidedPolicy=null，不把计划动作当实际帮助分类。没有reply_version的旧会话保持旧协议。程序仍不能保证模型实际文字完全遵循计划。
+
 程序从 State 按固定顺序选当前点，传入原题、上述学习记录、学生回答，以及当前 type 的系统提示词。
 
 一次 Agent 运行中：

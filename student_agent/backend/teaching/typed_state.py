@@ -10,7 +10,7 @@ def active(dialogue):
 
 
 def initial(points):
-    return {"flow_version": VERSION, "mastery_version": 1, "stage": "recall", "recall_round_limit": 5,
+    return {"flow_version": VERSION, "mastery_version": 1, "reply_version": 1, "stage": "recall", "recall_round_limit": 5,
             "reinforce_round_limit": 8, "transition": "continue", "strategy": "ask",
             "messages": [], "student_text": "", "evaluation": {}, "reply": "",
             "last_point_id": None, "current_task": None,
@@ -24,6 +24,18 @@ def initial(points):
 
 def scoped(state):
     return state.get("mastery_version") == 1
+
+
+def teaching_plan(state, *, after_class=False):
+    point = current(state, after_class=after_class)
+    if not point:
+        return {"target_ids": [], "action": "summarize"}
+    pending = next(r for r in point["requirements"] if r["status"] != "demonstrated")
+    repeated = pending["id"] in point.get("question_targets", [])
+    history = point["assessment_history"]
+    action = ("clarify" if repeated and history and history[-1]["result"] in {"unclear", "unanswered"} else
+              "explain" if repeated else "correct" if pending["status"] == "needs_help" else "ask")
+    return {"target_ids": [pending["id"]], "action": action, "requirement": pending["text"]}
 
 
 def current(state, *, after_class=False):

@@ -113,6 +113,7 @@ def run(dialogue, *, opening=False, after_class=False):
         raise ValueError("当前没有需要继续的知识点")
     deadline, calls, applied = monotonic() + 90, 0, None
     scoped = typed_state.scoped(candidate)
+    natural = scoped and candidate.get("reply_version") == 1
     assessment_schema = AnswerAssessment if scoped else Assessment
 
     def context(state, *, assessed=False):
@@ -145,6 +146,7 @@ def run(dialogue, *, opening=False, after_class=False):
             focus_data["help_history"] = focus_data.get("help_history", [])[-2:]
         prior = {key: prior[key] for key in ("id", "title", "status", "evidence")}
         return {"focus": focus_data, "previousPoint": prior,
+                "teaching_plan": typed_state.teaching_plan(state, after_class=after_class) if natural else None,
                 "stage": "postclass" if after_class else state["stage"],
                 "transition": state.get("transition"), "evaluation": evaluation,
                 "studentText": "" if opening else state["student_text"],
@@ -179,9 +181,15 @@ def run(dialogue, *, opening=False, after_class=False):
         focus = typed_state.current(state, after_class=after_class)
         policy = TYPE_PROMPTS[focus["type"]] if focus else "程序已进入总结，不再提出问题。"
         system = (SCOPED_PROMPT if scoped else PROMPT) + "\n当前类型策略：" + policy + "\n程序提供的最新教学数据：\n" + json.dumps(context(state, assessed=assessed), ensure_ascii=False)
+        if natural:
+            system = system.replace(SCOPED_PROMPT, SCOPED_PROMPT.split("回复只输出JSON：")[0] +
+                "程序已选定teaching_plan的目标和动作，不能自行更换。ask提问、clarify澄清卡点、explain解释或示范必要一步、correct纠正误解、summarize总结。"
+                "评估仍通过工具提交；最终只输出给学生看的自然中文，不输出JSON、字段、内部记录或工具代码。最终中文不修改进度。")
         # Keep the tool exchange in Agent State, but generation reads the updated
         # context rather than re-reading the old assessment's action suggestions.
         messages = [HumanMessage(content="根据最新教学数据生成回复。简短回应学生，本轮教学落实 focus.next_step；切点后不再追问上一点。")]
+        if natural:
+            messages = [HumanMessage(content="按照程序的teaching_plan直接回复自然中文；切点只简短反馈旧点，不再追问旧点。")]
         if request.messages and isinstance(request.messages[-1], HumanMessage):
             messages = [request.messages[-1]]
         response = handler(request.override(system_message=SystemMessage(content=system),
@@ -195,6 +203,8 @@ def run(dialogue, *, opening=False, after_class=False):
 
     @after_model(can_jump_to=["model"])
     def repair_missing_task_question(state, runtime):
+        if natural:
+            return None
         if not state["assessed"]:
             return None
         focus = typed_state.current(state["dialogue"], after_class=after_class)
@@ -224,6 +234,24 @@ def run(dialogue, *, opening=False, after_class=False):
     if not result["assessed"]:
         raise ValueError("没有收到当前回答的有效评估工具提交")
     last = next(m for m in reversed(result["messages"]) if isinstance(m, AIMessage))
+    if natural:
+        if not isinstance(last.content, str) or not last.content.strip() or last.tool_calls:
+            raise ValueError("教学回复为空或未完成")
+        candidate = deepcopy(result["dialogue"])
+        text = last.content.strip()
+        plan = typed_state.teaching_plan(candidate, after_class=after_class)
+        focus = typed_state.current(candidate, after_class=after_class)
+        if focus:
+            focus["question_targets"] = deepcopy(plan["target_ids"])
+            focus["latest_question"] = text
+            focus["task_question"] = focus["task_question"] or text
+            record = {"stage": "postclass" if after_class else candidate["stage"], "text": text,
+                      "target_ids": deepcopy(plan["target_ids"]), "planned_action": plan["action"]}
+            focus["question_history"].append(deepcopy(record))
+            focus["help_history"].append(record)
+        candidate.update(reply=text, teaching_plan=plan, last_assistance="tutor_response",
+                         current_task=typed_state.task(candidate, after_class=after_class))
+        return candidate
     reply = model.json_object(str(last.content))
     text, question = reply.get("text"), reply.get("question", "")
     if not isinstance(text, str) or not text.strip() or not isinstance(question, str):

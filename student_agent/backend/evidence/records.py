@@ -292,6 +292,10 @@ def transition(before, candidate, *, command_id=None):
                     "kind": kind, "guidedPolicy": (kind != "none") if dynamic or typed else True if kind != "tutor_response" else None, "substantive": None,
                     "providedAt": message["createdAt"], "deliveryStatus": "committed",
                     "classificationBasis": "model_reported_help" if typed else "executed_teaching_policy"})
+                if typed and not dynamic and typed_state.scoped(after["dialogue"]) and after["dialogue"].get("reply_version") == 1:
+                    records["assistance"][-1].update(
+                        classificationBasis="unclassified_tutor_text", guidedPolicy=None,
+                        plannedAction=(after["dialogue"].get("teaching_plan") or {}).get("action"))
     if old_task and old_task_id != next_task_id and old_task["type"] != "open_question":
         point = next((p for p in (after.get("dialogue") or {}).get("points", [])
                       if p["id"] == old_task.get("topicId")), {})
