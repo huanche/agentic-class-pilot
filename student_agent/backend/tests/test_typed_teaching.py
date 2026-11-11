@@ -43,6 +43,54 @@ def scripted(monkeypatch, *responses):
     return client
 
 
+@pytest.mark.parametrize("content", [MEMORY, CONCEPT, DESIGN])
+def test_opening_covers_the_whole_point_without_marking_requirements_assessed(monkeypatch, content):
+    state = service.new_dialogue(compile_points(submit_knowledge_points(points=[content])))
+    client = scripted(monkeypatch, AIMessage(content="请完成这个知识点的主要任务。"))
+    result = typed_teaching.run(state, opening=True)
+    context = json.loads(client.seen[0][0].content.splitlines()[-1])
+    expected = [r["id"] for r in state["points"][0]["requirements"]]
+    assert context["teaching_plan"]["target_ids"] == expected
+    assert context["teaching_plan"]["action"] == "ask"
+    assert result["points"][0]["attempts"] == 0
+    assert all(r["status"] == "unconfirmed" and not r["evidence"] for r in result["points"][0]["requirements"])
+
+
+def test_followup_covers_only_remaining_requirements_and_does_not_explain_unasked_items(monkeypatch):
+    state = service.new_dialogue(compile_points(submit_knowledge_points(points=[MEMORY])))
+    scripted(monkeypatch, AIMessage(content="请说明for循环的结构。"))
+    state = typed_teaching.run(state, opening=True)
+    state["student_text"] = "先初始化，最后更新"
+    items = state["points"][0]["requirements"]
+    packet = AIMessage(content="", tool_calls=[{"name": "submit_current_assessment", "id": "assessment",
+        "args": {"intent": "answer", "assessment": {"answer_result": "partial", "evidence": "学生说明初始化和更新",
+            "updates": [{"requirement_id": items[i]["id"], "status": "demonstrated", "evidence": "学生自己说明", "gap": ""}
+                        for i in [0, 2]], "next_step": "先讲完所有答案，再要求学生重复已会的初始化和更新"}}}])
+    client = scripted(monkeypatch, packet, AIMessage(content="中间如何判断是否继续循环？"))
+    result = typed_teaching.run(state)
+    context = json.loads(client.seen[-1][0].content.splitlines()[-1])
+    assert context["teaching_plan"]["target_ids"] == [items[1]["id"]]
+    assert context["teaching_plan"]["action"] == "ask"
+    assert "next_step" not in context["focus"]
+    assert result["points"][0]["requirements"][1]["status"] == "unconfirmed"
+    assert result["points"][0]["recall_attempts"] == 1
+
+
+def test_pure_question_requests_explanation_without_creating_learning_evidence(monkeypatch):
+    state = service.new_dialogue(compile_points(submit_knowledge_points(points=[MEMORY])))
+    scripted(monkeypatch, AIMessage(content="请说明for循环的结构。"))
+    state = typed_teaching.run(state, opening=True)
+    state["student_text"] = "条件判断是什么意思？请直接解释。"
+    packet = AIMessage(content="", tool_calls=[{"name": "submit_current_assessment", "id": "assessment",
+        "args": {"intent": "question", "assessment": None}}])
+    client = scripted(monkeypatch, packet, AIMessage(content="条件判断决定是否进入下一次循环。"))
+    result = typed_teaching.run(state)
+    context = json.loads(client.seen[-1][0].content.splitlines()[-1])
+    assert context["teaching_plan"]["action"] == "explain"
+    assert "next_step" not in context["focus"]
+    assert all(r["status"] == "unconfirmed" and not r["evidence"] for r in result["points"][0]["requirements"])
+
+
 @pytest.mark.parametrize("after_class", [False, True])
 def test_natural_reply_receives_all_current_point_exchanges_across_rounds(monkeypatch, after_class):
     state = service.new_dialogue(compile_points(submit_knowledge_points(points=[MEMORY])))
@@ -90,6 +138,33 @@ def test_natural_reply_does_not_receive_previous_points_conversation(monkeypatch
     assert context["focus"]["id"] == result["points"][1]["id"]
     assert context["pointConversation"] == []
     assert result["points"][0]["status"] == "mastered"
+    assert context["previousPoint"]["type"] == "memory"
+    assert context["previousPoint"]["details"] == state["points"][0]["details"]
+    assert context["previousPoint"]["latest_question"] == "上一点的独有题目？"
+
+
+def test_deferred_point_keeps_material_for_explaining_help_request_before_switch(monkeypatch):
+    state = service.new_dialogue(compile_points(submit_knowledge_points(points=[MEMORY, CONCEPT])))
+    point = state["points"][0]
+    question = "为什么最后入栈的C先出来？"
+    point.update(recall_attempts=4, attempts=4, latest_question=question, task_question=question,
+                 known_parts=["学生已说明栈顶删除"], gaps=["尚未连接操作位置与顺序"])
+    state["student_text"] = "不知道，你直接说吧"
+    packet = AIMessage(content="", tool_calls=[{"name": "submit_current_assessment", "id": "assessment",
+        "args": {"intent": "answer", "assessment": {"answer_result": "unanswered", "evidence": "学生请求讲解",
+            "updates": [], "next_step": "说明C在栈顶所以先出来"}}}])
+    client = scripted(monkeypatch, packet, AIMessage(content="C最后入栈，在栈顶所以先出来。下面看下一个知识点。"))
+    result = typed_teaching.run(state)
+    context = json.loads(client.seen[-1][0].content.splitlines()[-1])
+    assert context["transition"] == "defer"
+    assert context["studentText"] == "不知道，你直接说吧"
+    assert context["previousPoint"]["latest_question"] == question
+    assert context["previousPoint"]["details"] == point["details"]
+    assert context["previousPoint"]["gaps"]
+    assert context["focus"]["id"] == result["points"][1]["id"]
+    assert context["pointConversation"] == []
+    assert result["points"][0]["recall_attempts"] == 5
+    assert result["points"][0]["status"] != "mastered"
 
 
 def test_postclass_reply_keeps_prior_unanswered_opening_without_new_state_fields(monkeypatch):

@@ -30,12 +30,19 @@ def teaching_plan(state, *, after_class=False):
     point = current(state, after_class=after_class)
     if not point:
         return {"target_ids": [], "action": "summarize"}
-    pending = next(r for r in point["requirements"] if r["status"] != "demonstrated")
-    repeated = pending["id"] in point.get("question_targets", [])
+    pending = [r for r in point["requirements"] if r["status"] != "demonstrated"]
     history = point["assessment_history"]
-    action = ("clarify" if repeated and history and history[-1]["result"] in {"unclear", "unanswered"} else
-              "explain" if repeated else "correct" if pending["status"] == "needs_help" else "ask")
-    return {"target_ids": [pending["id"]], "action": action, "requirement": pending["text"]}
+    last_result = history[-1]["result"] if history else None
+    action = ("ask" if not history else
+              "explain" if (state.get("evaluation") or {}).get("intent") == "question" else
+              "clarify" if last_result == "unclear" else
+              "correct" if last_result == "misconception" else
+              "explain" if last_result == "unanswered" or any(r["status"] == "needs_help" for r in pending) else "ask")
+    # A coverage scope, not a queue of questions. Unasked requirements remain
+    # unconfirmed until the learner supplies evidence; help targets real gaps.
+    pending.sort(key=lambda r: r["status"] != "needs_help")
+    return {"target_ids": [r["id"] for r in pending], "action": action,
+            "requirements": [r["text"] for r in pending]}
 
 
 def current(state, *, after_class=False):
