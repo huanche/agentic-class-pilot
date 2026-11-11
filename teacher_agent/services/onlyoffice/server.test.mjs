@@ -18,6 +18,7 @@ test('native service delegates ownership, pins original bytes, bounds source cap
   await writeFile(configFile, JSON.stringify(config));
   await mkdir(path.join(dir, 'classroom_test', 'native'), { recursive: true });
   await writeFile(path.join(dir, 'classroom_test', 'native', 'source.pptx'), bytes);
+  let currentSha = sha;
   let upstreamCalls = 0;
   const teacher = http.createServer((req, res) => {
     upstreamCalls++;
@@ -34,7 +35,7 @@ test('native service delegates ownership, pins original bytes, bounds source cap
             name: 'test',
             nativePptx: {
               version: 1,
-              sha256: sha,
+              sha256: currentSha,
               pages: { outline_1: 2 },
               compatibility: { converted: 1, unresolved: 0 },
             },
@@ -96,6 +97,27 @@ test('native service delegates ownership, pins original bytes, bounds source cap
     const downloaded = await fetch(base + source.pathname + source.search);
     assert.equal(downloaded.status, 200);
     assert.deepEqual(Buffer.from(await downloaded.arrayBuffer()), bytes);
+    const repaired = Buffer.from('verified-repaired-source');
+    const repairedSha = createHash('sha256').update(repaired).digest('hex');
+    await writeFile(path.join(dir, 'classroom_test', 'native', `${repairedSha}.pptx`), repaired);
+    currentSha = repairedSha;
+    const updated = await (
+      await fetch(endpoint, { headers: { cookie: 'agentedu_session=owner' } })
+    ).json();
+    const repairedUrl = new URL(updated.editor.document.url);
+    assert.notEqual(updated.editor.document.key, data.editor.document.key);
+    const repairedResponse = await fetch(base + repairedUrl.pathname + repairedUrl.search);
+    assert.equal(repairedResponse.status, 200);
+    assert.deepEqual(Buffer.from(await repairedResponse.arrayBuffer()), repaired);
+    const originalResponse = await fetch(base + source.pathname + source.search);
+    assert.equal(originalResponse.status, 200);
+    assert.deepEqual(Buffer.from(await originalResponse.arrayBuffer()), bytes);
+    await writeFile(path.join(dir, 'classroom_test', 'native', `${repairedSha}.pptx`), 'corrupt');
+    assert.equal((await fetch(base + repairedUrl.pathname + repairedUrl.search)).status, 409);
+    assert.equal(
+      (await fetch(endpoint, { headers: { cookie: 'agentedu_session=owner' } })).status,
+      409,
+    );
     source.searchParams.set('signature', 'forged');
     assert.equal((await fetch(base + source.pathname + source.search)).status, 403);
     source.searchParams.set('expires', String(Math.floor(Date.now() / 1000) - 1));

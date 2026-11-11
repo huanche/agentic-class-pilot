@@ -12,6 +12,33 @@ const element = (doc, name, attrs = {}) => {
   return n;
 };
 
+function nextClickEffects(group) {
+  const labelled = nodes(group, 'cTn').find((n) => n.getAttribute('nodeType') === 'withGroup');
+  if (labelled) return direct(labelled, 'childTnLst');
+  const click = direct(group, 'cTn');
+  const children = click && direct(click, 'childTnLst');
+  if (!children) return undefined;
+  const first = Array.from(children.childNodes).find((n) => n.nodeType === 1);
+  const parallel = first?.namespaceURI === P && first.localName === 'par' && direct(first, 'cTn');
+  if (!parallel) return undefined;
+
+  // PowerPoint can omit nodeType on both wrappers. In that form the first
+  // parallel group starts at click time, before any subsequent effect groups.
+  const type = parallel.getAttribute('nodeType');
+  if (type !== 'withGroup') {
+    const start = direct(parallel, 'stCondLst');
+    const conditions = start && nodes(start, 'cond');
+    if (
+      type ||
+      conditions?.length !== 1 ||
+      conditions[0].getAttribute('delay') !== '0' ||
+      conditions[0].hasAttribute('evt')
+    )
+      return undefined;
+  }
+  return direct(parallel, 'childTnLst');
+}
+
 /** Convert legacy next-click hide to an explicit exit in the NEXT existing click.
  * No visual shapes, text, page order, or extra click groups are introduced.
  */
@@ -46,8 +73,7 @@ export function normalizeLegacyHides(xml) {
         unresolved++;
         continue;
       }
-      const container = nodes(next, 'cTn').find((n) => n.getAttribute('nodeType') === 'withGroup');
-      const destination = container && direct(container, 'childTnLst');
+      const destination = nextClickEffects(next);
       if (!destination) {
         unresolved++;
         continue;

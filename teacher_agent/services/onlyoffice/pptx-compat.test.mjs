@@ -9,6 +9,35 @@ const group = (body) =>
 const hide = `<p:par><p:cTn id="10"><p:subTnLst><p:set><p:cBhvr><p:cTn masterRel="nextClick" afterEffect="1"/><p:tgtEl><p:spTgt spid="42"><p:txEl><p:pRg st="0" end="0"/></p:txEl></p:spTgt></p:tgtEl><p:attrNameLst><p:attrName>style.visibility</p:attrName></p:attrNameLst></p:cBhvr><p:to><p:strVal val="hidden"/></p:to></p:set></p:subTnLst></p:cTn></p:par>`;
 const wrap = (groups) =>
   `<p:sld xmlns:p="${ns}"><p:timing><p:cTn nodeType="mainSeq"><p:childTnLst>${groups}</p:childTnLst></p:cTn></p:timing></p:sld>`;
+const implicitGroup = (id, body) =>
+  `<p:par><p:cTn id="${id}" fill="hold"><p:stCondLst><p:cond delay="indefinite"/></p:stCondLst><p:childTnLst><p:par><p:cTn id="${id + 1}" fill="hold"><p:stCondLst><p:cond delay="0"/></p:stCondLst><p:childTnLst>${body}</p:childTnLst></p:cTn></p:par></p:childTnLst></p:cTn></p:par>`;
+
+test('PowerPoint click wrappers without nodeType hide the card on the next click', () => {
+  const nextEffect = '<p:par><p:cTn id="12" nodeType="clickEffect" presetClass="entr"/></p:par>';
+  const result = normalizeLegacyHides(wrap(implicitGroup(3, hide) + implicitGroup(5, nextEffect)));
+  assert.equal(result.converted, 1);
+  assert.equal(result.unresolved, 0);
+  const doc = new DOMParser().parseFromString(result.xml, 'application/xml');
+  const ctns = Array.from(doc.getElementsByTagNameNS(ns, 'cTn'));
+  const exit = ctns.find((n) => n.getAttribute('presetClass') === 'exit');
+  assert.equal(exit.parentNode.parentNode.parentNode.getAttribute('id'), '6');
+  assert.equal(exit.parentNode.nextSibling.firstChild.getAttribute('id'), '12');
+  assert.equal(
+    Array.from(doc.getElementsByTagNameNS(ns, 'cond')).filter(
+      (n) => n.getAttribute('delay') === 'indefinite',
+    ).length,
+    2,
+  );
+  assert.equal(normalizeLegacyHides(result.xml).converted, 0);
+});
+
+test('implicit groups with a delayed or event-triggered start are retained', () => {
+  for (const condition of ['delay="100"', 'delay="0" evt="onClick"']) {
+    const next = implicitGroup(5, '').replace('<p:cond delay="0"/>', `<p:cond ${condition}/>`);
+    const xml = wrap(implicitGroup(3, hide) + next);
+    assert.deepEqual(normalizeLegacyHides(xml), { xml, converted: 0, unresolved: 1 });
+  }
+});
 test('next-click hiding stays in next existing click with paragraph target and unique IDs', () => {
   const result = normalizeLegacyHides(wrap(group(hide) + group('')));
   assert.equal(result.converted, 1);
