@@ -22,6 +22,16 @@ const equal = (a, b) => {
     y = Buffer.from(b || '');
   return x.length === y.length && timingSafeEqual(x, y);
 };
+async function sourceBytes(id, sha) {
+  const directory = path.join(classrooms, id, 'native');
+  try {
+    // Repaired snapshots coexist with the original until old signed URLs expire.
+    return await readFile(path.join(directory, `${sha}.pptx`));
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+    return readFile(path.join(directory, 'source.pptx'));
+  }
+}
 const jwt = (payload) => {
   const head = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
   const body = Buffer.from(JSON.stringify(payload)).toString('base64url');
@@ -112,7 +122,7 @@ const server = http.createServer(async (req, res) => {
         !equal(url.searchParams.get('signature'), sign(`source:${source[1]}:${source[2]}:${exp}`))
       )
         return send(res, 403, { error: 'Source signature invalid or expired' });
-      const bytes = await readFile(path.join(classrooms, source[1], 'native/source.pptx'));
+      const bytes = await sourceBytes(source[1], source[2]);
       if (digest(bytes) !== source[2]) return send(res, 409, { error: 'Source version changed' });
       return send(
         res,
@@ -161,7 +171,7 @@ const server = http.createServer(async (req, res) => {
       !/^[a-f0-9]{64}$/.test(native.sha256)
     )
       return send(res, 409, { error: '此页的原稿快照不可用，请重新导入原文件' });
-    const bytes = await readFile(path.join(classrooms, id, 'native/source.pptx'));
+    const bytes = await sourceBytes(id, native.sha256);
     if (digest(bytes) !== native.sha256) return send(res, 409, { error: '原稿快照校验失败' });
     const expires = Date.now() + 3600_000,
       exp = Math.floor(expires / 1000),
