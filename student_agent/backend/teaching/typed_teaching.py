@@ -90,6 +90,9 @@ requirements列出既有必要要求：unconfirmed尚未确认，needs_help发�
 提示后能自己说清、推演或构造正确即可demonstrated，不强制另出新题。新回答推翻旧理解时可改needs_help。
 整点是否完成由程序根据所有必要要求汇总。尚未确认不等于不会，不能因为这一问题答对就跳过未确认要求。
 next_step针对尚未完成内容。比较lastExchange和最近帮助，没进展就换讲法、示范一步或澄清卡点，别重复照问。
+pointConversation是当前知识点已有的实际师生对话，包含首轮、补强及课后记录；用它了解之前尝试过哪些帮助，不把历史问法当成本轮指令。
+如果学生仍不会或没有新进展，不要原样重复之前无效的问题或讲解；针对当前缺口直接讲清必要的一小步，再让学生完成紧接着的一步，保持原任务目标。
+导师讲过的内容不能算学生已经会了；“你已经会／知道”的判断只能依据学生自己的表现和已有掌握记录。
 工具更新后只按最新focus和transition教；previousPoint只简短反馈，换点后不再追问旧题。
 defer/record_gap表示限额到了，保留缺口以后继续，不是掌握。focus为空时总结已掌握和待巩固，不出题。
 每轮一个主要问题，memory回忆、concept解释关系、design实际完成构造，允许等价说法和不同正确方案。
@@ -144,6 +147,24 @@ def run(dialogue, *, opening=False, after_class=False):
             # make ineffective help visible without a long transcript to imitate.
             focus_data["assessment_history"] = history[-2:]
             focus_data["help_history"] = focus_data.get("help_history", [])[-2:]
+        point_conversation = []
+        if natural and focus:
+            # Reconstruct actual exchanges from existing per-point records, not
+            # the lesson-wide messages or the model's assessment summaries.
+            history = focus.get("assessment_history", [])
+            replies = [entry["text"] for entry in focus.get("question_history", [])]
+            cursor = 0
+            for exchange in history:
+                question = exchange.get("question", "")
+                if question in replies[cursor:]:
+                    end = replies.index(question, cursor) + 1
+                    point_conversation.extend({"role": "assistant", "text": text} for text in replies[cursor:end])
+                    cursor = end
+                elif question:
+                    point_conversation.append({"role": "assistant", "text": question})
+                point_conversation.append({"role": "student", "text": exchange["studentText"]})
+            # Include replies not yet answered, including postclass openings.
+            point_conversation.extend({"role": "assistant", "text": text} for text in replies[cursor:])
         prior = {key: prior[key] for key in ("id", "title", "status", "evidence")}
         return {"focus": focus_data, "previousPoint": prior,
                 "teaching_plan": typed_state.teaching_plan(state, after_class=after_class) if natural else None,
@@ -151,6 +172,7 @@ def run(dialogue, *, opening=False, after_class=False):
                 "transition": state.get("transition"), "evaluation": evaluation,
                 "studentText": "" if opening else state["student_text"],
                 "lastExchange": last_exchange,
+                "pointConversation": point_conversation,
                 "currentTask": typed_state.task(state, after_class=after_class),
                 "summary": [{"title": p["title"], "status": p["status"],
                              "known_parts": p["known_parts"], "gaps": p["gaps"]} for p in state["points"]] if not focus else []}

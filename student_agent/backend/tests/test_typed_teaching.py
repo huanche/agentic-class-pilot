@@ -43,6 +43,78 @@ def scripted(monkeypatch, *responses):
     return client
 
 
+@pytest.mark.parametrize("after_class", [False, True])
+def test_natural_reply_receives_all_current_point_exchanges_across_rounds(monkeypatch, after_class):
+    state = service.new_dialogue(compile_points(submit_knowledge_points(points=[MEMORY])))
+    scripted(monkeypatch, AIMessage(content="先说说循环的结构？"))
+    state = typed_teaching.run(state, opening=True)
+    expected = []
+    # More than two exchanges catches accidental truncation. Six classroom
+    # answers cross from recall to reinforcement using the existing 5/8 rules.
+    for index in range(6):
+        question = state["points"][0]["latest_question"]
+        answer = f"第{index + 1}次还是不知道"
+        expected.extend([{"role": "assistant", "text": question}, {"role": "student", "text": answer}])
+        state["student_text"] = answer
+        packet = AIMessage(content="", tool_calls=[{"name": "submit_current_assessment", "id": "assessment",
+            "args": {"intent": "answer", "assessment": {"answer_result": "unanswered", "evidence": answer,
+                "updates": [], "next_step": "讲清一步，再让学生完成下一步"}}}])
+        client = scripted(monkeypatch, packet, AIMessage(content=f"第{index + 1}种帮助，请继续下一步。"))
+        state = typed_teaching.run(state, after_class=after_class)
+        context = json.loads(client.seen[-1][0].content.splitlines()[-1])
+        assert context["pointConversation"] == expected
+        assert context["studentText"] == answer
+        assert context["focus"]["known_parts"] == []
+        assert all(r["status"] == "unconfirmed" for r in context["focus"]["requirements"])
+        assert "assessment_history" not in context["focus"]
+        assert "help_history" not in context["focus"]
+    if not after_class:
+        assert state["stage"] == "reinforce"
+        assert state["points"][0]["recall_attempts"] == 5
+        assert state["points"][0]["reinforce_attempts"] == 1
+
+
+def test_natural_reply_does_not_receive_previous_points_conversation(monkeypatch):
+    state = service.new_dialogue(compile_points(submit_knowledge_points(points=[MEMORY, CONCEPT])))
+    scripted(monkeypatch, AIMessage(content="上一点的独有题目？"))
+    state = typed_teaching.run(state, opening=True)
+    state["student_text"] = "上一点的独有回答"
+    updates = [{"requirement_id": r["id"], "status": "demonstrated", "evidence": "学生已说明", "gap": ""}
+               for r in state["points"][0]["requirements"]]
+    packet = AIMessage(content="", tool_calls=[{"name": "submit_current_assessment", "id": "assessment",
+        "args": {"intent": "answer", "assessment": {"answer_result": "correct", "evidence": "学生已说明",
+            "updates": updates, "next_step": "继续下一点"}}}])
+    client = scripted(monkeypatch, packet, AIMessage(content="请解释当前概念。"))
+    result = typed_teaching.run(state)
+    context = json.loads(client.seen[-1][0].content.splitlines()[-1])
+    assert context["focus"]["id"] == result["points"][1]["id"]
+    assert context["pointConversation"] == []
+    assert result["points"][0]["status"] == "mastered"
+
+
+def test_postclass_reply_keeps_prior_unanswered_opening_without_new_state_fields(monkeypatch):
+    state = service.new_dialogue(compile_points(submit_knowledge_points(points=[MEMORY])))
+    scripted(monkeypatch, AIMessage(content="课堂的原问题？"))
+    state = typed_teaching.run(state, opening=True)
+    fields = set(state)
+    point_fields = set(state["points"][0])
+    scripted(monkeypatch, AIMessage(content="课后接着原问题，先说明第一步？"))
+    state = typed_teaching.run(state, opening=True, after_class=True)
+    state["student_text"] = "第一步我还不会"
+    packet = AIMessage(content="", tool_calls=[{"name": "submit_current_assessment", "id": "assessment",
+        "args": {"intent": "answer", "assessment": {"answer_result": "unanswered", "evidence": "明确说不会",
+            "updates": [], "next_step": "示范第一步"}}}])
+    client = scripted(monkeypatch, packet, AIMessage(content="我先示范这一步，请接着完成下一步。"))
+    state = typed_teaching.run(state, after_class=True)
+    context = json.loads(client.seen[-1][0].content.splitlines()[-1])
+    assert context["pointConversation"] == [
+        {"role": "assistant", "text": "课堂的原问题？"},
+        {"role": "assistant", "text": "课后接着原问题，先说明第一步？"},
+        {"role": "student", "text": "第一步我还不会"}]
+    assert set(state) == fields
+    assert set(state["points"][0]) == point_fields | {"postclass_rounds"}
+
+
 def apply(base, changed, command="test"):
     return records.transition(base, dict(base, **changed), command_id=command)
 
