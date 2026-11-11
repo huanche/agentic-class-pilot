@@ -295,8 +295,16 @@ def run(dialogue, *, opening=False, after_class=False):
 
     agent = create_agent(model.teaching_model(), tools=[submit_current_assessment],
                          state_schema=TeachingAgentState, middleware=[teaching_request, repair_missing_task_question])
+    opening_instruction = "生成当前任务第一问。"
+    if opening and after_class and previous.get("assessment_history"):
+        opening_instruction = (
+            "这是继续上次学习，不是首次提问。结合本知识点对话、已确认掌握和剩余要求继续。"
+            "原题仅保留任务目标与背景，不要重复完整原题，不再考查已确认的部分。"
+            "按当前teaching_plan解释上次卡住的必要一步，或提出一个针对剩余内容的主要问题；"
+            "不要要求复述刚给出的解释，也不要把已讲解内容当成学生已经掌握。"
+        )
     result = agent.invoke({"dialogue": candidate, "assessed": opening,
-                          "messages": [HumanMessage(content="生成当前任务第一问。" if opening else candidate["student_text"])]},
+                          "messages": [HumanMessage(content=opening_instruction if opening else candidate["student_text"])]},
                           config={"recursion_limit": 20})
     if not result["assessed"]:
         raise ValueError("没有收到当前回答的有效评估工具提交")

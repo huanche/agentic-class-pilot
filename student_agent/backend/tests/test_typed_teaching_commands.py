@@ -444,7 +444,36 @@ def test_program_chooses_pending_target_and_records_actual_unclassified_reply(co
     assert record["plannedAction"] == "ask"
 
 
+def inspect_resume_instruction(body):
+    context = json.loads(body["messages"][0]["content"].splitlines()[-1])
+    if context["stage"] == "postclass" and not context["studentText"]:
+        instruction = body["messages"][-1]["content"]
+        assert "生成当前任务第一问" not in instruction
+        assert "继续上次学习" in instruction
+        assert context["teaching_plan"]["target_ids"] == ["requiredElements:2"]
+        assert context["focus"]["requirements"][0]["status"] == "demonstrated"
+
+
+def inspect_unassessed_opening(body):
+    context = json.loads(body["messages"][0]["content"].splitlines()[-1])
+    assert "生成当前任务第一问" in body["messages"][-1]["content"]
+    assert all(r["status"] == "unconfirmed" for r in context["focus"]["requirements"])
+
+
 @pytest.mark.parametrize("conversation", [{"requirement_progress": True, "natural_reply": True,
+    "inspect_request": inspect_unassessed_opening,
+    "responses": ["请整体说明Push和Pop。", "请整体说明Push和Pop。"]}], indirect=True)
+def test_unassessed_point_still_gets_first_question_after_early_exit(conversation):
+    read, send = conversation
+    send("start_discussion")
+    send("finish")
+    resumed = send("continue_after_class")
+    assert resumed["messages"][-1]["text"] == "请整体说明Push和Pop。"
+    assert read()["feedback"]["counts"]["not_assessed"] == 1
+
+
+@pytest.mark.parametrize("conversation", [{"requirement_progress": True, "natural_reply": True,
+    "inspect_request": inspect_resume_instruction,
     "responses": ["请说明Push。", scoped_packet(PUSH_SHOWN), "请说明Pop。", "我们继续说明Pop。",
                   scoped_packet(POP_SHOWN), "你已自己说明了两个操作。"]}], indirect=True)
 def test_plain_reply_keeps_original_task_and_evidence_after_postclass_resume(conversation):
