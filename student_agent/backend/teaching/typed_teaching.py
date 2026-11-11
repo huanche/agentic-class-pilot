@@ -9,7 +9,7 @@ from langchain.agents.middleware import after_model, wrap_model_call
 from langchain.tools import ToolRuntime, tool
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langgraph.types import Command
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from backend.infrastructure import model
 from backend.teaching import typed_state
@@ -71,15 +71,23 @@ class Assessment(BaseModel):
 class RequirementUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     requirement_id: str
-    status: Literal["demonstrated", "needs_help"]
-    evidence: str
+    status: Literal["demonstrated", "needs_help"] = Field(description=
+        "demonstrated表示该要求的全部独立含义均有累计学生证据，不能只匹配其中一部分。"
+        "未涉及的子项缺证据时省略整个update，不能确认或标不会。")
+    evidence: str = Field(description=
+        "按要求的每个独立含义逐一引用学生本次或此前原话/步骤，写清对应关系；老师的讲解不算证据。"
+        "如要求同时含入队连接位置与容量性质，必须分别给出两者的学生依据。"
+        "只说rear指向队尾、动态分配没有队满不支持在rear后连接新结点，不能提交整项demonstrated。")
     gap: str
 
 
 class AnswerAssessment(BaseModel):
     model_config = ConfigDict(extra="forbid")
     answer_result: Literal["correct", "partial", "misconception", "unanswered"]
-    evidence: str
+    evidence: str = Field(description=
+        "先核对学生证据，再决定updates。说明本次体现了什么、哪些要求仍缺证据；尤其先检查原要求的全部含义，不能擅自缩小要求。"
+        "例如‘入队在rear之后插入，无队满问题’同时考查连接位置和容量性质；仅说rear是尾指针、动态分配，必须在此明确‘插入位置尚无学生证据’，并从updates省略该复合项。"
+        "若此前学生自己已解释插入位置则可补足，老师给过的内容不能补足。")
     updates: list[RequirementUpdate]
     next_step: str
 
@@ -95,6 +103,10 @@ concept允许分轮说明关系，不强制复述A/B/C、样例数字或导师�
 needs_help只用于有实际依据的要求：学生明确表示该项不会／不记得，实际作答出现具体错误，或已尝试该项但未完成。
 明确不会只影响其指向的要求，不能扩展到其他未提及要求。不能仅因“未说明／未讨论”就把未考查或未尝试的内容写成缺口。
 每项必须整体满足才可demonstrated；学生实际尝试一项但只完成部分时，可标needs_help，evidence写清已尝试什么，gap写具体未完成部分。
+存量要求可能把两个独立事实写在同一项。提交demonstrated前，分别找出每个事实对应的学生原话或实际步骤；不能用其中一个事实的证据代替另一个。
+例如要求“入队在rear之后插入，无队满问题”：学生只说“rear指向尾结点，结点动态分配所以没有固定容量限制”，只证明尾指针含义和容量性质，没有证明新结点连接在rear之后。此时省略这一复合项的更新，保持unconfirmed；不能因未问到插入步骤而记needs_help。
+若学生自己在此前已说明“把新结点接在原rear之后，再更新rear”，本次补出动态分配，则累计证据齐全，可以确认整项。不得把老师此前展示的插入步骤算作学生证据。
+要求含A和B而题目仅问B时，答对B不等于A也已确认；evidence应分别说明累计学生证据如何覆盖A和B，缺一部分且没有实际失败表现就不提交该项。不要补造隐含操作，也不要因其他项均完成而放宽最后一项。
 每项用requirement_id关联，evidence说明学生哪句话/步骤支持判断；需要帮助时gap说明具体问题。
 老师讲过不算学生会；整条消息没有可评估表现时assessment=null，不更新任何要求；若同时含实际作答，只评估其中有依据的部分。
 提示后能自己说清、推演或构造正确即可demonstrated，不强制另出新题。已demonstrated项不能因本轮未提及而降级，只有新回答提供相反证据时才可改needs_help。
@@ -240,7 +252,7 @@ def run(dialogue, *, opening=False, after_class=False):
                 action = typed_state.teaching_plan(state, after_class=after_class)["action"]
                 action_instruction = {
                     "ask": "只提出一个主要任务，不提前给答案。本点无原题时组织整体任务；已有原题时简短反馈后直接问未确认的关键内容，不先逐条讲答案再要求复述。切点时仍先完成必要的上一问收尾。",
-                    "clarify": "只澄清学生卡在哪里，不把全部剩余内容讲完后再考一遍。",
+                    "clarify": "只提出一个具体的卡点定位问题，借最近的任务确认学生卡在题意、先修概念还是某一步操作；不要猜定他卡在哪，不要附整份实现或先讲完答案再问。",
                     "explain": "直接讲清学生请求帮助的具体一步，不要求复述刚给出的解释，也不只换字母数字重问同题。若有自然的下一步，让学生完成尚未示范的操作；否则本轮可以只讲解，不强制加问题。",
                     "correct": "指出具体错误并讲清关键一步，不要求照着重述纠正内容；只在确有必要时留下尚未示范的下一步任务。",
                     "summarize": "整理已有表现和缺口，不再要求复述或提出新任务。",
@@ -255,6 +267,13 @@ def run(dialogue, *, opening=False, after_class=False):
                     action_instruction += "这是memory点，只回忆必要事实；不额外要求解释因果或做出栈顺序推演，不用增加操作题代替重复背诵。"
                 if action == "explain" and (state.get("evaluation") or {}).get("intent") == "question":
                     action_instruction += "当前学生是在提问，本轮只回答这条问题，答完结束回复；不要让学生复述或追加考题。"
+                if focus:
+                    action_instruction += (
+                        "生成前对照pointConversation里最近实际给过的帮助与学生随后表现。最近已经展示过的完整解法若未奏效，不再全文重放，也不只是换比喻后把相同内容讲得更长。"
+                        "学生只说不会、卡点尚不清楚时，问一个具体定位问题；学生明确指出某一步时，只解释或示范那一步。"
+                        "若留下下一步操作，它必须是学生尚未完成且本轮没有直接演示出答案的一步；本轮已讲出的结论不能再要求立即复述。"
+                        "design的capability是整点目标，不能把宽泛的‘不会写程序’当作必须再展示完整程序的具体卡点。学生明确要求完整示范时可以提供，但之后仍无进展就定位卡点。"
+                    )
                 system = system.replace("\n程序提供的最新教学数据：\n",
                     "\n本轮生成动作约束：" + action_instruction + "\n程序提供的最新教学数据：\n", 1)
         # Keep the tool exchange in Agent State, but generation reads the updated

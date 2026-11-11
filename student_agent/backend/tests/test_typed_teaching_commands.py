@@ -511,3 +511,24 @@ def test_program_selects_clarification_for_unclear_answer_without_mastery(conver
     assert read.records()["assistance"][-1]["plannedAction"] == "clarify"
     send("finish")
     assert all(r["status"] == "unconfirmed" for r in read()["feedback"]["points"][0]["requirements"])
+
+
+@pytest.mark.parametrize("conversation", [{"requirement_progress": True, "natural_reply": True,
+    "responses": ["请说明Push和Pop。", scoped_packet(answer_result="unanswered"),
+        "Push表示插入。", scoped_packet(answer_result="unanswered"),
+        "你是没理解插入的含义，还是不知道它操作哪里？",
+        {"role": "assistant", "content": None, "tool_calls": [{"id": "direct-question", "type": "function",
+            "function": {"name": "submit_current_assessment", "arguments": json.dumps({"intent": "question", "assessment": None})}}]},
+        "Push在栈顶插入元素。"]}], indirect=True)
+def test_repeated_unanswered_localizes_difficulty_but_direct_question_still_gets_answer(conversation):
+    read, send = conversation
+    send("start_discussion")
+    send("submit_answer", "不会")
+    send("submit_answer", "还是不知道")
+    assert read.records()["assistance"][-1]["plannedAction"] == "clarify"
+    send("submit_answer", "Push在哪里插入？直接解释一下")
+    assert read.records()["assistance"][-1]["plannedAction"] == "explain"
+    send("finish")
+    point = read()["feedback"]["points"][0]
+    assert point["category"] != "mastered"
+    assert all(r["status"] == "unconfirmed" for r in point["requirements"])

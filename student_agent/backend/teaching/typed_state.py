@@ -35,6 +35,7 @@ def teaching_plan(state, *, after_class=False):
     last_result = history[-1]["result"] if history else None
     action = ("ask" if not history else
               "explain" if (state.get("evaluation") or {}).get("intent") == "question" else
+              "clarify" if len(history) >= 2 and all(h["result"] in {"unanswered", "unclear"} for h in history[-2:]) else
               "clarify" if last_result == "unclear" else
               "correct" if last_result == "misconception" else
               "explain" if last_result == "unanswered" or any(r["status"] == "needs_help" for r in pending) else "ask")
