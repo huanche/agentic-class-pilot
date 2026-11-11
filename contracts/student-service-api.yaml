@@ -99,6 +99,22 @@ paths:
                   videoRevision: { type: string }
         '403': { description: Invalid service credentials }
         '503': { description: Student job storage unavailable }
+  /api/internal/platform/chat-sessions/capabilities:
+    get:
+      operationId: getStudentChatSessionsCapabilities
+      summary: Chat session pagination availability
+      security: [{ studentServiceKey: [] }]
+      responses:
+        '200':
+          description: Supported pagination version
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [session_pagination]
+                properties:
+                  session_pagination: { type: integer }
+        '403': { description: Invalid service credentials }
   /api/internal/platform/courses/{course_id}/chat-sessions:
     post:
       operationId: getStudentChatSessions
@@ -116,6 +132,9 @@ paths:
               properties:
                 userIds: { type: array, maxItems: 10000, items: { type: string } }
                 limit: { type: integer, minimum: 1, maximum: 500 }
+                offset: { type: [integer, 'null'], minimum: 0 }
+                lessonId: { type: [string, 'null'], maxLength: 255 }
+                classroomId: { type: [string, 'null'], maxLength: 255 }
       responses:
         '200':
           description: Sessions belonging to the supplied enrolled students

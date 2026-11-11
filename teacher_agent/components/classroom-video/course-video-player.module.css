@@ -249,8 +249,55 @@
 }
 
 .videoSurface {
-  aspect-ratio: 16 / 9;
-  max-height: max(280px, calc(100dvh - 275px));
+  aspect-ratio: var(--course-video-ratio, 16 / 9);
+  background: #edf1f5;
+}
+.videoSurface[data-fullscreen='true'] {
+  aspect-ratio: auto;
+  background: radial-gradient(ellipse at center, #f2f5f8, #d9e2ec);
+}
+.viewer[data-theater='true'] {
+  --theater-gutter: clamp(12px, 2.2vw, 42px);
+  --theater-width: min(
+    calc(100% - 2 * var(--theater-gutter)),
+    1800px,
+    max(560px, calc((100dvh - 120px) * var(--course-video-ratio, 1.77777778)))
+  );
+}
+.viewer[data-theater='true'] .viewerHeader,
+.viewer[data-theater='true'] .frame:not(:fullscreen) {
+  width: var(--theater-width);
+  margin-inline: auto;
+}
+.viewer[data-theater='true'] .viewerHeader {
+  max-width: none;
+  height: 56px;
+  padding: 0 4px;
+}
+.viewer[data-theater='true'] .viewerWorkspace {
+  max-width: none;
+  padding: 0 0 12px;
+}
+.viewer[data-theater='true'] .courseNavigation {
+  min-height: 52px;
+  padding-block: 7px;
+}
+.theaterTitles {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.theaterTitles .courseTitle {
+  font-size: 11px;
+  color: #667181;
+}
+.theaterTitles h1 {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: clamp(14px, 1.4vw, 18px);
+  font-weight: 650;
+  line-height: 1.25;
 }
 .viewer[data-embedded='true'] {
   min-height: 0;
@@ -274,13 +321,6 @@
 .viewer[data-embedded='true'] .frameBody > [data-course-video-player] {
   border: 0;
   border-radius: 0;
-}
-.embeddedVideoSurface {
-  max-height: none;
-  background: #f1f3f5;
-}
-.embeddedVideoSurface .videoElement {
-  color: #20252b;
 }
 .courseNavigation {
   display: flex;
@@ -407,6 +447,7 @@
 .frame:fullscreen {
   width: 100vw;
   height: 100dvh;
+  border: 0;
   border-radius: 0;
 }
 
@@ -599,19 +640,4 @@
   border-radius: 50%;
   background: #fff;
   box-shadow: 0 1px 5px #0005;
-}
-
-.previous,
-.next {
-  display: inline-flex;
-}
-@media (max-width: 639px) {
-  .previous {
-    display: none;
-  }
-}
-@media (max-width: 359px) {
-  .next {
-    display: none;
-  }
 }

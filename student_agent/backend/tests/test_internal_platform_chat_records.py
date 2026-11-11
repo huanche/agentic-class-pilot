@@ -23,6 +23,7 @@ class Rows:
 class FakeConnection:
     def __init__(self):
         self.revoked = False
+        self.last_query = None
 
     def execute(self, sql, params):
         if "SELECT 1 FROM student.student_sessions" in sql:
@@ -32,6 +33,7 @@ class FakeConnection:
                 return Rows([])
             return Rows([(1, "student", "recall", "hello", datetime(2026, 1, 1, tzinfo=timezone.utc))])
         if "FROM student.student_sessions s" in sql:
+            self.last_query = (sql, params)
             if "student-a" not in params[1] or self.revoked:
                 return Rows([])
             now = datetime(2026, 1, 1, tzinfo=timezone.utc)
@@ -57,6 +59,12 @@ def test_chat_records_enforce_service_key_student_scope_and_revocation(monkeypat
     assert client.post(base, headers=headers, json={"userIds": ["student-b"]}).json() == []
     rows = client.post(base, headers=headers, json={"userIds": ["student-a"]}).json()
     assert rows[0]["sessionKey"] == "session-a"
+    filtered = client.post(base, headers=headers, json={"userIds": ["student-a"], "lessonId": "lesson-a", "classroomId": "room-a", "offset": 500, "limit": 100})
+    assert filtered.status_code == 200
+    sql, params = connection.last_query
+    assert "s.started_at ASC" in sql and "OFFSET %s" in sql
+    assert params == ("course-a", ["student-a"], "lesson-a", "room-a", 100, 500)
+    assert client.get('/api/internal/platform/chat-sessions/capabilities', headers=headers).json() == {'session_pagination': 1}
     path = base + "/session-a/messages"
     assert client.post(path, headers=headers, json={"userIds": ["student-b"]}).status_code == 404
     assert client.post(path, headers=headers, json={"userIds": ["student-a"]}).json()[0]["content"] == "hello"
