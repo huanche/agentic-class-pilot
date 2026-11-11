@@ -15,6 +15,8 @@
 
 新工具`AnswerAssessment`只允许answer_result（correct/partial/misconception/unanswered）、evidence、updates和next_step；updates用requirement_id关联当前点，并给出demonstrated或needs_help和依据。模型不能直接提交整点mastered。一答可更新多个要求，未问过/无新证据的项不更新。单纯提问允许assessment=null。
 
+2026-11-11收紧评估规则：未提及、无意义输入、纯提问、含糊确认不提交对应要求更新，依据不足保留原状态。needs_help限于明确表示该项不会、具体错误或实际尝试该项但未完成，不能仅凭“未说明／未讨论”给未考查内容记缺口；已demonstrated项不能因本轮未提及而降级，新回答有相反证据才更新。混合作答按实际有依据的部分评估，不把提问一律视为整条不可评估；仍允许一答覆盖多个要求。此次仅调整模型评估提示词，不增加证据类型或程序校验字段，不改掌握与推进规则。
+
 程序根据全部requirements汇总status、known_parts和gaps；只有全部demonstrated才mastered。其余gaps区分“尚未确认”与已发现的问题。反馈中仅未确认的标“本次尚未确认”，不当作学生不会。历史、原题与逐项证据随原snapshot事务保存。
 
 保留已有的知识点内容、掌握状态、判断依据、回答历史和轮数；新增 known_parts、gaps、next_step、help_history 和 task_question，分别保存以下记录：
