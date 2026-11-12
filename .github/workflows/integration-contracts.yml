@@ -4,6 +4,8 @@ on:
   pull_request:
     branches: [main]
     paths:
+      - '.github/workflows/integration-contracts.yml'
+      - 'platform/scripts/platform_runtime_role.py'
       - 'platform/backend/app/api/**'
       - 'platform/backend/app/services/**'
       - 'student_agent/agent/**'
@@ -314,3 +316,14 @@ jobs:
       - name: Check course access and cross-service authorization
         working-directory: platform/backend
         run: ../.venv/bin/python -m pytest -p no:cacheprovider tests/api/routes/test_learning_context.py tests/api/routes/test_student_lesson_context.py tests/api/routes/test_teacher_bridge.py tests/api/routes/test_student_bridge.py -q
+      - name: Check platform with a public-only runtime database role
+        env:
+          MIGRATION_DATABASE_URL: postgresql://platform:isolated-ci-only@127.0.0.1:5432/app_test
+          PLATFORM_RUNTIME_DB_PASSWORD: isolated-runtime-ci-only
+          DATABASE_URL: postgresql://platform_runtime:isolated-runtime-ci-only@127.0.0.1:5432/app_test
+          TEST_DATABASE_URL: postgresql://platform_runtime:isolated-runtime-ci-only@127.0.0.1:5432/app_test
+        run: |
+          platform/.venv/bin/python platform/scripts/platform_runtime_role.py --database-name app_test --apply
+          cd platform/backend
+          ../.venv/bin/python -m alembic current
+          ../.venv/bin/python -m pytest -p no:cacheprovider tests/api/routes/test_learning_context.py tests/api/routes/test_student_lesson_context.py tests/api/routes/test_teacher_bridge.py tests/api/routes/test_student_bridge.py -q
