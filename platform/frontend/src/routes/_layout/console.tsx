@@ -144,6 +144,7 @@ export const Route = createFileRoute("/_layout/console")({
         to: "/",
       })
     }
+    return { canViewLogs: user.is_superuser === true }
   },
   head: () => ({
     meta: [
@@ -160,6 +161,7 @@ type Section =
   | { kind: "students" }
   | { kind: "chat" }
   | { kind: "services" }
+  | { kind: "logs" }
 
 /** 语义状态:绿=正常,黄=待关注,红=需处理,灰=无数据。 */
 function StatusBadge({ label }: { label: string }) {
@@ -1318,6 +1320,155 @@ function StudentDetailView({
   )
 }
 
+type DiagnosticLog = {
+  timestamp: string
+  service: string
+  level: string
+  event?: string
+  request_id?: string
+  method?: string
+  route?: string
+  status_code?: number
+  duration_ms?: number
+  error_type?: string
+  error_code?: string
+}
+
+const LOG_SERVICES: Record<string, string> = {
+  platform: "平台",
+  student: "学生 Agent",
+  teacher: "教师 Agent",
+}
+
+function LogsView() {
+  const [service, setService] = useState("all")
+  const [hours, setHours] = useState("24")
+  const [problemsOnly, setProblemsOnly] = useState(true)
+  const [requestId, setRequestId] = useState("")
+  const [search, setSearch] = useState("")
+  const params = new URLSearchParams({
+    hours,
+    problems_only: String(problemsOnly),
+  })
+  if (service !== "all") params.set("service", service)
+  if (search) params.set("request_id", search)
+  const logs = useQuery({
+    queryKey: ["dev-console-logs", params.toString()],
+    queryFn: () =>
+      api<{
+        events: DiagnosticLog[]
+        unavailable: string[]
+        truncated: boolean
+      }>(`/dev-console/logs?${params}`),
+  })
+
+  return (
+    <div className="space-y-4">
+      <h2 className="text-lg font-semibold">运行日志</h2>
+      <form
+        className="flex flex-wrap items-center gap-2"
+        onSubmit={(event) => {
+          event.preventDefault()
+          const value = requestId.trim()
+          if (value === search) void logs.refetch()
+          setSearch(value)
+        }}
+      >
+        <Select value={service} onValueChange={setService}>
+          <SelectTrigger aria-label="服务" className="w-36">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">所有服务</SelectItem>
+            {Object.entries(LOG_SERVICES).map(([key, label]) => (
+              <SelectItem key={key} value={key}>{label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select value={hours} onValueChange={setHours}>
+          <SelectTrigger aria-label="时间范围" className="w-32">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="1">近 1 小时</SelectItem>
+            <SelectItem value="24">近 24 小时</SelectItem>
+            <SelectItem value="168">近 7 天</SelectItem>
+          </SelectContent>
+        </Select>
+        <Input
+          aria-label="请求 ID"
+          placeholder="请求 ID"
+          className="w-64"
+          value={requestId}
+          maxLength={64}
+          pattern={String.raw`[A-Za-z0-9_\-]{8,64}`}
+          onChange={(event) => setRequestId(event.target.value)}
+        />
+        <Button type="submit">查询</Button>
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={problemsOnly}
+            disabled={Boolean(search)}
+            onChange={(event) => setProblemsOnly(event.target.checked)}
+          />
+          仅看异常
+        </label>
+      </form>
+      {logs.isPending && <p role="status">正在加载日志…</p>}
+      {logs.error && <ViewError label="日志加载" error={logs.error} />}
+      {logs.data && (
+        <>
+          {logs.data.unavailable.length > 0 && (
+            <p className="text-sm text-muted-foreground">
+              日志来源不可用：{logs.data.unavailable.map((key) => LOG_SERVICES[key]).join("、")}
+            </p>
+          )}
+          {logs.data.truncated && (
+            <p className="text-sm text-muted-foreground">查询结果受近期文件和条数限制。</p>
+          )}
+          {logs.data.events.length === 0 ? (
+            <p className="text-sm text-muted-foreground">未找到匹配的日志。</p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>时间</TableHead>
+                  <TableHead>服务</TableHead>
+                  <TableHead>级别</TableHead>
+                  <TableHead>事件</TableHead>
+                  <TableHead>状态 / 耗时</TableHead>
+                  <TableHead>请求 ID</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {logs.data.events.map((row, index) => (
+                  <TableRow key={`${row.timestamp}-${row.service}-${index}`}>
+                    <TableCell>{new Date(row.timestamp).toLocaleString()}</TableCell>
+                    <TableCell>{LOG_SERVICES[row.service]}</TableCell>
+                    <TableCell>{row.level}</TableCell>
+                    <TableCell>
+                      <div>{row.event ?? "—"}</div>
+                      {row.route && <div>{row.method} {row.route}</div>}
+                      <div className="text-muted-foreground">
+                        {[row.error_code, row.error_type].filter(Boolean).join(" · ")}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      {row.status_code ?? "—"} / {row.duration_ms == null ? "—" : `${row.duration_ms} ms`}
+                    </TableCell>
+                    <TableCell className="font-mono text-xs">{row.request_id ?? "—"}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
 const NAV_GROUPS: Array<{
   label: string
   items: Array<{ section: Section; label: string; icon: typeof BookOpen }>
@@ -1340,6 +1491,7 @@ const NAV_GROUPS: Array<{
     label: "系统观测",
     items: [
       { section: { kind: "services" }, label: "服务状态", icon: Activity },
+      { section: { kind: "logs" }, label: "运行日志", icon: CircleAlert },
     ],
   },
 ]
@@ -1347,10 +1499,12 @@ const NAV_GROUPS: Array<{
 /** 左侧导航:按开发动作组织(概览 / 业务诊断 / 系统观测)。 */
 function ConsoleNav({
   activeKind,
+  canViewLogs,
   onNavigate,
 }: {
   /** nav kind to highlight; detail views map back to their section */
   activeKind: Section["kind"]
+  canViewLogs: boolean
   onNavigate: (section: Section) => void
 }) {
   const overview = useQuery({
@@ -1370,7 +1524,7 @@ function ConsoleNav({
               {group.label}
             </p>
           )}
-          {group.items.map((item) => {
+          {group.items.filter((item) => canViewLogs || item.section.kind !== "logs").map((item) => {
             const active = activeKind === item.section.kind
             return (
               <button
@@ -1403,6 +1557,7 @@ function ConsoleNav({
  * 具体排障。observer/superuser 专用,学生/教师不可见。
  */
 function DevConsole() {
+  const { canViewLogs } = Route.useRouteContext()
   const [section, setSection] = useState<Section>({ kind: "overview" })
   const [course, setCourse] = useState<CourseHealthRow | null>(null)
   const [student, setStudent] = useState<StudentActivityRow | null>(null)
@@ -1436,6 +1591,8 @@ function DevConsole() {
           return <ChatDiagnosisView onSelectSession={setSession} />
         case "services":
           return <ServicesView />
+        case "logs":
+          return canViewLogs ? <LogsView /> : null
       }
     })()
   }
@@ -1480,6 +1637,7 @@ function DevConsole() {
       </div>
       <div className="flex min-h-0 flex-1">
         <ConsoleNav
+          canViewLogs={canViewLogs}
           activeKind={
             course ? "course-health" : student ? "students" : section.kind
           }

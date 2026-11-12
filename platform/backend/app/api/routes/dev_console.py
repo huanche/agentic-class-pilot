@@ -16,16 +16,18 @@ degrade to ``None`` / "数据不可用" — never fabricated zeros.
 
 import uuid
 from datetime import UTC, datetime, timedelta
+from typing import Literal
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select, text
 from sqlmodel import Session
 
-from app.api.deps import SessionDep, get_current_observer
+from app.api.deps import CurrentUser, SessionDep, get_current_observer
 from app.core.config import settings
 from app.models import Course, Enrollment, User
 from app.services import (
+    diagnostic_logs,
     student_analytics_client,
     student_chat_records_client,
     teacher_lesson_titles_client,
@@ -43,6 +45,27 @@ router = APIRouter(
 # fan-out cap so an unfiltered "all courses" query can't stampede the
 # student service on large deployments
 MAX_COURSE_FANOUT = 50
+
+
+@router.get("/logs")
+def list_logs(
+    current_user: CurrentUser,
+    service: Literal["platform", "student", "teacher"] | None = None,
+    hours: int = Query(default=24, ge=1, le=168),
+    request_id: str | None = Query(default=None, pattern=r"^[A-Za-z0-9_-]{8,64}$"),
+    problems_only: bool = True,
+    limit: int = Query(default=100, ge=1, le=200),
+) -> dict:
+    if not current_user.is_superuser:
+        raise HTTPException(status_code=403, detail="仅超级管理员可以查看日志")
+    return diagnostic_logs.read_recent_logs(
+        local=settings.ENVIRONMENT in ("local", "development"),
+        service=service,
+        hours=hours,
+        request_id=request_id,
+        problems_only=problems_only,
+        limit=limit,
+    )
 
 
 def _resolve_course_targets(
