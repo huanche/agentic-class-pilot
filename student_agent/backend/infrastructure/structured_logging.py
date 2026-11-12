@@ -219,10 +219,6 @@ class RequestLoggingMiddleware:
         method = scope.get("method", "")
         path = scope.get("path", "")
         route = _route_template(scope)
-        if status >= 500:
-            # error path already emitted above; just restore the context
-            request_id_var.reset(token)
-            return
         log_request_completed(
             method=method, path=path, route=route,
             status=status, duration_ms=duration_ms,
