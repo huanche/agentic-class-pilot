@@ -1,0 +1,9 @@
+{
+  "url": "http://localhost:8088/app?course_id=04b5c284-9ef6-415c-abb1-e7910c1dff68",
+  "playerUrl": "http://localhost:8088/classroom-player/arrays_short_bbee42b5b1e6",
+  "publication": {
+    "publicationId": "kVHxMZ0Y_cvQg1",
+    "version": 1
+  },
+  "classroomId": "arrays_short_bbee42b5b1e6"
+}

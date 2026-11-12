@@ -12,6 +12,6 @@ Status: resolved
 
 新提取在既有工具字段中要求独立事实分项；旧条目不迁移、不重编号，评估先在既有evidence中核对每个独立含义的学生依据，再提交updates。仅加系统规则和单条evidence描述仍复现失败，最终评估总evidence先核对证据的约束通过定向测试。缺半项与最后一项对照不确认；完整回答、历史学生原话补足均可确认。另一种队列操作位置正反对照也通过。
 
-7项真实模型最终两批通过，75项相关回归通过；完整原课时新提取把入队位置与容量性质分开。见 [修复报告](../../../evidence/compound-help-fix/REPORT.md)。这是有限样例的修复验收，不代表消除全部模型语义风险，也未自动修正旧错误掌握记录。没有新增状态、额外模型审核或更改5/8规则。
+7项真实模型最终两批通过，75项相关回归通过；完整原课时新提取把入队位置与容量性质分开。见 [修复报告](../../../student_agent/evidence/compound-help-fix/REPORT.md)。这是有限样例的修复验收，不代表消除全部模型语义风险，也未自动修正旧错误掌握记录。没有新增状态、额外模型审核或更改5/8规则。
 
-证据：[本轮报告](../../../docs/knowledge-teaching/validation/2026-11-10-requirement-progress/README.md)、同目录compound-item-probe.json和run-artifact-error.json。
+证据：[本轮报告](../../../student_agent/docs/knowledge-teaching/validation/2026-11-10-requirement-progress/README.md)、同目录compound-item-probe.json和run-artifact-error.json。

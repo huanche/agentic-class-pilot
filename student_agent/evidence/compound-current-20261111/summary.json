@@ -1,0 +1,51 @@
+[
+  {
+    "case": "archived-1",
+    "httpStatus": 200,
+    "itemStatus": "demonstrated",
+    "pointStatus": "partial",
+    "stage": "recall"
+  },
+  {
+    "case": "archived-2",
+    "httpStatus": 200,
+    "itemStatus": "demonstrated",
+    "pointStatus": "partial",
+    "stage": "recall"
+  },
+  {
+    "case": "current-1",
+    "httpStatus": 200,
+    "itemStatus": "demonstrated",
+    "pointStatus": "partial",
+    "stage": "recall"
+  },
+  {
+    "case": "current-2",
+    "httpStatus": 200,
+    "itemStatus": "demonstrated",
+    "pointStatus": "partial",
+    "stage": "recall"
+  },
+  {
+    "case": "complete",
+    "httpStatus": 200,
+    "itemStatus": "demonstrated",
+    "pointStatus": "partial",
+    "stage": "recall"
+  },
+  {
+    "case": "prior-evidence",
+    "httpStatus": 200,
+    "itemStatus": "demonstrated",
+    "pointStatus": "partial",
+    "stage": "recall"
+  },
+  {
+    "case": "other-items-confirmed",
+    "httpStatus": 200,
+    "itemStatus": "demonstrated",
+    "pointStatus": "mastered",
+    "stage": "wrapup"
+  }
+]

@@ -1,0 +1,1127 @@
+{
+  "success": true,
+  "classroom": {
+    "id": "arrays_short_bbee42b5b1e6",
+    "stage": {
+      "id": "arrays_short_bbee42b5b1e6",
+      "name": "一维数组短课：定义、初始化与循环构造",
+      "createdAt": 1794384646749,
+      "updatedAt": 1794384753580,
+      "generationPlan": {
+        "version": 1,
+        "complete": true,
+        "outlines": [
+          {
+            "id": "scene_1",
+            "type": "slide",
+            "order": 1,
+            "title": "一维数组的定义与下标",
+            "keyPoints": [
+              "定义形式：存储类型 数据类型 数组名[整型常量表达式]；",
+              "示例 int a[5]; 表示5个int元素，合法下标为 a[0] 到 a[4]",
+              "下标从0开始，最大下标 = 数组大小 - 1；a[5] 不是合法元素"
+            ],
+            "description": "用最简定义引入一维数组，明确下标从0开始到n-1。",
+            "estimatedDuration": 45,
+            "teachingObjective": "能说出 int a[5] 的元素个数与合法下标范围。"
+          },
+          {
+            "id": "scene_2",
+            "type": "slide",
+            "order": 2,
+            "title": "初始化：int a[5]={1,2}",
+            "keyPoints": [
+              "int a[5] = {1, 2}; 只给出前两个初值",
+              "其余元素 a[2]、a[3]、a[4] 自动补0",
+              "最终元素为 1,2,0,0,0；访问 a[5] 越界，不能读写"
+            ],
+            "description": "通过部分初始化观察未显式赋值元素的默认值，并强调越界不可访问。",
+            "estimatedDuration": 45,
+            "teachingObjective": "能解释部分初始化时剩余元素补0，并识别越界下标。"
+          },
+          {
+            "id": "scene_3",
+            "type": "slide",
+            "order": 3,
+            "title": "用循环逐项赋值并构造奇数数组",
+            "keyPoints": [
+              "数组必须逐元素赋值",
+              "for循环下标0至4",
+              "a[i]=2*i+1得到1、3、5、7、9",
+              "独立编写5元素奇数数组，检查边界与结果"
+            ],
+            "description": "在同一页讲清int a[5]和for(i=0;i<5;i++) a[i]=2*i+1的代码及结果，给出学生独立构造5个奇数的任务。只用一个核心代码块，逐句实际解释代码，不用空转的看代码块引导句，不用任务标题替代代码焦点。",
+            "estimatedDuration": 50,
+            "teachingObjective": "能仿照示例写出遍历0~4下标的for循环赋值代码。"
+          }
+        ],
+        "serverJobId": "cw_arrays_short_bbee42b5b1e6"
+      },
+      "languageDirective": "本课程全程使用中文讲解，代码关键字与数组名保留英文原样。术语首次出现时用中文说明，并直接配合C代码示例。语速适中，面向C语言初学者，只围绕一维数组的定义、下标、初始化和循环赋值展开。",
+      "generationModelPolicy": "server"
+    },
+    "scenes": [
+      {
+        "id": "y7hhE2Xae0gxjg9Lv6kpd",
+        "type": "slide",
+        "order": 1,
+        "title": "一维数组的定义与下标",
+        "timing": {
+          "mode": "narration-fit",
+          "autoAdvance": true,
+          "measurementKey": "v2:1013:2660376196",
+          "plannedDurationSec": 45
+        },
+        "actions": [
+          {
+            "id": "teaching-t_Etx82G-1-speech",
+            "text": "同学们好，这节课我们学习一维数组的定义与下标。",
+            "type": "speech",
+            "audioInvalidated": true
+          },
+          {
+            "id": "teaching-t_Etx82G-2-focus",
+            "type": "spotlight",
+            "elementId": "text__uezzdUK"
+          },
+          {
+            "id": "teaching-t_Etx82G-2-speech",
+            "text": "一维数组的定义形式由四部分组成：存储类型、数据类型、数组名，以及方括号中的整型常量表达式。存储类型说明存储特性，数据类型决定每个元素的类型，数组名是标识符，方括号里的整型常量表达式给出元素个数。",
+            "type": "speech",
+            "audioInvalidated": true
+          },
+          {
+            "id": "teaching-t_Etx82G-3-focus",
+            "type": "spotlight",
+            "elementId": "text_OFEtmo-c"
+          },
+          {
+            "id": "teaching-t_Etx82G-3-speech",
+            "text": "看示例：int a[5]; 这里数据类型是 int，数组名是 a，方括号里的 5 表示元素个数，所以它定义的是 5 个 int 类型的元素。",
+            "type": "speech",
+            "audioInvalidated": true
+          },
+          {
+            "id": "teaching-t_Etx82G-4-focus",
+            "type": "spotlight",
+            "elementId": "text_codn1UnV"
+          },
+          {
+            "id": "teaching-t_Etx82G-4-speech",
+            "text": "这 5 个 int 元素在内存中连续存放，这一点对后面用……",
+            "type": "speech",
+            "audioInvalidated": true
+          },
+          {
+            "id": "teaching-t_Etx82G-8-reveal",
+            "type": "reveal",
+            "effect": "fade-up",
+            "duration": 520,
+            "elementId": "text_pfVRfhGD"
+          }
+        ],
+        "content": {
+          "type": "slide",
+          "canvas": {
+            "id": "_qZ_0CFolIHGiIsTva5dA",
+            "theme": {
+              "shadow": {
+                "h": 0,
+                "v": 0,
+                "blur": 10,
+                "color": "#000000"
+              },
+              "outline": {
+                "color": "#d14424",
+                "style": "solid",
+                "width": 2
+              },
+              "fontName": "Microsoft YaHei",
+              "fontColor": "#333333",
+              "themeColors": [
+                "#5b9bd5",
+                "#ed7d31",
+                "#a5a5a5",
+                "#ffc000",
+                "#4472c4"
+              ],
+              "backgroundColor": "#ffffff"
+            },
+            "elements": [
+              {
+                "id": "shape_uz1N7blv",
+                "top": 128,
+                "fill": "#2563eb",
+                "left": 60,
+                "path": "M 0 0 L 1 0 L 1 1 L 0 1 Z",
+                "type": "shape",
+                "width": 90,
+                "height": 4,
+                "rotate": 0,
+                "viewBox": [
+                  1,
+                  1
+                ],
+                "fixedRatio": false
+              },
+              {
+                "id": "shape_d0L0_4Od",
+                "top": 144,
+                "fill": "#1e293b",
+                "left": 216,
+                "path": "M 0 0 L 1 0 L 1 1 L 0 1 Z",
+                "type": "shape",
+                "width": 724,
+                "height": 64,
+                "rotate": 0,
+                "viewBox": [
+                  1,
+                  1
+                ],
+                "fixedRatio": false
+              },
+              {
+                "id": "shape_jJXlMdLh",
+                "top": 224,
+                "fill": "#dbeafe",
+                "left": 216,
+                "path": "M 0 0 L 1 0 L 1 1 L 0 1 Z",
+                "type": "shape",
+                "width": 240,
+                "height": 64,
+                "rotate": 0,
+                "viewBox": [
+                  1,
+                  1
+                ],
+                "fixedRatio": false
+              },
+              {
+                "id": "shape_DpdTb9qe",
+                "top": 372,
+                "fill": "#e0e7ff",
+                "left": 60,
+                "path": "M 0 0 L 1 0 L 1 1 L 0 1 Z",
+                "type": "shape",
+                "width": 160,
+                "height": 60,
+                "rotate": 0,
+                "viewBox": [
+                  1,
+                  1
+                ],
+                "fixedRatio": false
+              },
+              {
+                "id": "shape_hWcgRbBG",
+                "top": 372,
+                "fill": "#e0e7ff",
+                "left": 240,
+                "path": "M 0 0 L 1 0 L 1 1 L 0 1 Z",
+                "type": "shape",
+                "width": 160,
+                "height": 60,
+                "rotate": 0,
+                "viewBox": [
+                  1,
+                  1
+                ],
+                "fixedRatio": false
+              },
+              {
+                "id": "shape_SS8kaPyd",
+                "top": 372,
+                "fill": "#e0e7ff",
+                "left": 420,
+                "path": "M 0 0 L 1 0 L 1 1 L 0 1 Z",
+                "type": "shape",
+                "width": 160,
+                "height": 60,
+                "rotate": 0,
+                "viewBox": [
+                  1,
+                  1
+                ],
+                "fixedRatio": false
+              },
+              {
+                "id": "shape_ZkQffvu9",
+                "top": 372,
+                "fill": "#e0e7ff",
+                "left": 600,
+                "path": "M 0 0 L 1 0 L 1 1 L 0 1 Z",
+                "type": "shape",
+                "width": 160,
+                "height": 60,
+                "rotate": 0,
+                "viewBox": [
+                  1,
+                  1
+                ],
+                "fixedRatio": false
+              },
+              {
+                "id": "shape_TBhaaB4j",
+                "top": 372,
+                "fill": "#e0e7ff",
+                "left": 780,
+                "path": "M 0 0 L 1 0 L 1 1 L 0 1 Z",
+                "type": "shape",
+                "width": 160,
+                "height": 60,
+                "rotate": 0,
+                "viewBox": [
+                  1,
+                  1
+                ],
+                "fixedRatio": false
+              },
+              {
+                "id": "text_L_Yc9mHQ",
+                "top": 50,
+                "left": 60,
+                "type": "text",
+                "width": 880,
+                "height": 70,
+                "rotate": 0,
+                "content": "<p style=\"font-size: 32px;\"><strong>一维数组的定义与下标</strong></p>",
+                "defaultColor": "#1e293b",
+                "defaultFontName": "Microsoft YaHei"
+              },
+              {
+                "id": "text_nph8OW6S",
+                "top": 150,
+                "left": 60,
+                "type": "text",
+                "width": 140,
+                "height": 52,
+                "rotate": 0,
+                "content": "<p style=\"font-size: 20px;\"><strong>定义形式</strong></p>",
+                "defaultColor": "#1e293b",
+                "defaultFontName": "Microsoft YaHei"
+              },
+              {
+                "id": "text__uezzdUK",
+                "top": 150,
+                "left": 236,
+                "type": "text",
+                "width": 684,
+                "height": 52,
+                "rotate": 0,
+                "content": "<p style=\"font-size: 20px;\">存储类型&nbsp;&nbsp;数据类型&nbsp;&nbsp;数组名[整型常量表达式];</p>",
+                "defaultColor": "#f1f5f9",
+                "defaultFontName": "Microsoft YaHei"
+              },
+              {
+                "id": "text_sOu6UaA8",
+                "top": 230,
+                "left": 60,
+                "type": "text",
+                "width": 140,
+                "height": 52,
+                "rotate": 0,
+                "content": "<p style=\"font-size: 20px;\"><strong>示例</strong></p>",
+                "defaultColor": "#1e293b",
+                "defaultFontName": "Microsoft YaHei"
+              },
+              {
+                "id": "text_OFEtmo-c",
+                "top": 230,
+                "left": 236,
+                "type": "text",
+                "width": 200,
+                "height": 52,
+                "rotate": 0,
+                "content": "<p style=\"font-size: 20px;\">int a[5];</p>",
+                "defaultColor": "#1e40af",
+                "defaultFontName": "Microsoft YaHei"
+              },
+              {
+                "id": "text_codn1UnV",
+                "top": 230,
+                "left": 480,
+                "type": "text",
+                "width": 460,
+                "height": 52,
+                "rotate": 0,
+                "content": "<p style=\"font-size: 20px;\">定义 5 个 int 元素，内存连续存放</p>",
+                "defaultColor": "#334155",
+                "defaultFontName": "Microsoft YaHei"
+              },
+              {
+                "id": "text_FtXdxaco",
+                "top": 310,
+                "left": 60,
+                "type": "text",
+                "width": 520,
+                "height": 52,
+                "rotate": 0,
+                "content": "<p style=\"font-size: 20px;\"><strong>合法下标：0 ~ 4（从 0 开始计）</strong></p>",
+                "defaultColor": "#1e293b",
+                "defaultFontName": "Microsoft YaHei"
+              },
+              {
+                "id": "text_rXo_GbFc",
+                "top": 376,
+                "left": 80,
+                "type": "text",
+                "width": 120,
+                "height": 52,
+                "rotate": 0,
+                "content": "<p style=\"font-size: 20px; text-align: center;\">a[0]</p>",
+                "defaultColor": "#3730a3",
+                "defaultFontName": "Microsoft YaHei"
+              },
+              {
+                "id": "text_FA5MYoo8",
+                "top": 376,
+                "left": 260,
+                "type": "text",
+                "width": 120,
+                "height": 52,
+                "rotate": 0,
+                "content": "<p style=\"font-size: 20px; text-align: center;\">a[1]</p>",
+                "defaultColor": "#3730a3",
+                "defaultFontName": "Microsoft YaHei"
+              },
+              {
+                "id": "text_GCyPKSjT",
+                "top": 376,
+                "left": 440,
+                "type": "text",
+                "width": 120,
+                "height": 52,
+                "rotate": 0,
+                "content": "<p style=\"font-size: 20px; text-align: center;\">a[2]</p>",
+                "defaultColor": "#3730a3",
+                "defaultFontName": "Microsoft YaHei"
+              },
+              {
+                "id": "text_rgmFPRPC",
+                "top": 376,
+                "left": 620,
+                "type": "text",
+                "width": 120,
+                "height": 52,
+                "rotate": 0,
+                "content": "<p style=\"font-size: 20px; text-align: center;\">a[3]</p>",
+                "defaultColor": "#3730a3",
+                "defaultFontName": "Microsoft YaHei"
+              },
+              {
+                "id": "text_JZL835AF",
+                "top": 376,
+                "left": 800,
+                "type": "text",
+                "width": 120,
+                "height": 52,
+                "rotate": 0,
+                "content": "<p style=\"font-size: 20px; text-align: center;\">a[4]</p>",
+                "defaultColor": "#3730a3",
+                "defaultFontName": "Microsoft YaHei"
+              },
+              {
+                "id": "text_pfVRfhGD",
+                "top": 446,
+                "left": 60,
+                "type": "text",
+                "width": 880,
+                "height": 52,
+                "rotate": 0,
+                "content": "<p style=\"font-size: 20px;\">最大下标 = 数组大小 - 1（此处为 4）；<span style=\"color: #b91c1c;\">a[5] 越界，不是合法元素</span></p>",
+                "defaultColor": "#334155",
+                "defaultFontName": "Microsoft YaHei"
+              }
+            ],
+            "background": {
+              "type": "solid",
+              "color": "#ffffff"
+            },
+            "viewportSize": 1000,
+            "viewportRatio": 0.5625
+          }
+        },
+        "stageId": "arrays_short_bbee42b5b1e6",
+        "createdAt": 1794384708498,
+        "outlineId": "scene_1",
+        "updatedAt": 1794384708498
+      },
+      {
+        "id": "yqb9KzzVjYnb-cmF2OB87",
+        "type": "slide",
+        "order": 2,
+        "title": "初始化：int a[5]={1,2}",
+        "timing": {
+          "mode": "narration-fit",
+          "autoAdvance": true,
+          "measurementKey": "v2:1013:1967135978",
+          "plannedDurationSec": 45
+        },
+        "actions": [
+          {
+            "id": "teaching-3WeKPN-c-1-speech",
+            "text": "上一页我们已经知道，int a[5] 定义了 5 个连续存放的 int 元素。这一页我们看部分初始化：如果只写出一部分初值，剩下的元素会变成什么。",
+            "type": "speech",
+            "audioInvalidated": true
+          },
+          {
+            "id": "teaching-3WeKPN-c-2-focus",
+            "type": "spotlight",
+            "elementId": "text_CObPBhOE"
+          },
+          {
+            "id": "teaching-3WeKPN-c-2-speech",
+            "text": "先看这段代码：int a[5] = {1, 2}; 方括号里的 5 说明数组一共有 5 个元素，而花括号里只写了两个初值 1 和 2，所以这是一次部分初始化。",
+            "type": "speech",
+            "audioInvalidated": true
+          },
+          {
+            "id": "teaching-3WeKPN-c-3-focus",
+            "type": "spotlight",
+            "elementId": "text_QcsrjUAL"
+          },
+          {
+            "id": "teaching-3WeKPN-c-3-speech",
+            "text": "初始化按下标从小到大依次对应：第一个初值 1 给 a[0]，所以 a[0] 里存的就是 1。",
+            "type": "speech",
+            "audioInvalidated": true
+          },
+          {
+            "id": "teaching-3WeKPN-c-4-focus",
+            "type": "spotlight",
+            "elementId": "text_q4hfeVWJ"
+          },
+          {
+            "id": "teaching-3WeKPN-c-4-speech",
+            "text": "第二个初值 2 紧跟着给 a[1]，所以……",
+            "type": "speech",
+            "audioInvalidated": true
+          },
+          {
+            "id": "teaching-3WeKPN-c-5-reveal",
+            "type": "reveal",
+            "effect": "fade-up",
+            "duration": 520,
+            "elementId": "text_ngiaqQ8y"
+          }
+        ],
+        "content": {
+          "type": "slide",
+          "canvas": {
+            "id": "O82_0ADxB7nHJ3OaCqY_l",
+            "theme": {
+              "shadow": {
+                "h": 0,
+                "v": 0,
+                "blur": 10,
+                "color": "#000000"
+              },
+              "outline": {
+                "color": "#d14424",
+                "style": "solid",
+                "width": 2
+              },
+              "fontName": "Microsoft YaHei",
+              "fontColor": "#333333",
+              "themeColors": [
+                "#5b9bd5",
+                "#ed7d31",
+                "#a5a5a5",
+                "#ffc000",
+                "#4472c4"
+              ],
+              "backgroundColor": "#ffffff"
+            },
+            "elements": [
+              {
+                "id": "text_uluAkYsT",
+                "top": 50,
+                "left": 60,
+                "type": "text",
+                "width": 880,
+                "height": 70,
+                "rotate": 0,
+                "content": "<p style=\"font-size: 32px;\"><strong>初始化：int a[5] = {1, 2};</strong></p>",
+                "defaultColor": "#1f2937",
+                "defaultFontName": "Microsoft YaHei"
+              },
+              {
+                "id": "shape_EeKbUTId",
+                "top": 132,
+                "fill": "#5b9bd5",
+                "left": 70,
+                "path": "M 0 0 L 1 0 L 1 1 L 0 1 Z",
+                "type": "shape",
+                "width": 860,
+                "height": 3,
+                "rotate": 0,
+                "viewBox": [
+                  1,
+                  1
+                ],
+                "fixedRatio": false
+              },
+              {
+                "id": "shape_e64ekDoy",
+                "top": 156,
+                "fill": "#1e293b",
+                "left": 60,
+                "path": "M 0 0 L 1 0 L 1 1 L 0 1 Z",
+                "type": "shape",
+                "width": 400,
+                "height": 100,
+                "rotate": 0,
+                "viewBox": [
+                  1,
+                  1
+                ],
+                "fixedRatio": false
+              },
+              {
+                "id": "text_CObPBhOE",
+                "top": 177,
+                "left": 80,
+                "type": "text",
+                "width": 360,
+                "height": 58,
+                "rotate": 0,
+                "content": "<p style=\"font-size: 24px; font-family: Consolas, monospace; color: #e2e8f0; text-align: center;\">int a[5] = {1, 2};</p>",
+                "defaultColor": "#e2e8f0",
+                "defaultFontName": "Consolas"
+              },
+              {
+                "id": "text_Ty2652aP",
+                "top": 159,
+                "left": 500,
+                "type": "text",
+                "width": 440,
+                "height": 94,
+                "rotate": 0,
+                "content": "<p style=\"font-size: 16px;\">• 只给出前两个初值 1、2</p><p style=\"font-size: 16px;\">• 其余元素由编译器自动补 0</p><p style=\"font-size: 16px;\">• 最终数组：1, 2, 0, 0, 0</p>",
+                "defaultColor": "#374151",
+                "defaultFontName": "Microsoft YaHei"
+              },
+              {
+                "id": "text_Fc_VVhL8",
+                "top": 290,
+                "left": 224,
+                "type": "text",
+                "width": 80,
+                "height": 43,
+                "rotate": 0,
+                "content": "<p style=\"font-size: 14px; text-align: center;\">a[0]</p>",
+                "defaultColor": "#64748b",
+                "defaultFontName": "Microsoft YaHei"
+              },
+              {
+                "id": "text_enxe58WA",
+                "top": 290,
+                "left": 312,
+                "type": "text",
+                "width": 80,
+                "height": 43,
+                "rotate": 0,
+                "content": "<p style=\"font-size: 14px; text-align: center;\">a[1]</p>",
+                "defaultColor": "#64748b",
+                "defaultFontName": "Microsoft YaHei"
+              },
+              {
+                "id": "text_18ryXEI7",
+                "top": 290,
+                "left": 400,
+                "type": "text",
+                "width": 80,
+                "height": 43,
+                "rotate": 0,
+                "content": "<p style=\"font-size: 14px; text-align: center;\">a[2]</p>",
+                "defaultColor": "#64748b",
+                "defaultFontName": "Microsoft YaHei"
+              },
+              {
+                "id": "text_NOBgLwBg",
+                "top": 290,
+                "left": 488,
+                "type": "text",
+                "width": 80,
+                "height": 43,
+                "rotate": 0,
+                "content": "<p style=\"font-size: 14px; text-align: center;\">a[3]</p>",
+                "defaultColor": "#64748b",
+                "defaultFontName": "Microsoft YaHei"
+              },
+              {
+                "id": "text_Ebro9ArW",
+                "top": 290,
+                "left": 576,
+                "type": "text",
+                "width": 80,
+                "height": 43,
+                "rotate": 0,
+                "content": "<p style=\"font-size: 14px; text-align: center;\">a[4]</p>",
+                "defaultColor": "#64748b",
+                "defaultFontName": "Microsoft YaHei"
+              },
+              {
+                "id": "text_5mZA0jmb",
+                "top": 290,
+                "left": 696,
+                "type": "text",
+                "width": 80,
+                "height": 43,
+                "rotate": 0,
+                "content": "<p style=\"font-size: 14px; text-align: center;\">a[5]</p>",
+                "defaultColor": "#dc2626",
+                "defaultFontName": "Microsoft YaHei"
+              },
+              {
+                "id": "shape_IUPTZ-N-",
+                "top": 343,
+                "fill": "#dbeafe",
+                "left": 224,
+                "path": "M 0 0 L 1 0 L 1 1 L 0 1 Z",
+                "type": "shape",
+                "width": 80,
+                "height": 80,
+                "rotate": 0,
+                "viewBox": [
+                  1,
+                  1
+                ],
+                "fixedRatio": false
+              },
+              {
+                "id": "shape_MQmI5mN3",
+                "top": 343,
+                "fill": "#dbeafe",
+                "left": 312,
+                "path": "M 0 0 L 1 0 L 1 1 L 0 1 Z",
+                "type": "shape",
+                "width": 80,
+                "height": 80,
+                "rotate": 0,
+                "viewBox": [
+                  1,
+                  1
+                ],
+                "fixedRatio": false
+              },
+              {
+                "id": "shape_xYVBF2OE",
+                "top": 343,
+                "fill": "#dcfce7",
+                "left": 400,
+                "path": "M 0 0 L 1 0 L 1 1 L 0 1 Z",
+                "type": "shape",
+                "width": 80,
+                "height": 80,
+                "rotate": 0,
+                "viewBox": [
+                  1,
+                  1
+                ],
+                "fixedRatio": false
+              },
+              {
+                "id": "shape_3FgZCo6v",
+                "top": 343,
+                "fill": "#dcfce7",
+                "left": 488,
+                "path": "M 0 0 L 1 0 L 1 1 L 0 1 Z",
+                "type": "shape",
+                "width": 80,
+                "height": 80,
+                "rotate": 0,
+                "viewBox": [
+                  1,
+                  1
+                ],
+                "fixedRatio": false
+              },
+              {
+                "id": "shape_l6isKgZw",
+                "top": 343,
+                "fill": "#dcfce7",
+                "left": 576,
+                "path": "M 0 0 L 1 0 L 1 1 L 0 1 Z",
+                "type": "shape",
+                "width": 80,
+                "height": 80,
+                "rotate": 0,
+                "viewBox": [
+                  1,
+                  1
+                ],
+                "fixedRatio": false
+              },
+              {
+                "id": "shape_4z_RvLtX",
+                "top": 343,
+                "fill": "#fee2e2",
+                "left": 696,
+                "path": "M 0 0 L 1 0 L 1 1 L 0 1 Z",
+                "type": "shape",
+                "width": 80,
+                "height": 80,
+                "rotate": 0,
+                "viewBox": [
+                  1,
+                  1
+                ],
+                "fixedRatio": false
+              },
+              {
+                "id": "text_QcsrjUAL",
+                "top": 354,
+                "left": 224,
+                "type": "text",
+                "width": 80,
+                "height": 58,
+                "rotate": 0,
+                "content": "<p style=\"font-size: 24px; text-align: center;\"><strong>1</strong></p>",
+                "defaultColor": "#1e40af",
+                "defaultFontName": "Microsoft YaHei"
+              },
+              {
+                "id": "text_q4hfeVWJ",
+                "top": 354,
+                "left": 312,
+                "type": "text",
+                "width": 80,
+                "height": 58,
+                "rotate": 0,
+                "content": "<p style=\"font-size: 24px; text-align: center;\"><strong>2</strong></p>",
+                "defaultColor": "#1e40af",
+                "defaultFontName": "Microsoft YaHei"
+              },
+              {
+                "id": "text_ngiaqQ8y",
+                "top": 354,
+                "left": 400,
+                "type": "text",
+                "width": 80,
+                "height": 58,
+                "rotate": 0,
+                "content": "<p style=\"font-size: 24px; text-align: center;\"><strong>0</strong></p>",
+                "defaultColor": "#166534",
+                "defaultFontName": "Microsoft YaHei"
+              },
+              {
+                "id": "text_dxrPbgCt",
+                "top": 354,
+                "left": 488,
+                "type": "text",
+                "width": 80,
+                "height": 58,
+                "rotate": 0,
+                "content": "<p style=\"font-size: 24px; text-align: center;\"><strong>0</strong></p>",
+                "defaultColor": "#166534",
+                "defaultFontName": "Microsoft YaHei"
+              },
+              {
+                "id": "text_JQJDkHih",
+                "top": 354,
+                "left": 576,
+                "type": "text",
+                "width": 80,
+                "height": 58,
+                "rotate": 0,
+                "content": "<p style=\"font-size: 24px; text-align: center;\"><strong>0</strong></p>",
+                "defaultColor": "#166534",
+                "defaultFontName": "Microsoft YaHei"
+              },
+              {
+                "id": "text_UnnE8GR4",
+                "top": 354,
+                "left": 696,
+                "type": "text",
+                "width": 80,
+                "height": 58,
+                "rotate": 0,
+                "content": "<p style=\"font-size: 24px; text-align: center;\"><strong>✕</strong></p>",
+                "defaultColor": "#dc2626",
+                "defaultFontName": "Microsoft YaHei"
+              },
+              {
+                "id": "text_FWAeT0G7",
+                "top": 438,
+                "left": 400,
+                "type": "text",
+                "width": 256,
+                "height": 43,
+                "rotate": 0,
+                "content": "<p style=\"font-size: 14px; text-align: center;\">未显式赋值 → 自动补 0</p>",
+                "defaultColor": "#166534",
+                "defaultFontName": "Microsoft YaHei"
+              },
+              {
+                "id": "text_E-PsI1jj",
+                "top": 438,
+                "left": 656,
+                "type": "text",
+                "width": 160,
+                "height": 43,
+                "rotate": 0,
+                "content": "<p style=\"font-size: 14px; text-align: center;\">越界，不可读写</p>",
+                "defaultColor": "#dc2626",
+                "defaultFontName": "Microsoft YaHei"
+              }
+            ],
+            "background": {
+              "type": "solid",
+              "color": "#ffffff"
+            },
+            "viewportSize": 1000,
+            "viewportRatio": 0.5625
+          }
+        },
+        "stageId": "arrays_short_bbee42b5b1e6",
+        "createdAt": 1794384726837,
+        "outlineId": "scene_2",
+        "updatedAt": 1794384726837
+      },
+      {
+        "id": "NWJCDhp-xZApxifAVMtnx",
+        "type": "slide",
+        "order": 3,
+        "title": "用循环逐项赋值并构造奇数数组",
+        "timing": {
+          "mode": "narration-fit",
+          "autoAdvance": true,
+          "measurementKey": "v2:823:4244245248",
+          "plannedDurationSec": 50
+        },
+        "actions": [
+          {
+            "id": "teaching-htyGSHA9-1-speech",
+            "text": "前面我们已经学了数组的定义与初始化。最后一页，把下标和 for 循环结合起来，看怎样逐项给数组元素赋值，并构造出五个奇数。",
+            "type": "speech",
+            "audioInvalidated": true
+          },
+          {
+            "id": "teaching-htyGSHA9-2-focus",
+            "type": "spotlight",
+            "elementId": "text_Cx-DYJZH"
+          },
+          {
+            "id": "teaching-htyGSHA9-2-speech",
+            "text": "先看第一行：int a[5], i; 这里定义了一个包含 5 个 int 元素的数组 a，同时定义循环变量 i。数组的每个元素还没有赋值，接下来要逐个填入。",
+            "type": "speech",
+            "audioInvalidated": true
+          },
+          {
+            "id": "teaching-htyGSHA9-3-focus",
+            "type": "spotlight",
+            "elementId": "text_Cx-DYJZH"
+          },
+          {
+            "id": "teaching-htyGSHA9-3-speech",
+            "text": "循环条件是 for (i = 0; i < 5; i++)。i 从 0 开始，只要 i 小于 5 就继续执行；因此 i 依次取 0、1、2、3、4，正好对应数……",
+            "type": "speech",
+            "audioInvalidated": true
+          },
+          {
+            "id": "teaching-htyGSHA9-6-reveal",
+            "type": "reveal",
+            "effect": "fade-up",
+            "duration": 520,
+            "elementId": "text_fBq-9vjv"
+          }
+        ],
+        "content": {
+          "type": "slide",
+          "canvas": {
+            "id": "F0ug9V991itt5OENujWn2",
+            "theme": {
+              "shadow": {
+                "h": 0,
+                "v": 0,
+                "blur": 10,
+                "color": "#000000"
+              },
+              "outline": {
+                "color": "#d14424",
+                "style": "solid",
+                "width": 2
+              },
+              "fontName": "Microsoft YaHei",
+              "fontColor": "#333333",
+              "themeColors": [
+                "#5b9bd5",
+                "#ed7d31",
+                "#a5a5a5",
+                "#ffc000",
+                "#4472c4"
+              ],
+              "backgroundColor": "#ffffff"
+            },
+            "elements": [
+              {
+                "id": "text_0dqmdw95",
+                "top": 50,
+                "left": 60,
+                "type": "text",
+                "width": 880,
+                "height": 70,
+                "rotate": 0,
+                "content": "<p style=\"font-size: 32px;\"><strong>用循环逐项赋值并构造奇数数组</strong></p>",
+                "defaultColor": "#1e293b",
+                "defaultFontName": "Microsoft YaHei"
+              },
+              {
+                "id": "shape_r5uMNimP",
+                "top": 130,
+                "fill": "#2563eb",
+                "left": 70,
+                "path": "M 0 0 L 1 0 L 1 1 L 0 1 Z",
+                "type": "shape",
+                "width": 860,
+                "height": 3,
+                "rotate": 0,
+                "viewBox": [
+                  1,
+                  1
+                ],
+                "fixedRatio": false
+              },
+              {
+                "id": "shape__CeIc8_H",
+                "top": 146,
+                "fill": "#1e293b",
+                "left": 60,
+                "path": "M 0 0 L 1 0 L 1 1 L 0 1 Z",
+                "type": "shape",
+                "width": 440,
+                "height": 252,
+                "rotate": 0,
+                "viewBox": [
+                  1,
+                  1
+                ],
+                "fixedRatio": false
+              },
+              {
+                "id": "text_L9GNQb9o",
+                "top": 188,
+                "left": 80,
+                "type": "text",
+                "width": 200,
+                "height": 43,
+                "rotate": 0,
+                "content": "<p style=\"font-size: 14px;\">核心代码</p>",
+                "defaultColor": "#94a3b8",
+                "defaultFontName": "Microsoft YaHei"
+              },
+              {
+                "id": "text_Cx-DYJZH",
+                "top": 239,
+                "left": 80,
+                "type": "text",
+                "width": 400,
+                "height": 118,
+                "rotate": 0,
+                "content": "<p style=\"font-size: 16px; font-family: 'Courier New', monospace;\"><span style=\"color:#7dd3fc;\">int</span> a[5], i;</p><p style=\"font-size: 16px; font-family: 'Courier New', monospace;\"><span style=\"color:#7dd3fc;\">for</span> (i = 0; i &lt; 5; i++)</p><p style=\"font-size: 16px; font-family: 'Courier New', monospace;\">&nbsp;&nbsp;&nbsp;&nbsp;a[i] = 2 * i + 1;</p><p style=\"font-size: 16px; font-family: 'Courier New', monospace;\"><span style=\"color:#94a3b8;\">// 得到 1 3 5 7 9</span></p>",
+                "defaultColor": "#e2e8f0",
+                "defaultFontName": "Microsoft YaHei"
+              },
+              {
+                "id": "shape_SHZtOgN7",
+                "top": 146,
+                "fill": "#eff6ff",
+                "left": 540,
+                "path": "M 0 0 L 1 0 L 1 1 L 0 1 Z",
+                "type": "shape",
+                "width": 400,
+                "height": 140,
+                "rotate": 0,
+                "viewBox": [
+                  1,
+                  1
+                ],
+                "fixedRatio": false
+              },
+              {
+                "id": "text_URt1WshL",
+                "top": 169,
+                "left": 560,
+                "type": "text",
+                "width": 360,
+                "height": 94,
+                "rotate": 0,
+                "content": "<p style=\"font-size: 16px;\">• 数组逐个元素赋值，共 5 个</p><p style=\"font-size: 16px;\">• 循环 i = 0~4 依次覆盖下标</p><p style=\"font-size: 16px;\">• a[i] = 2*i+1 → 1 3 5 7 9</p>",
+                "defaultColor": "#1e3a8a",
+                "defaultFontName": "Microsoft YaHei"
+              },
+              {
+                "id": "shape_v5FePWT8",
+                "top": 298,
+                "fill": "#ecfdf5",
+                "left": 540,
+                "path": "M 0 0 L 1 0 L 1 1 L 0 1 Z",
+                "type": "shape",
+                "width": 400,
+                "height": 100,
+                "rotate": 0,
+                "viewBox": [
+                  1,
+                  1
+                ],
+                "fixedRatio": false
+              },
+              {
+                "id": "text_fBq-9vjv",
+                "top": 322,
+                "left": 560,
+                "type": "text",
+                "width": 360,
+                "height": 52,
+                "rotate": 0,
+                "content": "<p style=\"font-size: 20px; text-align: center;\"><strong>a = {1, 3, 5, 7, 9}</strong></p>",
+                "defaultColor": "#047857",
+                "defaultFontName": "Microsoft YaHei"
+              },
+              {
+                "id": "shape__3oeKQQw",
+                "top": 412,
+                "fill": "#fef3c7",
+                "left": 60,
+                "path": "M 0 0 L 1 0 L 1 1 L 0 1 Z",
+                "type": "shape",
+                "width": 880,
+                "height": 90,
+                "rotate": 0,
+                "viewBox": [
+                  1,
+                  1
+                ],
+                "fixedRatio": false
+              },
+              {
+                "id": "text_k2IlqnF2",
+                "top": 432,
+                "left": 80,
+                "type": "text",
+                "width": 840,
+                "height": 49,
+                "rotate": 0,
+                "content": "<p style=\"font-size: 18px;\">任务：写出 int a[5]，用 for(i=0; i&lt;5; i++) 赋值，得到 5 个奇数并检查结果</p>",
+                "defaultColor": "#92400e",
+                "defaultFontName": "Microsoft YaHei"
+              }
+            ],
+            "background": {
+              "type": "solid",
+              "color": "#ffffff"
+            },
+            "viewportSize": 1000,
+            "viewportRatio": 0.5625
+          }
+        },
+        "stageId": "arrays_short_bbee42b5b1e6",
+        "createdAt": 1794384753557,
+        "outlineId": "scene_3",
+        "updatedAt": 1794384753557
+      }
+    ],
+    "createdAt": "2026-11-11T08:12:33.580Z"
+  }
+}

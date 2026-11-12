@@ -1,0 +1,84 @@
+{
+  "request": {
+    "commandId": "aedcaa25fe1041dcb56d1abd90d68770",
+    "type": "start_discussion",
+    "payload": {},
+    "expectedStateVersion": 1,
+    "contentGeneration": 0
+  },
+  "http": 200,
+  "response": {
+    "commandId": "aedcaa25fe1041dcb56d1abd90d68770",
+    "status": "completed",
+    "appliedStateVersion": 3,
+    "sessionView": {
+      "sessionId": "recall-five-a586102ca27b490fac71e2fdaae7be37",
+      "phase": "discussion",
+      "lessonId": "lesson",
+      "stateVersion": 3,
+      "contentGeneration": 0,
+      "flowVersion": "legacy_recall_v3",
+      "pendingSubmission": null,
+      "messages": [
+        {
+          "role": "assistant",
+          "text": "先回忆一下：C 语言里 `for` 循环的括号中通常由三个部分组成，你能说出这三个部分分别是什么吗？",
+          "phase": "recall",
+          "taskId": "task:5c24e961161d5bf4bb7775575ecdee93",
+          "createdAt": "2026-11-11T11:42:53.111548+00:00",
+          "episodeId": "episode:ef5c61ac9bc05080adda2adc1e272c47",
+          "messageId": "message:2f40500fc0b559a7a42ddfc7d53d01f5",
+          "recordOrigin": "recorded",
+          "relatedTaskIds": [
+            "task:5c24e961161d5bf4bb7775575ecdee93"
+          ]
+        }
+      ],
+      "courses": [],
+      "preparation": "ready",
+      "preparationError": "",
+      "preparationErrorCode": "",
+      "preparationRequestId": "",
+      "preparationCoverage": null,
+      "feedback": null,
+      "currentTaskPublic": {
+        "taskId": "task:5c24e961161d5bf4bb7775575ecdee93",
+        "episodeId": "episode:ef5c61ac9bc05080adda2adc1e272c47",
+        "type": "recall",
+        "topicId": "syntax",
+        "questionMessageId": "message:2f40500fc0b559a7a42ddfc7d53d01f5",
+        "question": "先回忆一下：C 语言里 `for` 循环的括号中通常由三个部分组成，你能说出这三个部分分别是什么吗？",
+        "purpose": "学习当前知识点",
+        "status": "active"
+      },
+      "contentRef": {
+        "contentId": "content:55c0538be9c95d4dfdbed6ea3a63f2d55e182eea16863c6c254a31d5f5f249ae",
+        "compilerVersion": "legacy-frozen:39d9b0800153c9ea3af57aa5edf15f64c894ada9017d9e8a0347c232f84a8b4c",
+        "sourceRevision": "revision",
+        "sourceManifestHash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      },
+      "recordSchemaVersion": 1,
+      "agentStage": "recall",
+      "typedTeaching": true,
+      "learningProgress": {
+        "total": 1,
+        "recallCompleted": 0,
+        "currentPoint": "for循环三个部分",
+        "reinforcementStarted": false,
+        "completionReason": null
+      },
+      "afterClassComplete": false,
+      "postclassStage": null,
+      "videoRevision": "revision",
+      "videoUpdated": false,
+      "postclassMessages": [],
+      "browserCourseKey": "student:course",
+      "browserKey": "student:course:lesson",
+      "browserSnapshot": "eyJpZCI6InJlY2FsbC1maXZlLWE1ODYxMDJjYTI3YjQ5MGZhYzcxZTJmZGFhZTdiZTM3IiwiY29udGV4dCI6eyJ1c2VySWQiOiJzdHVkZW50IiwiY291cnNlSWQiOiJjb3Vyc2UiLCJwdWJsaWNhdGlvbiI6eyJpZCI6InB1YiIsInZlcnNpb24iOjF9fSwiY291cnNlcyI6W10sIm1lc3NhZ2VzIjpbXSwicGhhc2UiOiJkaXNjdXNzaW9uIiwibGVzc29uSWQiOiJsZXNzb24iLCJzdGF0ZVZlcnNpb24iOjN9.bf73c73793926fb6f9b5c008673881e00bfc6c82b38e21b7841b137ccb4dfe71",
+      "userId": "student",
+      "authProtocol": "platform-cookie-v1"
+    },
+    "failure": null
+  },
+  "elapsed": 1.72
+}

@@ -13,4 +13,4 @@ Status: resolved
 
 ## Answer
 
-已实现并完成验证。后端252通过/2跳过，前端42单测、20浏览器与构建通过。实施说明：[记录](../../../docs/knowledge-teaching/implementation.md)。独立PG随机测试库0，集群已停止。未部署；真实模型教学质量未抽样。
+已实现并完成验证。后端252通过/2跳过，前端42单测、20浏览器与构建通过。实施说明：[记录](../../../student_agent/docs/knowledge-teaching/implementation.md)。独立PG随机测试库0，集群已停止。未部署；真实模型教学质量未抽样。

@@ -21,4 +21,4 @@ Status: resolved
 
 3个子Agent+主Agent完成12个有效会话及1个排除的注入设置错误留档。168次真实请求，另2次受控拦截；50条动态学生输入，44条成功应用State、6条自然格式失败未应用。6个流程完成不等于质量通过：多场只答局部就mastered，甚至mastered+gaps并存；出现取余/位置约定错误，结尾文字和State矛盾。实际覆盖5轮切点、补强进入和第1次补强，未覆盖8轮上限。内存恢复和受控失败重试检查通过，非HTTP/DB/浏览器端到端。66产物脱敏/JSON/链接检查通过，所有场景教学代码hash一致，无业务修改或部署。
 
-详见[总报告](../../../docs/knowledge-teaching/validation/2026-11-10-multi-scenario/README.md)，各失败原文完整保留，本轮没有修成“通过”。
+详见[总报告](../../../student_agent/docs/knowledge-teaching/validation/2026-11-10-multi-scenario/README.md)，各失败原文完整保留，本轮没有修成“通过”。

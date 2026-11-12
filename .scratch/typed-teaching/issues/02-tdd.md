@@ -10,4 +10,4 @@ Status: resolved
 
 ## Answer
 
-两个入口各一条行为测试：先复现失败，再做最小修复，通过后进入下一切片。后端相关42、前端unit42、浏览器21与构建通过。见[实施记录](../../../docs/knowledge-teaching/implementation.md)。
+两个入口各一条行为测试：先复现失败，再做最小修复，通过后进入下一切片。后端相关42、前端unit42、浏览器21与构建通过。见[实施记录](../../../student_agent/docs/knowledge-teaching/implementation.md)。

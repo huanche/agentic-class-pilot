@@ -1,0 +1,9 @@
+[
+  {
+    "case": "prior-evidence-valid",
+    "httpStatus": 200,
+    "itemStatus": "demonstrated",
+    "pointStatus": "partial",
+    "stage": "recall"
+  }
+]

@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[3]
 
 
 def record(name, data):
-    folder = ROOT / 'evidence/compound-help-fix' / os.environ['COMPOUND_HELP_RUN']
+    folder = ROOT / 'student_agent/evidence/compound-help-fix' / os.environ['COMPOUND_HELP_RUN']
     folder.mkdir(parents=True, exist_ok=True)
     path = folder / (name + '.json')
     assert not path.exists()

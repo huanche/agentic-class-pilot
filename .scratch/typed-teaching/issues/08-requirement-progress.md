@@ -23,4 +23,4 @@ Status: resolved
 
 真实模型抽样8答（循环5/链队列3），不再只答首问就换整个点；30真实请求含3次最终提示定向回放。仍发现复合要求语义宽判，定向检查仍失败，已另开09风险，不能算全部教学验收通过。实验日志写入错误发生在8答成功应用后，原失败状态保留，finish无模型收尾。JSON总结和原教材问题不夹带修复。
 
-见[实施验证](../../../docs/knowledge-teaching/validation/2026-11-10-requirement-progress/README.md)。
+见[实施验证](../../../student_agent/docs/knowledge-teaching/validation/2026-11-10-requirement-progress/README.md)。

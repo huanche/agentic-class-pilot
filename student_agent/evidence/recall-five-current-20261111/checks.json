@@ -1,0 +1,14 @@
+{
+  "concept-next-point-exact-five": true,
+  "concept-next-point-no-extra-recall": true,
+  "concept-next-point-question-no-requirement-change": true,
+  "memory-last-correct-exact-five": true,
+  "memory-last-correct-no-extra-recall": true,
+  "design-reinforce-exact-five": true,
+  "design-reinforce-no-extra-recall": true,
+  "design-reinforce-question-no-requirement-change": true,
+  "concept-next-point-selected": true,
+  "memory-final-correct-mastered": true,
+  "design-enters-reinforce": true,
+  "memory-initialization-not-lost": true
+}

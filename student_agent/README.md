@@ -6,7 +6,7 @@
 
 # 学生端
 
-结构化知识点的后续教学使用见 [教学使用方案](../docs/knowledge-teaching/plan.md)，涵盖 State、一次 Agent 运行内的评估工具、程序固定选点、轮数限制及结束条件。上游知识点协议与提取已基本完成，相关设计和实施记录另见 [知识点提取文档](../docs/knowledge-extraction/README.md)，两项工作分开维护。 新建三类型知识点会话现已接入首轮 5 轮、补强 8 轮和一次 Agent 工具教学流程，旧会话保持原方式；验证与限制见[实施记录](../docs/knowledge-teaching/implementation.md)，未部署。
+结构化知识点的后续教学使用见 [教学使用方案](docs/knowledge-teaching/plan.md)，涵盖 State、一次 Agent 运行内的评估工具、程序固定选点、轮数限制及结束条件。上游知识点协议与提取已基本完成，相关设计和实施记录另见 [知识点提取文档](docs/knowledge-extraction/README.md)，两项工作分开维护。 新建三类型知识点会话现已接入首轮 5 轮、补强 8 轮和一次 Agent 工具教学流程，旧会话保持原方式；验证与限制见[实施记录](docs/knowledge-teaching/implementation.md)，未部署。
 
 模块职责、接口、状态归属及动态教学渐进改造设计见 [从需求到模块架构设计](docs/student-module-architecture-design.md)。P1 收拢入口，P2 补齐可靠命令和事务，P3 增加任务/消息标识、学习证据、帮助记录与课时内容版本，默认继续既有教学流程。P4 提供显式白名单的新会话动态教学试点能力，未默认启用。变更与回归见 [P1](docs/student-p1-implementation.md)、[P2](docs/student-p2-implementation.md)、[P3](docs/student-p3-implementation.md)、[P4](docs/student-p4-implementation.md)、[P5 实施记录](docs/student-p5-implementation.md)。
 
@@ -45,7 +45,7 @@ P5 新增前端 `learning-session.mjs`，统一课时恢复、请求/重试、�
 
 ## 课堂流程
 
-新建三类型会话使用[首轮逐点教学 → 补强未掌握点 → 总结](../docs/knowledge-teaching/plan.md)。下文的 8/4 轮、后期确认及深入讨论规则仅适用于保留原版本的旧会话。
+新建三类型会话使用[首轮逐点教学 → 补强未掌握点 → 总结](docs/knowledge-teaching/plan.md)。下文的 8/4 轮、后期确认及深入讨论规则仅适用于保留原版本的旧会话。
 
 平台登录 → 使用选课码加入课程 → 选择课程 → 选择课时 → 教学视频 → 复述与讨论 → 本节课结束。教师发布视频时，平台登记该课时的视频版本和场景文字；学生服务后台提取知识点并保存到 `student.published_lesson_knowledge`。同一课时的学生读取这一份结果。视频嵌入逻辑沿用旧版 `platform-player-adapter.js`。视频页面可直接点击“进入复述与讨论”；播放结束也会给出提示。
 

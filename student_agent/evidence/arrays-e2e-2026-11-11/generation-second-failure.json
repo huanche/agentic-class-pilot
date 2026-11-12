@@ -1,0 +1,115 @@
+{
+  "success": true,
+  "course": {
+    "id": "04b5c284-9ef6-415c-abb1-e7910c1dff68",
+    "title": "数组短课｜本地完整流程测试 2026-11-11",
+    "status": "draft",
+    "modules": [],
+    "subject": "C语言程序设计",
+    "createdAt": 1794383846985,
+    "materials": [
+      {
+        "id": "kr-c5NEwpxWdQU",
+        "name": "第07章  数组.pptx",
+        "size": 1002026,
+        "parser": "local-pptx-xml",
+        "sha256": "21642fa0f7929641a8aee5dd20dac7264315a85f591c16631f303f12f56de54c",
+        "status": "ready",
+        "purpose": "course-material",
+        "courseId": "04b5c284-9ef6-415c-abb1-e7910c1dff68",
+        "mimeType": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "createdAt": 1794383883917,
+        "pageCount": 52,
+        "teacherId": "5abb1b05-9c6f-464c-9721-1e175583586a",
+        "updatedAt": 1794383885351,
+        "storageKey": "materials/04b5c284-9ef6-415c-abb1-e7910c1dff68/kr-c5NEwpxWdQU/source.pptx",
+        "extractedAt": 1794383885351
+      }
+    ],
+    "teacherId": "5abb1b05-9c6f-464c-9721-1e175583586a",
+    "updatedAt": 1794383885351,
+    "onboarding": {
+      "step": 1,
+      "version": 1
+    },
+    "description": "用户数组PPT的独立本地测试课，不影响已有课程。"
+  },
+  "jobs": [
+    {
+      "id": "cw_arrays_50fb56e551ccbd",
+      "error": "第 4 页「构造任务：生成1、3、5、7、9」：讲解与聚焦校验未通过，请重新生成本页讲解。",
+      "scope": {
+        "type": "course"
+      },
+      "status": "failed",
+      "message": "3/4 页已生成，1 页待重试",
+      "courseId": "04b5c284-9ef6-415c-abb1-e7910c1dff68",
+      "progress": 85,
+      "createdAt": 1794384121188,
+      "teacherId": "5abb1b05-9c6f-464c-9721-1e175583586a",
+      "updatedAt": 1794384494684,
+      "artifactType": "lesson-courseware",
+      "backgroundGeneration": {
+        "phase": "page-failed",
+        "totalPages": 4,
+        "classroomId": "arrays_50fb56e551ccbd",
+        "failedPages": [
+          {
+            "order": 4,
+            "title": "构造任务：生成1、3、5、7、9",
+            "issues": [
+              "speech teaching-FvpciGGq-3-speech: 只说“现在看代码块”并未实际讲解代码。应说明 int a[5]、for 循环下标 0 到 4，以及 a[i] = 2 * i + 1 如何生成 1、3、5、7、9。"
+            ],
+            "message": "讲解与聚焦校验未通过，请重新生成本页讲解。"
+          }
+        ],
+        "performance": {
+          "timings": [
+            {
+              "phase": "queue",
+              "status": "ok",
+              "startMs": 2,
+              "durationMs": 0
+            },
+            {
+              "phase": "save",
+              "status": "ok",
+              "startMs": 65,
+              "durationMs": 10
+            },
+            {
+              "phase": "content",
+              "status": "ok",
+              "attempt": 1,
+              "startMs": 158,
+              "pageOrder": 4,
+              "durationMs": 52471
+            },
+            {
+              "phase": "actions",
+              "status": "error",
+              "attempt": 1,
+              "startMs": 52633,
+              "pageOrder": 4,
+              "durationMs": 60664
+            }
+          ],
+          "version": 1,
+          "pipeline": true,
+          "prefetch": 2,
+          "elapsedMs": 113308,
+          "startedAt": 1794384381376,
+          "audioCache": {
+            "hits": 0,
+            "misses": 0,
+            "shared": 0,
+            "bypassed": 0
+          },
+          "finishedAt": 1794384494684
+        },
+        "completedPages": 3
+      }
+    }
+  ],
+  "artifacts": []
+}

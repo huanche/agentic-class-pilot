@@ -1,0 +1,58 @@
+{
+  "commit": "fea3abd54cd1faeb19e7be55ad92d2bdff3c7962",
+  "teachingSha256": "5b4565cac73b16326b4e5b568599d1b2649cdf1e1444353c6b7f6104c1459780",
+  "results": [
+    {
+      "case": "archived-1",
+      "http": 200,
+      "item": "demonstrated",
+      "point": "partial",
+      "stage": "recall"
+    },
+    {
+      "case": "archived-2",
+      "http": 200,
+      "item": "demonstrated",
+      "point": "partial",
+      "stage": "recall"
+    },
+    {
+      "case": "current-1",
+      "http": 200,
+      "item": "demonstrated",
+      "point": "partial",
+      "stage": "recall"
+    },
+    {
+      "case": "current-2",
+      "http": 200,
+      "item": "demonstrated",
+      "point": "partial",
+      "stage": "recall"
+    },
+    {
+      "case": "complete",
+      "http": 200,
+      "item": "demonstrated",
+      "point": "partial",
+      "stage": "recall"
+    },
+    {
+      "case": "prior-evidence-valid",
+      "http": 200,
+      "item": "demonstrated",
+      "point": "partial",
+      "stage": "recall"
+    },
+    {
+      "case": "other-items-confirmed",
+      "http": 200,
+      "item": "demonstrated",
+      "point": "mastered",
+      "stage": "wrapup"
+    }
+  ],
+  "excluded": [
+    "prior-evidence.json: pre-marked whole compound item demonstrated; invalid positive-control setup"
+  ]
+}

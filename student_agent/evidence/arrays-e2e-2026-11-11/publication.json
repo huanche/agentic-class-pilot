@@ -1,0 +1,36 @@
+{
+  "success": true,
+  "resource": {
+    "id": "artifact_cw_arrays_short_bbee42b5b1e6",
+    "type": "lesson-courseware",
+    "jobId": "cw_arrays_short_bbee42b5b1e6",
+    "scope": {
+      "type": "lesson",
+      "lessonId": "OU0jEmwe2azvKU"
+    },
+    "title": "一维数组短课：定义、初始化与循环构造",
+    "status": "published",
+    "content": "互动课件已完整生成，共 3 页。\n\n课堂地址：/classroom/arrays_short_bbee42b5b1e6",
+    "courseId": "04b5c284-9ef6-415c-abb1-e7910c1dff68",
+    "citations": [],
+    "createdAt": 1794384753584,
+    "teacherId": "5abb1b05-9c6f-464c-9721-1e175583586a",
+    "updatedAt": 1794384825670,
+    "approvedAt": 1794384824789,
+    "classroomId": "arrays_short_bbee42b5b1e6",
+    "htmlContent": "<p>互动课件已完整生成，共 3 页。</p>\n<p>课堂地址：/classroom/arrays_short_bbee42b5b1e6</p>",
+    "classroomUrl": "/classroom/arrays_short_bbee42b5b1e6",
+    "publicationPlacement": {
+      "lessonId": "OU0jEmwe2azvKU",
+      "week": 1,
+      "lessonNumber": 1,
+      "teachingHours": 0.1,
+      "resourceType": "courseware",
+      "confirmedAt": 1794384825670
+    },
+    "classVisible": true,
+    "classPublicationId": "CLS-A-P-ve6xSd8UXr",
+    "classPublishedAt": 1794384825670,
+    "activatedAt": 1794384825670
+  }
+}

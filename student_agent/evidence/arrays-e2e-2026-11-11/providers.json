@@ -1,0 +1,18 @@
+{
+  "success": true,
+  "providers": {
+    "deepseek": {}
+  },
+  "tts": {
+    "lemonade-tts": {}
+  },
+  "asr": {},
+  "pdf": {},
+  "image": {},
+  "video": {},
+  "webSearch": {},
+  "generation": {
+    "parallelSceneConcurrency": 0,
+    "parallelTtsConcurrency": 2
+  }
+}

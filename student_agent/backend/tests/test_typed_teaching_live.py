@@ -21,7 +21,7 @@ from backend.teaching import service
                     reason="Opt in to real provider calls with STUDENT_TEACHING_LIVE_REGRESSION=1")
 def test_stalled_learner_gets_a_different_explanation_instead_of_the_same_choice(pg, monkeypatch):
     report = json.loads((Path(__file__).resolve().parents[3] /
-        "docs/knowledge-teaching/validation/2026-11-06-live-model/run.json").read_text(encoding="utf-8"))
+        "student_agent/docs/knowledge-teaching/validation/2026-11-06-live-model/run.json").read_text(encoding="utf-8"))
     prior_turns = report["turns"][36:38]
     last = prior_turns[-1]
     point = next(p for p in report["finalPoints"] if p["id"] == last["pointId"])

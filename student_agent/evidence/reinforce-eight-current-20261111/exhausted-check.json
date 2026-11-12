@@ -1,0 +1,6 @@
+{
+  "stage": "wrapup",
+  "attempts": 8,
+  "status": "partial",
+  "completionReason": "rounds_exhausted"
+}

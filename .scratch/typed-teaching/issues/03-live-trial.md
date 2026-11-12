@@ -8,4 +8,4 @@ Status: resolved
 
 ## Answer
 
-完成真实课时和真实模型教学实测，学生为脚本模拟。两项结构阻断先Red后Green修复后续跑，原始失败保留。流程完成但追问重复、切点夹带旧题仍需改进。见[报告](../../../docs/knowledge-teaching/validation/2026-11-06-live-model/README.md)。255后端通过/2专用库跳过，不部署。
+完成真实课时和真实模型教学实测，学生为脚本模拟。两项结构阻断先Red后Green修复后续跑，原始失败保留。流程完成但追问重复、切点夹带旧题仍需改进。见[报告](../../../student_agent/docs/knowledge-teaching/validation/2026-11-06-live-model/README.md)。255后端通过/2专用库跳过，不部署。

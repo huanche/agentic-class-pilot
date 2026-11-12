@@ -49,6 +49,16 @@ student_agent/
 
 原 `agent/` 目录已移除，业务源码全部进入新的职责包，旧生成字节码也已清理。所有项目导入都指向新路径，不在旧目录保留 Python 转发层。
 
+### 学生端新增文档与验证记录
+
+本次及后续学生端知识点教学文档统一归属学生端目录，不再新增到仓库根目录的 `docs`：
+
+- `student_agent/docs/knowledge-teaching/`：教学方案、实施说明及过程记录。
+- `student_agent/docs/knowledge-extraction/`：知识点提取验证及其索引。
+- `student_agent/evidence/`：真实模型、HTTP流程的报告、脚本和原始输出；含失败记录。
+
+`student_agent/backend/evidence/` 仍是运行时学习证据模块，与上述测试产物目录用途不同。早期的 `student_agent/.personal-dev/docs/` 归档保留，当前教学入口以学生端 README 为准。
+
 ## 2. 如何放置后续代码
 
 | 要做的变更 | 放置位置 | 不应承担的职责 |

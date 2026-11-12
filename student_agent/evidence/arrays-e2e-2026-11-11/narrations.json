@@ -1,0 +1,144 @@
+[
+  {
+    "title": "一维数组的定义与下标",
+    "actions": [
+      {
+        "id": "teaching-t_Etx82G-1-speech",
+        "text": "同学们好，这节课我们学习一维数组的定义与下标。",
+        "type": "speech",
+        "audioInvalidated": true
+      },
+      {
+        "id": "teaching-t_Etx82G-2-focus",
+        "type": "spotlight",
+        "elementId": "text__uezzdUK"
+      },
+      {
+        "id": "teaching-t_Etx82G-2-speech",
+        "text": "一维数组的定义形式由四部分组成：存储类型、数据类型、数组名，以及方括号中的整型常量表达式。存储类型说明存储特性，数据类型决定每个元素的类型，数组名是标识符，方括号里的整型常量表达式给出元素个数。",
+        "type": "speech",
+        "audioInvalidated": true
+      },
+      {
+        "id": "teaching-t_Etx82G-3-focus",
+        "type": "spotlight",
+        "elementId": "text_OFEtmo-c"
+      },
+      {
+        "id": "teaching-t_Etx82G-3-speech",
+        "text": "看示例：int a[5]; 这里数据类型是 int，数组名是 a，方括号里的 5 表示元素个数，所以它定义的是 5 个 int 类型的元素。",
+        "type": "speech",
+        "audioInvalidated": true
+      },
+      {
+        "id": "teaching-t_Etx82G-4-focus",
+        "type": "spotlight",
+        "elementId": "text_codn1UnV"
+      },
+      {
+        "id": "teaching-t_Etx82G-4-speech",
+        "text": "这 5 个 int 元素在内存中连续存放，这一点对后面用……",
+        "type": "speech",
+        "audioInvalidated": true
+      },
+      {
+        "id": "teaching-t_Etx82G-8-reveal",
+        "type": "reveal",
+        "effect": "fade-up",
+        "duration": 520,
+        "elementId": "text_pfVRfhGD"
+      }
+    ]
+  },
+  {
+    "title": "初始化：int a[5]={1,2}",
+    "actions": [
+      {
+        "id": "teaching-3WeKPN-c-1-speech",
+        "text": "上一页我们已经知道，int a[5] 定义了 5 个连续存放的 int 元素。这一页我们看部分初始化：如果只写出一部分初值，剩下的元素会变成什么。",
+        "type": "speech",
+        "audioInvalidated": true
+      },
+      {
+        "id": "teaching-3WeKPN-c-2-focus",
+        "type": "spotlight",
+        "elementId": "text_CObPBhOE"
+      },
+      {
+        "id": "teaching-3WeKPN-c-2-speech",
+        "text": "先看这段代码：int a[5] = {1, 2}; 方括号里的 5 说明数组一共有 5 个元素，而花括号里只写了两个初值 1 和 2，所以这是一次部分初始化。",
+        "type": "speech",
+        "audioInvalidated": true
+      },
+      {
+        "id": "teaching-3WeKPN-c-3-focus",
+        "type": "spotlight",
+        "elementId": "text_QcsrjUAL"
+      },
+      {
+        "id": "teaching-3WeKPN-c-3-speech",
+        "text": "初始化按下标从小到大依次对应：第一个初值 1 给 a[0]，所以 a[0] 里存的就是 1。",
+        "type": "speech",
+        "audioInvalidated": true
+      },
+      {
+        "id": "teaching-3WeKPN-c-4-focus",
+        "type": "spotlight",
+        "elementId": "text_q4hfeVWJ"
+      },
+      {
+        "id": "teaching-3WeKPN-c-4-speech",
+        "text": "第二个初值 2 紧跟着给 a[1]，所以……",
+        "type": "speech",
+        "audioInvalidated": true
+      },
+      {
+        "id": "teaching-3WeKPN-c-5-reveal",
+        "type": "reveal",
+        "effect": "fade-up",
+        "duration": 520,
+        "elementId": "text_ngiaqQ8y"
+      }
+    ]
+  },
+  {
+    "title": "用循环逐项赋值并构造奇数数组",
+    "actions": [
+      {
+        "id": "teaching-htyGSHA9-1-speech",
+        "text": "前面我们已经学了数组的定义与初始化。最后一页，把下标和 for 循环结合起来，看怎样逐项给数组元素赋值，并构造出五个奇数。",
+        "type": "speech",
+        "audioInvalidated": true
+      },
+      {
+        "id": "teaching-htyGSHA9-2-focus",
+        "type": "spotlight",
+        "elementId": "text_Cx-DYJZH"
+      },
+      {
+        "id": "teaching-htyGSHA9-2-speech",
+        "text": "先看第一行：int a[5], i; 这里定义了一个包含 5 个 int 元素的数组 a，同时定义循环变量 i。数组的每个元素还没有赋值，接下来要逐个填入。",
+        "type": "speech",
+        "audioInvalidated": true
+      },
+      {
+        "id": "teaching-htyGSHA9-3-focus",
+        "type": "spotlight",
+        "elementId": "text_Cx-DYJZH"
+      },
+      {
+        "id": "teaching-htyGSHA9-3-speech",
+        "text": "循环条件是 for (i = 0; i < 5; i++)。i 从 0 开始，只要 i 小于 5 就继续执行；因此 i 依次取 0、1、2、3、4，正好对应数……",
+        "type": "speech",
+        "audioInvalidated": true
+      },
+      {
+        "id": "teaching-htyGSHA9-6-reveal",
+        "type": "reveal",
+        "effect": "fade-up",
+        "duration": 520,
+        "elementId": "text_fBq-9vjv"
+      }
+    ]
+  }
+]

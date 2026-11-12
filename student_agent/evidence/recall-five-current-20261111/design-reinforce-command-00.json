@@ -1,0 +1,84 @@
+{
+  "request": {
+    "commandId": "4fc9a0a0a32349b8bb0fea02d4feb8be",
+    "type": "start_discussion",
+    "payload": {},
+    "expectedStateVersion": 1,
+    "contentGeneration": 0
+  },
+  "http": 200,
+  "response": {
+    "commandId": "4fc9a0a0a32349b8bb0fea02d4feb8be",
+    "status": "completed",
+    "appliedStateVersion": 3,
+    "sessionView": {
+      "sessionId": "recall-five-302220178dcf44b5a64163e864f250f5",
+      "phase": "discussion",
+      "lessonId": "lesson",
+      "stateVersion": 3,
+      "contentGeneration": 0,
+      "flowVersion": "legacy_recall_v3",
+      "pendingSubmission": null,
+      "messages": [
+        {
+          "role": "assistant",
+          "text": "请写一段完整的 C 程序：定义 `int a[5]`，用 `for` 循环配合下标逐项给数组元素赋值，使最终数组为 `{1, 3, 5, 7, 9}`。写完后说明你如何检查结果确实是 5 个奇数。",
+          "phase": "recall",
+          "taskId": "task:9c0dae791bc95adc8548159ec26a7f29",
+          "createdAt": "2026-11-11T11:43:22.952359+00:00",
+          "episodeId": "episode:a2f0ea29c97a5f0388a6aa557bc58a5a",
+          "messageId": "message:811e6ee6343857e78d03d8ff80c01061",
+          "recordOrigin": "recorded",
+          "relatedTaskIds": [
+            "task:9c0dae791bc95adc8548159ec26a7f29"
+          ]
+        }
+      ],
+      "courses": [],
+      "preparation": "ready",
+      "preparationError": "",
+      "preparationErrorCode": "",
+      "preparationRequestId": "",
+      "preparationCoverage": null,
+      "feedback": null,
+      "currentTaskPublic": {
+        "taskId": "task:9c0dae791bc95adc8548159ec26a7f29",
+        "episodeId": "episode:a2f0ea29c97a5f0388a6aa557bc58a5a",
+        "type": "recall",
+        "topicId": "knowledge:2d5728a42c751ee83316",
+        "questionMessageId": "message:811e6ee6343857e78d03d8ff80c01061",
+        "question": "请写一段完整的 C 程序：定义 `int a[5]`，用 `for` 循环配合下标逐项给数组元素赋值，使最终数组为 `{1, 3, 5, 7, 9}`。写完后说明你如何检查结果确实是 5 个奇数。",
+        "purpose": "学习当前知识点",
+        "status": "active"
+      },
+      "contentRef": {
+        "contentId": "content:edfc5c6e1bf1538a4aee21f198eb0ebeb93be8e0a2c61483a551382abde3896e",
+        "compilerVersion": "legacy-frozen:deafccc3d0e896b45727421a1fe78be372ac9e433fa0e72ff17eeb2a3042ea38",
+        "sourceRevision": "revision",
+        "sourceManifestHash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      },
+      "recordSchemaVersion": 1,
+      "agentStage": "recall",
+      "typedTeaching": true,
+      "learningProgress": {
+        "total": 1,
+        "recallCompleted": 0,
+        "currentPoint": "用 for 循环逐项给数组元素赋值",
+        "reinforcementStarted": false,
+        "completionReason": null
+      },
+      "afterClassComplete": false,
+      "postclassStage": null,
+      "videoRevision": "revision",
+      "videoUpdated": false,
+      "postclassMessages": [],
+      "browserCourseKey": "student:course",
+      "browserKey": "student:course:lesson",
+      "browserSnapshot": "eyJpZCI6InJlY2FsbC1maXZlLTMwMjIyMDE3OGRjZjQ0YjVhNjQxNjNlODY0ZjI1MGY1IiwiY29udGV4dCI6eyJ1c2VySWQiOiJzdHVkZW50IiwiY291cnNlSWQiOiJjb3Vyc2UiLCJwdWJsaWNhdGlvbiI6eyJpZCI6InB1YiIsInZlcnNpb24iOjF9fSwiY291cnNlcyI6W10sIm1lc3NhZ2VzIjpbXSwicGhhc2UiOiJkaXNjdXNzaW9uIiwibGVzc29uSWQiOiJsZXNzb24iLCJzdGF0ZVZlcnNpb24iOjN9.a5a3b75ba99f83f4198aa4d38f9c55783f89029f461418215c7819deb70e7332",
+      "userId": "student",
+      "authProtocol": "platform-cookie-v1"
+    },
+    "failure": null
+  },
+  "elapsed": 2.25
+}

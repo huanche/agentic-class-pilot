@@ -1,0 +1,80 @@
+{
+  "stage": "recall",
+  "points": [
+    {
+      "id": "index",
+      "status": "partial",
+      "recall_attempts": 5,
+      "reinforce_attempts": 0,
+      "recall_done": true,
+      "known_parts": [],
+      "gaps": [
+        "不清楚数组下标的起始值。",
+        "不能由元素个数推出合法下标0至4。",
+        "不清楚a[5]为何越界。"
+      ],
+      "requirements": [
+        {
+          "id": "understandingPoints:1",
+          "gap": "不清楚数组下标的起始值。",
+          "text": "说明下标从0开始",
+          "status": "needs_help",
+          "evidence": "学生两次表示“不知道”，未说明下标从0开始。",
+          "studentText": "还是不知道"
+        },
+        {
+          "id": "understandingPoints:2",
+          "gap": "不能由元素个数推出合法下标0至4。",
+          "text": "由5个元素推出合法下标0至4",
+          "status": "needs_help",
+          "evidence": "学生两次表示“不知道”，未推出合法下标范围。",
+          "studentText": "还是不知道"
+        },
+        {
+          "id": "understandingPoints:3",
+          "gap": "不清楚a[5]为何越界。",
+          "text": "解释a[5]越界的原因",
+          "status": "needs_help",
+          "evidence": "学生两次表示“不知道”，未解释a[5]越界原因。",
+          "studentText": "还是不知道"
+        }
+      ]
+    },
+    {
+      "id": "syntax",
+      "status": "unseen",
+      "recall_attempts": 0,
+      "reinforce_attempts": 0,
+      "recall_done": false,
+      "known_parts": [],
+      "gaps": [],
+      "requirements": [
+        {
+          "id": "requiredElements:1",
+          "gap": "",
+          "text": "初始化",
+          "status": "unconfirmed",
+          "evidence": "",
+          "studentText": ""
+        },
+        {
+          "id": "requiredElements:2",
+          "gap": "",
+          "text": "条件判断",
+          "status": "unconfirmed",
+          "evidence": "",
+          "studentText": ""
+        },
+        {
+          "id": "requiredElements:3",
+          "gap": "",
+          "text": "更新",
+          "status": "unconfirmed",
+          "evidence": "",
+          "studentText": ""
+        }
+      ]
+    }
+  ],
+  "reply": "`int a[5]` 表示数组有 5 个元素，下标从 0 开始，所以合法下标是 0、1、2、3、4。`a[5]` 想访问第 6 个位置，但数组只有 5 个位置，因此越界。\n\n接下来看新内容：C 语言的 `for` 循环括号里通常要写三个部分。请你回忆一下，这三个部分分别是什么？"
+}

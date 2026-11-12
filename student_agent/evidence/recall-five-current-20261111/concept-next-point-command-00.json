@@ -1,0 +1,84 @@
+{
+  "request": {
+    "commandId": "52a3c0f656934d67a25ffcf3505529e2",
+    "type": "start_discussion",
+    "payload": {},
+    "expectedStateVersion": 1,
+    "contentGeneration": 0
+  },
+  "http": 200,
+  "response": {
+    "commandId": "52a3c0f656934d67a25ffcf3505529e2",
+    "status": "completed",
+    "appliedStateVersion": 3,
+    "sessionView": {
+      "sessionId": "recall-five-83db21c5d6de4bbd8a2ebbdab0ac9668",
+      "phase": "discussion",
+      "lessonId": "lesson",
+      "stateVersion": 3,
+      "contentGeneration": 0,
+      "flowVersion": "legacy_recall_v3",
+      "pendingSubmission": null,
+      "messages": [
+        {
+          "role": "assistant",
+          "text": "先看一个具体的例子：`int a[5];` 这个数组一共有 5 个元素。请你说明它的下标从哪里开始、哪些下标是合法的，并解释为什么写 `a[5]` 会越界。",
+          "phase": "recall",
+          "taskId": "task:486b56f2181959f2a3cfd5392c262cfa",
+          "createdAt": "2026-11-11T11:42:26.525228+00:00",
+          "episodeId": "episode:8151897e345358efb637d5a3bfd20e63",
+          "messageId": "message:d27974ff087f510ea9904a0086223c1a",
+          "recordOrigin": "recorded",
+          "relatedTaskIds": [
+            "task:486b56f2181959f2a3cfd5392c262cfa"
+          ]
+        }
+      ],
+      "courses": [],
+      "preparation": "ready",
+      "preparationError": "",
+      "preparationErrorCode": "",
+      "preparationRequestId": "",
+      "preparationCoverage": null,
+      "feedback": null,
+      "currentTaskPublic": {
+        "taskId": "task:486b56f2181959f2a3cfd5392c262cfa",
+        "episodeId": "episode:8151897e345358efb637d5a3bfd20e63",
+        "type": "recall",
+        "topicId": "index",
+        "questionMessageId": "message:d27974ff087f510ea9904a0086223c1a",
+        "question": "先看一个具体的例子：`int a[5];` 这个数组一共有 5 个元素。请你说明它的下标从哪里开始、哪些下标是合法的，并解释为什么写 `a[5]` 会越界。",
+        "purpose": "学习当前知识点",
+        "status": "active"
+      },
+      "contentRef": {
+        "contentId": "content:0e7ce5fe9d78a5b38506547855377daf46010fd8249bc8d22dd06e3c846809e9",
+        "compilerVersion": "legacy-frozen:bcb9248ea61c2dadd236adf64f56f2aedbbc6de0e4125ce3e93c3593694cb530",
+        "sourceRevision": "revision",
+        "sourceManifestHash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      },
+      "recordSchemaVersion": 1,
+      "agentStage": "recall",
+      "typedTeaching": true,
+      "learningProgress": {
+        "total": 2,
+        "recallCompleted": 0,
+        "currentPoint": "数组下标与越界",
+        "reinforcementStarted": false,
+        "completionReason": null
+      },
+      "afterClassComplete": false,
+      "postclassStage": null,
+      "videoRevision": "revision",
+      "videoUpdated": false,
+      "postclassMessages": [],
+      "browserCourseKey": "student:course",
+      "browserKey": "student:course:lesson",
+      "browserSnapshot": "eyJpZCI6InJlY2FsbC1maXZlLTgzZGIyMWM1ZDZkZTRiYmQ4YTJlYmJkYWIwYWM5NjY4IiwiY29udGV4dCI6eyJ1c2VySWQiOiJzdHVkZW50IiwiY291cnNlSWQiOiJjb3Vyc2UiLCJwdWJsaWNhdGlvbiI6eyJpZCI6InB1YiIsInZlcnNpb24iOjF9fSwiY291cnNlcyI6W10sIm1lc3NhZ2VzIjpbXSwicGhhc2UiOiJkaXNjdXNzaW9uIiwibGVzc29uSWQiOiJsZXNzb24iLCJzdGF0ZVZlcnNpb24iOjN9.fb6903247850e4218230efc78cb90b4160df5296e9171e8bdcc47adde3e0fe90",
+      "userId": "student",
+      "authProtocol": "platform-cookie-v1"
+    },
+    "failure": null
+  },
+  "elapsed": 10.1
+}

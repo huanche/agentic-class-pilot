@@ -10,4 +10,4 @@ Status: resolved
 
 确认：标准完整传入但局部问题与全点掌握共用result；程序无条件按mastered推进并清gap；总结无结构化生成约束且现有缺题修正绕过无focus总结；格式异常统一503；原课不同页rear约定混用被提取继承；算术错误则在模型生成中出现，原课7+1取余为0正确。不能从日志断定某句提示词是唯一诱因或模型内部为何算错。
 
-详见[原因核对](../../../docs/knowledge-teaching/validation/2026-11-10-multi-scenario/causes.md)。没有修业务代码，没有增加校验或规则，没有部署。
+详见[原因核对](../../../student_agent/docs/knowledge-teaching/validation/2026-11-10-multi-scenario/causes.md)。没有修业务代码，没有增加校验或规则，没有部署。

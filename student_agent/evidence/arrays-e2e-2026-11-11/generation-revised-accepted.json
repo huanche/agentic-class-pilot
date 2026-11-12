@@ -1,0 +1,24 @@
+{
+  "success": true,
+  "job": {
+    "id": "cw_arrays_short_bbee42b5b1e6",
+    "courseId": "04b5c284-9ef6-415c-abb1-e7910c1dff68",
+    "teacherId": "5abb1b05-9c6f-464c-9721-1e175583586a",
+    "scope": {
+      "type": "course"
+    },
+    "artifactType": "lesson-courseware",
+    "status": "queued",
+    "progress": 0,
+    "message": "已提交服务器，等待生成",
+    "createdAt": 1794384646804,
+    "updatedAt": 1794384646804,
+    "backgroundGeneration": {
+      "classroomId": "arrays_short_bbee42b5b1e6",
+      "completedPages": 0,
+      "totalPages": 3,
+      "phase": "queued"
+    }
+  },
+  "url": "/course-space/04b5c284-9ef6-415c-abb1-e7910c1dff68/jobs/cw_arrays_short_bbee42b5b1e6"
+}

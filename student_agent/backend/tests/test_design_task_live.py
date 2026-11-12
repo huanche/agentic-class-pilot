@@ -19,7 +19,7 @@ pytestmark = pytest.mark.skipif(os.environ.get('DESIGN_TASK_LIVE') != '1', reaso
 
 
 def record(name, value):
-    directory = ROOT / 'evidence/design-task-live' / os.environ['DESIGN_TASK_RUN']
+    directory = ROOT / 'student_agent/evidence/design-task-live' / os.environ['DESIGN_TASK_RUN']
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / (name + '.json')
     assert not path.exists(), 'Do not overwrite a provider run'
@@ -88,3 +88,59 @@ def test_archived_requirements_do_not_spoil_first_task_and_help_still_works():
     session.update(service.classroom_turn(session, answer))
     record('equivalent-answer', {'answer': answer, 'reply': session['messages'][-1]['text'], 'points': session['dialogue']['points']})
     assert session['dialogue']['points'][0]['status'] == 'mastered'
+
+
+def test_design_error_exit_resume_and_equivalent_answer_through_commands(pg, monkeypatch):
+    from uuid import uuid4
+    from fastapi.testclient import TestClient
+    from backend import main
+    from backend.infrastructure import persistence
+
+    sid = 'design-resume-' + uuid4().hex
+    persistence.save({'id': sid, 'phase': 'video', 'lessonId': 'lesson', 'classroomId': 'room',
+        'context': {'userId': 'student', 'courseId': 'course', 'publication': {'id': 'pub', 'version': 1}},
+        'videoRevision': 'revision', 'messages': [], 'courses': [], 'preparation': 'ready',
+        'dialogue': service.new_dialogue([archived_point()])}, 0)
+    monkeypatch.setenv('PLATFORM_TO_STUDENT_KEY', 'combined-live-forward')
+    client = TestClient(main.app, headers={'X-Platform-Learning-Key': 'combined-live-forward',
+        'X-Platform-Protocol': 'platform-cookie-v1', 'X-Platform-User-Id': 'student', 'X-Platform-Course-Id': 'course'})
+    trace = []
+
+    def send(kind, text=None):
+        view = client.get(f'/api/session/{sid}').json()
+        response = client.post(f'/api/session/{sid}/commands', json={'commandId': uuid4().hex,
+            'type': kind, 'payload': {'text': text} if text else {},
+            'expectedStateVersion': view['stateVersion'], 'contentGeneration': view['contentGeneration']})
+        assert response.status_code == 200, response.text
+        result = response.json()['sessionView']
+        trace.append({'command': kind, 'studentText': text, 'view': result})
+        record('combined-command-' + str(len(trace)), trace[-1])
+        return result
+
+    opened = send('start_discussion')
+    assert not exposes_solution(opened['messages'][-1]['text'])
+    wrong = send('submit_answer', 'int a[5]; int i; for(i=0;i<=5;i++){a[i]=2*i+1;} a[5]是合法的最后一项，这样会写入6个奇数。')
+    assert wrong['agentStage'] != 'wrapup'
+    ended = send('finish')
+    assert ended['feedback']['counts']['mastered'] == 0
+    requirements = ended['feedback']['points'][0]['requirements']
+    resumed = send('continue_after_class')
+    # Classroom and after-class tasks have separate IDs; the original question
+    # and topic are carried forward, with an explicit resume relation in records.
+    assert resumed['currentTaskPublic']['topicId'] == opened['currentTaskPublic']['topicId']
+    assert resumed['currentTaskPublic']['question'] == opened['currentTaskPublic']['question']
+    response = client.post(f'/api/session/{sid}/learning-records', json={})
+    assert response.status_code == 200
+    tasks = response.json()['tasks']
+    task = next(t for t in tasks if t['taskId'] == resumed['currentTaskPublic']['taskId'])
+    assert task['resumesTaskId'] == opened['currentTaskPublic']['taskId']
+    assert resumed['messages'][-1]['text'] != opened['messages'][-1]['text']
+    assert resumed['feedback']['points'][0]['requirements'] == requirements
+    # Repeated entry during active remediation must not call the provider again.
+    repeated = send('continue_after_class')
+    assert repeated['messages'] == resumed['messages']
+    complete = send('postclass_answer', '改为int a[5]; int i; for(i=0;i<5;i++){a[i]=i+i+1;} i只取0、1、2、3、4，合法下标0到4，a[5]越界。最终数组1、3、5、7、9，每项都是奇数，共5项且每个位置恰好赋值一次。')
+    assert complete['postclassStage'] == 'completed'
+    assert complete['feedback']['counts']['mastered'] == 1
+    final = send('continue_after_class')
+    assert final['messages'] == complete['messages']

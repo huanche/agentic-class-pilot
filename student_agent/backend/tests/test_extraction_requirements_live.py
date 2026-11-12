@@ -71,7 +71,7 @@ def check_case(case, points):
 def test_extracted_requirements_keep_independent_goals_separate_and_relationships_intact(case, monkeypatch):
     variant = os.environ.get("EXTRACTION_PROMPT_VARIANT", "current")
     assert variant in {"baseline", "current"}
-    output = ROOT / "docs/knowledge-extraction/validation/2026-11-10-requirement-splitting" / os.environ.get("EXTRACTION_VERIFICATION_RUN", variant) / (case + ".json")
+    output = ROOT / "student_agent/docs/knowledge-extraction/validation/2026-11-10-requirement-splitting" / os.environ.get("EXTRACTION_VERIFICATION_RUN", variant) / (case + ".json")
     output.parent.mkdir(parents=True, exist_ok=True)
     assert not output.exists(), "Never overwrite a recorded provider run"
     if case == "real_lesson":
