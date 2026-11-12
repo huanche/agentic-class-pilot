@@ -48,7 +48,11 @@ export default function StudentApp() {
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [showEarlyEndWarning, setShowEarlyEndWarning] = useState(false);
   const [showVideoAdvanceConfirm, setShowVideoAdvanceConfirm] = useState(false);
-  const [progressOpen, setProgressOpen] = useState(true);
+  const viewingVideo = phase === "video" || phase === "replay";
+  const [learningProgressOpen, setLearningProgressOpen] = useState(true);
+  const [videoProgressOpen, setVideoProgressOpen] = useState(false);
+  const progressOpen = viewingVideo ? videoProgressOpen : learningProgressOpen;
+  const setProgressOpen = viewingVideo ? setVideoProgressOpen : setLearningProgressOpen;
   const [conversationSize, setConversationSize] = useState(null);
   const playerSlot = useRef(null);
   const chatLog = useRef(null);
@@ -226,7 +230,7 @@ export default function StudentApp() {
       {!course?.lessons.length && <p>本课程暂无已开放课时。</p>}
     </section>}
     {phase === "lesson" && <section className="view"><header className="view__header"><button className="back" onClick={() => controller.dispatch({ type: "catalog" })}>← 返回课时</button><h2 className="view__title">{lesson?.title}</h2></header><div className="view__body"><div className="lesson"><p className="lesson__eyebrow">{course?.title} · 第 {lesson?.week} 周</p><h3 className="lesson__title">{lesson?.title}</h3><p className="lesson__summary">{lesson?.summary || "准备好后开始本节课。"}</p><button className="btn btn--primary" onClick={() => begin(lesson)} disabled={busy}>开始或继续上课</button></div></div></section>}
-    {(phase === "video" || phase === "discussion" || phase === "done" || phase === "replay" || phase === "postclass") && <section className="view classroom-view"><header className="view__header"><h2 className="view__title">{lesson?.title || "课堂"}</h2><span className="view__badge">{phase === "video" ? "教学视频" : phase === "discussion" ? stageTitle(agentStage) || "复述与讨论" : phase === "replay" ? "课后回看" : phase === "postclass" ? "课后对话" : "已结束"}</span></header><div className={`classroom-layout${progressOpen ? "" : " classroom-layout--progress-hidden"}${phase === "video" || phase === "replay" ? " classroom-layout--video" : ""}${phase === "discussion" || phase === "postclass" ? " classroom-layout--conversation" : ""}`}>
+    {(phase === "video" || phase === "discussion" || phase === "done" || phase === "replay" || phase === "postclass") && <section className="view classroom-view"><header className="view__header"><h2 className="view__title">{lesson?.title || "课堂"}</h2><span className="view__badge">{phase === "video" ? "教学视频" : phase === "discussion" ? stageTitle(agentStage) || "复述与讨论" : phase === "replay" ? "课后回看" : phase === "postclass" ? "课后对话" : "已结束"}</span></header><div className={`classroom-layout${progressOpen ? "" : " classroom-layout--progress-hidden"}${viewingVideo ? " classroom-layout--video" : ""}${phase === "discussion" || phase === "postclass" ? " classroom-layout--conversation" : ""}`}>
       <nav className="classroom-tools" aria-label="课堂工具"><ul className="classroom-tools__list"><li><button className={`classroom-tools__button${progressOpen ? " is-active" : ""}`} type="button" title={progressOpen ? "收起课堂进程" : "打开课堂进程"} aria-label={progressOpen ? "收起课堂进程" : "打开课堂进程"} aria-controls="lesson-progress-panel" aria-expanded={progressOpen} onClick={() => setProgressOpen((open) => !open)}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3" /><path d="M9 9h7M9 12h7M9 15h5" /></svg></button></li></ul></nav>
       <div className="classroom-progress-slot" hidden={!progressOpen}>
         <LessonProgress id="lesson-progress-panel" phase={phase} agentStage={agentStage} progress={learningProgress} postclassStage={postclassStage} flowVersion={flowVersion} progressSummary={progressSummary} typedTeaching={typedFlow} />

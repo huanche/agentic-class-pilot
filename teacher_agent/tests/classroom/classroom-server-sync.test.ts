@@ -92,7 +92,32 @@ describe('classroom server sync', () => {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ stage, scenes }),
+      signal: expect.any(AbortSignal),
     });
+  });
+
+  it('drains the latest edit after an older in-flight save before video conversion', async () => {
+    let release!: () => void;
+    const send = vi.fn().mockImplementationOnce(() => new Promise<void>((resolve) => { release = resolve; })).mockResolvedValue(undefined);
+    const queue = createClassroomSnapshotSyncQueue(send, undefined, 10000);
+    queue.enqueue({ stage, scenes });
+    const firstDrain = queue.drain();
+    const latest = { stage: { ...stage, name: 'Edited lesson' }, scenes };
+    queue.enqueue(latest);
+    const secondDrain = queue.drain();
+    release();
+    // The first drain detects that newer work arrived. The second drains it.
+    await firstDrain.catch(() => {});
+    await secondDrain;
+    expect(send).toHaveBeenLastCalledWith(latest);
+    expect(send).toHaveBeenCalledTimes(2);
+    queue.dispose();
+  });
+  it('does not acknowledge a failed save as ready to render', async () => {
+    const queue = createClassroomSnapshotSyncQueue(async () => { throw new Error('offline'); }, undefined, 10000);
+    queue.enqueue({ stage, scenes });
+    await expect(queue.drain()).rejects.toThrow('offline');
+    queue.dispose();
   });
 
   it('drops every queued stale snapshot on conflict instead of retrying it', async () => {

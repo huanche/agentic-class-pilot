@@ -322,12 +322,14 @@ export function useSlideCanvasController(): SlideCanvasController {
       // Read from the canonical stage store; the session writes through to
       // it on every history move so this is always the up-to-date content.
       getSnapshot: () => currentSlideContent(sceneId) ?? EMPTY_SLIDE,
-      updateSceneData: (updater) => {
+      updateSceneData: (updater, options) => {
         const base =
           useSlideEditSession.getState().history?.present ?? currentSlideContent(sceneId);
         if (!base) return;
         const next = produce(base, updater as (draft: SlideContent) => void);
-        useSlideEditSession.getState().commitContent(next, gestureRef.current);
+        useSlideEditSession
+          .getState()
+          .commitContent(next, options?.source !== 'layout' && gestureRef.current);
       },
     }),
     [sceneId],

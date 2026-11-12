@@ -22,6 +22,13 @@ import type { WidgetConfig } from '@/lib/types/widgets';
 import type { PBLProjectConfig } from '@/lib/pbl/legacy/read';
 import type { PBLProjectV2 } from '@/lib/pbl/v2/types';
 
+export interface NativePptxClick {
+  id: string;
+  durationMs: number;
+  sourceEffectIds: string[];
+  description: string;
+}
+
 export type {
   SceneType,
   StageMode,
@@ -48,6 +55,19 @@ export interface StageTiming {
 }
 
 export type Stage = DslStage & {
+  /** Original PPTX snapshot for the native, read-only high-fidelity player. */
+  nativePptx?: {
+    version: 1;
+    /** Server rendering repairs fence out stale browser snapshots. */
+    renderRevision?: number;
+    sha256: string;
+    sourceSha256: string;
+    /** Outline identity -> one-based original page; survives deletion/reordering. */
+    pages: Record<string, number>;
+    clicks?: Record<string, NativePptxClick[]>;
+    transitions?: Record<string, number>;
+    compatibility: { converted: number; unresolved: number };
+  };
   timing?: StageTiming;
   /** Keep the original model source when a classroom resumes in a new tab. */
   generationModelPolicy?: 'server' | 'browser';
@@ -135,6 +155,8 @@ export type SceneContent = AppSceneContent;
  * all four kinds).
  */
 export type AppScene = DslScene<Action, SceneContent> & {
+  /** Edited web canvases must not silently display the unedited PPTX snapshot. */
+  nativePptxEdited?: true;
   timing?: SceneTiming;
   /**
    * Stable id of the generation outline this scene was built from. Lets editor

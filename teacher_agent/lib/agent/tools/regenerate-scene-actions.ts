@@ -31,7 +31,8 @@ import type {
   GeneratedInteractiveContent,
   GeneratedPBLContent,
 } from '@/lib/types/generation';
-import type { SceneContent } from '@/lib/types/stage';
+import type { SceneContent, NativePptxClick } from '@/lib/types/stage';
+import { bindNativePptxActions, nativePptxNarrationContract } from '@/lib/onlyoffice/narration';
 import type { LlmStage } from '@/lib/server/model-routes';
 import { normalizeLegacyPBLContent } from '@/lib/pbl/legacy/read';
 import {
@@ -42,6 +43,7 @@ import {
 // ── Scene context shape (client-sourced, injected via deps) ──────────────────
 
 export interface SceneContext {
+  nativeClicks?: NativePptxClick[];
   /** The SceneOutline for the target scene. */
   outline: SceneOutline;
   /** All scene outlines in the stage, in order (for cross-scene context). */
@@ -237,7 +239,11 @@ export function makeRegenerateSceneActionsTool(
           content.type === 'slide'
             ? {
                 ...outline,
-                description: outline.description + pptxAnimationNarrationContract(content.canvas),
+                description:
+                  outline.description +
+                  (ctxData.nativeClicks
+                    ? nativePptxNarrationContract(ctxData.nativeClicks)
+                    : pptxAnimationNarrationContract(content.canvas)),
               }
             : outline;
         actions = await generateSceneActions(actionOutline, generationContent, aiCallFn, {
@@ -271,7 +277,10 @@ export function makeRegenerateSceneActionsTool(
         };
       }
 
-      if (content.type === 'slide') actions = bindPptxAnimationsToActions(actions, content.canvas);
+      if (content.type === 'slide')
+        actions = ctxData.nativeClicks
+          ? bindNativePptxActions(actions, content.canvas, ctxData.nativeClicks)
+          : bindPptxAnimationsToActions(actions, content.canvas);
 
       return {
         content: [

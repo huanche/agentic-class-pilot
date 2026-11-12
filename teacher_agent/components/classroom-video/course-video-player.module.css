@@ -1,0 +1,643 @@
+.frame {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  isolation: isolate;
+  overflow: hidden;
+  min-width: 0;
+  border: 1px solid #e7eaee;
+  border-radius: 14px;
+  background: white;
+}
+
+.viewer {
+  min-height: 100dvh;
+  background: #f6f7f8;
+  color: #20252b;
+  font-family: 'Microsoft YaHei UI', 'Segoe UI', sans-serif;
+}
+.viewerHeader {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  max-width: 1440px;
+  height: 76px;
+  margin: auto;
+  padding: 0 42px;
+}
+.backLink {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+  border: 1px solid #e7eaee;
+  border-radius: 50%;
+  color: #4d5561;
+}
+.courseTitle {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 600;
+}
+.catalogueToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  margin-left: auto;
+  padding: 8px 0 8px 14px;
+  color: #536070;
+  font-size: 12px;
+}
+.catalogueToggle:hover,
+.backLink:hover {
+  color: #9b2d58;
+}
+.viewerWorkspace {
+  width: 100%;
+  max-width: 1280px;
+  margin: auto;
+  padding: 12px 42px 32px;
+}
+.lessonHeading {
+  margin-bottom: 23px;
+}
+.lessonHeading h1 {
+  margin: 7px 0 0;
+  font-size: clamp(20px, 2.1vw, 28px);
+  line-height: 1.45;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+}
+.lessonMeta {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: #858b94;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+.lessonMeta > span:first-child {
+  color: #9b2d58;
+}
+.lessonMeta i {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: #a5aab2;
+}
+.lessonCaption {
+  margin: 15px 3px 0;
+  font-size: 12px;
+  color: #858b94;
+  line-height: 1.7;
+}
+.catalogue {
+  position: fixed;
+  inset: 0 0 0 auto;
+  width: min(350px, 92vw);
+  height: 100dvh;
+  max-height: none;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-left: 1px solid #e7eaee;
+  color: #20252b;
+  background: #fff;
+  box-shadow: -15px 0 60px #15212e12;
+}
+.catalogue[open] {
+  display: flex;
+  flex-direction: column;
+}
+.catalogue::backdrop {
+  background: #1d293128;
+  backdrop-filter: blur(2px);
+}
+.catalogueHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px 12px;
+}
+.catalogueHeader h2 {
+  font-size: 15px;
+  font-weight: 600;
+}
+.catalogueCourse {
+  margin: 0 24px 10px;
+  padding: 0 0 20px;
+  border-bottom: 1px solid #e7eaee;
+  font-size: 14px;
+  font-weight: 500;
+}
+.catalogueCourse > span {
+  display: block;
+  margin-top: 7px;
+  font-size: 11px;
+  color: #9299a3;
+  font-weight: 400;
+}
+.catalogueList {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 6px 14px 25px;
+}
+.chapter {
+  display: flex;
+  align-items: start;
+  gap: 13px;
+  width: 100%;
+  padding: 13px 12px;
+  margin-bottom: 3px;
+  border-radius: 7px;
+  text-align: left;
+  color: #606a77;
+  font-size: 13px;
+  line-height: 1.65;
+}
+.chapter:hover {
+  background: #f7f8fa;
+}
+.chapterActive,
+.chapterActive:hover {
+  background: #f7edf1;
+  color: #9b2d58;
+}
+.chapterNumber {
+  width: 20px;
+  flex-shrink: 0;
+  padding-top: 2px;
+  color: #9299a3;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.chapterActive .chapterNumber {
+  color: #9b2d58;
+}
+.chapterKind {
+  display: block;
+  margin-top: 2px;
+  font-size: 10px;
+  color: #949ca5;
+  font-weight: 400;
+}
+.activityControls {
+  position: absolute;
+  inset: auto 0 0;
+  z-index: 10;
+  display: flex;
+  height: 60px;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  border-top: 1px solid #e7eaee;
+  background: #fff;
+  color: #596472;
+}
+.activityButton,
+.activityPrimary {
+  display: inline-flex;
+  min-width: 35px;
+  height: 35px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 7px;
+  padding: 7px 10px;
+  font-size: 12px;
+}
+.activityButton:hover {
+  background: #f7edf1;
+  color: #9b2d58;
+}
+.activityButton:disabled {
+  opacity: 0.3;
+}
+.activityButton:focus-visible,
+.activityPrimary:focus-visible,
+.catalogueToggle:focus-visible,
+.chapter:focus-visible {
+  outline: 2px solid #9b2d58;
+  outline-offset: 2px;
+}
+.activityPrimary {
+  background: #9b2d58;
+  color: white;
+  padding-inline: 15px;
+}
+.activityPrimary:hover {
+  background: #852348;
+}
+.activityPage {
+  padding: 0 7px;
+  color: #9299a3;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.frameBody {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.videoSurface {
+  aspect-ratio: var(--course-video-ratio, 16 / 9);
+  background: #edf1f5;
+}
+.videoSurface[data-fullscreen='true'] {
+  aspect-ratio: auto;
+  background: radial-gradient(ellipse at center, #f2f5f8, #d9e2ec);
+}
+.viewer[data-theater='true'] {
+  --theater-gutter: clamp(12px, 2.2vw, 42px);
+  --theater-width: min(
+    calc(100% - 2 * var(--theater-gutter)),
+    1800px,
+    max(560px, calc((100dvh - 120px) * var(--course-video-ratio, 1.77777778)))
+  );
+}
+.viewer[data-theater='true'] .viewerHeader,
+.viewer[data-theater='true'] .frame:not(:fullscreen) {
+  width: var(--theater-width);
+  margin-inline: auto;
+}
+.viewer[data-theater='true'] .viewerHeader {
+  max-width: none;
+  height: 56px;
+  padding: 0 4px;
+}
+.viewer[data-theater='true'] .viewerWorkspace {
+  max-width: none;
+  padding: 0 0 12px;
+}
+.viewer[data-theater='true'] .courseNavigation {
+  min-height: 52px;
+  padding-block: 7px;
+}
+.theaterTitles {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.theaterTitles .courseTitle {
+  font-size: 11px;
+  color: #667181;
+}
+.theaterTitles h1 {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: clamp(14px, 1.4vw, 18px);
+  font-weight: 650;
+  line-height: 1.25;
+}
+.viewer[data-embedded='true'] {
+  min-height: 0;
+  background: #fff;
+}
+.viewer[data-embedded='true'] .viewerHeader {
+  height: auto;
+  min-height: 46px;
+  gap: 8px;
+  padding: 0 14px;
+}
+.viewer[data-embedded='true'] .viewerWorkspace {
+  max-width: none;
+  padding: 0;
+}
+.viewer[data-embedded='true'] .lessonHeading,
+.viewer[data-embedded='true'] .lessonCaption {
+  display: none;
+}
+.viewer[data-embedded='true'] .frame,
+.viewer[data-embedded='true'] .frameBody > [data-course-video-player] {
+  border: 0;
+  border-radius: 0;
+}
+.courseNavigation {
+  display: flex;
+  flex-shrink: 0;
+  min-height: 60px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px solid #e7eaee;
+  padding: 10px 20px;
+  background: #fff;
+  color: #596472;
+  z-index: 3;
+}
+.pageButtons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.pageButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  width: 90px;
+  height: 35px;
+  border: 1px solid #e6e9ed;
+  border-radius: 7px;
+  background: #fff;
+  color: #536070;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.pageButton:hover:not(:disabled) {
+  border-color: #e4bdcc;
+  background: #f7edf1;
+  color: #9b2d58;
+}
+.pageButton:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+.pageButton:focus-visible {
+  outline: 2px solid #9b2d58;
+  outline-offset: 2px;
+}
+.pageCount {
+  margin-left: 8px;
+  color: #9299a3;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.videoElement::cue {
+  background: #121821d9;
+  color: white;
+  font:
+    20px/1.5 'Microsoft YaHei UI',
+    'Segoe UI',
+    sans-serif;
+  text-shadow: 0 1px 2px #0008;
+}
+.captionIndicator {
+  position: absolute;
+  bottom: 3px;
+  left: 11px;
+  right: 11px;
+  height: 2px;
+  border-radius: 2px;
+  background: transparent;
+}
+.captionsOverlay {
+  position: absolute;
+  z-index: 2;
+  inset: auto 5% 20px;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+  text-align: center;
+  font:
+    20px/1.55 'Microsoft YaHei UI',
+    'Segoe UI',
+    sans-serif;
+  color: white;
+  transition: bottom 180ms ease;
+}
+.captionsOverlay[data-controls-shown='true'] {
+  bottom: 94px;
+}
+.captionsOverlay > span {
+  max-width: 100%;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: #121821db;
+  border-radius: 4px;
+  padding: 2px 9px;
+  text-shadow: 0 1px 2px #0008;
+}
+.captionIndicator[data-enabled='true'] {
+  background: #e980ad;
+}
+.failedSurface {
+  min-height: 320px;
+}
+
+.activity {
+  position: relative;
+  display: flex;
+  height: min(62vh, 548px);
+  min-height: 420px;
+  flex-direction: column;
+  background: white;
+  color: #0f172a;
+}
+
+/* Definite bounds let the existing h-full scene/iframe slot resolve its height,
+   including mobile where the activity's height comes from min-height. */
+.activityBody {
+  position: absolute;
+  inset: 0;
+  overflow: auto;
+}
+
+.frame:fullscreen {
+  width: 100vw;
+  height: 100dvh;
+  border: 0;
+  border-radius: 0;
+}
+
+.frame:fullscreen .frameBody,
+.frame:fullscreen .activity {
+  min-height: 0;
+  flex: 1;
+  aspect-ratio: auto;
+  height: auto;
+}
+
+@media (max-width: 639px) {
+  .viewerHeader {
+    height: 66px;
+    padding: 0 16px;
+    gap: 11px;
+  }
+  .backLink {
+    width: 33px;
+    height: 33px;
+  }
+  .courseTitle {
+    font-size: 12px;
+  }
+  .catalogueToggle {
+    font-size: 11px;
+    padding-left: 6px;
+    gap: 5px;
+  }
+  .viewerWorkspace {
+    padding: 10px 16px 24px;
+  }
+  .lessonHeading {
+    margin-bottom: 17px;
+  }
+  .lessonMeta {
+    font-size: 10px;
+  }
+  .frame {
+    border-radius: 11px;
+  }
+  .lessonCaption {
+    font-size: 11px;
+  }
+  .activityControls {
+    padding: 10px;
+  }
+  .activity {
+    min-height: 540px;
+    height: 540px;
+    aspect-ratio: auto;
+  }
+  .courseNavigation {
+    padding: 10px;
+    gap: 4px;
+  }
+  .pageButtons {
+    gap: 5px;
+  }
+  .pageButton {
+    width: 74px;
+    font-size: 11px;
+    gap: 2px;
+  }
+  .pageCount {
+    margin-left: 3px;
+    font-size: 10px;
+  }
+  .videoElement::cue {
+    font-size: 14px;
+  }
+  .captionsOverlay {
+    font-size: 14px;
+    line-height: 1.5;
+  }
+}
+
+.controls {
+  position: absolute;
+  z-index: 10;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding-top: 20px;
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+  background: linear-gradient(180deg, transparent, #101114d9 38%, #101114f5);
+  transition:
+    opacity 180ms ease,
+    transform 180ms ease,
+    visibility 180ms;
+}
+
+.videoRecovery,
+.videoWaiting {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 14px;
+  background: #fff;
+  color: #4b5563;
+  text-align: center;
+  padding: 30px 20px 80px;
+}
+.videoRecovery h2 {
+  font-size: 18px;
+  font-weight: 500;
+  color: #20252b;
+}
+.videoRecovery p,
+.videoWaiting {
+  font-size: 13px;
+}
+.videoRecovery > div {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 8px;
+}
+.videoRecovery details {
+  font-size: 11px;
+  color: #9299a3;
+  line-height: 2;
+}
+.videoRecovery summary {
+  cursor: pointer;
+}
+
+.controlsHidden {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(8px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .controls {
+    transition: none;
+  }
+}
+
+.seek {
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
+  width: 100%;
+  height: 20px;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.seek:disabled {
+  cursor: default;
+}
+.seek:focus-visible {
+  outline: 1px solid #fff;
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+.seek::-webkit-slider-runnable-track {
+  height: 4px;
+  background: transparent;
+}
+.seek::-moz-range-track {
+  height: 4px;
+  background: transparent;
+}
+.seek::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  margin-top: -4px;
+  border: 0;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 5px #0005;
+}
+.seek::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border: 0;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 5px #0005;
+}

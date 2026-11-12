@@ -1,6 +1,6 @@
 # 学生课堂平台会话鉴权实施记录
 
-2026-11-04。本地实现，未部署生产。工作分支 `codex/student-platform-session-auth`，基线为已同步远端 main 的 lzm2（`0b30b39`）。原目录的未提交改动不属于本次工作。
+初次记录：2026-11-04；后于 2026-11-05 完成生产发布，见 [生产发布记录](production-release-20261105.md)。工作分支 `codex/student-platform-session-auth`，基线为已同步远端 main 的 lzm2（`0b30b39`）。原目录的未提交改动不属于本次工作。
 
 ## 已实现的行为
 

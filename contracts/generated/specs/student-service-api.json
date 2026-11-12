@@ -16,6 +16,40 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/internal/platform/chat-sessions/capabilities": {
+      "get": {
+        "operationId": "getStudentChatSessionsCapabilities",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "session_pagination": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "session_pagination"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Supported pagination version"
+          },
+          "403": {
+            "description": "Invalid service credentials"
+          }
+        },
+        "security": [
+          {
+            "studentServiceKey": []
+          }
+        ],
+        "summary": "Chat session pagination availability"
+      }
+    },
     "/api/internal/platform/courses/{course_id}/chat-sessions": {
       "post": {
         "operationId": "getStudentChatSessions",
@@ -34,10 +68,31 @@
             "application/json": {
               "schema": {
                 "properties": {
+                  "classroomId": {
+                    "maxLength": 255,
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "lessonId": {
+                    "maxLength": 255,
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
                   "limit": {
                     "maximum": 500,
                     "minimum": 1,
                     "type": "integer"
+                  },
+                  "offset": {
+                    "minimum": 0,
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
                   },
                   "userIds": {
                     "items": {

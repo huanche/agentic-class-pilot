@@ -39,12 +39,27 @@ def _client() -> AuthenticatedClient:
     )
 
 
-def get_chat_sessions(course_id: uuid.UUID, user_ids: list[str], limit: int) -> list[dict]:
+def pagination_available() -> bool:
+    if not settings.STUDENT_SERVICE_KEY:
+        raise StudentChatUnavailable("Student service credential is missing")
     try:
+        with httpx.Client(timeout=httpx.Timeout(8.0, connect=2.0), trust_env=False, follow_redirects=False) as client:
+            response = client.get(settings.STUDENT_URL.rstrip('/') + '/api/internal/platform/chat-sessions/capabilities', headers={'X-Student-Service-Key': settings.STUDENT_SERVICE_KEY})
+        return response.status_code == 200 and response.json().get('session_pagination') == 1
+    except (httpx.HTTPError, ValueError, AttributeError) as error:
+        raise StudentChatUnavailable("Student chat capability request failed") from error
+
+
+def get_chat_sessions(course_id: uuid.UUID, user_ids: list[str], limit: int, offset: int | None = None, lesson_id: str | None = None, classroom_id: str | None = None) -> list[dict]:
+    try:
+        body = GetStudentChatSessionsBody(user_ids=user_ids, limit=limit)
+        if offset is not None: body.offset = offset
+        if lesson_id is not None: body.lesson_id = lesson_id
+        if classroom_id is not None: body.classroom_id = classroom_id
         with _client() as client:
             response = sessions_request(
                 str(course_id), client=client,
-                body=GetStudentChatSessionsBody(user_ids=user_ids, limit=limit),
+                body=body,
             )
     except (httpx.HTTPError, ValueError, KeyError, TypeError, AttributeError) as error:
         raise StudentChatUnavailable("Student chat sessions request failed") from error

@@ -25,6 +25,12 @@ on:
     paths:
       - 'teacher_agent/**'
       - '.github/workflows/teacher-deploy.yml'
+      - '.github/workflows/mainland-teacher-release.yml'
+      - 'scripts/mainland/agentic-teacher-deploy'
+      - 'scripts/mainland/agentic-teacher-media-release'
+      - 'scripts/mainland/teacher-media-revisions'
+      - 'scripts/mainland/smoke-video-worker.py'
+      - 'scripts/mainland/check-native-media-release.mjs'
   pull_request:
     branches: [main]
     paths:
@@ -82,6 +88,7 @@ jobs:
         with:
           context: teacher_agent
           file: teacher_agent/Dockerfile.harness
+          labels: org.opencontainers.image.revision=${{ github.sha }}
           push: ${{ github.event_name != 'pull_request' }}
           tags: |
             ${{ env.IMAGE }}:${{ env.IMAGE_TAG }}

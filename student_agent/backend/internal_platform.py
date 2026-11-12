@@ -138,6 +138,15 @@ def user_course_progress(
 class ChatSessionsRequest(BaseModel):
     userIds: list[str] = Field(max_length=10000)
     limit: int = Field(default=300, ge=1, le=500)
+    offset: int | None = Field(default=None, ge=0)
+    lessonId: str | None = Field(default=None, max_length=255)
+    classroomId: str | None = Field(default=None, max_length=255)
+
+
+@router.get("/api/internal/platform/chat-sessions/capabilities")
+def chat_sessions_capabilities(x_student_service_key: str | None = Header(default=None)) -> dict[str, int]:
+    _check_platform_service_key(x_student_service_key)
+    return {"session_pagination": 1}
 
 
 @router.post("/api/internal/platform/courses/{course_id}/chat-sessions")
@@ -151,6 +160,16 @@ def course_chat_sessions(
         return []
     try:
         with _db() as connection:
+            filters = ""
+            params = [course_id, body.userIds]
+            if body.lessonId is not None:
+                filters += " AND COALESCE(s.lesson_id::text, s.snapshot->>'lessonId', state.payload->>'lessonId', s.classroom_id::text)=%s"
+                params.append(body.lessonId)
+            if body.classroomId is not None:
+                filters += " AND COALESCE(s.classroom_id::text, '')=%s"
+                params.append(body.classroomId)
+            order = "s.started_at ASC, s.session_key ASC" if body.offset is not None else "s.last_active_at DESC, s.session_key DESC"
+            params.extend([body.limit, body.offset or 0])
             rows = connection.execute(
                 "SELECT s.session_key, s.user_id, s.classroom_id, s.started_at, "
                 "s.last_active_at, s.ended_at, "
@@ -162,8 +181,8 @@ def course_chat_sessions(
                 " WHERE event.session_key=s.session_key AND event.event_type='agent_state' "
                 " ORDER BY event.created_at DESC, event.id DESC LIMIT 1) state ON true "
                 "WHERE s.course_id=%s AND s.user_id=ANY(%s) AND s.revoked_at IS NULL "
-                "ORDER BY s.last_active_at DESC, s.session_key DESC LIMIT %s",
-                (course_id, body.userIds, body.limit),
+                + filters + f" ORDER BY {order} LIMIT %s OFFSET %s",
+                tuple(params),
             ).fetchall()
     except Exception as error:
         log.exception("Student chat session read failed")

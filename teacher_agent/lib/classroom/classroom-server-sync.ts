@@ -30,6 +30,8 @@ export function createClassroomSnapshotSyncQueue(
   let disposed = false;
   let conflicted = false;
   let timer: ReturnType<typeof setTimeout> | null = null;
+  let lastError: unknown;
+  const settled = new Set<() => void>();
 
   const schedule = (delay: number) => {
     if (disposed || writing || timer) return;
@@ -44,10 +46,12 @@ export function createClassroomSnapshotSyncQueue(
     const snapshot = pending;
     pending = null;
     writing = true;
+    lastError = undefined;
     let failed = false;
     try {
       await send(snapshot);
     } catch (error) {
+      lastError = error;
       if (error instanceof ClassroomSnapshotConflictError) {
         // A different owner is generating, or this tab predates the completed
         // server document. Retrying any queued snapshot could erase its pages.
@@ -62,11 +66,24 @@ export function createClassroomSnapshotSyncQueue(
       failed = true;
     } finally {
       writing = false;
+      for (const resolve of settled) resolve();
+      settled.clear();
       if (pending) schedule(failed ? 2000 : delayMs);
     }
   };
 
   return {
+    async drain() {
+      for (;;) {
+        while (writing) await new Promise<void>((resolve) => settled.add(resolve));
+        if (disposed || conflicted) throw new Error('课件同步已停止，请重新加载');
+        if (timer) clearTimeout(timer);
+        timer = null;
+        if (!pending) { if (lastError) throw lastError; return; }
+        await flush();
+        if (lastError) throw lastError;
+      }
+    },
     enqueue(snapshot: ClassroomServerSnapshot) {
       if (disposed || conflicted) return;
       pending = snapshot;
@@ -92,6 +109,7 @@ export async function syncClassroomSnapshot(
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(snapshot),
+    signal: AbortSignal.timeout(30_000),
   });
   if (response.ok) return;
 

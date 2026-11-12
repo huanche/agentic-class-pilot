@@ -1,5 +1,6 @@
 import type { Action, PptxAnimationEffect, Slide } from '@openmaic/dsl';
 import { pptxStepDurationMs } from '@/lib/choreography/timing';
+import { isNativeClick } from '@/lib/onlyoffice/narration';
 export { pptxStepDurationMs } from '@/lib/choreography/timing';
 
 export function pptxParagraphKey(id: string, paragraph: number): string {
@@ -26,6 +27,7 @@ export function initialPlaybackHiddenElements(actions: readonly Action[]): strin
   const phases = new Map<string, 'in' | 'out'>();
   for (const action of actions) {
     if (action.type !== 'reveal') continue;
+    if (action.pptxStep && isNativeClick(action.pptxStep.id)) continue;
     if (action.pptxStep) {
       for (const effect of action.pptxStep.effects)
         if (effect.scope !== 'slide')

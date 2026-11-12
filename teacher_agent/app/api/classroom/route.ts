@@ -9,6 +9,15 @@ import {
   ClassroomSnapshotConflictError,
 } from '@/lib/server/classroom-storage';
 import { createLogger } from '@/lib/logger';
+import {
+  prepareClassroomVideo,
+  readVideoPlan,
+  videoPointer,
+  videoStatus,
+  nativeVideoConfig,
+  videoEnabled,
+  readClipCaptions,
+} from '@/lib/server/classroom-video';
 
 const log = createLogger('Classroom API');
 
@@ -17,6 +26,17 @@ export async function POST(request: NextRequest) {
   let sceneCount: number | undefined;
   try {
     const body = await request.json();
+    if (body.operation === 'prepare-video') {
+      const id = request.nextUrl.searchParams.get('id') || '';
+      if (!isValidClassroomId(id) || request.headers.get('x-platform-role') === 'student')
+        return apiError(API_ERROR_CODES.INVALID_REQUEST, 403, '无权转换此课件');
+      const plan = await prepareClassroomVideo(
+        id,
+        request.headers.get('x-platform-user-id') || '',
+        buildRequestOrigin(request),
+      );
+      return apiSuccess({ version: plan.version, status: await videoStatus(plan) }, 202);
+    }
     const { stage, scenes } = body;
     stageId = stage?.id;
     sceneCount = scenes?.length;
@@ -33,6 +53,7 @@ export async function POST(request: NextRequest) {
     if (!isValidClassroomId(id)) {
       return apiError(API_ERROR_CODES.INVALID_REQUEST, 400, 'Invalid classroom id');
     }
+
     const baseUrl = buildRequestOrigin(request);
 
     const persisted = await persistClassroom({ id, stage: { ...stage, id }, scenes }, baseUrl, {
@@ -70,6 +91,49 @@ export async function GET(request: NextRequest) {
 
     if (!isValidClassroomId(id)) {
       return apiError(API_ERROR_CODES.INVALID_REQUEST, 400, 'Invalid classroom id');
+    }
+
+    const capture = request.nextUrl.searchParams.get('videoCapture');
+    if (capture) {
+      if (request.headers.get('x-classroom-render-version') !== capture)
+        return apiError(API_ERROR_CODES.INVALID_REQUEST, 403, 'Invalid capture grant');
+      const plan = await readVideoPlan(id, capture);
+      if (!plan) return apiError(API_ERROR_CODES.INVALID_REQUEST, 404, 'Video snapshot not found');
+      const sceneId = request.nextUrl.searchParams.get('nativeScene');
+      return apiSuccess(
+        sceneId ? { nativeConfig: await nativeVideoConfig(plan, sceneId) } : { plan },
+      );
+    }
+    if (request.nextUrl.searchParams.has('video')) {
+      const student = request.headers.get('x-platform-role') === 'student';
+      const pointer = await videoPointer(
+        id,
+        student || request.nextUrl.searchParams.get('video') === 'published'
+          ? 'published'
+          : 'draft',
+      );
+      const version = student
+        ? pointer?.version
+        : request.nextUrl.searchParams.get('version') || pointer?.version;
+      const plan = version ? await readVideoPlan(id, version) : null;
+      if (!plan) return apiSuccess({ manifest: null, enabled: videoEnabled() });
+      return apiSuccess({
+        enabled: videoEnabled(),
+        manifest: {
+          version: plan.version,
+          title: plan.stage.name,
+          stage: plan.stage,
+          scenes: plan.scenes,
+          status: await videoStatus(plan),
+          clips: await Promise.all(
+            plan.clips.map(async (c) => ({
+              sceneId: c.sceneId,
+              url: `/api/classroom-media/${id}/video/${c.key}.mp4`,
+              captions: await readClipCaptions(plan, c),
+            })),
+          ),
+        },
+      });
     }
 
     const classroom = await readClassroom(id);

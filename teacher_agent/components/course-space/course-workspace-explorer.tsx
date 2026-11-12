@@ -24,7 +24,8 @@ import { ResourceActions } from './resource-actions';
 import { WorkspaceItemMenu } from './workspace-item-menu';
 import { CoursewareGenerationButton } from './courseware-generation-button';
 import { SourceFileEditor } from './source-file-editor';
-import { courseWorkspaceUrl, withTeacherReturn } from '@/lib/course-space/navigation';
+import { courseWorkspaceUrl } from '@/lib/course-space/navigation';
+import { flushEmbeddedClassroom } from '@/lib/classroom-video/open-preview';
 import type {
   CourseArtifactJob,
   CourseArtifactRecord,
@@ -206,6 +207,8 @@ export function CourseWorkspaceExplorer({
   const [dropTargetId, setDropTargetId] = useState('');
   const initializedFromArtifacts = useRef(false);
   const explorerRef = useRef<HTMLDivElement>(null);
+  const classroomFrameRef = useRef<HTMLIFrameElement>(null);
+  const [openingVideo, setOpeningVideo] = useState(false);
   const materialInputRef = useRef<HTMLInputElement>(null);
   const [uploadingMaterials, setUploadingMaterials] = useState(false);
   const [uploadMessage, setUploadMessage] = useState('');
@@ -1742,18 +1745,25 @@ export function CourseWorkspaceExplorer({
                 <WorkspaceItemMenu title="课件操作" actions={taskHistoryActions} />
               )}
               {selectedFile?.artifact?.classroomUrl && (
-                <Button size="sm" variant="outline" asChild>
-                  <a
-                    href={withTeacherReturn(
-                      selectedFile.artifact.classroomUrl,
-                      courseWorkspaceUrl(course.id),
-                    )}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    全屏打开
-                    <ExternalLink className="ml-1 size-3.5" />
-                  </a>
+                <Button size="sm" variant="outline" disabled={openingVideo} onClick={() => {
+                  const artifact = selectedFile.artifact!;
+                  const id = artifact.classroomId || new URL(artifact.classroomUrl!, location.origin).pathname.split('/').pop()!;
+                  const popup = window.open('about:blank', '_blank');
+                  if (!popup) { setTreeMessage('请允许弹出窗口后重新打开视频'); return; }
+                  popup.opener = null;
+                  popup.document.body.textContent = '正在保存课件，准备视频…';
+                  setOpeningVideo(true);
+                  void (async () => {
+                    try {
+                      if (!classroomFrameRef.current) throw new Error('请等待课件编辑器加载完成');
+                      await flushEmbeddedClassroom(classroomFrameRef.current, id);
+                      popup.location.replace(`/classroom-player/${encodeURIComponent(id)}?video=1&draft=1&from=${encodeURIComponent(courseWorkspaceUrl(course.id))}`);
+                    } catch (e) { popup.close(); setTreeMessage(e instanceof Error ? e.message : String(e)); }
+                    finally { setOpeningVideo(false); }
+                  })();
+                }}>
+                  {openingVideo ? '正在保存…' : '全屏打开'}
+                  <ExternalLink className="ml-1 size-3.5" />
                 </Button>
               )}
             </div>
@@ -1780,6 +1790,7 @@ export function CourseWorkspaceExplorer({
               </div>
             ) : selectedFile?.artifact?.classroomUrl ? (
               <iframe
+                ref={classroomFrameRef}
                 data-courseware-preview
                 title={selectedFile.title}
                 src={`${selectedFile.artifact.classroomUrl}${selectedFile.artifact.classroomUrl.includes('?') ? '&' : '?'}embedded=course-workspace`}

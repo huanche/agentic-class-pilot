@@ -15,6 +15,7 @@ POLICY=/usr/local/lib/agentic-class-pilot/server-backup-policy.py
 WAIT=/usr/local/libexec/agentic-teacher-wait-idle.sh
 [[ $(docker inspect -f '{{.State.Running}}' agentic-teacher-prod) == true ]]
 [[ $(docker inspect -f '{{.State.Running}}' agentedu-final-minio-1) == true ]]
+SHARED_WRITERS=()
 UNITS=()
 for unit in agentic-platform agentic-student agentic-teacher-forward; do
   if systemctl is-active --quiet "$unit"; then UNITS+=("$unit"); fi
@@ -26,6 +27,12 @@ restore() {
   set +e
   docker start agentedu-final-minio-1 >/dev/null || rc=1
   docker start agentic-teacher-prod >/dev/null || rc=1
+  # Resume the same processes/IP addresses before restoring the teacher forwarder.
+  for container in "${SHARED_WRITERS[@]}"; do
+    if [[ $(docker inspect -f '{{.State.Paused}}' "$container" 2>/dev/null) == true ]]; then
+      docker unpause "$container" >/dev/null || rc=1
+    fi
+  done
   if ((${#UNITS[@]})); then systemctl start "${UNITS[@]}" || rc=1; fi
   if [[ " ${UNITS[*]} " == *' agentic-teacher-forward '* ]]; then
     local healthy=0
@@ -43,6 +50,29 @@ trap 'exit 143' TERM
 trap 'exit 130' INT
 if ((${#UNITS[@]})); then systemctl stop "${UNITS[@]}"; fi
 bash "$WAIT"
+# Freeze additional shared-data writers after queue drain without changing their IPs.
+WRITER_LIST=$(mktemp /run/agentic-backup-writers.XXXXXX)
+python3 - > "$WRITER_LIST" <<'PY_WRITERS'
+import json, subprocess
+from pathlib import Path
+ids = subprocess.check_output(['docker', 'ps', '-q'], text=True).split()
+roots = [Path('/home/ubuntu/teacher-agent-data').resolve(),
+         Path('/opt/agentic-class-pilot/student_agent/runtime').resolve()]
+for item in json.loads(subprocess.check_output(['docker', 'inspect', *ids], text=True)):
+    name = item['Name'].lstrip('/')
+    if name in {'agentic-teacher-prod', 'agentedu-final-minio-1'}:
+        continue
+    if any(m.get('RW') and any(Path(m['Source']).resolve() == root or
+            root in Path(m['Source']).resolve().parents for root in roots)
+            for m in item['Mounts']):
+        print(name)
+PY_WRITERS
+mapfile -t SHARED_WRITERS < "$WRITER_LIST"
+rm -f -- "$WRITER_LIST"
+for container in "${SHARED_WRITERS[@]}"; do
+  docker pause "$container" >/dev/null
+done
+echo "SHARED_WRITERS_PAUSED=${#SHARED_WRITERS[@]}"
 docker stop -t 60 agentic-teacher-prod >/dev/null
 docker stop -t 30 agentedu-final-minio-1 >/dev/null
 python3 "$POLICY" backup

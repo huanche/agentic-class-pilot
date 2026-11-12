@@ -76,10 +76,15 @@ export const useSlideEditSession = create<SlideEditSessionState>((set, get) => {
    * (SceneProvider reads via `currentSlideContent`) see the new content as
    * soon as React processes the next batch.
    */
-  const writeThrough = (next: SlideContent) => {
+  const writeThrough = (next: SlideContent, automaticLayout = false) => {
     const { sceneId } = get();
     if (!sceneId) return;
-    useStageStore.getState().updateScene(sceneId, { content: next });
+    if (automaticLayout) {
+      // Measuring text in the web editor is not an edit to the source PPTX.
+      useStageStore.getState().updateScene(sceneId, { content: next }, { source: 'layout' });
+    } else {
+      useStageStore.getState().updateScene(sceneId, { content: next });
+    }
   };
 
   const replace = (history: EditorHistory) => {
@@ -153,7 +158,7 @@ export const useSlideEditSession = create<SlideEditSessionState>((set, get) => {
         // the redo branch pointed at, so replaying those stale entries
         // would discard this normalization. Leaving them would let a later
         // redo silently revert to pre-undo content (canvas/store divergence).
-        writeThrough(next);
+        writeThrough(next, true);
         set({ history: { ...history, present: next, future: [] } });
         return;
       }

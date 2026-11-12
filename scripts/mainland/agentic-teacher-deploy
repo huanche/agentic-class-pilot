@@ -13,6 +13,7 @@ CONFIG=/opt/agentic-class-pilot/teacher_agent/server-providers.yml
 FORWARD=agentic-teacher-forward.service
 WAIT=/usr/local/libexec/agentic-teacher-wait-idle.sh
 ENABLE=/etc/agentic-class-pilot/teacher-deploy-enabled
+MEDIA=/usr/local/sbin/agentic-teacher-media-release
 
 die() {
   echo "ERROR: $*" >&2
@@ -164,8 +165,8 @@ if [[ "${1:-}" == check && $# -eq 1 ]]; then
   exit 0
 fi
 
-[[ $# -eq 3 && ( "${1:-}" == deploy || "${1:-}" == deploy-local ) ]] \
-  || die "用法: $0 check | deploy <image> <tag>"
+[[ ( $# -eq 3 || $# -eq 5 ) && "${1:-}" == deploy-local ]] \
+  || die "用法: $0 check | deploy-local <image> <tag> [video-source office-source]"
 
 [[ "$2" == "$IMAGE" ]] || die "不允许使用其他镜像仓库"
 [[ "$3" =~ ^main-[0-9a-f]{7}$ ]] || die "镜像标签格式不正确"
@@ -204,23 +205,27 @@ print(record['id'])
 PY
 ) || die "缺少可信镜像校验记录"
 [[ $(docker image inspect -f '{{.Id}}' "$NEW") == "$EXPECTED_ID" ]] || die "本地镜像已变化"
-if [[ $(docker inspect -f '{{.Image}}' "$NAME") == "$EXPECTED_ID" &&
+if [[ $# -eq 3 && $(docker inspect -f '{{.Image}}' "$NAME") == "$EXPECTED_ID" &&
       $(docker inspect -f '{{index .Config.Labels "org.agentedu.requested-image"}}' "$NAME") == "$NEW" ]]; then
   wait_forward_healthy || die "当前版本转发健康检查失败"
   verify_new_ai_tls || die "当前版本 AI TLS 检查失败"
   echo "DEPLOY_ALREADY_CURRENT: $NEW ($EXPECTED_ID)"
   exit 0
 fi
-echo '执行部署前完整静止备份'
-"$BACKUP" --locked
 BACK="${NAME}-rollback-$(date -u +%Y%m%dT%H%M%SZ)"
 STOP_ATTEMPTED=0
 FORWARD_PAUSED=0
+MEDIA_TX=
+MEDIA_DRAIN=0
 
 rollback_on_exit() {
   local rc=$?
   local restored=0
   trap - EXIT
+
+  if (( rc != 0 )) && [[ -n "$MEDIA_TX" ]]; then
+    "$MEDIA" rollback "$MEDIA_TX" || echo '媒体容器回退失败，请检查' >&2
+  fi
 
   if (( rc != 0 && STOP_ATTEMPTED == 1 )); then
     echo '部署失败：尝试恢复旧教师容器' >&2
@@ -259,11 +264,29 @@ rollback_on_exit() {
       echo '警告：本机 3200 未通过恢复检查' >&2
   fi
 
+  if [[ -n "$MEDIA_TX" ]]; then
+    if (( MEDIA_DRAIN == 1 )); then
+      "$MEDIA" release "$MEDIA_TX" || echo '转码队列将在维护期限结束后自动恢复' >&2
+    fi
+    rm -f -- "$MEDIA_TX"/{plan.json,video.env,office.env,native-smoke.env,video.attempted,office.attempted}
+    rmdir -- "$MEDIA_TX"
+  fi
   exit "$rc"
 }
 trap rollback_on_exit EXIT
 trap 'exit 143' TERM
 trap 'exit 130' INT
+
+if [[ $# -eq 5 ]]; then
+  [[ -x "$MEDIA" ]] || die "媒体部署程序尚未安装"
+  MEDIA_TX=$(mktemp -d /run/agentic-teacher-media.XXXXXXXX)
+  "$MEDIA" plan "$MEDIA_TX" "$4" "$5"
+  MEDIA_DRAIN=1
+  "$MEDIA" quiesce "$MEDIA_TX"
+fi
+
+echo '执行部署前完整静止备份'
+"$BACKUP" --locked
 
 docker container inspect "$BACK" >/dev/null 2>&1 \
   && die "回滚容器名称已存在"
@@ -311,11 +334,19 @@ wait_new_healthy || die "新容器健康检查失败"
 
 echo "验证新容器 DeepSeek HTTPS 连接"
 verify_new_ai_tls || die "新容器 DeepSeek HTTPS 验证失败"
+if [[ -n "$MEDIA_TX" ]]; then
+  "$MEDIA" switch "$MEDIA_TX"
+  "$MEDIA" verify "$MEDIA_TX"
+fi
 
 echo "刷新本机 3200 端口转发"
 systemctl restart "$FORWARD"
 wait_forward_healthy || die "本机转发健康检查失败（已重试）"
 
+if [[ -n "$MEDIA_TX" ]]; then
+  "$MEDIA" release "$MEDIA_TX"
+  MEDIA_DRAIN=0
+fi
 FORWARD_PAUSED=0
 STOP_ATTEMPTED=0
 echo "部署成功: $NEW"

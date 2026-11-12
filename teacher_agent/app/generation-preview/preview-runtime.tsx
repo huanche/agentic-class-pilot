@@ -1254,6 +1254,15 @@ function GenerationPreviewContent() {
           imageMapping,
           importedSlides: importedSlides ?? undefined,
           preferImportedCanvas: usesImportedPptCanvas,
+          nativePptxSource:
+            usesImportedPptCanvas &&
+            currentSession.courseSpaceContext.materialId &&
+            currentSession.sourceFingerprint
+              ? {
+                  materialId: currentSession.courseSpaceContext.materialId,
+                  sha256: currentSession.sourceFingerprint.sha256,
+                }
+              : undefined,
           narrationScripts,
           formulaEnhancedOrders,
           enableTTS: settings.ttsEnabled,

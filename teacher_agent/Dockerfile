@@ -1,13 +1,17 @@
 # ---- Stage 1: Base ----
-FROM node:22-alpine AS base
+ARG NODE_IMAGE=node:22-alpine
+FROM ${NODE_IMAGE} AS base
+ARG APK_MIRROR
 
-RUN apk add --no-cache libc6-compat
+RUN if [ -n "$APK_MIRROR" ]; then sed -i "s|https://dl-cdn.alpinelinux.org/alpine|$APK_MIRROR|g" /etc/apk/repositories; fi \
+    && apk add --no-cache libc6-compat
 RUN corepack enable && corepack prepare pnpm@10.28.0 --activate
 
 WORKDIR /app
 
 # ---- Stage 2: Dependencies ----
 FROM base AS deps
+ARG NPM_REGISTRY=https://registry.npmjs.org
 
 # Native build tools for sharp, @napi-rs/canvas
 RUN apk add --no-cache python3 build-base g++ cairo-dev pango-dev jpeg-dev giflib-dev librsvg-dev
@@ -17,7 +21,7 @@ COPY packages/ ./packages/
 COPY scripts/ ./scripts/
 
 RUN --mount=type=cache,id=teacher-pnpm-store,target=/root/.local/share/pnpm/store \
-    pnpm install --frozen-lockfile --network-concurrency=3 --fetch-retries=5 --fetch-timeout=120000
+    pnpm install --registry="$NPM_REGISTRY" --frozen-lockfile --network-concurrency=3 --fetch-retries=5 --fetch-timeout=120000
 
 # ---- Stage 3: Builder ----
 FROM base AS builder
@@ -57,7 +61,8 @@ COPY --from=deps /app/public/vendor ./public/vendor
 RUN pnpm build
 
 # ---- Stage 4: Runner ----
-FROM node:22-alpine AS runner
+FROM ${NODE_IMAGE} AS runner
+ARG APK_MIRROR
 
 WORKDIR /app
 
@@ -65,7 +70,8 @@ ENV NODE_ENV=production
 ENV HOSTNAME=0.0.0.0
 ENV PORT=3000
 
-RUN apk add --no-cache libc6-compat cairo pango jpeg giflib librsvg
+RUN if [ -n "$APK_MIRROR" ]; then sed -i "s|https://dl-cdn.alpinelinux.org/alpine|$APK_MIRROR|g" /etc/apk/repositories; fi \
+    && apk add --no-cache libc6-compat cairo pango jpeg giflib librsvg
 
 RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 nextjs

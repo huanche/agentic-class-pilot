@@ -4,6 +4,8 @@ import path from 'path';
 import { NextRequest, NextResponse } from 'next/server';
 import { CLASSROOMS_DIR, isValidClassroomId } from '@/lib/server/classroom-storage';
 import { createLogger } from '@/lib/logger';
+import { CLASSROOM_VIDEOS_DIR, readVideoPlan, videoPointer } from '@/lib/server/classroom-video';
+import { parseByteRange } from '@/lib/server/http-range';
 
 const log = createLogger('ClassroomMedia');
 
@@ -20,15 +22,6 @@ const MIME_TYPES: Record<string, string> = {
   '.ogg': 'audio/ogg',
   '.aac': 'audio/aac',
 };
-
-export function parseByteRange(value: string, size: number): { start: number; end: number } | null {
-  const match = /^bytes=(\d*)-(\d*)$/.exec(value);
-  if (!match || size <= 0 || (!match[1] && !match[2])) return null;
-  const start = match[1] ? Number(match[1]) : Math.max(0, size - Number(match[2]));
-  const end = match[2] && match[1] ? Number(match[2]) : size - 1;
-  if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start >= size || end < start) return null;
-  return { start, end: Math.min(end, size - 1) };
-}
 
 export async function GET(
   req: NextRequest,
@@ -47,14 +40,26 @@ export async function GET(
     return NextResponse.json({ error: 'Invalid path' }, { status: 400 });
   }
 
-  // Only allow media/ and audio/ subdirectories
+  // Generated MP4 files use a separate store and a published version pointer.
   const subDir = pathSegments[0];
-  if (subDir !== 'media' && subDir !== 'audio') {
+  if (subDir !== 'media' && subDir !== 'audio' && subDir !== 'video') {
     return NextResponse.json({ error: 'Invalid path' }, { status: 404 });
   }
 
-  const filePath = path.join(CLASSROOMS_DIR, classroomId, ...pathSegments);
-  const resolvedBase = path.resolve(CLASSROOMS_DIR, classroomId);
+  const isGeneratedVideo = subDir === 'video';
+  if (isGeneratedVideo && (pathSegments.length !== 2 || !/^[a-f0-9]{64}\.mp4$/.test(pathSegments[1])))
+    return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  if (isGeneratedVideo && req.headers.get('x-platform-role') === 'student') {
+    const pointer = await videoPointer(classroomId, 'published');
+    const plan = pointer && await readVideoPlan(classroomId, pointer.version);
+    if (!plan || !plan.clips.some((c) => `${c.key}.mp4` === pathSegments[1]))
+      return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  }
+  const root = isGeneratedVideo ? CLASSROOM_VIDEOS_DIR : CLASSROOMS_DIR;
+  const filePath = isGeneratedVideo
+    ? path.join(root, classroomId, 'clips', pathSegments[1])
+    : path.join(root, classroomId, ...pathSegments);
+  const resolvedBase = path.resolve(root, classroomId);
 
   try {
     // Resolve symlinks and verify the real path stays within the classroom dir

@@ -8,11 +8,13 @@ import json
 import io
 import os
 from pathlib import Path
+import shlex
 import subprocess
 import shutil
 import sys
 import tempfile
 import tarfile
+import time
 from types import SimpleNamespace
 import unittest
 
@@ -21,12 +23,38 @@ SOURCE = globals().get("DEPLOY_SOURCE") or Path(__file__).with_name("agentic-web
 
 
 class WebReleaseTest(unittest.TestCase):
+    def test_release_environment_accepts_only_private_root_owned_configuration(self):
+        path = self.root / 'learning-auth.env'
+        original_path = self.ns['Path']
+        self.ns['Path'] = lambda value: path if str(value) == '/etc/agentic-class-pilot/student-learning-auth.env' else original_path(value)
+        self.assertEqual(self.ns['release_environment']('agentic-student'), self.env)
+        path.write_text('PLATFORM_TO_STUDENT_KEY=' + 'k' * 64 + '\nSTUDENT_URL=http://127.0.0.1:8000\n')
+        path.chmod(0o600)
+        merged = self.ns['release_environment']('agentic-student')
+        self.assertEqual(merged['PLATFORM_TO_STUDENT_KEY'], 'k' * 64)
+        self.assertEqual(merged['STUDENT_DATABASE_URL'], self.env['STUDENT_DATABASE_URL'])
+        path.chmod(0o644)
+        with self.assertRaisesRegex(RuntimeError, 'Untrusted'):
+            self.ns['release_environment']('agentic-student')
+        path.chmod(0o600)
+        path.write_text('DATABASE_URL=not-allowed\n')
+        with self.assertRaisesRegex(RuntimeError, 'Invalid'):
+            self.ns['release_environment']('agentic-student')
+        path.unlink()
+        real = self.root / 'real-auth.env'
+        real.write_text('PLATFORM_TO_STUDENT_KEY=' + 'k' * 64 + '\n')
+        real.chmod(0o600)
+        path.symlink_to(real)
+        with self.assertRaisesRegex(RuntimeError, 'Untrusted'):
+            self.ns['release_environment']('agentic-student')
+
     def setUp(self):
         self.assertEqual(os.geteuid(), 0, "Use sudo for the isolated ownership checks")
         self.temp = tempfile.TemporaryDirectory(prefix="agentic-web-release-test-")
         self.root = Path(self.temp.name)
         self.ns = {"__name__": "sandbox_deployer"}
         exec(compile(SOURCE, "sandbox_deployer", "exec"), self.ns)
+        self.real_grouped_call = self.ns["_call_process_group"]
         self.real_live_environment = self.ns["live_environment"]
         self.base = self.root / "opt/agentic-mainland-web"
         self.old = self.base / "releases" / ("b" * 40)
@@ -165,6 +193,36 @@ class WebReleaseTest(unittest.TestCase):
         self.assertEqual(self.uv_directories, [self.target / 'platform', self.target / 'student_agent'])
         self.assertEqual((self.base / 'current').resolve(), self.old)
         self.assertTrue((self.root / 'var/lib/agentic-class-pilot/staged-web' / (self.sha + '.json')).is_file())
+
+        # A changed lock/requirements file must update a copy of the active
+        # environment instead of downloading every dependency from scratch.
+        shutil.rmtree(self.target)
+        (self.root / 'var/lib/agentic-class-pilot/staged-web' / (self.sha + '.json')).unlink()
+        (self.old / 'platform/uv.lock').write_text('previous lock')
+        (self.old / 'student_agent/backend/requirements.txt').write_text('previous requirements')
+        for app in ('platform', 'student_agent'):
+            (self.old / app / '.venv/reused-marker').write_text('active environment')
+        self.events.clear()
+        self.uv_directories.clear()
+        self.ns['deploy']()
+        for app in ('platform', 'student_agent'):
+            self.assertEqual((self.target / app / '.venv/reused-marker').read_text(), 'active environment')
+        uv_calls = [event for event in self.events if event[:5] ==
+                    ('runuser', '-u', 'ubuntu', '--', self.ns['UV'])]
+        self.assertTrue(any('sync' in event for event in uv_calls))
+        self.assertTrue(any(event[5:7] == ('pip', 'install') for event in uv_calls))
+        self.assertFalse(any(event[5] == 'venv' for event in uv_calls))
+        self.assertIn(str(self.target / 'platform/.venv/bin/python'),
+                      next(event for event in uv_calls if 'sync' in event))
+        self.assertEqual((self.base / 'current').resolve(), self.old)
+
+    def test_command_timeout_terminates_child_processes(self):
+        marker = self.root / 'orphan-marker'
+        child = f'(sleep 2; touch {shlex.quote(str(marker))}) & wait'
+        with self.assertRaises(subprocess.TimeoutExpired):
+            self.real_grouped_call(['bash', '-c', child], timeout=0.2)
+        time.sleep(2.2)
+        self.assertFalse(marker.exists(), 'a timed-out command left a descendant running')
 
     def test_revision_mismatch_never_stops_services(self):
         self.revision = "pub10"

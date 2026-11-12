@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>PPTX 原稿播放</title>
+    <style>
+      html,
+      body,
+      #editor {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+        background: #fff;
+      }
+      #status {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #fff;
+        color: #64748b;
+        font: 14px sans-serif;
+      }
+      #status[hidden] {
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="editor"></div>
+    <div id="status" role="status">正在加载原稿…</div>
+    <script type="module" src="/onlyoffice/frame.js"></script>
+  </body>
+</html>

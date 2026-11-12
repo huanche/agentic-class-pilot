@@ -163,6 +163,21 @@ beforeEach(() => {
 });
 
 describe('runClassroomLoad', () => {
+  it('revalidates a completed native classroom instead of indefinitely trusting its browser cache', async () => {
+    const { deps, setStage } = makeDeps();
+    const stage = {
+      ...makeStage('stage-a'),
+      nativePptx: { version: 1, renderRevision: 0 },
+    } as unknown as Stage;
+    setStage(stage);
+    vi.mocked(deps.fetchClassroom).mockResolvedValue({
+      stage: { ...stage, nativePptx: { ...stage.nativePptx!, renderRevision: 1 } },
+      scenes: [makeScene('native', stage.id)],
+    });
+    await runClassroomLoad(deps);
+    expect(deps.fetchClassroom).toHaveBeenCalledOnce();
+    expect(deps.applyFallbackScenes).toHaveBeenCalled();
+  });
   it('keeps the current teacher edit mode and selected page on a background refresh', () => {
     const stage = makeStage('preview-refresh');
     const first = makeScene('first', stage.id);

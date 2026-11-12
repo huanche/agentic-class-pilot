@@ -14,6 +14,14 @@ from app.services import student_chat_records_client, teacher_lesson_titles_clie
 router = APIRouter(prefix="/teacher-chat-records", tags=["teacher-chat-records"])
 
 
+@router.get('/capabilities')
+def capabilities(user: TeacherUser) -> dict:
+    try:
+        return {'session_pagination': 1 if student_chat_records_client.pagination_available() else 0}
+    except student_chat_records_client.StudentChatUnavailable as error:
+        raise HTTPException(503, "Chat records unavailable") from error
+
+
 def _enrolled_students(session: SessionDep, course_id: uuid.UUID, student_id: uuid.UUID | None = None) -> dict[str, str]:
     params = {"course": course_id}
     clause = ""
@@ -40,13 +48,18 @@ def list_sessions(
     course_id: uuid.UUID, session: SessionDep, user: TeacherUser,
     student_id: uuid.UUID | None = None,
     limit: int = Query(default=300, ge=1, le=500),
+    offset: int | None = Query(default=None, ge=0),
+    lesson_id: str | None = Query(default=None, max_length=255),
+    classroom_id: str | None = Query(default=None, max_length=255),
 ) -> list[dict]:
     course = get_owned_course(session, user, course_id)
     students = _enrolled_students(session, course_id, student_id)
     if not students:
         return []
     try:
-        rows = student_chat_records_client.get_chat_sessions(course_id, list(students), limit)
+        if (offset is not None or lesson_id is not None or classroom_id is not None) and not student_chat_records_client.pagination_available():
+            raise HTTPException(503, 'Student chat pagination unavailable')
+        rows = student_chat_records_client.get_chat_sessions(course_id, list(students), limit, offset, lesson_id, classroom_id)
         titles = teacher_lesson_titles_client.get_lesson_titles(course_id, course.owner_id)
     except (student_chat_records_client.StudentChatUnavailable,
             teacher_lesson_titles_client.TeacherLessonTitlesUnavailable) as error:
