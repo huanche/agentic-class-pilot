@@ -1,0 +1,64 @@
+{
+  "date": "2026-11-06",
+  "source": {
+    "title": "数据结构：栈和队列",
+    "courseId": "02b49c92-5d63-47bc-9295-2300b7f69203",
+    "lessonId": "-EXmpqbyvKbisC",
+    "classroomId": "tpPs6lhzy4",
+    "sourceRevision": "96d3825f111bfaeb822b71747b73dd0fdc5a53acdf456a9a1d6709d667e914e0"
+  },
+  "pointCount": 11,
+  "typeCounts": {
+    "memory": 2,
+    "concept": 7,
+    "design": 2
+  },
+  "sourceManifestHash": "259c4a49a808877100f6767024fa24ad04d2dcd4e2dc739e60458d115826c01f",
+  "knowledgeFileSha256": "31758de173fe95aa4fb5021edd4243879cd469358a0db1ce65c236c927379c38",
+  "studentMode": "developer-authored synthetic learner; not real student evidence",
+  "scenario": "Full lesson in original order. Hold points 2,3,11 incomplete for five recall inputs; point 2 remains unresolved in reinforcement; others answer correctly.",
+  "productionWrites": false,
+  "databaseUsed": false,
+  "responseInjection": false,
+  "trace": [
+    {
+      "request": 1,
+      "phase": "recall",
+      "focusId": "knowledge:865e2db687d1a044976c",
+      "focusType": "memory",
+      "transition": "continue",
+      "elapsedSeconds": 1.104,
+      "toolCalls": [],
+      "invalidToolCalls": [],
+      "content": "{\"text\":\"我们先回忆一个基础概念：请你说说栈和队列分别是什么结构，它们的插入、删除位置以及元素进出顺序有什么特点？\",\"question\":\"请说说栈和队列分别是什么结构，它们的插入、删除位置以及元素进出顺序有什么特点？\",\"assistance\":\"none\"}",
+      "usage": {
+        "input_tokens": 2080,
+        "output_tokens": 61,
+        "total_tokens": 2141,
+        "input_token_details": {
+          "cache_read": 0
+        },
+        "output_token_details": {}
+      }
+    }
+  ],
+  "turns": [],
+  "status": "failed",
+  "model": "deepseek-v4-flash",
+  "thinkingDisabledForToolCalls": true,
+  "failedTurn": null,
+  "errors": [
+    {
+      "type": "SessionError",
+      "httpStatus": 503,
+      "message": ""
+    },
+    {
+      "type": "ValueError",
+      "httpStatus": null,
+      "message": "新任务缺少与回复一致的实际题目"
+    }
+  ],
+  "elapsedSeconds": 1.127,
+  "requestCount": 1
+}

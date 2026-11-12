@@ -2,6 +2,8 @@
 
 本目录集中保存本次 `memory / concept / design` 结构化知识点提取改造的设计、历史调研、实施记录和验证产物。工作树为 `typed-knowledge-extraction`，分支为 `lzm2`；未部署。
 
+结构化知识点的核心协议、提取、保存和字段传递已基本完成，完成范围与限制以实施记录为准。后续学生端教学使用独立维护在 [结构化知识点的教学使用方案](../knowledge-teaching/plan.md)，不纳入本目录的提取设计或待实施范围。
+
 ## 阅读入口
 
 | 分类 | 文档 | 用途 |
@@ -9,6 +11,7 @@
 | 设计 | [当前方案](design/plan.md) | 数据协议、反馈修正闭环、职责边界与验收标准 |
 | 实施 | [代码改动与测试](implementation/changes-and-tests.md) | 已实现行为、兼容处理、测试结果和限制 |
 | 实测 | [2026-11-05 真实课时与模型试验](validation/2026-11-05-live-model/README.md) | 三种知识点样例、真实反馈修正和质量观察 |
+| 实测 | [2026-11-10 要求拆分提示词验证](validation/2026-11-10-requirement-splitting/README.md) | 公开提取入口前后对照；真实课时仍未拆开，保留失败 |
 | 实测数据 | [固定格式知识点 JSON](validation/2026-11-05-live-model/knowledge-points.json) | 直接查看真实课时的 11 项核心输出 |
 | 历史调研 | [替代方案比较](research/alternative-approaches.md) | 前期选项及一手资料，不作为当前实施要求 |
 | 工作记录 | [实施计划](records/task-plan.md)、[关键发现](records/findings.md)、[实施与测试日志](records/progress.md) | 本次工作的过程记录，不混入仓库已有的其他项目历史 |

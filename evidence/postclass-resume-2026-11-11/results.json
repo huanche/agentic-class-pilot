@@ -1,0 +1,24 @@
+[
+  {
+    "case": "partial",
+    "reply": "你上次卡住的地方，就是定义里少了“存储类型”这一部分。完整形式应为：\n\n**存储类型 数据类型 数组名[整型常量表达式];**\n\n其中存储类型用来说明存储特性，数据类型决定每个元素的类型。",
+    "checks": {
+      "requirements": true,
+      "assessment_history": true,
+      "recall_attempts": true,
+      "reinforce_attempts": true,
+      "input_not_mutated": true
+    }
+  },
+  {
+    "case": "unassessed",
+    "reply": "请回忆一维数组的定义形式，并说明其中各个组成部分分别表示什么。可以结合一个具体例子来说明。",
+    "checks": {
+      "requirements": true,
+      "assessment_history": true,
+      "recall_attempts": true,
+      "reinforce_attempts": true,
+      "input_not_mutated": true
+    }
+  }
+]

@@ -16,18 +16,23 @@ class StrictModel(BaseModel):
 
 class MemoryDetails(StrictModel):
     statement: Text
-    requiredElements: Elements
+    requiredElements: Elements = Field(description=
+        "每项只记录一个可独立确认的事实；多个独立事实分别放在列表元素中。同一事实的等价表述去重，一次回答可以覆盖多项。")
 
 
 class ConceptDetails(StrictModel):
     explanation: Text
-    understandingPoints: Elements
+    understandingPoints: Elements = Field(description=
+        "每项是一个可分别确认的理解目标，完整因果关系保留一项，独立事实必须分项。"
+        "如‘入队把新结点接在rear之后’与‘链队列无固定容量的队满限制’必须是两个元素，不能用‘因此’或‘同时’合并。"
+        "不要另加综合对比条目重新捆绑这些事实，不靠常识新增未教内容。")
 
 
 class DesignDetails(StrictModel):
     capability: Text
     constraints: Annotated[list[Text], Field(max_length=40)]
-    successCriteria: Elements
+    successCriteria: Elements = Field(description=
+        "每项记录一个不重复的可检验结果或过程标准；独立结果分项，同一作品可以同时体现多项，不要求拆成多道题。")
 
 
 class MemoryPoint(StrictModel):

@@ -1,5 +1,19 @@
 export default function LessonFeedback({ feedback }) {
   if (!feedback) return <p className="done__sub">本次课堂已结束，暂无知识点反馈。</p>;
+  if (feedback.typedTeaching) return <section className="lesson-feedback" aria-labelledby="lesson-feedback-title">
+    <h4 id="lesson-feedback-title">本课学习反馈</h4>
+    <p className="lesson-feedback__summary">{feedback.summary}</p>
+    {[["mastered", "已掌握"], ["needs_review", "待巩固"], ["not_assessed", "尚未学习／评估"]].map(([category, label]) => {
+      const points = feedback.points.filter(point => point.category === category);
+      return points.length > 0 && <div key={category}><h5>{label}</h5>
+        {points.map(point => <article key={point.id} className={`lesson-feedback__item lesson-feedback__item--${category}`}>
+          <h5>{point.title} · {point.label}</h5>
+          {point.knownParts?.length > 0 && <p><strong>你已经能：</strong>{point.knownParts.join("；")}</p>}
+          {point.gaps?.length > 0 && <p><strong>还需巩固：</strong>{point.gaps.join("；")}</p>}
+          {point.suggestion && <p><strong>下一步：</strong>{point.suggestion}</p>}
+        </article>)}</div>;
+    })}
+  </section>;
   if (feedback.flowVersion === "dynamic_dialogue_v1") return <section className="lesson-feedback" aria-labelledby="lesson-feedback-title">
     <h4 id="lesson-feedback-title">本次交流记录</h4>
     <p className="lesson-feedback__summary">{feedback.summary}</p>

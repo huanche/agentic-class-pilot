@@ -19,6 +19,7 @@ from backend.teaching.prompts import DISCUSSION_QUESTION_HELP_PROMPT
 from backend.teaching.prompts import DISCUSSION_RETRY_PROMPT
 from backend.teaching.prompts import FINAL_DISCUSSION_FEEDBACK_PROMPT
 from backend.teaching.prompts import opening_message
+from backend.teaching import typed_state
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +45,8 @@ class DialogueState(TypedDict):
 
 
 def initial_state(points: list[dict]) -> DialogueState:
+    if points and all(p.get("type") in {"memory", "concept", "design"} for p in points):
+        return typed_state.initial(points)
     return normalize({"stage": "recall", "points": [dict(p, status="unseen", attempts=0,
             evidence="") for p in points], "messages": [], "student_text": "",
             "evaluation": {}, "reply": "", "strategy": "ask", "discussion_turns": 0})
