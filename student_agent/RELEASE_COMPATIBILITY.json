@@ -1,1 +1,5 @@
-{"studentDataFormat":"student-reliable-records-v1"}
+{
+  "studentDataFormat": "student-reliable-records-v1",
+  "teachingDialogueReadVersions": [3, 4],
+  "teachingDialogueWriteVersions": [3, 4]
+}

@@ -58,11 +58,12 @@ export function createLearningSession({ request = requestSession, storage = () =
     if (!catalog.length || ["idle", "courses"].includes(incoming.phase)) catalog = incoming.courses || catalog;
     courseKey = incoming.browserCourseKey || courseKey;
     browser.save(incoming);
+    const typedComplete = incoming.typedTeaching && incoming.postclassStage === "completed";
     if (target && (target !== "postclass" || incoming.phase === "postclass"
-        || (incoming.phase === "done" && incoming.postclassStage && incoming.teachingStage !== "completed"))) screen = target;
+        || (incoming.phase === "done" && incoming.postclassStage && incoming.teachingStage !== "completed" && !typedComplete))) screen = target;
     else if (preserveScreen && previous?.lessonId === incoming.lessonId
         && previous?.contentGeneration === incoming.contentGeneration && previous?.phase === incoming.phase
-        && !(screen === "postclass" && incoming.teachingStage === "completed")) {
+        && !(screen === "postclass" && (incoming.teachingStage === "completed" || typedComplete))) {
       // A read refresh preserves replay/postclass presentation, never teaching state.
     } else screen = ["idle", "courses"].includes(incoming.phase) ? "lessons" : incoming.phase;
     connectionError = "";
@@ -173,8 +174,10 @@ export function createLearningSession({ request = requestSession, storage = () =
     }
     let target;
     if (type === "continue_after_class") target = "postclass";
+    if (type === "exit_after_class") target = "done";
     if (["postclass_answer", "request_help", "ask_question", "pause", "resume_activity"].includes(type)
         && screen === "postclass") target = "postclass";
+    const exitScope = { lessonId: session.lessonId, generation: session.contentGeneration || 0 };
     return operate(async t => {
       if (type === "replay") {
         let playable = current.lesson;
@@ -197,7 +200,19 @@ export function createLearningSession({ request = requestSession, storage = () =
         return result;
       }
       let result;
-      if (["submit_answer", "postclass_answer"].includes(type)) result = await api(t,
+      if (type === "exit_after_class") {
+        try { result = await api(t, `/session/${sid}/end`, "POST"); }
+        catch (failure) {
+          const latest = failure.sessionView;
+          if (failure.code !== "VERSION_CONFLICT" || !valid(t) || !latest?.typedTeaching
+              || latest.sessionId !== sid || latest.phase !== "done" || latest.lessonId !== exitScope.lessonId
+              || (latest.contentGeneration || 0) !== exitScope.generation) throw failure;
+          // The answer may have been accepted before its acknowledgement arrived.
+          // Retry only this explicit exit against that same lesson's refreshed view.
+          result = await api(t, `/session/${sid}/end`, "POST");
+        }
+      }
+      else if (["submit_answer", "postclass_answer"].includes(type)) result = await api(t,
         `/session/${sid}/${type === "submit_answer" ? "message" : "postclass/message"}`, "POST", { text: action.text });
       else if (["request_help", "ask_question", "pause", "resume_activity"].includes(type)) result = await client.dispatch(
         sid, type, ["request_help", "ask_question"].includes(type) ? { text: action.text } : {}, { signal: t.signal });
@@ -206,7 +221,7 @@ export function createLearningSession({ request = requestSession, storage = () =
       else throw new Error("未知的学习操作");
       if (valid(t) && type === "reset_lesson") browser.clear(courseKey, session.lessonId);
       return result;
-    }, { target });
+    }, { target, navigate: type === "exit_after_class" });
   }
 
   return { initialize, loadLesson, dispatch, refresh, getView: () => current,

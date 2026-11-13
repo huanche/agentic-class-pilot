@@ -62,6 +62,37 @@ def test_failed_first_upgrade_cannot_restart_a_pre_p2_writer(tmp_path):
     assert events == ["writers_stopped", "compatible_restored"]
 
 
+def test_typed_dialogue_release_cannot_roll_back_to_the_current_legacy_reader(tmp_path):
+    functions = deploy_functions()
+    old, new = tmp_path / "old", tmp_path / "new"
+    for directory in (old, new):
+        (directory / "student_agent").mkdir(parents=True)
+    legacy = {"studentDataFormat": "student-reliable-records-v1"}
+    typed = {**legacy, "teachingDialogueReadVersions": [3, 4], "teachingDialogueWriteVersions": [3, 4]}
+    (old / "student_agent/RELEASE_COMPATIBILITY.json").write_text(json.dumps(legacy))
+    (new / "student_agent/RELEASE_COMPATIBILITY.json").write_text(json.dumps(typed))
+    assert not functions["rollback_compatible"](old, new)
+    (old / "student_agent/RELEASE_COMPATIBILITY.json").write_text(json.dumps(typed))
+    assert functions["rollback_compatible"](old, new)
+
+
+@pytest.mark.parametrize("versions", [[], [True], ["4"], [0], None])
+def test_invalid_dialogue_capability_declarations_fail_closed(tmp_path, versions):
+    functions = deploy_functions()
+    for directory in (tmp_path / "old", tmp_path / "new"):
+        (directory / "student_agent").mkdir(parents=True)
+        (directory / "student_agent/RELEASE_COMPATIBILITY.json").write_text(json.dumps({
+            "studentDataFormat": "student-reliable-records-v1", "teachingDialogueReadVersions": versions,
+            "teachingDialogueWriteVersions": [3, 4]}))
+    assert not functions["rollback_compatible"](tmp_path / "old", tmp_path / "new")
+
+
+def test_candidate_release_declares_the_typed_dialogue_contract():
+    declaration = json.loads((ROOT / "student_agent/RELEASE_COMPATIBILITY.json").read_text())
+    assert set(declaration["teachingDialogueReadVersions"]) == {3, 4}
+    assert set(declaration["teachingDialogueWriteVersions"]) == {3, 4}
+
+
 def test_frozen_environment_and_staged_retry_require_trusted_matching_records(tmp_path):
     from types import SimpleNamespace
     functions = deploy_functions()

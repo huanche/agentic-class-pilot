@@ -48,6 +48,11 @@ def extraction_model():
     client = _model(retries=0)
     if urlsplit(str(client.openai_api_base or "")).hostname == "api.deepseek.com":
         # DeepSeek thinking mode rejects ToolStrategy's forced tool selection.
-        # This setting is scoped to extraction; the agent's feedback loop remains.
+        # Tool-based agents need this; ordinary complete() requests remain unchanged.
         client.extra_body = {**(client.extra_body or {}), "thinking": {"type": "disabled"}}
     return client
+
+
+def teaching_model():
+    """Tool-based teaching owns its per-run budget and hidden retries are disabled."""
+    return extraction_model()

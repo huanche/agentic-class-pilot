@@ -6,6 +6,7 @@ Graph state, normalization and message-stage bookkeeping stay private here.
 from __future__ import annotations
 
 import logging
+from copy import deepcopy
 
 from backend.teaching.graph import dialogue_graph
 from backend.teaching.graph import initial_state
@@ -22,6 +23,7 @@ from backend.teaching.postclass import prepare_points
 from backend.teaching.postclass import opening_task
 from backend.contracts import SessionError
 from backend.teaching import dynamic_teaching
+from backend.teaching import typed_state, typed_teaching
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +40,7 @@ def new_dialogue(points: list[dict]) -> dict:
 def describe(dialogue: dict | None) -> dict:
     normalized = normalize(dialogue) if dialogue else None
     return {"agentStage": (normalized or {}).get("stage"),
+            "typedTeaching": typed_state.active(dialogue),
             "learningProgress": progress(normalized) if normalized else None}
 
 
@@ -142,8 +145,56 @@ def _legacy_postclass_turn(session: dict, text: str) -> dict:
             "postclassStage": result["stage"], "feedback": updated_feedback}
 
 
-# Two actual implementations share this session-facing Seam. Keep legacy bodies and
-# model inputs intact; flow selection happens once at lesson start, never per route.
+# Versioned teaching implementations share this session-facing Interface.
+# Existing snapshots keep their legacy/dynamic execution; typed lessons pin version 4.
+def is_typed(session):
+    return typed_state.active(session.get("dialogue")) and not dynamic_teaching.active(session)
+
+
+def _typed_run(dialogue, **kwargs):
+    try:
+        return typed_teaching.run(dialogue, **kwargs)
+    except Exception as error:
+        logger.exception("三类型教学运行失败")
+        raise SessionError(503, "课堂导师暂不可用，进度未改变，请重试", code="MODEL_UNAVAILABLE") from error
+
+
+def _typed_open(session, *, after_class=False):
+    dialogue = deepcopy(session["dialogue"])
+    dialogue["messages"] = _model_messages(session["messages"])
+    dialogue = _typed_run(dialogue, opening=True, after_class=after_class)
+    phase = "postclass-remediation" if after_class else dialogue["stage"]
+    changed = {"dialogue": dialogue, "messages": session["messages"] + [
+        {"role": "assistant", "text": dialogue["reply"], "phase": phase}]}
+    if after_class:
+        changed["postclassStage"] = "remediation"
+    else:
+        changed["phase"] = "discussion"
+    return changed
+
+
+def _typed_turn(session, text, *, after_class=False):
+    if after_class:
+        if session["phase"] != "done" or session.get("postclassStage") != "remediation":
+            raise SessionError(409, "请先进入课后巩固")
+    elif session["phase"] != "discussion" or session["dialogue"]["stage"] == "wrapup":
+        raise SessionError(409, "当前不在知识点学习阶段")
+    dialogue = deepcopy(session["dialogue"])
+    student = {"role": "student", "text": text.strip(),
+               "phase": "postclass-remediation" if after_class else dialogue["stage"]}
+    dialogue["student_text"] = student["text"]
+    dialogue["messages"] = _model_messages(session["messages"] + [student])
+    dialogue = _typed_run(dialogue, after_class=after_class)
+    complete = after_class and typed_state.current(dialogue, after_class=True) is None
+    assistant = {"role": "assistant", "text": dialogue["reply"],
+                 "phase": "postclass-completed" if complete else "postclass-remediation" if after_class else dialogue["stage"]}
+    changed = {"dialogue": dialogue, "messages": session["messages"] + [student, assistant]}
+    if after_class:
+        changed.update(postclassStage="completed" if complete else "remediation",
+                       feedback=typed_state.feedback(dict(session, dialogue=dialogue)))
+    return changed
+
+
 def select_flow(context, lesson_id):
     return dynamic_teaching.select(context, lesson_id)
 
@@ -166,12 +217,18 @@ def _dynamic_call(function, *args, **kwargs):
 
 
 def describe_session(session):
+    if is_typed(session):
+        view = describe(session["dialogue"])
+        view["afterClassComplete"] = typed_state.current(session["dialogue"], after_class=True) is None
+        return view
     return _dynamic_call(dynamic_teaching.describe, session) if is_dynamic(session) else describe(session.get("dialogue"))
 
 
 def start_discussion(session):
     if session["phase"] == "discussion":
         return {}
+    if is_typed(session):
+        return _typed_open(session)
     if is_dynamic(session):
         return _dynamic_call(dynamic_teaching.start, session)
     return {"phase": "discussion", "messages": session["messages"] + [{"role": "assistant",
@@ -179,21 +236,45 @@ def start_discussion(session):
 
 
 def classroom_turn(session, text):
+    if is_typed(session):
+        return _typed_turn(session, text)
     return (_dynamic_call(dynamic_teaching.turn, session, text) if is_dynamic(session)
             else _legacy_classroom_turn(session, text))
 
 
 def finish(session):
+    if is_typed(session):
+        if session["phase"] == "done":
+            return {"postclassStage": "paused" if typed_state.current(session["dialogue"], after_class=True) else "completed",
+                    "feedback": typed_state.feedback(session)}
+        if session["phase"] != "discussion":
+            raise SessionError(409, "请先进入知识点学习")
+        dialogue = deepcopy(session["dialogue"])
+        if dialogue["stage"] != "wrapup":
+            dialogue["completion_reason"] = "student_ended_early"
+        feedback = typed_state.feedback(dict(session, dialogue=dialogue))
+        return {"phase": "done", "dialogue": dialogue, "feedback": feedback,
+                "classroomFeedback": deepcopy(feedback)}
     return (_dynamic_call(dynamic_teaching.finish, session) if is_dynamic(session)
             else _legacy_finish(session))
 
 
 def start_postclass(session):
+    if is_typed(session):
+        if session["phase"] != "done":
+            raise SessionError(409, "请先结束本节课")
+        if typed_state.current(session["dialogue"], after_class=True) is None:
+            return {"postclassStage": "completed", "feedback": typed_state.feedback(session)}
+        if session.get("postclassStage") == "remediation":
+            return {}
+        return _typed_open(session, after_class=True)
     return (_dynamic_call(dynamic_teaching.postclass, session) if is_dynamic(session)
             else _legacy_start_postclass(session))
 
 
 def postclass_turn(session, text):
+    if is_typed(session):
+        return _typed_turn(session, text, after_class=True)
     return (_dynamic_call(dynamic_teaching.turn, session, text) if is_dynamic(session)
             else _legacy_postclass_turn(session, text))
 
