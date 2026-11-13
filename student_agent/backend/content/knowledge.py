@@ -22,7 +22,9 @@ from backend.content.prompts import KNOWLEDGE_EXTRACTION_PROMPT
 CURRICULUM_VERSION = 10
 EXTRACTION_VERSION = 2
 MAX_MODEL_CALLS = 3
-TOTAL_TIMEOUT_SECONDS = 90
+TOTAL_TIMEOUT_SECONDS = 180
+MODEL_TIMEOUT_SECONDS = 120
+MAX_OUTPUT_TOKENS = 32768
 log = logging.getLogger(__name__)
 
 
@@ -140,7 +142,7 @@ def learning_points(materials: list[dict], course_id: str | None = None, lesson_
             raise failure("format")
         calls += 1
         response = handler(request.override(model_settings={
-            **request.model_settings, "timeout": min(45, remaining),
+            **request.model_settings, "timeout": min(MODEL_TIMEOUT_SECONDS, remaining),
             "parallel_tool_calls": False,
         }))
         if monotonic() >= deadline:
@@ -183,7 +185,7 @@ def learning_points(materials: list[dict], course_id: str | None = None, lesson_
         return None
 
     try:
-        agent = create_agent(model.extraction_model(), system_prompt=KNOWLEDGE_EXTRACTION_PROMPT,
+        agent = create_agent(model.extraction_model(max_output_tokens=MAX_OUTPUT_TOKENS), system_prompt=KNOWLEDGE_EXTRACTION_PROMPT,
                              response_format=ToolStrategy(submit_knowledge_points, handle_errors=structure_feedback),
                              middleware=[bounded_call, require_submission])
         state = agent.invoke({"messages": [HumanMessage(content=json.dumps({"materials": scenes}, ensure_ascii=False))]},
