@@ -15,11 +15,13 @@ degrade to ``None`` / "数据不可用" — never fabricated zeros.
 """
 
 import uuid
+from urllib.parse import quote
 from datetime import UTC, datetime, timedelta
 from typing import Literal
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import Response
 from sqlalchemy import func, select, text
 from sqlmodel import Session
 
@@ -33,6 +35,7 @@ from app.services import (
     teacher_lesson_titles_client,
     teacher_publication_client,
 )
+from app.api.routes.dev_console_export import render_collection, render_transcript, student_code
 
 # every endpoint is read-only and observer-guarded, so the boundary lives on
 # the router; endpoints that don't need the user object just omit it
@@ -611,3 +614,146 @@ def list_chat_messages(
         raise HTTPException(404, "未找到该学生会话") from error
     except student_chat_records_client.StudentChatUnavailable as error:
         raise HTTPException(503, "聊天记录服务不可用") from error
+
+
+@router.get("/courses/{course_id}/chat-sessions/{session_key}/export.txt")
+def export_chat_transcript(
+    course_id: uuid.UUID,
+    session_key: str,
+    student_id: uuid.UUID,
+    session: SessionDep,
+) -> Response:
+    """Export one complete, pseudonymized session through the existing observer boundary."""
+    course = session.get(Course, course_id)
+    if not course:
+        raise HTTPException(404, "课程不存在")
+    enrolled = session.execute(select(Enrollment.student_id).where(
+        Enrollment.course_id == course_id, Enrollment.student_id == student_id,
+    )).first()
+    if not enrolled:
+        raise HTTPException(404, "未找到该学生会话")
+
+    try:
+        target = None
+        for offset in range(0, 10000, 500):
+            page = student_chat_records_client.get_chat_sessions(
+                course_id, [str(student_id)], 500, offset=offset,
+            )
+            target = next((row for row in page if row["sessionKey"] == session_key), None)
+            if target or len(page) < 500:
+                break
+        if not target:
+            if len(page) == 500:
+                raise HTTPException(413, "会话记录过多，当前无法完整定位导出目标")
+            raise HTTPException(404, "未找到该学生会话")
+        expected = target["messageCount"]
+        if expected > 20000:
+            raise HTTPException(413, "会话消息过多，请联系管理员分批导出")
+        messages: list[dict] = []
+        for offset in range(0, expected + 1, 1000):
+            page = student_chat_records_client.get_chat_messages(
+                course_id, session_key, [str(student_id)], None, 1000, offset,
+            )
+            messages.extend(page)
+            if len(page) < 1000:
+                break
+        if len(messages) != expected or len({row["seq"] for row in messages}) != expected:
+            raise HTTPException(503, "对话消息数量不一致，请稍后重试")
+    except student_chat_records_client.StudentChatMissing as error:
+        raise HTTPException(404, "未找到该学生会话") from error
+    except student_chat_records_client.StudentChatUnavailable as error:
+        raise HTTPException(503, "聊天记录服务不可用") from error
+
+    try:
+        titles = teacher_lesson_titles_client.get_lesson_titles(course_id, course.owner_id)
+    except teacher_lesson_titles_client.TeacherLessonTitlesUnavailable:
+        titles = {}
+    lesson_id = str(target.get("lessonId") or "")
+    lesson = titles.get(lesson_id) or (f"课时 {lesson_id}" if lesson_id else "未记录课时")
+    code = student_code(settings.SECRET_KEY, str(course_id), str(student_id))
+    body = render_transcript(course=course.title, lesson=lesson, student=code,
+                             started_at=target.get("startedAt"), messages=messages)
+    filename = f"student-chat-{code}-{session_key[:8]}.txt"
+    return Response(content=body, media_type="text/plain; charset=utf-8", headers={
+        "Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}",
+        "Cache-Control": "no-store",
+        "X-Content-Type-Options": "nosniff",
+    })
+
+
+@router.get("/chat-sessions/export.txt")
+def export_chat_collection(
+    session: SessionDep,
+    course_id: uuid.UUID | None = None,
+) -> Response:
+    """Export every accessible active session in one course or all courses."""
+    if course_id is not None:
+        course = session.get(Course, course_id)
+        if not course:
+            raise HTTPException(404, "课程不存在")
+        courses = [course]
+    else:
+        courses = session.execute(select(Course).order_by(Course.created_at, Course.id)).scalars().all()
+
+    sections: list[str] = []
+    total_messages = 0
+    for course in courses:
+        student_ids = [str(row[0]) for row in session.execute(
+            select(Enrollment.student_id).where(Enrollment.course_id == course.id)
+        ).all()]
+        if not student_ids:
+            continue
+        if len(student_ids) > 10000:
+            raise HTTPException(413, "课程学生数超出当前导出接口容量")
+        try:
+            titles = teacher_lesson_titles_client.get_lesson_titles(course.id, course.owner_id)
+        except teacher_lesson_titles_client.TeacherLessonTitlesUnavailable:
+            titles = {}
+        try:
+            offset = 0
+            while True:
+                page = student_chat_records_client.get_chat_sessions(
+                    course.id, student_ids, 500, offset=offset,
+                )
+                for row in page:
+                    expected = row["messageCount"]
+                    if expected > 20000:
+                        raise HTTPException(413, "单个会话消息数超出当前导出接口容量")
+                    total_messages += expected
+                    if total_messages > 100000:
+                        raise HTTPException(413, "导出消息数过多，请按课程分别导出")
+                    messages: list[dict] = []
+                    for message_offset in range(0, expected + 1, 1000):
+                        batch = student_chat_records_client.get_chat_messages(
+                            course.id, row["sessionKey"], [row["studentId"]], None,
+                            1000, message_offset,
+                        )
+                        messages.extend(batch)
+                        if len(batch) < 1000:
+                            break
+                    if len(messages) != expected or len({item["seq"] for item in messages}) != expected:
+                        raise HTTPException(503, "对话消息数量不一致，请稍后重试")
+                    lesson_id = str(row.get("lessonId") or "")
+                    lesson = titles.get(lesson_id) or (f"课时 {lesson_id}" if lesson_id else "未记录课时")
+                    code = student_code(settings.SECRET_KEY, str(course.id), row["studentId"])
+                    section = render_transcript(
+                        course=course.title, lesson=lesson, student=code,
+                        started_at=row.get("startedAt"), messages=messages,
+                    )
+                    sections.append(section)
+                offset += len(page)
+                if len(page) < 500:
+                    break
+        except student_chat_records_client.StudentChatMissing as error:
+            raise HTTPException(503, "导出过程中会话发生变化，请重试") from error
+        except student_chat_records_client.StudentChatUnavailable as error:
+            raise HTTPException(503, "聊天记录服务不可用，未生成不完整文件") from error
+
+    scope = courses[0].title if course_id is not None else "全部课程"
+    body = render_collection(sections, scope)
+    filename = f"student-chats-{'course-' + str(course_id)[:8] if course_id else 'all'}.txt"
+    return Response(content=body, media_type="text/plain; charset=utf-8", headers={
+        "Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}",
+        "Cache-Control": "no-store",
+        "X-Content-Type-Options": "nosniff",
+    })
