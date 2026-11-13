@@ -446,9 +446,7 @@ def test_program_chooses_pending_target_and_records_actual_unclassified_reply(co
 
 def inspect_resume_instruction(body):
     context = json.loads(body["messages"][0]["content"].splitlines()[-1])
-    # Only the reply context carries phase instructions. The assessment context
-    # now contains the original contract and raw learner evidence instead.
-    if context.get("stage") == "postclass" and not context["studentText"]:
+    if context["stage"] == "postclass" and not context["studentText"]:
         instruction = body["messages"][-1]["content"]
         assert "生成当前任务第一问" not in instruction
         assert "继续上次学习" in instruction

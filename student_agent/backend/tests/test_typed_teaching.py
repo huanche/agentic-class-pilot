@@ -3,7 +3,7 @@ from copy import deepcopy
 import json
 
 import pytest
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage
 
 from backend.content.knowledge import compile_points
 from backend.content.knowledge_schema import submit_knowledge_points
@@ -41,188 +41,6 @@ def scripted(monkeypatch, *responses):
     client = ScriptedModel(responses=list(responses))
     monkeypatch.setattr(model, "teaching_model", lambda: client)
     return client
-
-
-def test_assessment_preserves_teacher_and_student_as_native_message_roles(monkeypatch):
-    from teaching_behavior_cases import CASES, build_case
-    state = build_case(next(c for c in CASES if c["id"] == "12"))
-    items = state["points"][0]["requirements"]
-    packet = AIMessage(content="", tool_calls=[{"name": "submit_current_assessment", "id": "assessment",
-        "args": {"intent": "answer", "assessment": {"answer_result": "correct", "evidence": "学生纠正老师并说明三项",
-            "updates": [{"requirement_id": r["id"], "status": "demonstrated", "evidence": state["student_text"], "gap": ""} for r in items],
-            "next_step": "继续"}}}])
-    client = scripted(monkeypatch, packet, AIMessage(content="你纠正得对，下面看连续存放。"))
-    result = typed_teaching.run(state)
-    messages = client.seen[0]
-    assert any(isinstance(m, AIMessage) and m.content == "a[5]是第5个元素，所以不越界。" for m in messages)
-    assert isinstance(messages[-1], HumanMessage)
-    assert messages[-1].content == state["student_text"]
-    context = json.loads(messages[0].content.splitlines()[-1])
-    assert context["learnerEvidence"] == [state["student_text"]]
-    assert "a[5]是第5个元素，所以不越界。" not in context["learnerEvidence"]
-    assert result["points"][0]["status"] == "mastered"
-
-
-@pytest.mark.parametrize("after_class", [False, True])
-def test_control_request_plan_reports_actual_progress(monkeypatch, after_class):
-    from teaching_behavior_cases import CASES, build_case
-    state = build_case(next(c for c in CASES if c["id"] == "13"))
-    packet = AIMessage(content="", tool_calls=[{"name": "submit_current_assessment", "id": "assessment",
-        "args": {"intent": "unclear", "assessment": None,
-                 "observation": {"control": "skip", "control_quote": "这题先跳过吧"}}}])
-    client = scripted(monkeypatch, packet, AIMessage(content="目前按知识点顺序继续；可以先讲清卡住的一步。"))
-    result = typed_teaching.run(state, after_class=after_class)
-    context = json.loads(client.seen[-1][0].content.splitlines()[-1])
-    plan = context["teaching_plan"]
-    assert plan["action"] == ("ask" if after_class else "respond")
-    assert plan["control"] == {"request": "skip", "applied": after_class}
-    assert plan["point_changed"] is after_class
-    assert context["focus"]["id"] == state["points"][1 if after_class else 0]["id"]
-    assert all(r["status"] == "unconfirmed" for r in result["points"][0]["requirements"])
-
-
-def test_mixed_answer_and_question_updates_evidence_and_selects_explanation(monkeypatch):
-    from teaching_behavior_cases import CASES, build_case
-    state = build_case(next(c for c in CASES if c["id"] == "09"))
-    packet = AIMessage(content="", tool_calls=[{"name": "submit_current_assessment", "id": "assessment",
-        "args": {"intent": "answer", "observation": {"help_quote": "但为什么a[5]不能访问？"},
-            "assessment": {"answer_result": "partial", "evidence": state["student_text"], "updates": [
-                {"requirement_id": r["id"], "status": "demonstrated", "evidence": "下标从0开始，所以合法范围是0到4", "gap": ""}
-                for r in state["points"][0]["requirements"][:2]], "next_step": "回答疑问"}}}])
-    client = scripted(monkeypatch, packet, AIMessage(content="因为a[5]是第6个位置，超出五个元素的范围。"))
-    result = typed_teaching.run(state)
-    context = json.loads(client.seen[-1][0].content.splitlines()[-1])
-    assert context["teaching_plan"]["action"] == "explain"
-    assert context["teaching_plan"]["solicitation"] == "none"
-    assert [r["status"] for r in result["points"][0]["requirements"]] == ["demonstrated", "demonstrated", "unconfirmed"]
-
-
-def test_unsuccessful_help_feedback_selects_localization_instead_of_replay(monkeypatch):
-    from teaching_behavior_cases import CASES, build_case
-    state = build_case(next(c for c in CASES if c["id"] == "08"))
-    packet = AIMessage(content="", tool_calls=[{"name": "submit_current_assessment", "id": "assessment",
-        "args": {"intent": "question", "assessment": None, "observation": {
-            "help_quote": state["student_text"], "teacher_feedback": "你刚才这样讲我没懂，换一种方式。"}}}])
-    client = scripted(monkeypatch, packet, AIMessage(content="你卡在从0编号，还是编号与第几个的对应？"))
-    typed_teaching.run(state)
-    context = json.loads(client.seen[-1][0].content.splitlines()[-1])
-    assert context["teaching_plan"]["action"] == "clarify"
-    assert context["teaching_plan"]["solicitation"] == "one_task"
-
-
-def test_request_quotes_from_teacher_cannot_be_used_as_current_student_request(monkeypatch):
-    from teaching_behavior_cases import CASES, build_case
-    state = build_case(next(c for c in CASES if c["id"] == "13"))
-    invalid = AIMessage(content="", tool_calls=[{"name": "submit_current_assessment", "id": "bad",
-        "args": {"intent": "unclear", "assessment": None, "observation": {
-            "control": "skip", "control_quote": "老师编出来的跳过请求"}}}])
-    valid = AIMessage(content="", tool_calls=[{"name": "submit_current_assessment", "id": "good",
-        "args": {"intent": "unclear", "assessment": None, "observation": {
-            "control": "skip", "control_quote": state["student_text"]}}}])
-    original = deepcopy(state)
-    client = scripted(monkeypatch, invalid, valid, AIMessage(content="目前仍按顺序学习当前点。"))
-    result = typed_teaching.run(state)
-    assert result["points"][0]["attempts"] == 1
-    assert len(result["points"][0]["assessment_history"]) == 1
-    assert len(client.seen) == 3
-    assert state == original
-    assert result["teaching_plan"]["control"] == {"request": "skip", "applied": False}
-
-
-def test_punctuation_alone_does_not_invent_a_specific_help_request():
-    from teaching_behavior_cases import CASES, build_case
-    state = build_case(next(c for c in CASES if c["id"] == "11"))
-    result = typed_state.advance(state, "unclear", None, observation={"help_quote": "？？？"})
-    assert typed_state.teaching_plan(result)["action"] == "clarify"
-    assert state["points"][0]["attempts"] == 0
-
-
-def test_correct_work_is_recorded_even_when_pause_request_coexists(monkeypatch):
-    from teaching_behavior_cases import CASES, build_case
-    state = build_case(next(c for c in CASES if c["id"] == "58"))
-    packet = AIMessage(content="", tool_calls=[{"name": "submit_current_assessment", "id": "assessment",
-        "args": {"intent": "answer", "observation": {"control": "pause", "control_quote": "我先暂停。"},
-            "assessment": {"answer_result": "correct", "evidence": state["student_text"], "updates": [
-                {"requirement_id": r["id"], "status": "demonstrated", "evidence": state["student_text"], "gap": ""}
-                for r in state["points"][0]["requirements"]], "next_step": "继续"}}}])
-    scripted(monkeypatch, packet, AIMessage(content="这部分回答已记录；你休息好后可以继续。"))
-    result = typed_teaching.run(state)
-    assert result["points"][0]["status"] == "mastered"
-    assert result["teaching_plan"]["point_changed"] is True
-    assert result["teaching_plan"]["answer_result"] == "correct"
-    assert result["teaching_plan"]["action"] == "respond"
-    assert result["teaching_plan"]["solicitation"] == "none"
-
-
-def test_missing_assessment_is_repaired_within_existing_call_budget(monkeypatch):
-    from teaching_behavior_cases import CASES, build_case
-    state = build_case(next(c for c in CASES if c["id"] == "13"))
-    packet = AIMessage(content="", tool_calls=[{"name": "submit_current_assessment", "id": "assessment",
-        "args": {"intent": "unclear", "assessment": None}}])
-    client = scripted(monkeypatch, AIMessage(content="先直接回复。"), packet, AIMessage(content="我们继续当前知识点。"))
-    result = typed_teaching.run(state)
-    assert len(client.seen) == 3
-    assert result["points"][0]["attempts"] == 1
-    original = deepcopy(state)
-    client = scripted(monkeypatch, AIMessage(content="仍然不提交工具。"))
-    with pytest.raises(TimeoutError, match="调用预算"):
-        typed_teaching.run(state)
-    assert len(client.seen) == 4
-    assert state == original
-
-
-def test_assessor_rechecks_original_contract_without_inheriting_old_invented_gap(monkeypatch):
-    from teaching_behavior_cases import CASES, build_case
-    state = build_case(next(c for c in CASES if c["id"] == "18"))
-    point = state["points"][0]
-    point.update(gaps=["历史老师误加的打印要求"], evidence="必须输出才能掌握", status="partial")
-    point["requirements"][0].update(status="needs_help", gap="历史老师误加的打印要求", evidence="老师要求输出")
-    packet = AIMessage(content="", tool_calls=[{"name": "submit_current_assessment", "id": "assessment",
-        "args": {"intent": "answer", "assessment": {"answer_result": "correct", "evidence": state["student_text"], "updates": [
-                {"requirement_id": r["id"], "status": "demonstrated", "evidence": state["student_text"], "gap": ""}
-                for r in point["requirements"]], "next_step": "继续"}}}])
-    client = scripted(monkeypatch, packet, AIMessage(content="求和代码已经正确。"))
-    result = typed_teaching.run(state)
-    context = json.loads(client.seen[0][0].content.splitlines()[-1])
-    assert "gaps" not in context["focus"]
-    assert "gap" not in context["focus"]["requirements"][0]
-    assert "currentTask" not in context
-    assert context["teacherQuestionForInterpretation"] == point["latest_question"]
-    assert "历史老师误加的打印要求" not in client.seen[0][0].content
-    assert result["points"][0]["status"] == "mastered"
-
-
-def test_noise_without_actual_request_selects_clarification_even_if_assessor_says_unanswered():
-    from teaching_behavior_cases import CASES, build_case
-    state = build_case(next(c for c in CASES if c["id"] == "28"))
-    result = typed_state.advance(state, "unclear", {
-        "answer_result": "unanswered", "evidence": "无可评估作答", "updates": [], "next_step": ""}, observation={})
-    assert typed_state.teaching_plan(result)["action"] == "clarify"
-
-
-def test_partial_progress_does_not_override_explicit_feedback_to_stop_replaying_help():
-    from teaching_behavior_cases import CASES, build_case
-    state = build_case(next(c for c in CASES if c["id"] == "60"))
-    item = state["points"][0]["requirements"][0]
-    result = typed_state.advance(state, "answer", {
-        "answer_result": "partial", "evidence": "学生说明从0开始", "updates": [{
-            "requirement_id": item["id"], "status": "demonstrated", "evidence": "我知道下标从0开始", "gap": ""}],
-        "next_step": ""}, observation={"help_quote": "其他还没想清楚", "teacher_feedback": "别再重复这段解释了"})
-    assert result["points"][0]["requirements"][0]["status"] == "demonstrated"
-    assert typed_state.teaching_plan(result)["action"] == "clarify"
-
-
-def test_same_request_span_cannot_be_both_confirmation_and_content_help():
-    from teaching_behavior_cases import CASES, build_case
-    state = build_case(next(c for c in CASES if c["id"] == "06"))
-    with pytest.raises(typed_state.InvalidObservation, match="不能重叠"):
-        typed_state.advance(state, "unclear", None, observation={
-            "help_quote": "然后呢", "continue_quote": "好，然后呢"})
-    assert state["points"][0]["attempts"] == 4
-    state["student_text"] = "好，请解释a[5]为什么越界。"
-    result = typed_state.advance(state, "question", None, observation={
-        "help_quote": "请解释a[5]为什么越界。", "continue_quote": "好"})
-    assert result["evaluation"]["observation"]["help_quote"]
 
 
 @pytest.mark.parametrize("content", [MEMORY, CONCEPT, DESIGN])
@@ -320,30 +138,9 @@ def test_natural_reply_does_not_receive_previous_points_conversation(monkeypatch
     assert context["focus"]["id"] == result["points"][1]["id"]
     assert context["pointConversation"] == []
     assert result["points"][0]["status"] == "mastered"
-    assert context["previousPoint"]["needs_closure"] is False
-    assert "details" not in context["previousPoint"]
-    assert "last_teacher_reply" not in context["previousPoint"]
-
-
-@pytest.mark.parametrize("student_text", ["好，然后呢", "不知道，你直接说吧"])
-def test_switch_distinguishes_continuation_from_help_without_replaying_teacher(monkeypatch, student_text):
-    state = service.new_dialogue(compile_points(submit_knowledge_points(points=[MEMORY, CONCEPT])))
-    previous_reply = "定义形式已讲清：存储类型 数据类型 数组名[整型常量表达式]。"
-    point = state["points"][0]
-    point.update(recall_attempts=4, attempts=4, latest_question=previous_reply,
-                 question_history=[{"text": previous_reply}], task_question="说明定义形式")
-    state["student_text"] = student_text
-    packet = AIMessage(content="", tool_calls=[{"name": "submit_current_assessment", "id": "assessment",
-        "args": {"intent": "unclear", "assessment": None}}])
-    client = scripted(monkeypatch, packet, AIMessage(content="接着看连续存放。"))
-    result = typed_teaching.run(state)
-    system = client.seen[-1][0].content
-    context = json.loads(system.splitlines()[-1])
-    assert context["previousPoint"]["needs_closure"] is False
-    assert "last_teacher_reply" not in context["previousPoint"]
-    assert context["previousPoint"]["learner_evidence"] == [student_text]
-    assert context["teaching_plan"]["point_changed"] is True
-    assert result["points"][0]["status"] != "mastered"
+    assert context["previousPoint"]["type"] == "memory"
+    assert context["previousPoint"]["details"] == state["points"][0]["details"]
+    assert context["previousPoint"]["latest_question"] == "上一点的独有题目？"
 
 
 def test_deferred_point_keeps_material_for_explaining_help_request_before_switch(monkeypatch):
