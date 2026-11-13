@@ -52,8 +52,12 @@ def teaching_plan(state, *, after_class=False):
     changed = bool(previous_id and previous_id != point["id"])
     control = observation.get("control", "none")
     updates = (history[-1].get("answer_assessment") or {}).get("updates", []) if history else []
-    failed_help = bool(observation.get("teacher_feedback") and len(history) >= 2
-                       and last_result != "misconception")
+    unresolved_feedback = observation.get("teacher_feedback", "")
+    for entry in reversed(history):
+        if unresolved_feedback or (entry.get("answer_assessment") or {}).get("updates"):
+            break
+        unresolved_feedback = entry.get("teacher_feedback", "")
+    failed_help = bool(unresolved_feedback and last_result != "misconception")
     if not changed:
         if control != "none":
             action = "respond"
@@ -73,6 +77,7 @@ def teaching_plan(state, *, after_class=False):
         action = "respond"
     return {"target_ids": [r["id"] for r in pending], "action": action,
             "requirements": [r["text"] for r in pending], "point_changed": changed,
+            "unresolved_teacher_feedback": unresolved_feedback,
             "answer_result": last_result if not changed else next(
                 (p["assessment_history"][-1]["result"] for p in state["points"]
                  if p["id"] == previous_id and p["assessment_history"]), None),
@@ -144,6 +149,8 @@ def advance(state, intent, assessment, *, after_class=False, observation=None):
     point["attempts"] = point["recall_attempts"] + point["reinforce_attempts"]
     point["assessment_history"].append({"stage": stage, "round": point[counter],
         "result": outcome, "evidence": evidence, "studentText": result["student_text"]})
+    if observation and observation.get("teacher_feedback"):
+        point["assessment_history"][-1]["teacher_feedback"] = observation["teacher_feedback"]
     if scoped(result):
         point["assessment_history"][-1].update(
             result=submitted["answer_result"] if submitted else "unclear", point_result=outcome,
