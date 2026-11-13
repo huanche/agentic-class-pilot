@@ -18,6 +18,7 @@ from backend.teaching.progression import current_point
 from backend.teaching.postclass_state import pending_points
 from backend.teaching.postclass_state import pending_kind
 from backend.teaching.postclass_state import prepare_points
+from backend.teaching import typed_state
 
 
 class InvalidRecord(ValueError):
@@ -45,6 +46,9 @@ def _focus(session):
         point = current_point(dialogue)
         return ("classroom", dialogue["stage"], point) if point else None
     if session.get("phase") == "done" and session.get("postclassStage") == "remediation":
+        if typed_state.active(dialogue):
+            point = typed_state.current(dialogue, after_class=True)
+            return ("after_class", "postclass_concept", point) if point else None
         points = pending_points(prepare_points(dialogue, session.get("messages", [])))
         if points:
             return "after_class", "postclass_" + pending_kind(points[0]), points[0]
@@ -73,6 +77,22 @@ def _ensure_task(session, focus):
             "question": None, "promptMessageIds": [], "criteriaStatus": "legacy_policy_no_fixed_rubric",
             "status": "active", "resumesTaskId": next((t["taskId"] for t in records["tasks"]
                 if kind == "postclass_discussion" and t["type"] == "discuss" and t["topicId"] == point["id"]), None)})
+        if typed_state.active(session.get("dialogue")):
+            created = records["tasks"][-1]
+            created.update(purpose="继续巩固当前知识点" if episode == "after_class" else "学习当前知识点",
+                           criteriaStatus="typed_point_details")
+            question = point.get("task_question", "")
+            original = next((t for t in records["tasks"][:-1]
+                             if t["topicId"] == point["id"] and t.get("questionMessageId")), None)
+            message = next((m for m in reversed(session.get("messages", []))
+                            if m["role"] == "assistant" and question and question in m["text"]), None)
+            if original:
+                created.update(question=original["question"], questionMessageId=original["questionMessageId"],
+                               resumesTaskId=original["taskId"])
+            elif message:
+                created.update(question=question, questionMessageId=message["messageId"])
+    if typed_state.active(session.get("dialogue")):
+        next(task for task in records["tasks"] if task["taskId"] == task_id)["status"] = "active"
     return task_id
 
 
@@ -231,6 +251,8 @@ def transition(before, candidate, *, command_id=None):
                 independence="assisted" if prior_help else "no_recorded_help_in_task" if independent else "unknown",
                 limitations=["semantic_judgement_unverified", "help_outside_this_task_unknown"]
                     + (["request_not_an_assessment"] if turn.get("intent") in {"ask_question", "request_help"} else []))
+        elif typed_state.active(after.get("dialogue")):
+            observation["limitations"] = ["semantic_judgement_unverified", "help_effect_unknown"] + ([] if assessment else ["no_assessment"])
         if oid not in {o["observationId"] for o in records["observations"]}:
             records["observations"].append(observation)
     for message in new_messages:
@@ -250,9 +272,14 @@ def transition(before, candidate, *, command_id=None):
                     if not dynamic:
                         task["question"] = message["text"]
             strategy = (after.get("dialogue") or {}).get("strategy")
+            if typed_state.active(after.get("dialogue")):
+                strategy = (after.get("dialogue") or {}).get("last_assistance", "none")
             same_task = old_task_id == next_task_id
-            kind = strategy if same_task and strategy in {"hint", "correct", "answer_question"} else "tutor_response"
-            if str(message.get("phase", "")).startswith("postclass-"):
+            kind = strategy if same_task and strategy in {"hint", "correct", "answer_question", "example", "explanation", "correction"} else "tutor_response"
+            typed = typed_state.active(after.get("dialogue"))
+            if typed:
+                kind = strategy
+            if str(message.get("phase", "")).startswith("postclass-") and not typed:
                 kind = "remediation_response" if same_task else "tutor_response"
             if task["type"] == "open_question":
                 kind = "free_answer"
@@ -262,9 +289,13 @@ def transition(before, candidate, *, command_id=None):
             if aid not in {a["assistanceId"] for a in records["assistance"]}:
                 records["assistance"].append({"assistanceId": aid, "taskId": task_id,
                     "episodeId": task["episodeId"], "assistantMessageId": message["messageId"],
-                    "kind": kind, "guidedPolicy": (kind != "none") if dynamic else True if kind != "tutor_response" else None, "substantive": None,
+                    "kind": kind, "guidedPolicy": (kind != "none") if dynamic or typed else True if kind != "tutor_response" else None, "substantive": None,
                     "providedAt": message["createdAt"], "deliveryStatus": "committed",
-                    "classificationBasis": "executed_teaching_policy"})
+                    "classificationBasis": "model_reported_help" if typed else "executed_teaching_policy"})
+                if typed and not dynamic and typed_state.scoped(after["dialogue"]) and after["dialogue"].get("reply_version") == 1:
+                    records["assistance"][-1].update(
+                        classificationBasis="unclassified_tutor_text", guidedPolicy=None,
+                        plannedAction=(after["dialogue"].get("teaching_plan") or {}).get("action"))
     if old_task and old_task_id != next_task_id and old_task["type"] != "open_question":
         point = next((p for p in (after.get("dialogue") or {}).get("points", [])
                       if p["id"] == old_task.get("topicId")), {})
@@ -307,7 +338,7 @@ def validate(session, before=None):
         if task["questionMessageId"] and task["questionMessageId"] not in messages:
             raise InvalidRecord("Task question has no message")
         if task["questionMessageId"] and (task["question"] not in messages[task["questionMessageId"]]["text"]
-                if is_dynamic_flow(session) else messages[task["questionMessageId"]]["text"] != task["question"]):
+                if is_dynamic_flow(session) or typed_state.active(session.get("dialogue")) else messages[task["questionMessageId"]]["text"] != task["question"]):
             raise InvalidRecord("Task question changed")
         if task.get("resumesTaskId"):
             original = tasks.get(task["resumesTaskId"])
