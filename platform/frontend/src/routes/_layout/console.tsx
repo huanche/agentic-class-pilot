@@ -4,6 +4,7 @@ import {
   Activity,
   BookOpen,
   CircleAlert,
+  Download,
   GraduationCap,
   LayoutDashboard,
   MessageSquare,
@@ -513,6 +514,8 @@ function TranscriptPanel({
   session: ChatSessionRow
   onBack: () => void
 }) {
+  const [exporting, setExporting] = useState(false)
+  const [exportError, setExportError] = useState<string | null>(null)
   const { data, error, isLoading } = useQuery({
     queryKey: ["dev-console-messages", session.courseId, session.sessionKey],
     queryFn: () =>
@@ -520,6 +523,31 @@ function TranscriptPanel({
         `/dev-console/courses/${session.courseId}/chat-sessions/${encodeURIComponent(session.sessionKey)}/messages`,
       ),
   })
+  async function downloadTranscript() {
+    setExporting(true)
+    setExportError(null)
+    try {
+      const path = `/api/v1/dev-console/courses/${encodeURIComponent(session.courseId)}/chat-sessions/${encodeURIComponent(session.sessionKey)}/export.txt?student_id=${encodeURIComponent(session.studentId)}`
+      const response = await fetch(path, { credentials: "include" })
+      if (!response.ok) {
+        const body = await response.json().catch(() => null)
+        throw new Error(body?.detail || `导出失败（HTTP ${response.status}）`)
+      }
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement("a")
+      link.href = url
+      link.download = `student-chat-${session.sessionKey.slice(0, 8)}.txt`
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      setTimeout(() => URL.revokeObjectURL(url), 1000)
+    } catch (cause) {
+      setExportError(cause instanceof Error ? cause.message : "导出失败")
+    } finally {
+      setExporting(false)
+    }
+  }
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -532,10 +560,17 @@ function TranscriptPanel({
             {formatTime(session.lastActiveAt)}
           </p>
         </div>
-        <Button variant="outline" size="sm" onClick={onBack}>
-          返回列表
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={downloadTranscript} disabled={exporting}>
+            <Download className="mr-1 size-4" />
+            {exporting ? "导出中…" : "导出对话 TXT"}
+          </Button>
+          <Button variant="outline" size="sm" onClick={onBack}>
+            返回列表
+          </Button>
+        </div>
       </div>
+      {exportError && <p className="text-sm text-destructive">{exportError}</p>}
       {isLoading && <p className="text-muted-foreground">加载中…</p>}
       {error && (
         <p className="text-destructive">
@@ -1050,6 +1085,8 @@ function ChatDiagnosisView({
   const [lesson, setLesson] = useState("")
   const [ended, setEnded] = useState("all")
   const [activeDays, setActiveDays] = useState("all")
+  const [bulkExporting, setBulkExporting] = useState<"course" | "all" | null>(null)
+  const [bulkExportError, setBulkExportError] = useState<string | null>(null)
   const courses = useQuery({
     queryKey: ["dev-console-courses"],
     queryFn: () =>
@@ -1073,6 +1110,33 @@ function ChatDiagnosisView({
     lesson !== "" ||
     ended !== "all" ||
     activeDays !== "all"
+  async function downloadCollection(scope: "course" | "all") {
+    setBulkExporting(scope)
+    setBulkExportError(null)
+    try {
+      const query = scope === "course" ? `?course_id=${encodeURIComponent(courseId)}` : ""
+      const response = await fetch(`/api/v1/dev-console/chat-sessions/export.txt${query}`, {
+        credentials: "include",
+      })
+      if (!response.ok) {
+        const body = await response.json().catch(() => null)
+        throw new Error(body?.detail || `导出失败（HTTP ${response.status}）`)
+      }
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement("a")
+      link.href = url
+      link.download = scope === "course" ? "course-student-chats.txt" : "all-student-chats.txt"
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      setTimeout(() => URL.revokeObjectURL(url), 1000)
+    } catch (cause) {
+      setBulkExportError(cause instanceof Error ? cause.message : "导出失败")
+    } finally {
+      setBulkExporting(null)
+    }
+  }
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
@@ -1152,7 +1216,20 @@ function ChatDiagnosisView({
         {isFetching && (
           <RefreshCw className="size-3.5 animate-spin text-muted-foreground" />
         )}
+        {courseId !== "all" && (
+          <Button variant="outline" size="sm" disabled={bulkExporting !== null}
+            onClick={() => downloadCollection("course")}>
+            <Download className="mr-1 size-4" />
+            {bulkExporting === "course" ? "导出中…" : "导出本课程 TXT"}
+          </Button>
+        )}
+        <Button variant="outline" size="sm" disabled={bulkExporting !== null}
+          onClick={() => downloadCollection("all")}>
+          <Download className="mr-1 size-4" />
+          {bulkExporting === "all" ? "导出中…" : "导出所有课程 TXT"}
+        </Button>
       </div>
+      {bulkExportError && <p className="text-sm text-destructive">{bulkExportError}</p>}
       {isLoading && <p className="text-muted-foreground">加载中…</p>}
       {error && <ViewError label="会话加载" error={error} />}
       {data && (
