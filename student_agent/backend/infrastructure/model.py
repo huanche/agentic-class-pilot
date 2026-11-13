@@ -43,13 +43,19 @@ def json_object(raw: str) -> dict:
         return {}
 
 
-def extraction_model():
+def extraction_model(*, max_output_tokens: int | None = None):
     """The extraction agent owns retries; disable hidden SDK retries."""
     client = _model(retries=0)
     if urlsplit(str(client.openai_api_base or "")).hostname == "api.deepseek.com":
         # DeepSeek thinking mode rejects ToolStrategy's forced tool selection.
         # Tool-based agents need this; ordinary complete() requests remain unchanged.
         client.extra_body = {**(client.extra_body or {}), "thinking": {"type": "disabled"}}
+        if max_output_tokens is not None:
+            # ChatOpenAI renames max_tokens to max_completion_tokens. DeepSeek
+            # ignores that alias and otherwise truncates at its default limit.
+            client.extra_body["max_tokens"] = max_output_tokens
+    elif max_output_tokens is not None:
+        client.max_tokens = max_output_tokens
     return client
 
 
