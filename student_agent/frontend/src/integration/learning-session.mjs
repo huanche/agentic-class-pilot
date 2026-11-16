@@ -212,6 +212,8 @@ export function createLearningSession({ request = requestSession, storage = () =
           result = await api(t, `/session/${sid}/end`, "POST");
         }
       }
+      else if (["submit_answer", "postclass_answer"].includes(type) && action.cardId) result = await client.dispatch(
+        sid, type, { text: "提交题卡作答", cardId: action.cardId, answers: action.answers }, { signal: t.signal });
       else if (["submit_answer", "postclass_answer"].includes(type)) result = await api(t,
         `/session/${sid}/${type === "submit_answer" ? "message" : "postclass/message"}`, "POST", { text: action.text });
       else if (["request_help", "ask_question", "pause", "resume_activity"].includes(type)) result = await client.dispatch(

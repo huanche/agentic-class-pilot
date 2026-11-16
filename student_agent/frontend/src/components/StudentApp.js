@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { platformPlayerAdapter } from "../integration/platform-player-adapter";
 import { createLearningSession } from "../integration/learning-session.mjs";
 import LessonFeedback from "./LessonFeedback";
+import QuestionGroup from "./QuestionGroup";
 import LessonProgress, { STAGE_TITLES } from "./LessonProgress";
 
 export default function StudentApp() {
@@ -259,6 +260,11 @@ export default function StudentApp() {
             </div>)}
             {replyPending && <div className="msg msg--ai" role="status" aria-label="AI 正在回复"><div className="msg__avatar" aria-hidden="true">AI</div><div className="msg__bubble typing" aria-hidden="true"><span /><span /><span /></div></div>}
           </div>
+          {typedFlow && learning.questionGroups?.length > 0 && <div className="question-groups">
+            {learning.questionGroups.map(group => <QuestionGroup key={group.id} group={group}
+              busy={busy || group.active === false || (phase === "discussion" && agentStage === "wrapup")}
+              onSubmit={(cardId, answers) => perform(phase === "postclass" ? "postclass_answer" : "submit_answer", { cardId, answers })} />)}
+          </div>}
           {((phase === "discussion" || (dynamicFlow && phase === "postclass")) && agentStage === "wrapup") || (typedFlow && phase === "postclass" && postclassStage !== "remediation")
             ? <div className="conversation-complete" role="status"><strong>课堂对话已完成</strong><p>{typedFlow ? "点击下方按钮查看反馈，再选择回看或继续巩固。" : "点击下方按钮查看本课反馈。还想继续学习，可以在课后回看视频或与 AI 对话。"}</p></div>
             : <form className="composer" onSubmit={event => send(event)}>

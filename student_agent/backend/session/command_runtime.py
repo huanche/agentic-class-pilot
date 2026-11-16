@@ -65,6 +65,20 @@ def validate(base, kind, payload):
     if not valid:
         raise SessionError(409, "当前阶段不允许此操作，请刷新学习状态", code="INVALID_ACTION")
     if kind in {"submit_answer", "postclass_answer"}:
+        if "cardId" in payload and teaching.is_typed(base):
+            if set(payload) - {"text", "taskId", "cardId", "answers"} or not isinstance(payload.get("answers"), dict):
+                raise SessionError(422, "题卡参数无效", code="INVALID_PAYLOAD")
+            if payload.get("taskId") != base.get("currentTaskId"):
+                raise SessionError(409, "当前任务已变化", code="TASK_CHANGED")
+            from backend.teaching.question_cards import grade
+            group = next((g for g in base["dialogue"].get("question_groups", []) if g["id"] == payload["cardId"]), None)
+            try:
+                if not group:
+                    raise ValueError("题卡不存在")
+                grade(group, payload["answers"])
+            except ValueError as error:
+                raise SessionError(422, str(error), code="INVALID_PAYLOAD") from error
+            return
         text = payload.get("text")
         if not isinstance(text, str) or not 1 <= len(text) <= 2000:
             raise SessionError(422, "回答长度必须在 1–2000 字符之间", code="INVALID_PAYLOAD")
@@ -77,6 +91,8 @@ def validate(base, kind, payload):
 
 
 def _changes(base, kind, payload):
+    if kind in {"submit_answer", "postclass_answer"} and "cardId" in payload and teaching.is_typed(base):
+        return teaching.card_turn(base, payload["cardId"], payload["answers"])
     if teaching.is_dynamic(base):
         extra = teaching.dynamic_command(base, kind, payload)
         if extra is not None:
