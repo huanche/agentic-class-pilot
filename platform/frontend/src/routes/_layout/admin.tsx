@@ -30,7 +30,7 @@ export const Route = createFileRoute("/_layout/admin")({
   head: () => ({
     meta: [
       {
-        title: "???? - AI ????",
+        title: "用户管理 - AI 教育平台",
       },
     ],
   }),
@@ -61,9 +61,9 @@ function Admin() {
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">???????</h1>
+          <h1 className="text-2xl font-bold tracking-tight">用户管理</h1>
           <p className="text-muted-foreground">
-            ??????????????
+            管理平台用户:角色、状态与信息。
           </p>
         </div>
         <AddUser />

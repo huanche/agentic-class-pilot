@@ -1,5 +1,6 @@
 import {
   BookOpenCheck,
+  Database,
   GraduationCap,
   Home,
   KeyRound,
@@ -8,10 +9,9 @@ import {
   UserCog,
 } from "lucide-react"
 import { useState } from "react"
-
-import { ModelConfigDialog } from "@/components/ModelConfig/ModelConfigDialog"
 import { SidebarAppearance } from "@/components/Common/Appearance"
 import { Logo } from "@/components/Common/Logo"
+import { ModelConfigDialog } from "@/components/ModelConfig/ModelConfigDialog"
 import {
   Sidebar,
   SidebarContent,
@@ -67,7 +67,15 @@ export function AppSidebar() {
   const { user: currentUser } = useAuth()
 
   const teacherItems = useTeacherItems()
-  const adminItems: Item[] = [{ icon: UserCog, title: "用户管理", path: "/admin" }]
+  const adminItems: Item[] = [
+    { icon: UserCog, title: "用户管理", path: "/admin" },
+  ]
+  // 内部数据看板：observer 与 superuser 共用的只读开发控制台入口。
+  const consoleItem: Item = {
+    icon: Database,
+    title: "数据看板",
+    path: "/console",
+  }
   const [modelConfigOpen, setModelConfigOpen] = useState(false)
   // 模型配置：教师/管理员打开系统级配置面板，学生打开个人配置面板，
   // 都以对话框形式就地展示，不再跳转外部页面。
@@ -77,10 +85,12 @@ export function AppSidebar() {
     onSelect: () => setModelConfigOpen(true),
   }
   const items = currentUser?.is_superuser
-    ? [...adminItems, modelConfigItem]
-    : currentUser?.role === "teacher"
-      ? [...teacherItems, modelConfigItem]
-      : [...studentItems, modelConfigItem]
+    ? [consoleItem, ...adminItems, modelConfigItem]
+    : currentUser?.role === "observer"
+      ? [consoleItem]
+      : currentUser?.role === "teacher"
+        ? [...teacherItems, modelConfigItem]
+        : [...studentItems, modelConfigItem]
 
   return (
     <Sidebar collapsible="icon">

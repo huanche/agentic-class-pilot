@@ -1,0 +1,30 @@
+{
+  "description": "Shared event schema — required fields per event type (docs/logging-standards.md §1/§2)",
+  "always_required": ["ts", "level", "service", "event"],
+  "conditional": {
+    "correlation_any_of": ["request_id", "operation_id"]
+  },
+  "events": {
+    "http.request.completed": {
+      "required": ["outcome", "method", "path", "status_code", "duration_ms"]
+    },
+    "http.client.completed": {
+      "required": ["outcome", "target_service", "method", "path", "status_code", "duration_ms"]
+    },
+    "llm.call.completed": {
+      "required": ["outcome", "duration_ms", "detail"],
+      "detail_required_if_present": ["model"]
+    },
+    "state.changed": {
+      "required": []
+    }
+  },
+  "services": ["platform", "student-agent", "teacher-agent"],
+  "levels": ["debug", "info", "warning", "error"],
+  "outcomes": ["success", "failure", "cancelled"],
+  "route_rule": "route must be a templated path (no raw resource ids); path must not contain '?'",
+  "redaction_forbidden_keys": [
+    "password", "token", "api_key", "authorization", "cookie",
+    "prompt", "response", "content", "chat_text"
+  ]
+}

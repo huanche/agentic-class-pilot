@@ -51,7 +51,7 @@ class ScriptedModel(BaseChatModel):
 
 def run(monkeypatch, *responses):
     client = ScriptedModel(responses=list(responses))
-    monkeypatch.setattr(model, "extraction_model", lambda: client)
+    monkeypatch.setattr(model, "extraction_model", lambda **kwargs: client)
     return client
 
 
@@ -63,7 +63,8 @@ def test_three_types_are_preserved_and_paraphrases_need_no_quotes(monkeypatch):
     assert len(client.seen) == result.model_calls == 1
     assert not result.repair_attempted
     assert all("sourceRefs" not in p and p["content"] for p in result.points)
-    assert client.settings[0]["timeout"] <= 45
+    assert client.settings[0]["timeout"] <= 120
+
 
 
 @pytest.mark.parametrize("broken", [
@@ -133,7 +134,7 @@ def test_empty_submission_is_no_content_not_format_retry(monkeypatch):
 
 
 def test_no_input_does_not_call_model(monkeypatch):
-    monkeypatch.setattr(model, "extraction_model", lambda: pytest.fail("no content"))
+    monkeypatch.setattr(model, "extraction_model", lambda **kwargs: pytest.fail("no content"))
     with pytest.raises(knowledge.KnowledgePreparationError) as caught:
         knowledge.learning_points([])
     assert caught.value.code == "no_content"
@@ -148,7 +149,7 @@ def test_transport_error_is_not_retried_as_a_structural_error(monkeypatch):
 
 def test_total_deadline_stops_repair(monkeypatch):
     client = run(monkeypatch, AIMessage(content="还未提交"))
-    times = iter([0, 0, 89, 91])
+    times = iter([0, 0, 179, 181])
     monkeypatch.setattr(knowledge, "monotonic", lambda: next(times))
     with pytest.raises(knowledge.KnowledgePreparationError) as caught:
         knowledge.learning_points(MATERIALS)
@@ -183,7 +184,7 @@ def test_same_content_in_different_lessons_has_distinct_program_owned_ids(monkey
 
 
 def test_incomplete_scope_is_a_program_error_without_model_retry(monkeypatch):
-    monkeypatch.setattr(model, "extraction_model", lambda: pytest.fail("invalid program binding"))
+    monkeypatch.setattr(model, "extraction_model", lambda **kwargs: pytest.fail("invalid program binding"))
     with pytest.raises(knowledge.KnowledgePreparationError) as caught:
         knowledge.learning_points(MATERIALS, "course", "")
     assert caught.value.stage == "binding" and caught.value.model_calls == 0
@@ -206,7 +207,7 @@ def test_real_chatopenai_serialization_and_repair_over_mock_http(monkeypatch):
     with httpx.Client(transport=httpx.MockTransport(handle)) as http_client:
         client = ChatOpenAI(api_key="mock-only", base_url="https://model.example.test/v1",
                             model="test-model", max_retries=0, http_client=http_client)
-        monkeypatch.setattr(model, "extraction_model", lambda: client)
+        monkeypatch.setattr(model, "extraction_model", lambda **kwargs: client)
         result = knowledge.learning_points(MATERIALS)
     assert result.model_calls == len(requests) == 2
     assert result.points[0]["type"] == "memory"

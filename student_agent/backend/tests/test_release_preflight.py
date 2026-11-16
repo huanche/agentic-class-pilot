@@ -62,6 +62,37 @@ def test_failed_first_upgrade_cannot_restart_a_pre_p2_writer(tmp_path):
     assert events == ["writers_stopped", "compatible_restored"]
 
 
+def test_typed_dialogue_release_cannot_roll_back_to_the_current_legacy_reader(tmp_path):
+    functions = deploy_functions()
+    old, new = tmp_path / "old", tmp_path / "new"
+    for directory in (old, new):
+        (directory / "student_agent").mkdir(parents=True)
+    legacy = {"studentDataFormat": "student-reliable-records-v1"}
+    typed = {**legacy, "teachingDialogueReadVersions": [3, 4], "teachingDialogueWriteVersions": [3, 4]}
+    (old / "student_agent/RELEASE_COMPATIBILITY.json").write_text(json.dumps(legacy))
+    (new / "student_agent/RELEASE_COMPATIBILITY.json").write_text(json.dumps(typed))
+    assert not functions["rollback_compatible"](old, new)
+    (old / "student_agent/RELEASE_COMPATIBILITY.json").write_text(json.dumps(typed))
+    assert functions["rollback_compatible"](old, new)
+
+
+@pytest.mark.parametrize("versions", [[], [True], ["4"], [0], None])
+def test_invalid_dialogue_capability_declarations_fail_closed(tmp_path, versions):
+    functions = deploy_functions()
+    for directory in (tmp_path / "old", tmp_path / "new"):
+        (directory / "student_agent").mkdir(parents=True)
+        (directory / "student_agent/RELEASE_COMPATIBILITY.json").write_text(json.dumps({
+            "studentDataFormat": "student-reliable-records-v1", "teachingDialogueReadVersions": versions,
+            "teachingDialogueWriteVersions": [3, 4]}))
+    assert not functions["rollback_compatible"](tmp_path / "old", tmp_path / "new")
+
+
+def test_candidate_release_declares_the_typed_dialogue_contract():
+    declaration = json.loads((ROOT / "student_agent/RELEASE_COMPATIBILITY.json").read_text())
+    assert set(declaration["teachingDialogueReadVersions"]) == {3, 4}
+    assert set(declaration["teachingDialogueWriteVersions"]) == {3, 4}
+
+
 def test_frozen_environment_and_staged_retry_require_trusted_matching_records(tmp_path):
     from types import SimpleNamespace
     functions = deploy_functions()
@@ -183,7 +214,9 @@ with create_engine(context.config.attributes['url']).connect() as connection:
     config.set_main_option("script_location", str(tmp_path))
     config.set_main_option("path_separator", "os")
     config.set_main_option("version_locations", str(ROOT / "platform/backend/app/alembic/versions"))
-    assert ScriptDirectory.from_config(config).get_heads() == ["rec12"]
+    script = ScriptDirectory.from_config(config)
+    assert script.get_revision("rec12").down_revision == "cmd11"
+    assert script.get_revision("cmd11").down_revision == "pub10"
     with pg() as connection:
         connection.execute("DROP TABLE student.student_commands,student.pending_progress_sync,student.lesson_content_versions")
         for column in ("state_version", "content_generation", "snapshot", "lesson_id", "revoked_at", "content_id"):
@@ -195,13 +228,13 @@ with create_engine(context.config.attributes['url']).connect() as connection:
     command.stamp(config, "pub10")
     try:
         with pytest.raises(Exception):
-            command.upgrade(config, "head")
+            command.upgrade(config, "rec12")
         with pg() as connection:
             assert connection.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "pub10"
             assert connection.execute("SELECT count(*) FROM information_schema.columns WHERE table_schema='student' AND table_name='student_sessions' AND column_name='snapshot'").fetchone()[0] == 0
             connection.execute("UPDATE student.learning_events SET payload='{\"lessonId\":\"lesson\",\"stateVersion\":3,\"contentGeneration\":2}'")
-        command.upgrade(config, "head")
-        command.upgrade(config, "head")
+        command.upgrade(config, "rec12")
+        command.upgrade(config, "rec12")
         with pg() as connection:
             assert connection.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "rec12"
             assert connection.execute("SELECT state_version,content_generation,lesson_id,snapshot->>'lessonId' FROM student.student_sessions WHERE session_key='legacy'").fetchone() == (3, 2, "lesson", "lesson")
@@ -209,4 +242,4 @@ with create_engine(context.config.attributes['url']).connect() as connection:
         # Keep the shared disposable fixture usable even when an assertion fails.
         with pg() as connection:
             connection.execute("UPDATE student.learning_events SET payload='{}'")
-        command.upgrade(config, "head")
+        command.upgrade(config, "rec12")

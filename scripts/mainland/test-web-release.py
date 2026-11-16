@@ -242,6 +242,19 @@ class WebReleaseTest(unittest.TestCase):
             self.ns["deploy"]()
         self.assertEqual(self.mutations(), [])
 
+    def test_typed_dialogue_upgrade_refuses_active_legacy_reader_before_backup(self):
+        (self.old / 'student_agent').mkdir()
+        legacy = {'studentDataFormat': 'student-reliable-records-v1'}
+        (self.old / 'student_agent/RELEASE_COMPATIBILITY.json').write_text(json.dumps(legacy))
+        typed = {**legacy, 'teachingDialogueReadVersions': [3, 4],
+                 'teachingDialogueWriteVersions': [3, 4]}
+        (self.target / 'student_agent/RELEASE_COMPATIBILITY.json').write_text(json.dumps(typed))
+        self.pids['agentic-student'] = '123'
+        with self.assertRaisesRegex(RuntimeError, 'not rollback-compatible'):
+            self.ns['deploy']()
+        self.assertEqual(self.mutations(), [])
+        self.assertEqual((self.base / 'current').resolve(), self.old)
+
     def test_first_upgrade_starts_only_after_checks_and_backup(self):
         self.ns["deploy"]()
         self.assertEqual((self.base / "current").resolve(), self.target)

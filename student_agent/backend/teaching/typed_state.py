@@ -5,6 +5,10 @@ from backend.teaching import requirements
 VERSION = 4
 
 
+class InvalidObservation(ValueError):
+    """A request quote has no provenance in the current learner message."""
+
+
 def active(dialogue):
     return bool(dialogue and dialogue.get("flow_version") == VERSION)
 
@@ -42,12 +46,54 @@ def teaching_plan(state, *, after_class=False):
     # A coverage scope, not a queue of questions. Unasked requirements remain
     # unconfirmed until the learner supplies evidence; help targets real gaps.
     pending.sort(key=lambda r: r["status"] != "needs_help")
+    evaluation = state.get("evaluation") or {}
+    observation = evaluation.get("observation") or {}
+    previous_id = state.get("last_point_id")
+    changed = bool(previous_id and previous_id != point["id"])
+    control = observation.get("control", "none")
+    updates = (history[-1].get("answer_assessment") or {}).get("updates", []) if history else []
+    unresolved_feedback = observation.get("teacher_feedback", "")
+    for entry in reversed(history):
+        if unresolved_feedback or (entry.get("answer_assessment") or {}).get("updates"):
+            break
+        unresolved_feedback = entry.get("teacher_feedback", "")
+    failed_help = bool(unresolved_feedback and last_result != "misconception")
+    if not changed:
+        if control != "none":
+            action = "respond"
+        elif failed_help:
+            action = "clarify"
+        elif observation.get("help_quote"):
+            action = "correct" if last_result == "misconception" else "explain"
+        elif observation.get("continue_quote"):
+            action = "ask"
+        elif "observation" in evaluation and evaluation.get("intent") == "unclear" and not updates:
+            # No actual request or learner work: do not invent a help topic from
+            # the coarse 'unanswered' label (e.g. punctuation-only input).
+            action = "clarify"
+    if control in {"pause", "revisit"}:
+        # Preserve any real learning evidence, but do not ignore the coexisting
+        # control request merely because mastery moved the program to a new point.
+        action = "respond"
     return {"target_ids": [r["id"] for r in pending], "action": action,
-            "requirements": [r["text"] for r in pending]}
+            "requirements": [r["text"] for r in pending], "point_changed": changed,
+            "unresolved_teacher_feedback": unresolved_feedback,
+            "answer_result": last_result if not changed else next(
+                (p["assessment_history"][-1]["result"] for p in state["points"]
+                 if p["id"] == previous_id and p["assessment_history"]), None),
+            "control": {"request": control, "applied": bool(after_class and changed and control == "skip")},
+            "solicitation": "none" if action == "respond" or (not changed and action != "clarify" and (
+                observation.get("help_quote") or action == "correct"
+                or any(r["status"] == "needs_help" for r in pending))) else "one_task"}
 
 
 def current(state, *, after_class=False):
     if after_class:
+        selected = state.get("postclass_point_id")
+        if selected:
+            point = next((p for p in state["points"] if p["id"] == selected and p["status"] != "mastered"), None)
+            if point:
+                return point
         return next((p for p in state["points"] if p["status"] != "mastered"), None)
     if state["stage"] == "recall":
         return next((p for p in state["points"] if not p["recall_done"]), None)
@@ -62,11 +108,31 @@ def task(state, *, after_class=False):
              "question": point["task_question"]} if point else None)
 
 
-def advance(state, intent, assessment, *, after_class=False):
+def advance(state, intent, assessment, *, after_class=False, observation=None):
     result = deepcopy(state)
     point = current(result, after_class=after_class)
     if not point:
         raise ValueError("当前没有待评估的知识点")
+    if observation is not None:
+        observation = deepcopy(observation)
+        for key in ("help_quote", "continue_quote", "teacher_feedback", "control_quote"):
+            quote = observation.get(key, "")
+            if quote and (not quote.strip() or quote not in result["student_text"]):
+                raise InvalidObservation("本轮诉求依据必须逐字引用当前学生输入")
+            # Punctuation/emoji alone conveys no specific request to explain a
+            # topic; leave it for clarification rather than inventing a question.
+            if quote and not any(char.isalnum() for char in quote):
+                observation[key] = ""
+        if observation.get("control", "none") != "none" and not observation.get("control_quote"):
+            raise InvalidObservation("控制请求必须包含本轮学生原文依据")
+        help_quote = observation.get("help_quote", "")
+        continue_quote = observation.get("continue_quote", "")
+        if help_quote and continue_quote:
+            text = result["student_text"]
+            disjoint = (text.find(help_quote) + len(help_quote) <= text.rfind(continue_quote)
+                        or text.find(continue_quote) + len(continue_quote) <= text.rfind(help_quote))
+            if not disjoint:
+                raise InvalidObservation("确认/继续与具体求助的原文片段不能重叠；请分别引用最小片段。没有具体内容疑问、明确不会或讲解请求时，help_quote留空。")
     submitted = deepcopy(assessment)
     if scoped(result):
         assessment = requirements.apply(point, assessment, result["student_text"])
@@ -83,6 +149,8 @@ def advance(state, intent, assessment, *, after_class=False):
     point["attempts"] = point["recall_attempts"] + point["reinforce_attempts"]
     point["assessment_history"].append({"stage": stage, "round": point[counter],
         "result": outcome, "evidence": evidence, "studentText": result["student_text"]})
+    if observation and observation.get("teacher_feedback"):
+        point["assessment_history"][-1]["teacher_feedback"] = observation["teacher_feedback"]
     if scoped(result):
         point["assessment_history"][-1].update(
             result=submitted["answer_result"] if submitted else "unclear", point_result=outcome,
@@ -90,6 +158,8 @@ def advance(state, intent, assessment, *, after_class=False):
             question=point["latest_question"])
     result["evaluation"] = {"intent": intent, "assessments": [
         {"id": point["id"], **deepcopy(assessment)}] if assessment else []}
+    if observation is not None:
+        result["evaluation"]["observation"] = deepcopy(observation)
     if assessment:
         point.update(status=outcome, evidence=evidence, known_parts=assessment["known_parts"],
                      gaps=assessment["gaps"], next_step=assessment["next_step"])
@@ -117,8 +187,18 @@ def advance(state, intent, assessment, *, after_class=False):
         if result["stage"] == "wrapup":
             result["completion_reason"] = ("all_mastered" if all(p["status"] == "mastered" for p in result["points"])
                                            else "rounds_exhausted")
-    elif current(result, after_class=True) is None:
-        result["transition"] = "all_mastered"
+    else:
+        # Navigation is independent of mastery. Persist the selected point so
+        # the next command/resume cannot silently pick the first gap again.
+        if observation and observation.get("control") == "skip":
+            index = result["points"].index(point)
+            ordered = result["points"][index + 1:] + result["points"][:index]
+            following = next((p for p in ordered if p["status"] != "mastered"), None)
+            if following:
+                result["postclass_point_id"] = following["id"]
+                result["transition"] = "postclass_next"
+        if current(result, after_class=True) is None:
+            result["transition"] = "all_mastered"
     result["current_task"] = task(result, after_class=after_class)
     return result
 

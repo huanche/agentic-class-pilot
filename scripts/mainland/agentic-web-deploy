@@ -162,7 +162,20 @@ def rollback_compatible(reference, release):
         filename = 'student_agent/RELEASE_COMPATIBILITY.json'
         previous = json.loads((reference / filename).read_text())
         target = json.loads((release / filename).read_text())
-        return previous['studentDataFormat'] == target['studentDataFormat'] == 'student-reliable-records-v1'
+        if previous['studentDataFormat'] != target['studentDataFormat'] or target['studentDataFormat'] != 'student-reliable-records-v1':
+            return False
+        def versions(declaration, key):
+            # Releases before typed teaching used dialogue v3. The outer record
+            # format alone cannot prove that an old reader accepts v4 sessions.
+            value = declaration.get(key, [3])
+            if not isinstance(value, list) or not value or any(type(v) is not int or v < 1 for v in value):
+                raise ValueError('Invalid teaching dialogue capability declaration')
+            return set(value)
+        old_reads = versions(previous, 'teachingDialogueReadVersions')
+        old_writes = versions(previous, 'teachingDialogueWriteVersions')
+        new_reads = versions(target, 'teachingDialogueReadVersions')
+        new_writes = versions(target, 'teachingDialogueWriteVersions')
+        return old_writes <= new_reads and new_writes <= old_reads
     except (OSError, ValueError, KeyError, TypeError):
         return False
 
@@ -315,7 +328,7 @@ def deploy():
           '-m', 'backend.infrastructure.release_check'], cwd=student, env=env_student, timeout=30)
     compatible = rollback_compatible(reference, release)
     if not compatible and any(output(['systemctl', 'show', u, '-p', 'MainPID', '--value']) != '0' for u in UNITS):
-        raise RuntimeError('First reliable-session release requires a frozen maintenance window; pre-P2 writers must remain stopped after migration')
+        raise RuntimeError('Release is not rollback-compatible; prepare a reviewed frozen maintenance window and a fallback that can read the target records and teaching dialogues; active services untouched')
     call(['/usr/local/sbin/agentic-mainland-backup', '--locked'], pass_fds=(9,), timeout=1800)
     files = [Path('/etc/systemd/system') / (u + '.service.d/98-versioned-release.conf') for u in UNITS]
     previous = {path: path.read_bytes() if path.exists() else None for path in files}
