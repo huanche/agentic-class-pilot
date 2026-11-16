@@ -1,6 +1,7 @@
 import type { SceneOutline, UserRequirements } from '@/lib/types/generation';
 import type { Scene } from '@/lib/types/stage';
 import { WIDGET_MS } from '@/lib/choreography/timing';
+import { LESSON_REQUIREMENTS, trialLearningRequirement } from './courseware-trial';
 import type { NarrationPace } from './narration-budget';
 import { pptxStepDurationMs } from '@/lib/import/pptx-animations';
 
@@ -62,12 +63,13 @@ export function withSceneContentDuration(outline: SceneOutline): SceneOutline {
 }
 
 /** Largest-remainder allocation: exact integer sum, with model estimates used only as weights. */
-export function planCourseDuration(outlines: SceneOutline[], minutes: number): SceneOutline[] {
+export function planCourseDuration(outlines: SceneOutline[], minutes: number, trial = false): SceneOutline[] {
   const total = resolveCourseMinutes(minutes) * 60;
   const automatic = outlines.filter((page) => page.type === 'slide' || page.type === 'interactive');
   if (!automatic.length) return outlines.map((page) => ({ ...page, durationBudget: undefined }));
   if (automatic.length > total) throw new Error('页面数量超过目标秒数，请增加时长或减少页面。');
   const weights = automatic.map((page) =>
+    trial ? LESSON_REQUIREMENTS[trialLearningRequirement(page.learningRequirement)].weight :
     Number.isFinite(page.estimatedDuration) && page.estimatedDuration! > 0
       ? page.estimatedDuration!
       : 60,

@@ -87,6 +87,7 @@ import {
 } from '@/lib/course-governance/governance';
 import { getOutlineDurationSeconds } from '@/lib/playback/timing-display';
 import { planCourseDuration, resolveCourseMinutes } from '@/lib/generation/course-duration';
+import { normalizeTrialOutlines } from '@/lib/generation/courseware-trial';
 import { prepareBackgroundInput } from '@/lib/generation/prepare-background-input';
 import type { CourseArtifactJob } from '@/lib/course-space/types';
 import {
@@ -97,6 +98,19 @@ import { readOutlineStream } from '@/lib/generation/outline-stream-client';
 import { ensureCoursewareSourceFingerprint } from '@/lib/course-space/source-fingerprint';
 
 const log = createLogger('GenerationPreview');
+
+function outlinesForReview(session: GenerationSessionState, generated: SceneOutline[]) {
+  if (session.trial) {
+    const source = session.conversionMode === 'faithful' && session.pptContentDraft
+      ? buildImportedPptOutlinesFromDraft(session.pptContentDraft)
+      : undefined;
+    return normalizeTrialOutlines(generated, source);
+  }
+  return session.pptContentDraft
+    ? bindPptOutlinesToReviewedPages(generated, session.pptContentDraft)
+    : generated;
+}
+
 const OUTLINE_REVIEW_AUTO_CONTINUE_MS = 2500;
 
 type ParsedDocumentResponseImage = {
@@ -763,6 +777,7 @@ function GenerationPreviewContent() {
                 {
                   requirements: currentSession.requirements,
                   includeLessonOverview: true,
+                  coursewareTrial: currentSession.trial,
                   pdfText: currentSession.pdfText,
                   pdfImages: currentSession.pdfImages,
                   imageMapping,
@@ -893,12 +908,11 @@ function GenerationPreviewContent() {
           throw outlineError;
         });
 
-        outlines = currentSession.pptContentDraft
-          ? bindPptOutlinesToReviewedPages(outlineResult.outlines, currentSession.pptContentDraft)
-          : outlineResult.outlines;
+        outlines = outlinesForReview(currentSession, outlineResult.outlines);
         outlines = planCourseDuration(
           outlines,
           resolveCourseMinutes(currentSession.requirements.targetDurationMinutes),
+          currentSession.trial,
         );
         languageDirective = outlineResult.languageDirective;
         courseTitle = outlineResult.courseTitle;
@@ -976,7 +990,7 @@ function GenerationPreviewContent() {
           throw new Error('审核后 PPT 页面与最终生成页面无法一一对应，请返回审核页面重新确认');
         }
         currentSession = { ...currentSession, pptContentDraft: reviewedDraft };
-        formulaEnhancedOrders = reviewedDraft.slides
+        formulaEnhancedOrders = currentSession.trial ? [] : reviewedDraft.slides
           .map((slide, index) =>
             slide.generationStrategy === 'ai-formula-enhanced' && slide.formulas?.length
               ? index + 1
@@ -1214,7 +1228,14 @@ function GenerationPreviewContent() {
       const targetDurationMinutes = resolveCourseMinutes(
         currentSession.requirements.targetDurationMinutes,
       );
-      outlines = planCourseDuration(outlines, targetDurationMinutes);
+      outlines = planCourseDuration(outlines, targetDurationMinutes, currentSession.trial);
+      if (currentSession.trial && currentSession.conversionMode) {
+        stage.coursewareTrial = {
+          mode: currentSession.conversionMode,
+          overview: currentSession.lessonOverview?.trim() || lessonOverviewFromOutlines(outlines),
+        };
+        stage.name += currentSession.conversionMode === 'faithful' ? ' · 高保真（测试）' : ' · AI 课件（测试）';
+      }
       stage.timing = {
         targetDurationMinutes,
         budgetVersion: 1,
@@ -1681,6 +1702,7 @@ function GenerationPreviewContent() {
       sceneOutlines: planCourseDuration(
         outlines,
         resolveCourseMinutes(currentSession.requirements.targetDurationMinutes),
+        currentSession.trial,
       ),
       previewPhase: 'review',
     }));
@@ -1721,6 +1743,7 @@ function GenerationPreviewContent() {
               {
                 requirements: next.requirements,
                 includeLessonOverview: true,
+                coursewareTrial: next.trial,
                 pdfText: next.pdfText,
                 pdfImages: next.pdfImages,
                 imageMapping,
@@ -1734,10 +1757,9 @@ function GenerationPreviewContent() {
       );
       controller.signal.throwIfAborted();
       const outlines = planCourseDuration(
-        next.pptContentDraft
-          ? bindPptOutlinesToReviewedPages(result.outlines, next.pptContentDraft)
-          : result.outlines,
+        outlinesForReview(next, result.outlines),
         resolveCourseMinutes(next.requirements.targetDurationMinutes),
+        next.trial,
       );
       persistSession({
         ...next,
@@ -1984,6 +2006,8 @@ function GenerationPreviewContent() {
             <OutlinesEditor
               outlines={editorOutlines}
               onChange={handleOutlinesChange}
+              trial={session.trial}
+              sourceKey={session.trial && session.conversionMode === 'faithful' ? session.pptxImportStorageKey : undefined}
               onConfirm={handleConfirmOutlines}
               onBack={handleBackFromOutlineReview}
               backLabel={

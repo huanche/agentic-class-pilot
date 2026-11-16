@@ -10,6 +10,7 @@ import { postPlayerHostEvent } from '@/lib/integration/player-host-events';
 import { postSaasHostMessage } from '@/lib/integration/host-bridge';
 import { InteractiveIframeHost } from '@/components/scene-renderers/InteractiveIframeHost';
 import styles from './course-video-player.module.css';
+import { TrialNarrationReview } from './trial-narration-review';
 import { CoursePageNavigation } from './course-page-navigation';
 
 const SCENE_LABELS = { slide: '课程视频', interactive: '互动练习', quiz: '测验', pbl: '项目实践' };
@@ -20,14 +21,17 @@ export function ClassroomVideoViewer({
   returnTo,
   initial,
   embedded = false,
+  trial = false,
 }: {
   id: string;
   draft: boolean;
   returnTo?: string | null;
   initial?: ClassroomVideoManifest;
   embedded?: boolean;
+  trial?: boolean;
 }) {
   const [manifest, setManifest] = useState(initial);
+  const [previewRevision, setPreviewRevision] = useState(0);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [index, setIndex] = useState(0);
@@ -111,7 +115,7 @@ export function ClassroomVideoViewer({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [id, draft, prepare]);
+  }, [id, draft, prepare, previewRevision]);
   useEffect(() => {
     if (!manifest) return;
     useStageStore.setState({
@@ -218,6 +222,9 @@ export function ClassroomVideoViewer({
           </button>
         )}
       </header>
+      {draft && (trial || manifest?.stage.coursewareTrial) && (
+        <TrialNarrationReview classroomId={id} index={index} onSelect={(next) => { setIndex(next); setAutoPlay(false); }} onSaved={() => setPreviewRevision((value) => value + 1)} />
+      )}
       {error && !ready && (
         <p role="alert" className="my-4 rounded-xl bg-red-50 p-4 text-red-700">
           {error}

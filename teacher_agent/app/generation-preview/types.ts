@@ -52,6 +52,7 @@ export interface GenerationSessionState {
     | 'document-faithful'
     | 'learning-skills-enhanced';
   conversionMode?: import('@/lib/learning-skills/courseware-mode').CoursewareConversionMode;
+  trial?: boolean;
   /** High-fidelity PPTX flow: source slides are stored in IndexedDB under this key. */
   pptxImportStorageKey?: string;
   /** Immutable source version used by traceability and release gates. */

@@ -21,6 +21,7 @@ import { resolveVocationalActive } from '@/lib/config/feature-flags';
 import { generatePBLV2Project } from '@/lib/pbl/v2/agents/planner';
 import { sanitizeEnhancedGeneratedContent } from '@/lib/learning-skills/enhanced-courseware-quality';
 import { alignActionsToPptNarration } from '@/lib/import/ppt-narration';
+import { LESSON_REQUIREMENTS, trialLearningRequirement } from '@/lib/generation/courseware-trial';
 import { withSceneContentDuration } from '@/lib/generation/course-duration';
 import { bindNativePptxActions, nativePptxNarrationContract } from '@/lib/onlyoffice/narration';
 import {
@@ -127,6 +128,26 @@ export function createOpenmaicCoursewareSteps(
       previous: Scene | undefined,
       signal: AbortSignal,
     ): Promise<Scene> {
+      if (outline.checkpointFor) {
+        const built = buildCompleteScene(
+          outline,
+          content as GeneratedSceneContent,
+          [],
+          input.stage.id,
+        );
+        const quiz = built?.content;
+        if (
+          !built ||
+          quiz?.type !== 'quiz' ||
+          quiz.questions.length !== 1 ||
+          !quiz.questions[0].analysis?.trim() ||
+          quiz.questions[0].answer?.length !== 1 ||
+          !validateScene(built).valid
+        ) {
+          throw new Error('随堂题需要一道题、有效答案和解析');
+        }
+        return built as Scene;
+      }
       const resolved = await modelFor('scene-actions');
       const imported =
         'type' in content && content.type === 'slide' && 'canvas' in content ? content : undefined;
@@ -154,10 +175,43 @@ export function createOpenmaicCoursewareSteps(
             ? nativePptxNarrationContract(nativeClicks)
             : pptxAnimationNarrationContract(imported?.canvas)),
       };
+      const trial = input.stage.coursewareTrial;
+      if (trial && outline.type === 'slide') {
+        const level = LESSON_REQUIREMENTS[trialLearningRequirement(outline.learningRequirement)];
+        const next = input.outlines
+          .slice(input.outlines.indexOf(outline) + 1)
+          .find((page) => !page.checkpointFor);
+        actionOutline = {
+          ...actionOutline,
+          description: [
+            actionOutline.description,
+            '本节课概述：' + trial.overview,
+            '本小节学习要求：' + level.label + '。' + level.instruction,
+            next ? '下一小节：' + next.title + '。这里仅留自然过渡。' : '这是最后一节，简要总结。',
+            '用自然口语解释代码、公式和图表。随堂题仅在答题后显示解析，课件讲稿不要念题或预告答案。',
+            imported
+              ? '原稿讲者备注：' + (imported.canvas.script || '无')
+              : '先聚焦最终画面真实元素，再讲对应内容。',
+            nativeClicks?.length
+              ? '严格按点击顺序每个点击只写一段 speech，不另加开场或结尾段。等对象出现再讲该对象。退出点击执行后，讲刚刚露出的正文，禁止继续指向已消失的对象。'
+              : '',
+          ]
+            .filter(Boolean)
+            .join('\n'),
+        };
+      }
+      const call = aiFor(resolved, 'scene-actions', signal);
       const actions = await generateSceneActions(
         actionOutline,
         generated,
-        aiFor(resolved, 'scene-actions', signal),
+        trial && nativeClicks?.length
+          ? (system, prompt, images) =>
+              call(
+                `${system}\n\nFor this native PPTX page, the supplied click count overrides the default object count. Return exactly one text object for each click. Start its text with [1], [2], etc., in strict order. Return only text objects. Begin each segment after its click takes effect.`,
+                prompt,
+                images,
+              )
+          : call,
         {
           ctx: {
             pageIndex: input.outlines.findIndex((page) => page.id === outline.id) + 1,
@@ -174,8 +228,25 @@ export function createOpenmaicCoursewareSteps(
           userProfile: input.requirements.userBio,
         },
       );
+      if (trial && nativeClicks?.length) {
+        if (
+          actions.length !== nativeClicks.length ||
+          !actions.every(
+            (action, index) =>
+              action.type === 'speech' &&
+              action.text.startsWith(`[${index + 1}]`) &&
+              action.text.slice(String(index + 1).length + 2).trim(),
+          )
+        )
+          throw Object.assign(new Error('讲稿与原稿动画步骤不一致，请重试本页讲稿'), {
+            isRetryable: true,
+          });
+        for (const action of actions) {
+          if (action.type === 'speech') action.text = action.text.replace(/^\[\d+\]\s*/, '');
+        }
+      }
       const aligned =
-        outline.type === 'slide'
+        outline.type === 'slide' && !trial
           ? alignActionsToPptNarration(
               actions,
               input.narrationScripts?.[outline.order - 1],
@@ -187,7 +258,7 @@ export function createOpenmaicCoursewareSteps(
         outline,
         generated,
         nativeClicks && imported
-          ? bindNativePptxActions(aligned, imported.canvas, nativeClicks)
+          ? bindNativePptxActions(aligned, imported.canvas, nativeClicks, Boolean(trial))
           : bindPptxAnimationsToActions(aligned, imported?.canvas),
         input.stage.id,
       );

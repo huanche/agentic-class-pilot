@@ -205,7 +205,7 @@ export async function executeOpenmaicCourseware(
                 {
                   concurrency: getParallelTtsConcurrency(),
                   signal,
-                  failFast: true,
+                  failFast: !stage.coursewareTrial,
                   isolateAudio: true,
                   recordUsage: true,
                   cacheScope: teacherId,
@@ -214,7 +214,7 @@ export async function executeOpenmaicCourseware(
                   onAudioCache: (status) => metrics.cache(status),
                 },
               );
-              if (result.failed || !result.generated)
+              if (!stage.coursewareTrial && (result.failed || !result.generated))
                 throw new Error('配音未完成，请检查语音服务配置后重试');
             },
             scene.order,
@@ -239,6 +239,7 @@ export async function executeOpenmaicCourseware(
               scope: job.scope,
               type: 'lesson-courseware',
               title: stage.name,
+              ...(stage.coursewareTrial ? { coursewareTrial: true } : {}),
               status: 'review',
               citations: [],
               content: `课件正在生成，已完成 ${scenes.length}/${outlines.length} 页。`,
@@ -298,6 +299,7 @@ export async function executeOpenmaicCourseware(
         scope: job.scope,
         type: 'lesson-courseware',
         title: stage.name,
+        ...(stage.coursewareTrial ? { coursewareTrial: true } : {}),
         status: 'review',
         citations: [],
         content: `互动课件已完整生成，共 ${scenes.length} 页。\n\n课堂地址：/classroom/${stage.id}`,
@@ -312,7 +314,9 @@ export async function executeOpenmaicCourseware(
         progress: 100,
         error: undefined,
         artifactId: `artifact_${jobId}`,
-        message: '课件已生成，返回工作区查看，满意后发布',
+        message: stage.coursewareTrial
+          ? '试用草稿已生成，返回工作区预览'
+          : '课件已生成，返回工作区查看，满意后发布',
         backgroundGeneration: {
           ...progress(job, 'completed'),
           performance: performanceSnapshot(true),
