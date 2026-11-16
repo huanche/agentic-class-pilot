@@ -206,9 +206,15 @@ export async function persistClassroom(
     scenes: Scene[];
   },
   baseUrl: string,
-  options: { source?: 'browser' } = {},
+  options: { source?: 'browser'; expectedTrial?: { revision: number; updatedAt: number } } = {},
 ): Promise<PersistedClassroomData & { url: string }> {
   return withClassroomWriteLock(data.id, async () => {
+    if (options.expectedTrial) {
+      const current = await readClassroom(data.id);
+      if (!current?.stage.coursewareTrial ||
+        (current.stage.coursewareTrial.revision ?? 0) !== options.expectedTrial.revision ||
+        current.stage.updatedAt !== options.expectedTrial.updatedAt) throw new ClassroomSnapshotConflictError();
+    }
     if (options.source === 'browser' && !isCourseDatabaseConfigured()) {
       const current = await readClassroom(data.id);
       if (
@@ -216,6 +222,8 @@ export async function persistClassroom(
         (current.stage.nativePptx?.renderRevision ?? 0) !==
           (data.stage.nativePptx?.renderRevision ?? 0)
       )
+        throw new ClassroomSnapshotConflictError();
+      if (JSON.stringify(current?.stage.coursewareTrial) !== JSON.stringify(data.stage.coursewareTrial))
         throw new ClassroomSnapshotConflictError();
       const plan = current?.stage.generationPlan;
       if (

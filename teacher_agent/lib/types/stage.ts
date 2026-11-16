@@ -55,6 +55,13 @@ export interface StageTiming {
 }
 
 export type Stage = DslStage & {
+  coursewareTrial?: {
+    mode: import('@/lib/learning-skills/courseware-mode').CoursewareConversionMode;
+    overview: string;
+    courseId?: string;
+    revision?: number;
+    voice?: import('@/lib/generation/background-courseware').CoursewareVoiceSelection;
+  };
   /** Original PPTX snapshot for the native, read-only high-fidelity player. */
   nativePptx?: {
     version: 1;

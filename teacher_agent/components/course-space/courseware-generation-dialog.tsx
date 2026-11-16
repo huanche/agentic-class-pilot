@@ -67,6 +67,7 @@ export function CoursewareGenerationDialog({
   const [conversionMode, setConversionMode] = useState<CoursewareConversionMode>(
     'learning-skills-enhanced',
   );
+  const [trial, setTrial] = useState(false);
   const [busy, setBusy] = useState(false);
   const [parsingId, setParsingId] = useState('');
   const [error, setError] = useState('');
@@ -92,6 +93,7 @@ export function CoursewareGenerationDialog({
         targetDurationMinutes,
         instruction,
         conversionMode,
+        trial,
       });
       onClose();
     } catch (e) {
@@ -202,36 +204,52 @@ export function CoursewareGenerationDialog({
           <div className="min-w-0 space-y-4">
             <fieldset disabled={busy} className="space-y-2">
               <legend className="mb-2 text-sm font-medium">生成模式</legend>
-              {(
-                [
-                  ['faithful', '高保真还原', '保留 PPTX 原始画面和页序，补充讲解与配音。'],
-                  [
-                    'learning-skills-enhanced',
-                    'AI 增强',
-                    '依据资料重新组织讲解、画面、互动和测验。',
-                  ],
-                ] as const
-              ).map(([mode, title, description]) => (
-                <label
-                  key={mode}
-                  className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 ${conversionMode === mode ? 'border-[#B00055] bg-[#fff8fb]' : 'border-slate-200'} ${mode === 'faithful' && faithfulReason ? 'cursor-not-allowed opacity-60' : ''}`}
+              {[false, true].map((isTrial) => (
+                <div
+                  key={String(isTrial)}
+                  role="group"
+                  aria-label={isTrial ? '试用新功能' : '常规'}
+                  className="space-y-2"
                 >
-                  <input
-                    type="radio"
-                    name="courseware-mode"
-                    value={mode}
-                    checked={conversionMode === mode}
-                    disabled={mode === 'faithful' && Boolean(faithfulReason)}
-                    onChange={() => setConversionMode(mode)}
-                    className="mt-1 accent-[#B00055]"
-                  />
-                  <span className="min-w-0 text-sm font-medium">
-                    {title}
-                    <span className="mt-1 block text-xs font-normal leading-5 text-slate-500">
-                      {description}
-                    </span>
-                  </span>
-                </label>
+                  <p className="text-xs font-medium text-muted-foreground">
+                    {isTrial ? '试用新功能' : '常规'}
+                  </p>
+                  {(
+                    [
+                      ['faithful', '高保真', '保留 PPTX 原始画面和页序，补充讲解与配音。'],
+                      [
+                        'learning-skills-enhanced',
+                        'AI 课件',
+                        '依据资料重新组织讲解、画面、互动和测验。',
+                      ],
+                    ] as const
+                  ).map(([mode, title, description]) => (
+                    <label
+                      key={mode}
+                      className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 ${conversionMode === mode && trial === isTrial ? 'border-[#B00055] bg-[#fff8fb]' : 'border-slate-200'} ${mode === 'faithful' && faithfulReason ? 'cursor-not-allowed opacity-60' : ''}`}
+                    >
+                      <input
+                        type="radio"
+                        name="courseware-mode"
+                        value={isTrial ? `${mode}-trial` : mode}
+                        checked={conversionMode === mode && trial === isTrial}
+                        disabled={mode === 'faithful' && Boolean(faithfulReason)}
+                        onChange={() => {
+                          setConversionMode(mode);
+                          setTrial(isTrial);
+                        }}
+                        className="mt-1 accent-[#B00055]"
+                      />
+                      <span className="min-w-0 text-sm font-medium">
+                        {title}
+                        {isTrial ? '（测试）' : ''}
+                        <span className="mt-1 block text-xs font-normal leading-5 text-slate-500">
+                          {isTrial ? '生成独立的教师预览草稿。' : description}
+                        </span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
               ))}
               {faithfulReason && (
                 <p className="text-xs leading-5 text-slate-500">{faithfulReason}</p>

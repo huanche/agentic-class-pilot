@@ -15,10 +15,14 @@ export function bindNativePptxActions(
   actions: Action[],
   slide: Slide,
   clicks: NativePptxClick[],
+  exact = false,
 ): Action[] {
   const base = actions.filter((a) => a.type !== 'reveal');
   const speeches = base.flatMap((a, i) => (a.type === 'speech' && a.text.trim() ? [i] : []));
-  if (speeches.length < clicks.length) {
+  if (
+    speeches.length < clicks.length ||
+    (exact && clicks.length > 0 && speeches.length !== clicks.length)
+  ) {
     throw Object.assign(
       new Error(
         `原稿有 ${clicks.length} 次点击，但只生成 ${speeches.length} 段讲解，请重试本页讲解。`,
@@ -28,7 +32,8 @@ export function bindNativePptxActions(
   }
   const inserts = new Map<number, Action[]>();
   for (const [index, click] of clicks.entries()) {
-    const position = speeches[Math.floor((index * speeches.length) / clicks.length)];
+    const speechPosition = speeches[Math.floor((index * speeches.length) / clicks.length)];
+    const position = exact ? (index === 0 ? 0 : speeches[index - 1] + 1) : speechPosition;
     const step = {
       id: click.id,
       trigger: 'click' as const,

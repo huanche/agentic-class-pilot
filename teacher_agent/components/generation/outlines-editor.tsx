@@ -26,6 +26,14 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useI18n } from '@/lib/hooks/use-i18n';
+import type { Slide } from '@openmaic/dsl';
+import { SlideThumbnail } from '@/components/slide-renderer/SlideThumbnail';
+import { loadImportedPptSlides } from '@/lib/import/pptx-course';
+import {
+  LESSON_REQUIREMENTS,
+  trialLearningRequirement,
+  type LearningRequirement,
+} from '@/lib/generation/courseware-trial';
 import { cn } from '@/lib/utils';
 import type { SceneOutline } from '@/lib/types/generation';
 import type { WidgetType } from '@/lib/types/widgets';
@@ -37,6 +45,8 @@ type SceneType = SceneOutline['type'];
 
 interface OutlinesEditorProps {
   outlines: SceneOutline[];
+  trial?: boolean;
+  sourceKey?: string;
   onChange: (outlines: SceneOutline[]) => void;
   onConfirm: () => void;
   onBack: () => void;
@@ -54,6 +64,115 @@ interface OutlinesEditorProps {
   onRegenerateOutline?: () => void;
   overviewChanged?: boolean;
   isRegenerating?: boolean;
+}
+
+function TrialOutlineRow({
+  outline,
+  slide,
+  sourceIndex,
+  disabled,
+  onUpdate,
+}: {
+  outline: SceneOutline;
+  slide?: Slide;
+  sourceIndex?: number;
+  disabled: boolean;
+  onUpdate: (patch: Partial<SceneOutline>) => void;
+}) {
+  const level = trialLearningRequirement(outline.learningRequirement);
+  const canAddQuestion = outline.type === 'slide' || outline.type === 'interactive';
+  return (
+    <li className="flex flex-wrap gap-3 p-4">
+      {sourceIndex !== undefined && (
+        <div className="w-28 shrink-0 text-xs text-muted-foreground">
+          {slide && (
+            <Popover>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  className="block overflow-hidden rounded border"
+                  aria-label={'查看原稿第 ' + (sourceIndex + 1) + ' 页'}
+                >
+                  <SlideThumbnail slide={slide} size={110} viewportRatio={slide.viewportRatio} />
+                </button>
+              </PopoverTrigger>
+              <PopoverContent className="w-[min(85vw,560px)] p-2">
+                <div
+                  className="overflow-hidden rounded"
+                  style={{ aspectRatio: 1 / slide.viewportRatio }}
+                >
+                  <SlideThumbnail slide={slide} viewportRatio={slide.viewportRatio} />
+                </div>
+              </PopoverContent>
+            </Popover>
+          )}
+          <p className="mt-1">原稿第 {sourceIndex + 1} 页</p>
+        </div>
+      )}
+      <div className="min-w-48 flex-1 space-y-2">
+        <h3 className="font-medium">{outline.title}</h3>
+        <p className="text-sm text-muted-foreground">{outline.description}</p>
+        {canAddQuestion && (
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <label className="flex items-center gap-2">
+              学习要求
+              <select
+                className="rounded-md border bg-background px-2 py-1"
+                value={level}
+                disabled={disabled}
+                title={LESSON_REQUIREMENTS[level].instruction}
+                onChange={(event) =>
+                  onUpdate({ learningRequirement: event.target.value as LearningRequirement })
+                }
+              >
+                {Object.entries(LESSON_REQUIREMENTS).map(([key, option]) => (
+                  <option key={key} value={key}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {!!outline.durationBudget && (
+              <span className="text-xs text-muted-foreground">
+                {formatPlaybackDuration(outline.durationBudget.targetSeconds)}
+              </span>
+            )}
+            {outline.checkpoint ? (
+              <>
+                <span
+                  className="rounded-md bg-muted px-2 py-1"
+                  title={outline.checkpoint.instruction}
+                >
+                  讲完后 · 随堂题 1 道
+                </span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  disabled={disabled}
+                  onClick={() => onUpdate({ checkpoint: undefined })}
+                >
+                  移除随堂题
+                </Button>
+              </>
+            ) : (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                disabled={disabled}
+                onClick={() =>
+                  onUpdate({ checkpoint: { instruction: '围绕本节重点提一道单选题。' } })
+                }
+              >
+                ＋随堂题
+              </Button>
+            )}
+          </div>
+        )}
+      </div>
+    </li>
+  );
 }
 
 const SCENE_TYPES: SceneType[] = ['slide', 'quiz', 'interactive', 'pbl'];
@@ -119,6 +238,8 @@ function useSceneTypeLabel() {
 
 export function OutlinesEditor({
   outlines,
+  trial = false,
+  sourceKey,
   onChange,
   onConfirm,
   onBack,
@@ -141,6 +262,21 @@ export function OutlinesEditor({
   const [dragOverId, setDragOverId] = useState<string | null>(null);
   const lastScrollTargetRef = useRef<string | null>(null);
   const editingDisabled = isLoading || isStreaming;
+  const [sourceSlides, setSourceSlides] = useState<Slide[]>([]);
+  useEffect(() => {
+    if (!sourceKey) return;
+    let current = true;
+    void loadImportedPptSlides(sourceKey)
+      .then((slides) => {
+        if (current) setSourceSlides(slides ?? []);
+      })
+      .catch(() => {
+        if (current) setSourceSlides([]);
+      });
+    return () => {
+      current = false;
+    };
+  }, [sourceKey]);
   const lastOutlineId = outlines.length > 0 ? outlines[outlines.length - 1].id : null;
 
   // Generation gate: an outline with a blank title is meaningless to generate,
@@ -283,7 +419,7 @@ export function OutlinesEditor({
             )}
             {headerSubtitle}
           </p>
-          {!isStreaming && (
+          {!isStreaming && !trial && (
             <p className="text-xs text-blue-600 dark:text-blue-300">
               点击每个场景的标题、说明或知识点即可直接修改，修改会自动保存。
             </p>
@@ -347,7 +483,20 @@ export function OutlinesEditor({
             </div>
           </section>
         )}
-        {outlines.length === 0 ? (
+        {trial ? (
+          <ol className="divide-y rounded-xl border divide-border">
+            {outlines.map((outline, index) => (
+              <TrialOutlineRow
+                key={outline.id}
+                outline={outline}
+                disabled={editingDisabled}
+                sourceIndex={sourceKey ? outline.sourceSlideOriginalIndex : undefined}
+                slide={sourceKey ? sourceSlides[outline.sourceSlideOriginalIndex ?? -1] : undefined}
+                onUpdate={(patch) => updateOutline(index, patch)}
+              />
+            ))}
+          </ol>
+        ) : outlines.length === 0 ? (
           <EmptyState isStreaming={isStreaming} disabled={editingDisabled} onAdd={addOutline} />
         ) : (
           <ol className="flex flex-col py-1">

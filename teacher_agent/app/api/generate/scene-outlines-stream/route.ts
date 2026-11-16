@@ -414,6 +414,13 @@ export async function POST(req: NextRequest) {
       };
     }
 
+    if (body.coursewareTrial === true) {
+      prompts = {
+        ...prompts,
+        user: `${prompts.user}\n\n先将教师原始要求和本节课概述中的学习深度落实到各讲解小节。每个小节补充 learningRequirement（master=掌握，familiar=熟悉，recognize=了解，不明确时用 familiar）。只有教师明确要求出题时，在对应讲解小节附加 checkpoint: {"instruction":"题型与考查内容"}。例如讲完数组越界后加一道判断题，就把 checkpoint 放在讲完数组越界的那一节。随堂题用附加字段，保留原讲解小节。原稿讲解行须返回 sourceSlideOriginalIndex，使用资料标注的原始页码减一。`,
+      };
+    }
+
     log.info(
       `Generating outlines: "${requirements.requirement.substring(0, 50)}" [model=${modelString}]`,
     );
