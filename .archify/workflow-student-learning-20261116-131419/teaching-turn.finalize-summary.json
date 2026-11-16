@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "command": "finalize",
+  "status": "pass",
+  "type": "workflow",
+  "quality": "showcase",
+  "specification": {
+    "path": "E:\\LMS系统参考\\项目\\agentic-class-pilot-running\\.archify\\workflow-student-learning-20261116-131419\\turn-candidate.json",
+    "sha256": "bf39bccf6fdd086c8e6f278b1b84686fa9cfde9589c914bd001c42b795b6c781",
+    "bytes": 5093
+  },
+  "artifact": {
+    "path": "E:\\LMS系统参考\\项目\\agentic-class-pilot-running\\.archify\\workflow-student-learning-20261116-131419\\teaching-turn.html",
+    "sha256": "4086ec0df67415ef35c6549d4ebc5f3b5bcecbc45a6e4346be8ca48c65df8076",
+    "bytes": 838895
+  },
+  "gates": {
+    "validate": "pass",
+    "deliver": "pass",
+    "check": "pass",
+    "browser-check": "pass"
+  },
+  "diagnostics": [],
+  "diagnosticSummary": {
+    "total": 0,
+    "shown": 0,
+    "truncated": false
+  },
+  "evidence": {
+    "receipt": "E:\\LMS系统参考\\项目\\agentic-class-pilot-running\\.archify\\workflow-student-learning-20261116-131419\\teaching-turn.finalize.json",
+    "summaryReceipt": "E:\\LMS系统参考\\项目\\agentic-class-pilot-running\\.archify\\workflow-student-learning-20261116-131419\\teaching-turn.finalize-summary.json",
+    "browserCheckReceipt": "E:\\LMS系统参考\\项目\\agentic-class-pilot-running\\.archify\\workflow-student-learning-20261116-131419\\teaching-turn.browser-check.json"
+  },
+  "update": {
+    "status": "current",
+    "installedVersion": "3.2.0",
+    "availableVersion": "3.2.0",
+    "releaseNotes": null,
+    "checkedAt": "2026-11-16T05:14:32.536Z",
+    "source": "cache",
+    "noticeRequired": false,
+    "noticeText": null
+  },
+  "visualReview": "not-requested",
+  "durationMs": 3731,
+  "browserCheck": {
+    "requested": true,
+    "ran": true
+  }
+}

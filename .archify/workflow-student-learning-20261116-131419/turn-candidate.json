@@ -1,0 +1,216 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "三类型教学：一轮学生输入如何处理",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "output": ".archify/workflow-student-learning-20261116-131419/teaching-turn.html",
+    "repository": {
+      "url": "https://github.com/huanche/agentic-class-pilot.git",
+      "revision": "87884026cb8fb2ed22e063536438c5dd989a1dab",
+      "link_mode": "local-only"
+    }
+  },
+  "lanes": [
+    {
+      "id": "turn",
+      "label": "单次 Agent 运行"
+    },
+    {
+      "id": "repeat",
+      "label": "状态与恢复"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "input",
+      "lane": "turn",
+      "col": 0,
+      "type": "frontend",
+      "label": "学生发言",
+      "sublabel": "保留真实角色与原文",
+      "sources": [
+        {
+          "path": "student_agent/backend/teaching/typed_teaching.py",
+          "line": 404,
+          "end_line": 415
+        }
+      ]
+    },
+    {
+      "id": "assess",
+      "lane": "turn",
+      "col": 1,
+      "type": "backend",
+      "label": "评估证据",
+      "sublabel": "P2 · 只提交工具",
+      "sources": [
+        {
+          "path": "student_agent/backend/teaching/typed_teaching.py",
+          "line": 147,
+          "end_line": 165
+        }
+      ]
+    },
+    {
+      "id": "apply",
+      "lane": "turn",
+      "col": 2,
+      "type": "backend",
+      "label": "应用逐项证据",
+      "sublabel": "工具调用 / 程序汇总",
+      "sources": [
+        {
+          "path": "student_agent/backend/teaching/typed_teaching.py",
+          "line": 288,
+          "end_line": 305
+        }
+      ]
+    },
+    {
+      "id": "plan",
+      "lane": "turn",
+      "col": 3,
+      "type": "backend",
+      "label": "选点与教学计划",
+      "sublabel": "程序推进 / 不由模型决定",
+      "sources": [
+        {
+          "path": "student_agent/backend/teaching/typed_state.py",
+          "line": 111,
+          "end_line": 203
+        }
+      ]
+    },
+    {
+      "id": "reply",
+      "lane": "turn",
+      "col": 4,
+      "type": "backend",
+      "label": "生成教学回复",
+      "sublabel": "P3 + P4 + 动作约束",
+      "sources": [
+        {
+          "path": "student_agent/backend/teaching/typed_teaching.py",
+          "line": 310,
+          "end_line": 415
+        }
+      ]
+    },
+    {
+      "id": "commit",
+      "lane": "turn",
+      "col": 5,
+      "type": "database",
+      "label": "事务保存",
+      "sublabel": "命令回执 / 返回页面",
+      "sources": [
+        {
+          "path": "student_agent/backend/session/command_runtime.py",
+          "line": 109,
+          "end_line": 145
+        }
+      ]
+    },
+    {
+      "id": "next",
+      "lane": "repeat",
+      "col": 3,
+      "type": "backend",
+      "label": "继续 / 换点 / 总结",
+      "sublabel": "掌握或达到本阶段上限",
+      "sources": [
+        {
+          "path": "student_agent/backend/teaching/typed_state.py",
+          "line": 171,
+          "end_line": 189
+        }
+      ]
+    },
+    {
+      "id": "retry",
+      "lane": "repeat",
+      "col": 5,
+      "type": "backend",
+      "label": "失败与重试",
+      "sublabel": "候选状态不直接写库",
+      "sources": [
+        {
+          "path": "student_agent/backend/teaching/service.py",
+          "line": 154,
+          "end_line": 159
+        }
+      ]
+    }
+  ],
+  "mainPath": [
+    "input",
+    "assess",
+    "apply",
+    "plan",
+    "reply",
+    "commit"
+  ],
+  "edges": [
+    {
+      "id": "input-assess",
+      "from": "input",
+      "to": "assess"
+    },
+    {
+      "id": "assess-apply",
+      "from": "assess",
+      "to": "apply",
+      "label": "工具参数"
+    },
+    {
+      "id": "apply-plan",
+      "from": "apply",
+      "to": "plan"
+    },
+    {
+      "id": "plan-reply",
+      "from": "plan",
+      "to": "reply",
+      "label": "最新计划"
+    },
+    {
+      "id": "reply-commit",
+      "from": "reply",
+      "to": "commit"
+    },
+    {
+      "id": "plan-next",
+      "from": "plan",
+      "to": "next",
+      "label": "推进结果"
+    },
+    {
+      "id": "commit-retry",
+      "from": "commit",
+      "to": "retry",
+      "label": "异常",
+      "role": "error"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "提示词组合",
+      "items": [
+        "评估：ASSESSMENT_PROMPT + 原始要求 + 学生累计原文",
+        "回复：REPLY_PROMPT + TYPE_PROMPTS + 程序动作约束 + 最新上下文"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "首问与课后",
+      "items": [
+        "首问没有学生答案，跳过评估，直接按计划生成任务",
+        "课后继续复用同一执行器，after_class=True；不套用课堂5/8轮上限",
+        "每次运行最多4次模型调用、90秒总预算；修复可能追加调用"
+      ]
+    }
+  ]
+}

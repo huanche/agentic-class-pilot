@@ -14,4 +14,4 @@
 
 迁移后回归：75 passed、11 skipped（139.23秒）。跳过的是默认关闭的真实模型测试，本次没有重新调用模型；组合测试此前的真实执行结果已随证据归档。运行时业务实现不变。
 
-统一入口：[教学文档索引](../README.md)与[学生端目录说明](../../student-directory-layout.md)。
+统一入口：[教学文档索引](../README.md)与[学生端目录说明](../../architecture/student-directory-layout.md)。

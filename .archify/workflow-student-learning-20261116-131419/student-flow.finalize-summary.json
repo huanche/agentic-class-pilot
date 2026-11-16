@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "command": "finalize",
+  "status": "pass",
+  "type": "workflow",
+  "quality": "showcase",
+  "specification": {
+    "path": "E:\\LMS系统参考\\项目\\agentic-class-pilot-running\\.archify\\workflow-student-learning-20261116-131419\\candidate.json",
+    "sha256": "0ba8f2620b6006842bb60617e46bcf73326c532104ac8ebb09c907feee56cc07",
+    "bytes": 5768
+  },
+  "artifact": {
+    "path": "E:\\LMS系统参考\\项目\\agentic-class-pilot-running\\.archify\\workflow-student-learning-20261116-131419\\student-flow.html",
+    "sha256": "0206e5a12e10054fb57590ac5aa22ad30f458b1b6448a212cb27a7d6d7da2514",
+    "bytes": 841854
+  },
+  "gates": {
+    "validate": "pass",
+    "deliver": "pass",
+    "check": "pass",
+    "browser-check": "pass"
+  },
+  "diagnostics": [],
+  "diagnosticSummary": {
+    "total": 0,
+    "shown": 0,
+    "truncated": false
+  },
+  "evidence": {
+    "receipt": "E:\\LMS系统参考\\项目\\agentic-class-pilot-running\\.archify\\workflow-student-learning-20261116-131419\\student-flow.finalize.json",
+    "summaryReceipt": "E:\\LMS系统参考\\项目\\agentic-class-pilot-running\\.archify\\workflow-student-learning-20261116-131419\\student-flow.finalize-summary.json",
+    "browserCheckReceipt": "E:\\LMS系统参考\\项目\\agentic-class-pilot-running\\.archify\\workflow-student-learning-20261116-131419\\student-flow.browser-check.json"
+  },
+  "update": {
+    "status": "current",
+    "installedVersion": "3.2.0",
+    "availableVersion": "3.2.0",
+    "releaseNotes": null,
+    "checkedAt": "2026-11-16T05:14:32.536Z",
+    "source": "network",
+    "noticeRequired": false,
+    "noticeText": null
+  },
+  "visualReview": "not-requested",
+  "durationMs": 4340,
+  "browserCheck": {
+    "requested": true,
+    "ran": true
+  }
+}

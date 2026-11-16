@@ -1,6 +1,6 @@
 # 评估、证据数据与问题报告
 
-配套[主方案](../student-simulation-experiment.md)与[学生设定](student-profiles.md)。状态：待实施规范；下面的字段和示例不是现有API新增字段，不是已运行结果。
+配套[主方案](plan.md)与[学生设定](student-profiles.md)。状态：待实施规范；下面的字段和示例不是现有API新增字段，不是已运行结果。
 
 ## 1. 每个trial保留四种独立状态
 

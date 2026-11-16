@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "5076df06-ed5a-4d57-8e9a-46657387c5ae",
+  "status": "current",
+  "command": "deliver",
+  "type": "workflow",
+  "input": "E:\\LMS系统参考\\项目\\agentic-class-pilot-running\\.archify\\workflow-student-learning-20261116-131419\\turn-candidate.json",
+  "output": "E:\\LMS系统参考\\项目\\agentic-class-pilot-running\\.archify\\workflow-student-learning-20261116-131419\\teaching-turn.html",
+  "specification": {
+    "sha256": "bf39bccf6fdd086c8e6f278b1b84686fa9cfde9589c914bd001c42b795b6c781",
+    "bytes": 5093
+  },
+  "artifact": {
+    "sha256": "4086ec0df67415ef35c6549d4ebc5f3b5bcecbc45a6e4346be8ca48c65df8076",
+    "bytes": 838895
+  }
+}
