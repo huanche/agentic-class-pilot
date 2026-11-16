@@ -1,0 +1,15 @@
+{
+  "checks": {
+    "main_four_mastered": true,
+    "question_does_not_change_requirements": true,
+    "duplicate_keeps_version": true,
+    "duplicate_keeps_dialogue": true,
+    "empty_answer_rejected_without_change": true,
+    "resume_same_session_messages_task": true,
+    "all_mastered_no_new_messages": true,
+    "early_exit_preserves_unassessed": true,
+    "postclass_updates_only_completed_point": true,
+    "postclass_repeated_original_question_observed": true
+  },
+  "allRecordedClaimsSupported": true
+}

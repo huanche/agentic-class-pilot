@@ -1,0 +1,52 @@
+{
+  "sessionId": "TmiAosS50Fj3KndyNAyabmwSRVbtWChJ",
+  "phase": "video",
+  "lessonId": "OU0jEmwe2azvKU",
+  "stateVersion": 1,
+  "contentGeneration": 0,
+  "flowVersion": "legacy_recall_v3",
+  "pendingSubmission": null,
+  "messages": [],
+  "courses": [
+    {
+      "id": "04b5c284-9ef6-415c-abb1-e7910c1dff68",
+      "title": "数组短课｜本地完整流程测试 2026-11-11",
+      "lessons": [
+        {
+          "id": "OU0jEmwe2azvKU",
+          "title": "一维数组短课：定义、初始化与循环构造",
+          "week": 1,
+          "lessonNumber": 1,
+          "summary": "",
+          "teachingHours": 0.1,
+          "publishedAt": 1794384825670,
+          "playerUrl": "http://localhost:8088/classroom-player/arrays_short_bbee42b5b1e6",
+          "classroomId": "arrays_short_bbee42b5b1e6",
+          "segmentCount": 3
+        }
+      ]
+    }
+  ],
+  "preparation": "pending",
+  "preparationError": "",
+  "preparationErrorCode": "",
+  "preparationRequestId": "",
+  "preparationCoverage": null,
+  "feedback": null,
+  "currentTaskPublic": null,
+  "contentRef": null,
+  "recordSchemaVersion": 1,
+  "agentStage": null,
+  "typedTeaching": false,
+  "learningProgress": null,
+  "postclassStage": null,
+  "videoRevision": "96ec8d09998c0c62015cae958876373c8bc4f869ff3d848895e997ac449c73ce",
+  "videoUpdated": false,
+  "postclassMessages": [],
+  "browserCourseKey": "5700dbbf-b3a8-4c62-8463-d4c0783ed76b:04b5c284-9ef6-415c-abb1-e7910c1dff68",
+  "browserKey": "5700dbbf-b3a8-4c62-8463-d4c0783ed76b:04b5c284-9ef6-415c-abb1-e7910c1dff68:OU0jEmwe2azvKU",
+  "browserSnapshot": "eyJpZCI6IlRtaUFvc1M1MEZqM0tuZHlOQXlhYm13U1JWYnRXQ2hKIiwiY29udGV4dCI6eyJ1c2VySWQiOiI1NzAwZGJiZi1iM2E4LTRjNjItODQ2My1kNGMwNzgzZWQ3NmIiLCJjb3Vyc2VJZCI6IjA0YjVjMjg0LTllZjYtNDE1Yy1hYmIxLWU3OTEwYzFkZmY2OCIsInB1YmxpY2F0aW9uIjp7ImlkIjoia1ZIeE1aMFlfY3ZRZzEiLCJ2ZXJzaW9uIjoxfX0sImNvdXJzZXMiOltdLCJtZXNzYWdlcyI6W10sInBoYXNlIjoidmlkZW8iLCJsZXNzb25JZCI6Ik9VMGpFbXdlMmF6dktVIiwic3RhdGVWZXJzaW9uIjoxfQ.30235f57053ae39a252e79c732bbc3dcc2e7e3ddd7518e9679f23003e0ed2aec",
+  "userId": "5700dbbf-b3a8-4c62-8463-d4c0783ed76b",
+  "authProtocol": "platform-cookie-v1",
+  "requestId": "ba56b86c67b94d239ce046f3ffbced3c"
+}

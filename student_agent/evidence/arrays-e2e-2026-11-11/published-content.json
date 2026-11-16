@@ -1,0 +1,22 @@
+{
+  "knowledgePackage": {
+    "id": "kVHxMZ0Y_cvQg1",
+    "version": 1,
+    "entries": [
+      {
+        "id": "artifact_cw_arrays_short_bbee42b5b1e6",
+        "title": "一维数组短课：定义、初始化与循环构造",
+        "content": "互动课件已完整生成，共 3 页。\n\n课堂地址：/classroom/arrays_short_bbee42b5b1e6",
+        "citations": [],
+        "scope": {
+          "type": "lesson",
+          "lessonId": "OU0jEmwe2azvKU"
+        },
+        "kind": "artifact",
+        "resourceType": "courseware",
+        "publicationId": "CLS-A-P-ve6xSd8UXr"
+      }
+    ]
+  },
+  "classroomAvailable": true
+}

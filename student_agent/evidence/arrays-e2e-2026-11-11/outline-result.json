@@ -1,0 +1,65 @@
+{
+  "type": "done",
+  "outlines": [
+    {
+      "id": "scene_1",
+      "type": "slide",
+      "title": "一维数组的定义与下标",
+      "description": "用最简定义引入一维数组，明确下标从0开始到n-1。",
+      "keyPoints": [
+        "定义形式：存储类型 数据类型 数组名[整型常量表达式]；",
+        "示例 int a[5]; 表示5个int元素，合法下标为 a[0] 到 a[4]",
+        "下标从0开始，最大下标 = 数组大小 - 1；a[5] 不是合法元素"
+      ],
+      "teachingObjective": "能说出 int a[5] 的元素个数与合法下标范围。",
+      "estimatedDuration": 45,
+      "order": 1
+    },
+    {
+      "id": "scene_2",
+      "type": "slide",
+      "title": "初始化：int a[5]={1,2}",
+      "description": "通过部分初始化观察未显式赋值元素的默认值，并强调越界不可访问。",
+      "keyPoints": [
+        "int a[5] = {1, 2}; 只给出前两个初值",
+        "其余元素 a[2]、a[3]、a[4] 自动补0",
+        "最终元素为 1,2,0,0,0；访问 a[5] 越界，不能读写"
+      ],
+      "teachingObjective": "能解释部分初始化时剩余元素补0，并识别越界下标。",
+      "estimatedDuration": 45,
+      "order": 2
+    },
+    {
+      "id": "scene_3",
+      "type": "slide",
+      "title": "用for循环逐项赋值",
+      "description": "示范用循环变量作为下标，按规律给每个元素赋值。",
+      "keyPoints": [
+        "先定义 int a[5], i; 再写循环 for(i=0; i<5; i++)",
+        "循环体 a[i] = i + 1; 让 a[0]~a[4] 依次得到 1,2,3,4,5",
+        "i<5 保证下标只在0~4内，避免越界；数组不能整体用 a={...} 二次赋值"
+      ],
+      "teachingObjective": "能仿照示例写出遍历0~4下标的for循环赋值代码。",
+      "estimatedDuration": 50,
+      "order": 3
+    },
+    {
+      "id": "scene_4",
+      "type": "slide",
+      "title": "构造任务：生成1、3、5、7、9",
+      "description": "给出独立编码任务与可检查的成功标准，巩固定义、下标和循环赋值。",
+      "keyPoints": [
+        "任务：声明 int a[5]; 用 for 循环让 a[0]~a[4] 依次为 1、3、5、7、9",
+        "提示：先观察第 i 个元素与 i 的对应关系，再写循环体",
+        "成功标准：数组大小为5；循环下标覆盖0~4；每个元素值正确且无越界",
+        "自查：逐项检查 a[0]=1、a[1]=3、a[2]=5、a[3]=7、a[4]=9"
+      ],
+      "teachingObjective": "能独立写出 int a[5] 的循环赋值代码并验证结果正确。",
+      "estimatedDuration": 40,
+      "order": 4
+    }
+  ],
+  "languageDirective": "本课程全程使用中文讲解，代码关键字与数组名保留英文原样。术语首次出现时用中文说明，并直接配合C代码示例。语速适中，面向C语言初学者，只围绕一维数组的定义、下标、初始化和循环赋值展开。",
+  "courseTitle": "C语言一维数组入门",
+  "taskEngineMode": false
+}

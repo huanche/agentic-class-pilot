@@ -1,0 +1,247 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "学生端当前学习流程",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "output": ".archify/workflow-student-learning-20261116-131419/student-flow.html",
+    "repository": {
+      "url": "https://github.com/huanche/agentic-class-pilot.git",
+      "revision": "87884026cb8fb2ed22e063536438c5dd989a1dab",
+      "link_mode": "local-only"
+    }
+  },
+  "lanes": [
+    {
+      "id": "learn",
+      "label": "正式课堂主线"
+    },
+    {
+      "id": "prepare",
+      "label": "发布内容准备"
+    },
+    {
+      "id": "compat",
+      "label": "版本兼容"
+    }
+  ],
+  "mainPath": [
+    "auth",
+    "resume",
+    "video",
+    "teach",
+    "feedback",
+    "postclass"
+  ],
+  "nodes": [
+    {
+      "id": "auth",
+      "lane": "learn",
+      "col": 0,
+      "type": "security",
+      "label": "进入课程",
+      "sublabel": "平台 Cookie 内部身份",
+      "sources": [
+        {
+          "path": "student_agent/backend/infrastructure/platform_identity.py",
+          "line": 30,
+          "end_line": 42
+        }
+      ]
+    },
+    {
+      "id": "resume",
+      "lane": "learn",
+      "col": 1,
+      "type": "backend",
+      "label": "选择与恢复",
+      "sublabel": "数据库历史优先",
+      "sources": [
+        {
+          "path": "student_agent/backend/session/service.py",
+          "line": 576,
+          "end_line": 608
+        }
+      ]
+    },
+    {
+      "id": "video",
+      "lane": "learn",
+      "col": 2,
+      "type": "frontend",
+      "label": "观看课件",
+      "sublabel": "等待知识点准备",
+      "sources": [
+        {
+          "path": "student_agent/backend/session/service.py",
+          "line": 617,
+          "end_line": 635
+        }
+      ]
+    },
+    {
+      "id": "teach",
+      "lane": "learn",
+      "col": 3,
+      "type": "backend",
+      "label": "逐点教学",
+      "sublabel": "首轮5轮 / 补强8轮",
+      "sources": [
+        {
+          "path": "student_agent/backend/teaching/typed_state.py",
+          "line": 16,
+          "end_line": 26
+        }
+      ]
+    },
+    {
+      "id": "feedback",
+      "lane": "learn",
+      "col": 4,
+      "type": "backend",
+      "label": "结束与反馈",
+      "sublabel": "可提前结束，保留缺口",
+      "sources": [
+        {
+          "path": "student_agent/backend/teaching/service.py",
+          "line": 245,
+          "end_line": 257
+        }
+      ]
+    },
+    {
+      "id": "postclass",
+      "lane": "learn",
+      "col": 5,
+      "type": "backend",
+      "label": "课后补完",
+      "sublabel": "未掌握点 → completed",
+      "sources": [
+        {
+          "path": "student_agent/backend/teaching/service.py",
+          "line": 262,
+          "end_line": 279
+        }
+      ]
+    },
+    {
+      "id": "extract",
+      "lane": "prepare",
+      "col": 2,
+      "type": "backend",
+      "label": "共享知识点提取",
+      "sublabel": "发布任务 / 失败可重试",
+      "sources": [
+        {
+          "path": "student_agent/backend/infrastructure/published_knowledge.py",
+          "line": 88,
+          "end_line": 150
+        }
+      ]
+    },
+    {
+      "id": "bind",
+      "lane": "prepare",
+      "col": 3,
+      "type": "backend",
+      "label": "绑定发布内容",
+      "sublabel": "准备就绪方可教学",
+      "sources": [
+        {
+          "path": "student_agent/backend/session/service.py",
+          "line": 410,
+          "end_line": 433
+        }
+      ]
+    },
+    {
+      "id": "versions",
+      "lane": "compat",
+      "col": 3,
+      "type": "backend",
+      "label": "按版本兼容",
+      "sublabel": "旧版 / 显式动态试点",
+      "sources": [
+        {
+          "path": "student_agent/backend/teaching/service.py",
+          "line": 227,
+          "end_line": 242
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "id": "auth-resume",
+      "from": "auth",
+      "to": "resume"
+    },
+    {
+      "id": "resume-video",
+      "from": "resume",
+      "to": "video",
+      "label": "无可恢复历史"
+    },
+    {
+      "id": "video-teach",
+      "from": "video",
+      "to": "teach",
+      "label": "准备就绪"
+    },
+    {
+      "id": "teach-feedback",
+      "from": "teach",
+      "to": "feedback",
+      "label": "总结或提前结束"
+    },
+    {
+      "id": "feedback-postclass",
+      "from": "feedback",
+      "to": "postclass",
+      "label": "继续学习"
+    },
+    {
+      "id": "video-extract",
+      "from": "video",
+      "to": "extract",
+      "label": "读取共享结果"
+    },
+    {
+      "id": "extract-bind",
+      "from": "extract",
+      "to": "bind"
+    },
+    {
+      "id": "bind-teach",
+      "from": "bind",
+      "to": "teach"
+    },
+    {
+      "id": "teach-versions",
+      "from": "teach",
+      "to": "versions",
+      "label": "旧版分支",
+      "role": "branch"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "提示词与程序边界",
+      "items": [
+        "P1提取；P2评估；P3类型策略；P4自然中文教学回复",
+        "登录、恢复、版本绑定、5/8轮推进、事务和反馈由程序执行"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "阅读范围",
+      "items": [
+        "主线展示新建三类型会话；恢复会话按保存版本执行",
+        "视频阶段读取共享提取结果，不为每名学生重做提取",
+        "三类型课后补完进入completed；旧版另有自由提问"
+      ]
+    }
+  ]
+}

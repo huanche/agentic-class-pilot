@@ -1,0 +1,9 @@
+{
+  "status": 422,
+  "body": {
+    "detail": "回答长度必须在 1–2000 字符之间",
+    "code": "INVALID_PAYLOAD",
+    "requestId": "bcdd319c7a604187aed43427a2146cd7"
+  },
+  "stateUnchanged": true
+}

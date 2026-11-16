@@ -1,0 +1,267 @@
+{
+  "productionWrites": false,
+  "model": "deepseek-v4-flash",
+  "cases": [
+    {
+      "name": "concept-help",
+      "point": {
+        "id": "knowledge:8aea007ebfca5273a830",
+        "gaps": [],
+        "type": "concept",
+        "title": "栈与队列作为受限线性表",
+        "status": "unseen",
+        "content": "线性表允许在任意位置插入和删除，取出顺序可以自由决定；当插入、删除的位置受到限制后，数据存取顺序随之改变，由此得到栈和队列这两种受限线性表。栈只允许在 top 端操作，是后进先出 LIFO；队列从队尾入、队头出，是先进先出 FIFO。\n说明线性表与受限线性表的区别：线性表可在任意位置插入删除，栈和队列的插入删除位置受限\n解释插入、删除位置受限后数据存取顺序如何改变\n指出栈只在 top 端操作、队列在队尾入队头出，从而分别形成 LIFO 与 FIFO",
+        "details": {
+          "explanation": "线性表允许在任意位置插入和删除，取出顺序可以自由决定；当插入、删除的位置受到限制后，数据存取顺序随之改变，由此得到栈和队列这两种受限线性表。栈只允许在 top 端操作，是后进先出 LIFO；队列从队尾入、队头出，是先进先出 FIFO。",
+          "understandingPoints": [
+            "说明线性表与受限线性表的区别：线性表可在任意位置插入删除，栈和队列的插入删除位置受限",
+            "解释插入、删除位置受限后数据存取顺序如何改变",
+            "指出栈只在 top 端操作、队列在队尾入队头出，从而分别形成 LIFO 与 FIFO"
+          ]
+        },
+        "attempts": 0,
+        "evidence": "",
+        "next_step": "",
+        "description": "线性表允许在任意位置插入和删除，取出顺序可以自由决定；当插入、删除的位置受到限制后，数据存取顺序随之改变，由此得到栈和队列这两种受限线性表。栈只允许在 top 端操作，是后进先出 LIFO；队列从队尾入、队头出，是先进先出 FIFO。\n说明线性表与受限线性表的区别：线性表可在任意位置插入删除，栈和队列的插入删除位置受限\n解释插入、删除位置受限后数据存取顺序如何改变\n指出栈只在 top 端操作、队列在队尾入队头出，从而分别形成 LIFO 与 FIFO",
+        "known_parts": [],
+        "mastered_in": null,
+        "recall_done": false,
+        "help_history": [],
+        "requirements": [
+          {
+            "id": "understandingPoints:1",
+            "text": "说明线性表与受限线性表的区别：线性表可在任意位置插入删除，栈和队列的插入删除位置受限",
+            "status": "unconfirmed",
+            "evidence": "",
+            "studentText": "",
+            "gap": ""
+          },
+          {
+            "id": "understandingPoints:2",
+            "text": "解释插入、删除位置受限后数据存取顺序如何改变",
+            "status": "unconfirmed",
+            "evidence": "",
+            "studentText": "",
+            "gap": ""
+          },
+          {
+            "id": "understandingPoints:3",
+            "text": "指出栈只在 top 端操作、队列在队尾入队头出，从而分别形成 LIFO 与 FIFO",
+            "status": "unconfirmed",
+            "evidence": "",
+            "studentText": "",
+            "gap": ""
+          }
+        ],
+        "task_question": "",
+        "reinforce_done": false,
+        "latest_question": "",
+        "recall_attempts": 0,
+        "question_history": [],
+        "question_targets": [],
+        "assessment_history": [],
+        "reinforce_attempts": 0,
+        "reinforcement_required": false,
+        "excluded_from_discussion": false
+      },
+      "turns": [
+        {
+          "student": "我不懂位置限制为什么会决定顺序，你直接讲清楚吧。",
+          "state": {
+            "flow_version": 4,
+            "mastery_version": 1,
+            "reply_version": 1,
+            "stage": "recall",
+            "recall_round_limit": 5,
+            "reinforce_round_limit": 8,
+            "transition": "continue",
+            "strategy": "answer_question",
+            "messages": [],
+            "student_text": "我不懂位置限制为什么会决定顺序，你直接讲清楚吧。",
+            "evaluation": {
+              "intent": "question",
+              "assessments": [
+                {
+                  "id": "knowledge:8aea007ebfca5273a830",
+                  "result": "partial",
+                  "evidence": "学生表示不懂位置限制为何决定顺序，请求直接讲解，未给出可评估的作答。",
+                  "known_parts": [],
+                  "gaps": [
+                    "尚未确认：说明线性表与受限线性表的区别：线性表可在任意位置插入删除，栈和队列的插入删除位置受限",
+                    "尚未说明插入、删除位置受限后取出顺序如何被决定。",
+                    "尚未确认：指出栈只在 top 端操作、队列在队尾入队头出，从而分别形成 LIFO 与 FIFO"
+                  ],
+                  "next_step": "直接讲清“只能在固定一端进出”如何导致后进先出／先进先出，再用一个具体序列示范一步，让学生判断下一步取出哪个元素。"
+                }
+              ]
+            },
+            "reply": "你卡住的这一点，关键在于“能从哪里取”被限制后，取出的先后就由插入的先后决定了。\n\n拿一摞盘子来说：你只能从最上面放、也只能从最上面取。先放进去的盘子被压在下面，后放的盘子在最上面。所以取的时候，一定是最上面那个——也就是最后放进去的那个先出来。这就是“后进先出”。顺序不是我们随便挑的，而是“只能在顶端操作”这条限制逼出来的：想取下面的盘子，必须先把它上面的都取走。\n\n队列像排队打饭：只能从队尾进、从队头出。先来的人站在前面，后来的人接在后面；队头的人先离开，所以先来的先走，这就是“先进先出”。同样，顺序也不是自由选的，而是“入口和出口固定在一头一尾”这条限制决定的。\n\n对比普通线性表：它允许在任意位置插入、删除，所以你想先取中间某个元素也行，取出顺序可以自由安排。一旦把插入、删除的位置限制住，能动的只剩固定的一端或两端，取出顺序就被这个位置规则锁定了——栈锁成后进先出，队列锁成先进先出。",
+            "last_point_id": "knowledge:8aea007ebfca5273a830",
+            "current_task": {
+              "pointId": "knowledge:8aea007ebfca5273a830",
+              "stage": "recall",
+              "question": "先想一个日常场景：食堂里大家排队打饭，和把一摞盘子往上叠、再从上往下取，这两种存取方式有什么不同？请结合这个对比说说：普通线性表在插入、删除位置上有什么自由，而栈和队列分别把操作限制在了哪一端，这种限制又怎样决定了它们的取出顺序。"
+            },
+            "points": [
+              {
+                "id": "knowledge:8aea007ebfca5273a830",
+                "gaps": [
+                  "尚未确认：说明线性表与受限线性表的区别：线性表可在任意位置插入删除，栈和队列的插入删除位置受限",
+                  "尚未说明插入、删除位置受限后取出顺序如何被决定。",
+                  "尚未确认：指出栈只在 top 端操作、队列在队尾入队头出，从而分别形成 LIFO 与 FIFO"
+                ],
+                "type": "concept",
+                "title": "栈与队列作为受限线性表",
+                "status": "partial",
+                "content": "线性表允许在任意位置插入和删除，取出顺序可以自由决定；当插入、删除的位置受到限制后，数据存取顺序随之改变，由此得到栈和队列这两种受限线性表。栈只允许在 top 端操作，是后进先出 LIFO；队列从队尾入、队头出，是先进先出 FIFO。\n说明线性表与受限线性表的区别：线性表可在任意位置插入删除，栈和队列的插入删除位置受限\n解释插入、删除位置受限后数据存取顺序如何改变\n指出栈只在 top 端操作、队列在队尾入队头出，从而分别形成 LIFO 与 FIFO",
+                "details": {
+                  "explanation": "线性表允许在任意位置插入和删除，取出顺序可以自由决定；当插入、删除的位置受到限制后，数据存取顺序随之改变，由此得到栈和队列这两种受限线性表。栈只允许在 top 端操作，是后进先出 LIFO；队列从队尾入、队头出，是先进先出 FIFO。",
+                  "understandingPoints": [
+                    "说明线性表与受限线性表的区别：线性表可在任意位置插入删除，栈和队列的插入删除位置受限",
+                    "解释插入、删除位置受限后数据存取顺序如何改变",
+                    "指出栈只在 top 端操作、队列在队尾入队头出，从而分别形成 LIFO 与 FIFO"
+                  ]
+                },
+                "attempts": 1,
+                "evidence": "学生表示不懂位置限制为何决定顺序，请求直接讲解，未给出可评估的作答。",
+                "next_step": "直接讲清“只能在固定一端进出”如何导致后进先出／先进先出，再用一个具体序列示范一步，让学生判断下一步取出哪个元素。",
+                "description": "线性表允许在任意位置插入和删除，取出顺序可以自由决定；当插入、删除的位置受到限制后，数据存取顺序随之改变，由此得到栈和队列这两种受限线性表。栈只允许在 top 端操作，是后进先出 LIFO；队列从队尾入、队头出，是先进先出 FIFO。\n说明线性表与受限线性表的区别：线性表可在任意位置插入删除，栈和队列的插入删除位置受限\n解释插入、删除位置受限后数据存取顺序如何改变\n指出栈只在 top 端操作、队列在队尾入队头出，从而分别形成 LIFO 与 FIFO",
+                "known_parts": [],
+                "mastered_in": null,
+                "recall_done": false,
+                "help_history": [
+                  {
+                    "stage": "recall",
+                    "text": "先想一个日常场景：食堂里大家排队打饭，和把一摞盘子往上叠、再从上往下取，这两种存取方式有什么不同？请结合这个对比说说：普通线性表在插入、删除位置上有什么自由，而栈和队列分别把操作限制在了哪一端，这种限制又怎样决定了它们的取出顺序。",
+                    "target_ids": [
+                      "understandingPoints:1",
+                      "understandingPoints:2",
+                      "understandingPoints:3"
+                    ],
+                    "planned_action": "ask"
+                  },
+                  {
+                    "stage": "recall",
+                    "text": "你卡住的这一点，关键在于“能从哪里取”被限制后，取出的先后就由插入的先后决定了。\n\n拿一摞盘子来说：你只能从最上面放、也只能从最上面取。先放进去的盘子被压在下面，后放的盘子在最上面。所以取的时候，一定是最上面那个——也就是最后放进去的那个先出来。这就是“后进先出”。顺序不是我们随便挑的，而是“只能在顶端操作”这条限制逼出来的：想取下面的盘子，必须先把它上面的都取走。\n\n队列像排队打饭：只能从队尾进、从队头出。先来的人站在前面，后来的人接在后面；队头的人先离开，所以先来的先走，这就是“先进先出”。同样，顺序也不是自由选的，而是“入口和出口固定在一头一尾”这条限制决定的。\n\n对比普通线性表：它允许在任意位置插入、删除，所以你想先取中间某个元素也行，取出顺序可以自由安排。一旦把插入、删除的位置限制住，能动的只剩固定的一端或两端，取出顺序就被这个位置规则锁定了——栈锁成后进先出，队列锁成先进先出。",
+                    "target_ids": [
+                      "understandingPoints:2",
+                      "understandingPoints:1",
+                      "understandingPoints:3"
+                    ],
+                    "planned_action": "explain"
+                  }
+                ],
+                "requirements": [
+                  {
+                    "id": "understandingPoints:1",
+                    "text": "说明线性表与受限线性表的区别：线性表可在任意位置插入删除，栈和队列的插入删除位置受限",
+                    "status": "unconfirmed",
+                    "evidence": "",
+                    "studentText": "",
+                    "gap": ""
+                  },
+                  {
+                    "id": "understandingPoints:2",
+                    "text": "解释插入、删除位置受限后数据存取顺序如何改变",
+                    "status": "needs_help",
+                    "evidence": "学生明确说“我不懂位置限制为什么会决定顺序”。",
+                    "studentText": "我不懂位置限制为什么会决定顺序，你直接讲清楚吧。",
+                    "gap": "尚未说明插入、删除位置受限后取出顺序如何被决定。"
+                  },
+                  {
+                    "id": "understandingPoints:3",
+                    "text": "指出栈只在 top 端操作、队列在队尾入队头出，从而分别形成 LIFO 与 FIFO",
+                    "status": "unconfirmed",
+                    "evidence": "",
+                    "studentText": "",
+                    "gap": ""
+                  }
+                ],
+                "task_question": "先想一个日常场景：食堂里大家排队打饭，和把一摞盘子往上叠、再从上往下取，这两种存取方式有什么不同？请结合这个对比说说：普通线性表在插入、删除位置上有什么自由，而栈和队列分别把操作限制在了哪一端，这种限制又怎样决定了它们的取出顺序。",
+                "reinforce_done": false,
+                "latest_question": "你卡住的这一点，关键在于“能从哪里取”被限制后，取出的先后就由插入的先后决定了。\n\n拿一摞盘子来说：你只能从最上面放、也只能从最上面取。先放进去的盘子被压在下面，后放的盘子在最上面。所以取的时候，一定是最上面那个——也就是最后放进去的那个先出来。这就是“后进先出”。顺序不是我们随便挑的，而是“只能在顶端操作”这条限制逼出来的：想取下面的盘子，必须先把它上面的都取走。\n\n队列像排队打饭：只能从队尾进、从队头出。先来的人站在前面，后来的人接在后面；队头的人先离开，所以先来的先走，这就是“先进先出”。同样，顺序也不是自由选的，而是“入口和出口固定在一头一尾”这条限制决定的。\n\n对比普通线性表：它允许在任意位置插入、删除，所以你想先取中间某个元素也行，取出顺序可以自由安排。一旦把插入、删除的位置限制住，能动的只剩固定的一端或两端，取出顺序就被这个位置规则锁定了——栈锁成后进先出，队列锁成先进先出。",
+                "recall_attempts": 1,
+                "question_history": [
+                  {
+                    "stage": "recall",
+                    "text": "先想一个日常场景：食堂里大家排队打饭，和把一摞盘子往上叠、再从上往下取，这两种存取方式有什么不同？请结合这个对比说说：普通线性表在插入、删除位置上有什么自由，而栈和队列分别把操作限制在了哪一端，这种限制又怎样决定了它们的取出顺序。",
+                    "target_ids": [
+                      "understandingPoints:1",
+                      "understandingPoints:2",
+                      "understandingPoints:3"
+                    ],
+                    "planned_action": "ask"
+                  },
+                  {
+                    "stage": "recall",
+                    "text": "你卡住的这一点，关键在于“能从哪里取”被限制后，取出的先后就由插入的先后决定了。\n\n拿一摞盘子来说：你只能从最上面放、也只能从最上面取。先放进去的盘子被压在下面，后放的盘子在最上面。所以取的时候，一定是最上面那个——也就是最后放进去的那个先出来。这就是“后进先出”。顺序不是我们随便挑的，而是“只能在顶端操作”这条限制逼出来的：想取下面的盘子，必须先把它上面的都取走。\n\n队列像排队打饭：只能从队尾进、从队头出。先来的人站在前面，后来的人接在后面；队头的人先离开，所以先来的先走，这就是“先进先出”。同样，顺序也不是自由选的，而是“入口和出口固定在一头一尾”这条限制决定的。\n\n对比普通线性表：它允许在任意位置插入、删除，所以你想先取中间某个元素也行，取出顺序可以自由安排。一旦把插入、删除的位置限制住，能动的只剩固定的一端或两端，取出顺序就被这个位置规则锁定了——栈锁成后进先出，队列锁成先进先出。",
+                    "target_ids": [
+                      "understandingPoints:2",
+                      "understandingPoints:1",
+                      "understandingPoints:3"
+                    ],
+                    "planned_action": "explain"
+                  }
+                ],
+                "question_targets": [
+                  "understandingPoints:2",
+                  "understandingPoints:1",
+                  "understandingPoints:3"
+                ],
+                "assessment_history": [
+                  {
+                    "stage": "recall",
+                    "round": 1,
+                    "result": "unanswered",
+                    "evidence": "学生表示不懂位置限制为何决定顺序，请求直接讲解，未给出可评估的作答。",
+                    "studentText": "我不懂位置限制为什么会决定顺序，你直接讲清楚吧。",
+                    "point_result": "partial",
+                    "answer_assessment": {
+                      "answer_result": "unanswered",
+                      "evidence": "学生表示不懂位置限制为何决定顺序，请求直接讲解，未给出可评估的作答。",
+                      "updates": [
+                        {
+                          "requirement_id": "understandingPoints:2",
+                          "status": "needs_help",
+                          "evidence": "学生明确说“我不懂位置限制为什么会决定顺序”。",
+                          "gap": "尚未说明插入、删除位置受限后取出顺序如何被决定。"
+                        }
+                      ],
+                      "next_step": "直接讲清“只能在固定一端进出”如何导致后进先出／先进先出，再用一个具体序列示范一步，让学生判断下一步取出哪个元素。"
+                    },
+                    "target_ids": [
+                      "understandingPoints:1",
+                      "understandingPoints:2",
+                      "understandingPoints:3"
+                    ],
+                    "question": "先想一个日常场景：食堂里大家排队打饭，和把一摞盘子往上叠、再从上往下取，这两种存取方式有什么不同？请结合这个对比说说：普通线性表在插入、删除位置上有什么自由，而栈和队列分别把操作限制在了哪一端，这种限制又怎样决定了它们的取出顺序。"
+                  }
+                ],
+                "reinforce_attempts": 0,
+                "reinforcement_required": false,
+                "excluded_from_discussion": false
+              }
+            ],
+            "curriculum_version": 10,
+            "teaching_plan": {
+              "target_ids": [
+                "understandingPoints:2",
+                "understandingPoints:1",
+                "understandingPoints:3"
+              ],
+              "action": "explain",
+              "requirements": [
+                "解释插入、删除位置受限后数据存取顺序如何改变",
+                "说明线性表与受限线性表的区别：线性表可在任意位置插入删除，栈和队列的插入删除位置受限",
+                "指出栈只在 top 端操作、队列在队尾入队头出，从而分别形成 LIFO 与 FIFO"
+              ]
+            },
+            "last_assistance": "tutor_response"
+          }
+        }
+      ],
+      "opening": "先想一个日常场景：食堂里大家排队打饭，和把一摞盘子往上叠、再从上往下取，这两种存取方式有什么不同？请结合这个对比说说：普通线性表在插入、删除位置上有什么自由，而栈和队列分别把操作限制在了哪一端，这种限制又怎样决定了它们的取出顺序。",
+      "passed": true
+    }
+  ]
+}

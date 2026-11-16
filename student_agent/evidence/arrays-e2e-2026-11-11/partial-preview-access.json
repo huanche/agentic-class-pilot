@@ -1,0 +1,16 @@
+{
+  "teacher": {
+    "status": 404,
+    "body": {
+      "success": false,
+      "error": "Classroom not found"
+    }
+  },
+  "admin": {
+    "status": 403,
+    "body": {
+      "success": false,
+      "error": "Classroom is not attached to a course"
+    }
+  }
+}

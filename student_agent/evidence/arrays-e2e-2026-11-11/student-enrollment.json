@@ -1,0 +1,13 @@
+{
+  "status": 200,
+  "body": {
+    "title": "数组短课｜本地完整流程测试 2026-11-11",
+    "description": "用户数组PPT的独立本地测试课，不影响已有课程。",
+    "id": "04b5c284-9ef6-415c-abb1-e7910c1dff68",
+    "owner_id": "5abb1b05-9c6f-464c-9721-1e175583586a",
+    "enroll_code": "<REDACTED>",
+    "created_at": "2026-11-11T07:57:27.015506Z",
+    "total_chapters": 0,
+    "completed_chapters": 0
+  }
+}

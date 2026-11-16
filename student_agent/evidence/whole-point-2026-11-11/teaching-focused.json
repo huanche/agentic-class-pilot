@@ -1,0 +1,800 @@
+{
+  "productionWrites": false,
+  "model": "deepseek-v4-flash",
+  "cases": [
+    {
+      "name": "memory-partial",
+      "point": {
+        "id": "knowledge:94154afd82bcaa74cbe5",
+        "gaps": [],
+        "type": "memory",
+        "title": "栈的定义与核心术语",
+        "status": "unseen",
+        "content": "栈是仅在一端进行插入和删除的线性表。允许插入和删除的一端称为栈顶 Top，不允许操作的另一端称为栈底 Bottom；Push（入栈）是在栈顶插入元素，Pop（出栈）是删除栈顶元素。栈的特性是后进先出 LIFO，最后入栈的元素最先出栈。\n说出栈的定义：仅在一端进行插入和删除的线性表\n指出栈顶 Top 是允许插入和删除的一端，栈底 Bottom 是不允许操作的另一端\n说明 Push 是在栈顶插入元素、Pop 是删除栈顶元素\n说明栈遵循后进先出 LIFO，最后入栈的元素最先出栈",
+        "details": {
+          "statement": "栈是仅在一端进行插入和删除的线性表。允许插入和删除的一端称为栈顶 Top，不允许操作的另一端称为栈底 Bottom；Push（入栈）是在栈顶插入元素，Pop（出栈）是删除栈顶元素。栈的特性是后进先出 LIFO，最后入栈的元素最先出栈。",
+          "requiredElements": [
+            "说出栈的定义：仅在一端进行插入和删除的线性表",
+            "指出栈顶 Top 是允许插入和删除的一端，栈底 Bottom 是不允许操作的另一端",
+            "说明 Push 是在栈顶插入元素、Pop 是删除栈顶元素",
+            "说明栈遵循后进先出 LIFO，最后入栈的元素最先出栈"
+          ]
+        },
+        "attempts": 0,
+        "evidence": "",
+        "next_step": "",
+        "description": "栈是仅在一端进行插入和删除的线性表。允许插入和删除的一端称为栈顶 Top，不允许操作的另一端称为栈底 Bottom；Push（入栈）是在栈顶插入元素，Pop（出栈）是删除栈顶元素。栈的特性是后进先出 LIFO，最后入栈的元素最先出栈。\n说出栈的定义：仅在一端进行插入和删除的线性表\n指出栈顶 Top 是允许插入和删除的一端，栈底 Bottom 是不允许操作的另一端\n说明 Push 是在栈顶插入元素、Pop 是删除栈顶元素\n说明栈遵循后进先出 LIFO，最后入栈的元素最先出栈",
+        "known_parts": [],
+        "mastered_in": null,
+        "recall_done": false,
+        "help_history": [],
+        "requirements": [
+          {
+            "id": "requiredElements:1",
+            "text": "说出栈的定义：仅在一端进行插入和删除的线性表",
+            "status": "unconfirmed",
+            "evidence": "",
+            "studentText": "",
+            "gap": ""
+          },
+          {
+            "id": "requiredElements:2",
+            "text": "指出栈顶 Top 是允许插入和删除的一端，栈底 Bottom 是不允许操作的另一端",
+            "status": "unconfirmed",
+            "evidence": "",
+            "studentText": "",
+            "gap": ""
+          },
+          {
+            "id": "requiredElements:3",
+            "text": "说明 Push 是在栈顶插入元素、Pop 是删除栈顶元素",
+            "status": "unconfirmed",
+            "evidence": "",
+            "studentText": "",
+            "gap": ""
+          },
+          {
+            "id": "requiredElements:4",
+            "text": "说明栈遵循后进先出 LIFO，最后入栈的元素最先出栈",
+            "status": "unconfirmed",
+            "evidence": "",
+            "studentText": "",
+            "gap": ""
+          }
+        ],
+        "task_question": "",
+        "reinforce_done": false,
+        "latest_question": "",
+        "recall_attempts": 0,
+        "question_history": [],
+        "question_targets": [],
+        "assessment_history": [],
+        "reinforce_attempts": 0,
+        "reinforcement_required": false,
+        "excluded_from_discussion": false
+      },
+      "turns": [
+        {
+          "student": "栈是只在栈顶进行插入删除的线性表。",
+          "state": {
+            "flow_version": 4,
+            "mastery_version": 1,
+            "reply_version": 1,
+            "stage": "recall",
+            "recall_round_limit": 5,
+            "reinforce_round_limit": 8,
+            "transition": "continue",
+            "strategy": "hint",
+            "messages": [],
+            "student_text": "栈是只在栈顶进行插入删除的线性表。",
+            "evaluation": {
+              "intent": "answer",
+              "assessments": [
+                {
+                  "id": "knowledge:94154afd82bcaa74cbe5",
+                  "result": "partial",
+                  "evidence": "学生说“栈是只在栈顶进行插入删除的线性表”，体现了栈只在一端操作的定义，并提到栈顶是操作端。",
+                  "known_parts": [
+                    "说出栈的定义：仅在一端进行插入和删除的线性表"
+                  ],
+                  "gaps": [
+                    "未说明栈底 Bottom 是不允许操作的另一端。",
+                    "尚未确认：说明 Push 是在栈顶插入元素、Pop 是删除栈顶元素",
+                    "尚未确认：说明栈遵循后进先出 LIFO，最后入栈的元素最先出栈"
+                  ],
+                  "next_step": "补充栈另一端（栈底）的名称与是否允许操作，并说明 Push/Pop 各做什么、元素进出遵循什么规律。"
+                }
+              ]
+            },
+            "reply": "你刚才说“栈是只在栈顶进行插入删除的线性表”，这一点是对的。需要补上的是另一端：栈的另一端叫栈底 Bottom，它是不允许进行插入和删除操作的一端。也就是说，栈顶 Top 是唯一允许操作的一端，栈底 Bottom 则不能操作。\n\n接下来请你补充：Push（入栈）和 Pop（出栈）分别是在哪一端做什么？栈的元素进出又遵循什么规律？",
+            "last_point_id": "knowledge:94154afd82bcaa74cbe5",
+            "current_task": {
+              "pointId": "knowledge:94154afd82bcaa74cbe5",
+              "stage": "recall",
+              "question": "我们先从“栈”这个数据结构开始。请你回忆一下：栈是什么样的线性表？它两端分别叫什么、各自允许什么操作？入栈和出栈又分别做什么？最后，栈的元素进出遵循什么规律？把你能想到的完整说出来。"
+            },
+            "points": [
+              {
+                "id": "knowledge:94154afd82bcaa74cbe5",
+                "gaps": [
+                  "未说明栈底 Bottom 是不允许操作的另一端。",
+                  "尚未确认：说明 Push 是在栈顶插入元素、Pop 是删除栈顶元素",
+                  "尚未确认：说明栈遵循后进先出 LIFO，最后入栈的元素最先出栈"
+                ],
+                "type": "memory",
+                "title": "栈的定义与核心术语",
+                "status": "partial",
+                "content": "栈是仅在一端进行插入和删除的线性表。允许插入和删除的一端称为栈顶 Top，不允许操作的另一端称为栈底 Bottom；Push（入栈）是在栈顶插入元素，Pop（出栈）是删除栈顶元素。栈的特性是后进先出 LIFO，最后入栈的元素最先出栈。\n说出栈的定义：仅在一端进行插入和删除的线性表\n指出栈顶 Top 是允许插入和删除的一端，栈底 Bottom 是不允许操作的另一端\n说明 Push 是在栈顶插入元素、Pop 是删除栈顶元素\n说明栈遵循后进先出 LIFO，最后入栈的元素最先出栈",
+                "details": {
+                  "statement": "栈是仅在一端进行插入和删除的线性表。允许插入和删除的一端称为栈顶 Top，不允许操作的另一端称为栈底 Bottom；Push（入栈）是在栈顶插入元素，Pop（出栈）是删除栈顶元素。栈的特性是后进先出 LIFO，最后入栈的元素最先出栈。",
+                  "requiredElements": [
+                    "说出栈的定义：仅在一端进行插入和删除的线性表",
+                    "指出栈顶 Top 是允许插入和删除的一端，栈底 Bottom 是不允许操作的另一端",
+                    "说明 Push 是在栈顶插入元素、Pop 是删除栈顶元素",
+                    "说明栈遵循后进先出 LIFO，最后入栈的元素最先出栈"
+                  ]
+                },
+                "attempts": 1,
+                "evidence": "学生说“栈是只在栈顶进行插入删除的线性表”，体现了栈只在一端操作的定义，并提到栈顶是操作端。",
+                "next_step": "补充栈另一端（栈底）的名称与是否允许操作，并说明 Push/Pop 各做什么、元素进出遵循什么规律。",
+                "description": "栈是仅在一端进行插入和删除的线性表。允许插入和删除的一端称为栈顶 Top，不允许操作的另一端称为栈底 Bottom；Push（入栈）是在栈顶插入元素，Pop（出栈）是删除栈顶元素。栈的特性是后进先出 LIFO，最后入栈的元素最先出栈。\n说出栈的定义：仅在一端进行插入和删除的线性表\n指出栈顶 Top 是允许插入和删除的一端，栈底 Bottom 是不允许操作的另一端\n说明 Push 是在栈顶插入元素、Pop 是删除栈顶元素\n说明栈遵循后进先出 LIFO，最后入栈的元素最先出栈",
+                "known_parts": [
+                  "说出栈的定义：仅在一端进行插入和删除的线性表"
+                ],
+                "mastered_in": null,
+                "recall_done": false,
+                "help_history": [
+                  {
+                    "stage": "recall",
+                    "text": "我们先从“栈”这个数据结构开始。请你回忆一下：栈是什么样的线性表？它两端分别叫什么、各自允许什么操作？入栈和出栈又分别做什么？最后，栈的元素进出遵循什么规律？把你能想到的完整说出来。",
+                    "target_ids": [
+                      "requiredElements:1",
+                      "requiredElements:2",
+                      "requiredElements:3",
+                      "requiredElements:4"
+                    ],
+                    "planned_action": "ask"
+                  },
+                  {
+                    "stage": "recall",
+                    "text": "你刚才说“栈是只在栈顶进行插入删除的线性表”，这一点是对的。需要补上的是另一端：栈的另一端叫栈底 Bottom，它是不允许进行插入和删除操作的一端。也就是说，栈顶 Top 是唯一允许操作的一端，栈底 Bottom 则不能操作。\n\n接下来请你补充：Push（入栈）和 Pop（出栈）分别是在哪一端做什么？栈的元素进出又遵循什么规律？",
+                    "target_ids": [
+                      "requiredElements:2",
+                      "requiredElements:3",
+                      "requiredElements:4"
+                    ],
+                    "planned_action": "explain"
+                  }
+                ],
+                "requirements": [
+                  {
+                    "id": "requiredElements:1",
+                    "text": "说出栈的定义：仅在一端进行插入和删除的线性表",
+                    "status": "demonstrated",
+                    "evidence": "“栈是只在栈顶进行插入删除的线性表”——说明栈是仅在一端进行插入和删除的线性表。",
+                    "studentText": "栈是只在栈顶进行插入删除的线性表。",
+                    "gap": ""
+                  },
+                  {
+                    "id": "requiredElements:2",
+                    "text": "指出栈顶 Top 是允许插入和删除的一端，栈底 Bottom 是不允许操作的另一端",
+                    "status": "needs_help",
+                    "evidence": "学生指出插入删除在栈顶进行，但未提到另一端叫栈底、且不允许操作。",
+                    "studentText": "栈是只在栈顶进行插入删除的线性表。",
+                    "gap": "未说明栈底 Bottom 是不允许操作的另一端。"
+                  },
+                  {
+                    "id": "requiredElements:3",
+                    "text": "说明 Push 是在栈顶插入元素、Pop 是删除栈顶元素",
+                    "status": "unconfirmed",
+                    "evidence": "",
+                    "studentText": "",
+                    "gap": ""
+                  },
+                  {
+                    "id": "requiredElements:4",
+                    "text": "说明栈遵循后进先出 LIFO，最后入栈的元素最先出栈",
+                    "status": "unconfirmed",
+                    "evidence": "",
+                    "studentText": "",
+                    "gap": ""
+                  }
+                ],
+                "task_question": "我们先从“栈”这个数据结构开始。请你回忆一下：栈是什么样的线性表？它两端分别叫什么、各自允许什么操作？入栈和出栈又分别做什么？最后，栈的元素进出遵循什么规律？把你能想到的完整说出来。",
+                "reinforce_done": false,
+                "latest_question": "你刚才说“栈是只在栈顶进行插入删除的线性表”，这一点是对的。需要补上的是另一端：栈的另一端叫栈底 Bottom，它是不允许进行插入和删除操作的一端。也就是说，栈顶 Top 是唯一允许操作的一端，栈底 Bottom 则不能操作。\n\n接下来请你补充：Push（入栈）和 Pop（出栈）分别是在哪一端做什么？栈的元素进出又遵循什么规律？",
+                "recall_attempts": 1,
+                "question_history": [
+                  {
+                    "stage": "recall",
+                    "text": "我们先从“栈”这个数据结构开始。请你回忆一下：栈是什么样的线性表？它两端分别叫什么、各自允许什么操作？入栈和出栈又分别做什么？最后，栈的元素进出遵循什么规律？把你能想到的完整说出来。",
+                    "target_ids": [
+                      "requiredElements:1",
+                      "requiredElements:2",
+                      "requiredElements:3",
+                      "requiredElements:4"
+                    ],
+                    "planned_action": "ask"
+                  },
+                  {
+                    "stage": "recall",
+                    "text": "你刚才说“栈是只在栈顶进行插入删除的线性表”，这一点是对的。需要补上的是另一端：栈的另一端叫栈底 Bottom，它是不允许进行插入和删除操作的一端。也就是说，栈顶 Top 是唯一允许操作的一端，栈底 Bottom 则不能操作。\n\n接下来请你补充：Push（入栈）和 Pop（出栈）分别是在哪一端做什么？栈的元素进出又遵循什么规律？",
+                    "target_ids": [
+                      "requiredElements:2",
+                      "requiredElements:3",
+                      "requiredElements:4"
+                    ],
+                    "planned_action": "explain"
+                  }
+                ],
+                "question_targets": [
+                  "requiredElements:2",
+                  "requiredElements:3",
+                  "requiredElements:4"
+                ],
+                "assessment_history": [
+                  {
+                    "stage": "recall",
+                    "round": 1,
+                    "result": "partial",
+                    "evidence": "学生说“栈是只在栈顶进行插入删除的线性表”，体现了栈只在一端操作的定义，并提到栈顶是操作端。",
+                    "studentText": "栈是只在栈顶进行插入删除的线性表。",
+                    "point_result": "partial",
+                    "answer_assessment": {
+                      "answer_result": "partial",
+                      "evidence": "学生说“栈是只在栈顶进行插入删除的线性表”，体现了栈只在一端操作的定义，并提到栈顶是操作端。",
+                      "updates": [
+                        {
+                          "requirement_id": "requiredElements:1",
+                          "status": "demonstrated",
+                          "evidence": "“栈是只在栈顶进行插入删除的线性表”——说明栈是仅在一端进行插入和删除的线性表。",
+                          "gap": ""
+                        },
+                        {
+                          "requirement_id": "requiredElements:2",
+                          "status": "needs_help",
+                          "evidence": "学生指出插入删除在栈顶进行，但未提到另一端叫栈底、且不允许操作。",
+                          "gap": "未说明栈底 Bottom 是不允许操作的另一端。"
+                        }
+                      ],
+                      "next_step": "补充栈另一端（栈底）的名称与是否允许操作，并说明 Push/Pop 各做什么、元素进出遵循什么规律。"
+                    },
+                    "target_ids": [
+                      "requiredElements:1",
+                      "requiredElements:2",
+                      "requiredElements:3",
+                      "requiredElements:4"
+                    ],
+                    "question": "我们先从“栈”这个数据结构开始。请你回忆一下：栈是什么样的线性表？它两端分别叫什么、各自允许什么操作？入栈和出栈又分别做什么？最后，栈的元素进出遵循什么规律？把你能想到的完整说出来。"
+                  }
+                ],
+                "reinforce_attempts": 0,
+                "reinforcement_required": false,
+                "excluded_from_discussion": false
+              }
+            ],
+            "curriculum_version": 10,
+            "teaching_plan": {
+              "target_ids": [
+                "requiredElements:2",
+                "requiredElements:3",
+                "requiredElements:4"
+              ],
+              "action": "explain",
+              "requirements": [
+                "指出栈顶 Top 是允许插入和删除的一端，栈底 Bottom 是不允许操作的另一端",
+                "说明 Push 是在栈顶插入元素、Pop 是删除栈顶元素",
+                "说明栈遵循后进先出 LIFO，最后入栈的元素最先出栈"
+              ]
+            },
+            "last_assistance": "tutor_response"
+          }
+        },
+        {
+          "student": "允许操作的一端叫Top，另一端Bottom不允许操作。Push栈顶插入、Pop栈顶删除，最后放入的先取出，是LIFO。",
+          "state": {
+            "flow_version": 4,
+            "mastery_version": 1,
+            "reply_version": 1,
+            "stage": "wrapup",
+            "recall_round_limit": 5,
+            "reinforce_round_limit": 8,
+            "transition": "enter_wrapup",
+            "strategy": "hint",
+            "messages": [],
+            "student_text": "允许操作的一端叫Top，另一端Bottom不允许操作。Push栈顶插入、Pop栈顶删除，最后放入的先取出，是LIFO。",
+            "evaluation": {
+              "intent": "answer",
+              "assessments": [
+                {
+                  "id": "knowledge:94154afd82bcaa74cbe5",
+                  "result": "mastered",
+                  "evidence": "学生说“允许操作的一端叫Top，另一端Bottom不允许操作”，并说明“Push栈顶插入、Pop栈顶删除，最后放入的先取出，是LIFO”。",
+                  "known_parts": [
+                    "说出栈的定义：仅在一端进行插入和删除的线性表",
+                    "指出栈顶 Top 是允许插入和删除的一端，栈底 Bottom 是不允许操作的另一端",
+                    "说明 Push 是在栈顶插入元素、Pop 是删除栈顶元素",
+                    "说明栈遵循后进先出 LIFO，最后入栈的元素最先出栈"
+                  ],
+                  "gaps": [],
+                  "next_step": "栈的定义与核心术语已全部说清，进入下一知识点。"
+                }
+              ]
+            },
+            "reply": "你这次把栈的核心术语说完整了：栈顶 Top 是允许插入和删除的一端，栈底 Bottom 不允许操作；Push 在栈顶插入，Pop 删除栈顶元素；元素进出遵循后进先出（LIFO），最后放入的最先取出。这个知识点已经掌握，可以继续后面的内容。",
+            "last_point_id": "knowledge:94154afd82bcaa74cbe5",
+            "current_task": null,
+            "points": [
+              {
+                "id": "knowledge:94154afd82bcaa74cbe5",
+                "gaps": [],
+                "type": "memory",
+                "title": "栈的定义与核心术语",
+                "status": "mastered",
+                "content": "栈是仅在一端进行插入和删除的线性表。允许插入和删除的一端称为栈顶 Top，不允许操作的另一端称为栈底 Bottom；Push（入栈）是在栈顶插入元素，Pop（出栈）是删除栈顶元素。栈的特性是后进先出 LIFO，最后入栈的元素最先出栈。\n说出栈的定义：仅在一端进行插入和删除的线性表\n指出栈顶 Top 是允许插入和删除的一端，栈底 Bottom 是不允许操作的另一端\n说明 Push 是在栈顶插入元素、Pop 是删除栈顶元素\n说明栈遵循后进先出 LIFO，最后入栈的元素最先出栈",
+                "details": {
+                  "statement": "栈是仅在一端进行插入和删除的线性表。允许插入和删除的一端称为栈顶 Top，不允许操作的另一端称为栈底 Bottom；Push（入栈）是在栈顶插入元素，Pop（出栈）是删除栈顶元素。栈的特性是后进先出 LIFO，最后入栈的元素最先出栈。",
+                  "requiredElements": [
+                    "说出栈的定义：仅在一端进行插入和删除的线性表",
+                    "指出栈顶 Top 是允许插入和删除的一端，栈底 Bottom 是不允许操作的另一端",
+                    "说明 Push 是在栈顶插入元素、Pop 是删除栈顶元素",
+                    "说明栈遵循后进先出 LIFO，最后入栈的元素最先出栈"
+                  ]
+                },
+                "attempts": 2,
+                "evidence": "学生说“允许操作的一端叫Top，另一端Bottom不允许操作”，并说明“Push栈顶插入、Pop栈顶删除，最后放入的先取出，是LIFO”。",
+                "next_step": "栈的定义与核心术语已全部说清，进入下一知识点。",
+                "description": "栈是仅在一端进行插入和删除的线性表。允许插入和删除的一端称为栈顶 Top，不允许操作的另一端称为栈底 Bottom；Push（入栈）是在栈顶插入元素，Pop（出栈）是删除栈顶元素。栈的特性是后进先出 LIFO，最后入栈的元素最先出栈。\n说出栈的定义：仅在一端进行插入和删除的线性表\n指出栈顶 Top 是允许插入和删除的一端，栈底 Bottom 是不允许操作的另一端\n说明 Push 是在栈顶插入元素、Pop 是删除栈顶元素\n说明栈遵循后进先出 LIFO，最后入栈的元素最先出栈",
+                "known_parts": [
+                  "说出栈的定义：仅在一端进行插入和删除的线性表",
+                  "指出栈顶 Top 是允许插入和删除的一端，栈底 Bottom 是不允许操作的另一端",
+                  "说明 Push 是在栈顶插入元素、Pop 是删除栈顶元素",
+                  "说明栈遵循后进先出 LIFO，最后入栈的元素最先出栈"
+                ],
+                "mastered_in": "recall",
+                "recall_done": true,
+                "help_history": [
+                  {
+                    "stage": "recall",
+                    "text": "我们先从“栈”这个数据结构开始。请你回忆一下：栈是什么样的线性表？它两端分别叫什么、各自允许什么操作？入栈和出栈又分别做什么？最后，栈的元素进出遵循什么规律？把你能想到的完整说出来。",
+                    "target_ids": [
+                      "requiredElements:1",
+                      "requiredElements:2",
+                      "requiredElements:3",
+                      "requiredElements:4"
+                    ],
+                    "planned_action": "ask"
+                  },
+                  {
+                    "stage": "recall",
+                    "text": "你刚才说“栈是只在栈顶进行插入删除的线性表”，这一点是对的。需要补上的是另一端：栈的另一端叫栈底 Bottom，它是不允许进行插入和删除操作的一端。也就是说，栈顶 Top 是唯一允许操作的一端，栈底 Bottom 则不能操作。\n\n接下来请你补充：Push（入栈）和 Pop（出栈）分别是在哪一端做什么？栈的元素进出又遵循什么规律？",
+                    "target_ids": [
+                      "requiredElements:2",
+                      "requiredElements:3",
+                      "requiredElements:4"
+                    ],
+                    "planned_action": "explain"
+                  }
+                ],
+                "requirements": [
+                  {
+                    "id": "requiredElements:1",
+                    "text": "说出栈的定义：仅在一端进行插入和删除的线性表",
+                    "status": "demonstrated",
+                    "evidence": "“栈是只在栈顶进行插入删除的线性表”——说明栈是仅在一端进行插入和删除的线性表。",
+                    "studentText": "栈是只在栈顶进行插入删除的线性表。",
+                    "gap": ""
+                  },
+                  {
+                    "id": "requiredElements:2",
+                    "text": "指出栈顶 Top 是允许插入和删除的一端，栈底 Bottom 是不允许操作的另一端",
+                    "status": "demonstrated",
+                    "evidence": "“允许操作的一端叫Top，另一端Bottom不允许操作”——明确栈顶为操作端、栈底不允许操作。",
+                    "studentText": "允许操作的一端叫Top，另一端Bottom不允许操作。Push栈顶插入、Pop栈顶删除，最后放入的先取出，是LIFO。",
+                    "gap": ""
+                  },
+                  {
+                    "id": "requiredElements:3",
+                    "text": "说明 Push 是在栈顶插入元素、Pop 是删除栈顶元素",
+                    "status": "demonstrated",
+                    "evidence": "“Push栈顶插入、Pop栈顶删除”——说明入栈在栈顶插入、出栈删除栈顶元素。",
+                    "studentText": "允许操作的一端叫Top，另一端Bottom不允许操作。Push栈顶插入、Pop栈顶删除，最后放入的先取出，是LIFO。",
+                    "gap": ""
+                  },
+                  {
+                    "id": "requiredElements:4",
+                    "text": "说明栈遵循后进先出 LIFO，最后入栈的元素最先出栈",
+                    "status": "demonstrated",
+                    "evidence": "“最后放入的先取出，是LIFO”——说明后进先出、最后入栈的最先出栈。",
+                    "studentText": "允许操作的一端叫Top，另一端Bottom不允许操作。Push栈顶插入、Pop栈顶删除，最后放入的先取出，是LIFO。",
+                    "gap": ""
+                  }
+                ],
+                "task_question": "我们先从“栈”这个数据结构开始。请你回忆一下：栈是什么样的线性表？它两端分别叫什么、各自允许什么操作？入栈和出栈又分别做什么？最后，栈的元素进出遵循什么规律？把你能想到的完整说出来。",
+                "reinforce_done": true,
+                "latest_question": "你刚才说“栈是只在栈顶进行插入删除的线性表”，这一点是对的。需要补上的是另一端：栈的另一端叫栈底 Bottom，它是不允许进行插入和删除操作的一端。也就是说，栈顶 Top 是唯一允许操作的一端，栈底 Bottom 则不能操作。\n\n接下来请你补充：Push（入栈）和 Pop（出栈）分别是在哪一端做什么？栈的元素进出又遵循什么规律？",
+                "recall_attempts": 2,
+                "question_history": [
+                  {
+                    "stage": "recall",
+                    "text": "我们先从“栈”这个数据结构开始。请你回忆一下：栈是什么样的线性表？它两端分别叫什么、各自允许什么操作？入栈和出栈又分别做什么？最后，栈的元素进出遵循什么规律？把你能想到的完整说出来。",
+                    "target_ids": [
+                      "requiredElements:1",
+                      "requiredElements:2",
+                      "requiredElements:3",
+                      "requiredElements:4"
+                    ],
+                    "planned_action": "ask"
+                  },
+                  {
+                    "stage": "recall",
+                    "text": "你刚才说“栈是只在栈顶进行插入删除的线性表”，这一点是对的。需要补上的是另一端：栈的另一端叫栈底 Bottom，它是不允许进行插入和删除操作的一端。也就是说，栈顶 Top 是唯一允许操作的一端，栈底 Bottom 则不能操作。\n\n接下来请你补充：Push（入栈）和 Pop（出栈）分别是在哪一端做什么？栈的元素进出又遵循什么规律？",
+                    "target_ids": [
+                      "requiredElements:2",
+                      "requiredElements:3",
+                      "requiredElements:4"
+                    ],
+                    "planned_action": "explain"
+                  }
+                ],
+                "question_targets": [
+                  "requiredElements:2",
+                  "requiredElements:3",
+                  "requiredElements:4"
+                ],
+                "assessment_history": [
+                  {
+                    "stage": "recall",
+                    "round": 1,
+                    "result": "partial",
+                    "evidence": "学生说“栈是只在栈顶进行插入删除的线性表”，体现了栈只在一端操作的定义，并提到栈顶是操作端。",
+                    "studentText": "栈是只在栈顶进行插入删除的线性表。",
+                    "point_result": "partial",
+                    "answer_assessment": {
+                      "answer_result": "partial",
+                      "evidence": "学生说“栈是只在栈顶进行插入删除的线性表”，体现了栈只在一端操作的定义，并提到栈顶是操作端。",
+                      "updates": [
+                        {
+                          "requirement_id": "requiredElements:1",
+                          "status": "demonstrated",
+                          "evidence": "“栈是只在栈顶进行插入删除的线性表”——说明栈是仅在一端进行插入和删除的线性表。",
+                          "gap": ""
+                        },
+                        {
+                          "requirement_id": "requiredElements:2",
+                          "status": "needs_help",
+                          "evidence": "学生指出插入删除在栈顶进行，但未提到另一端叫栈底、且不允许操作。",
+                          "gap": "未说明栈底 Bottom 是不允许操作的另一端。"
+                        }
+                      ],
+                      "next_step": "补充栈另一端（栈底）的名称与是否允许操作，并说明 Push/Pop 各做什么、元素进出遵循什么规律。"
+                    },
+                    "target_ids": [
+                      "requiredElements:1",
+                      "requiredElements:2",
+                      "requiredElements:3",
+                      "requiredElements:4"
+                    ],
+                    "question": "我们先从“栈”这个数据结构开始。请你回忆一下：栈是什么样的线性表？它两端分别叫什么、各自允许什么操作？入栈和出栈又分别做什么？最后，栈的元素进出遵循什么规律？把你能想到的完整说出来。"
+                  },
+                  {
+                    "stage": "recall",
+                    "round": 2,
+                    "result": "correct",
+                    "evidence": "学生说“允许操作的一端叫Top，另一端Bottom不允许操作”，并说明“Push栈顶插入、Pop栈顶删除，最后放入的先取出，是LIFO”。",
+                    "studentText": "允许操作的一端叫Top，另一端Bottom不允许操作。Push栈顶插入、Pop栈顶删除，最后放入的先取出，是LIFO。",
+                    "point_result": "mastered",
+                    "answer_assessment": {
+                      "answer_result": "correct",
+                      "evidence": "学生说“允许操作的一端叫Top，另一端Bottom不允许操作”，并说明“Push栈顶插入、Pop栈顶删除，最后放入的先取出，是LIFO”。",
+                      "updates": [
+                        {
+                          "requirement_id": "requiredElements:2",
+                          "status": "demonstrated",
+                          "evidence": "“允许操作的一端叫Top，另一端Bottom不允许操作”——明确栈顶为操作端、栈底不允许操作。",
+                          "gap": ""
+                        },
+                        {
+                          "requirement_id": "requiredElements:3",
+                          "status": "demonstrated",
+                          "evidence": "“Push栈顶插入、Pop栈顶删除”——说明入栈在栈顶插入、出栈删除栈顶元素。",
+                          "gap": ""
+                        },
+                        {
+                          "requirement_id": "requiredElements:4",
+                          "status": "demonstrated",
+                          "evidence": "“最后放入的先取出，是LIFO”——说明后进先出、最后入栈的最先出栈。",
+                          "gap": ""
+                        }
+                      ],
+                      "next_step": "栈的定义与核心术语已全部说清，进入下一知识点。"
+                    },
+                    "target_ids": [
+                      "requiredElements:2",
+                      "requiredElements:3",
+                      "requiredElements:4"
+                    ],
+                    "question": "你刚才说“栈是只在栈顶进行插入删除的线性表”，这一点是对的。需要补上的是另一端：栈的另一端叫栈底 Bottom，它是不允许进行插入和删除操作的一端。也就是说，栈顶 Top 是唯一允许操作的一端，栈底 Bottom 则不能操作。\n\n接下来请你补充：Push（入栈）和 Pop（出栈）分别是在哪一端做什么？栈的元素进出又遵循什么规律？"
+                  }
+                ],
+                "reinforce_attempts": 0,
+                "reinforcement_required": false,
+                "excluded_from_discussion": false
+              }
+            ],
+            "curriculum_version": 10,
+            "teaching_plan": {
+              "target_ids": [],
+              "action": "summarize"
+            },
+            "last_assistance": "tutor_response",
+            "completion_reason": "all_mastered"
+          }
+        }
+      ],
+      "opening": "我们先从“栈”这个数据结构开始。请你回忆一下：栈是什么样的线性表？它两端分别叫什么、各自允许什么操作？入栈和出栈又分别做什么？最后，栈的元素进出遵循什么规律？把你能想到的完整说出来。",
+      "passed": true
+    },
+    {
+      "name": "concept-help",
+      "point": {
+        "id": "knowledge:8aea007ebfca5273a830",
+        "gaps": [],
+        "type": "concept",
+        "title": "栈与队列作为受限线性表",
+        "status": "unseen",
+        "content": "线性表允许在任意位置插入和删除，取出顺序可以自由决定；当插入、删除的位置受到限制后，数据存取顺序随之改变，由此得到栈和队列这两种受限线性表。栈只允许在 top 端操作，是后进先出 LIFO；队列从队尾入、队头出，是先进先出 FIFO。\n说明线性表与受限线性表的区别：线性表可在任意位置插入删除，栈和队列的插入删除位置受限\n解释插入、删除位置受限后数据存取顺序如何改变\n指出栈只在 top 端操作、队列在队尾入队头出，从而分别形成 LIFO 与 FIFO",
+        "details": {
+          "explanation": "线性表允许在任意位置插入和删除，取出顺序可以自由决定；当插入、删除的位置受到限制后，数据存取顺序随之改变，由此得到栈和队列这两种受限线性表。栈只允许在 top 端操作，是后进先出 LIFO；队列从队尾入、队头出，是先进先出 FIFO。",
+          "understandingPoints": [
+            "说明线性表与受限线性表的区别：线性表可在任意位置插入删除，栈和队列的插入删除位置受限",
+            "解释插入、删除位置受限后数据存取顺序如何改变",
+            "指出栈只在 top 端操作、队列在队尾入队头出，从而分别形成 LIFO 与 FIFO"
+          ]
+        },
+        "attempts": 0,
+        "evidence": "",
+        "next_step": "",
+        "description": "线性表允许在任意位置插入和删除，取出顺序可以自由决定；当插入、删除的位置受到限制后，数据存取顺序随之改变，由此得到栈和队列这两种受限线性表。栈只允许在 top 端操作，是后进先出 LIFO；队列从队尾入、队头出，是先进先出 FIFO。\n说明线性表与受限线性表的区别：线性表可在任意位置插入删除，栈和队列的插入删除位置受限\n解释插入、删除位置受限后数据存取顺序如何改变\n指出栈只在 top 端操作、队列在队尾入队头出，从而分别形成 LIFO 与 FIFO",
+        "known_parts": [],
+        "mastered_in": null,
+        "recall_done": false,
+        "help_history": [],
+        "requirements": [
+          {
+            "id": "understandingPoints:1",
+            "text": "说明线性表与受限线性表的区别：线性表可在任意位置插入删除，栈和队列的插入删除位置受限",
+            "status": "unconfirmed",
+            "evidence": "",
+            "studentText": "",
+            "gap": ""
+          },
+          {
+            "id": "understandingPoints:2",
+            "text": "解释插入、删除位置受限后数据存取顺序如何改变",
+            "status": "unconfirmed",
+            "evidence": "",
+            "studentText": "",
+            "gap": ""
+          },
+          {
+            "id": "understandingPoints:3",
+            "text": "指出栈只在 top 端操作、队列在队尾入队头出，从而分别形成 LIFO 与 FIFO",
+            "status": "unconfirmed",
+            "evidence": "",
+            "studentText": "",
+            "gap": ""
+          }
+        ],
+        "task_question": "",
+        "reinforce_done": false,
+        "latest_question": "",
+        "recall_attempts": 0,
+        "question_history": [],
+        "question_targets": [],
+        "assessment_history": [],
+        "reinforce_attempts": 0,
+        "reinforcement_required": false,
+        "excluded_from_discussion": false
+      },
+      "turns": [
+        {
+          "student": "我不懂位置限制为什么会决定顺序，你直接讲清楚吧。",
+          "state": {
+            "flow_version": 4,
+            "mastery_version": 1,
+            "reply_version": 1,
+            "stage": "recall",
+            "recall_round_limit": 5,
+            "reinforce_round_limit": 8,
+            "transition": "continue",
+            "strategy": "answer_question",
+            "messages": [],
+            "student_text": "我不懂位置限制为什么会决定顺序，你直接讲清楚吧。",
+            "evaluation": {
+              "intent": "question",
+              "assessments": [
+                {
+                  "id": "knowledge:8aea007ebfca5273a830",
+                  "result": "partial",
+                  "evidence": "学生表示不理解位置限制为何决定顺序，请求直接讲解，未给出可评估的作答。",
+                  "known_parts": [],
+                  "gaps": [
+                    "尚未确认：说明线性表与受限线性表的区别：线性表可在任意位置插入删除，栈和队列的插入删除位置受限",
+                    "尚未理解插入删除位置受限与取出顺序之间的因果联系。",
+                    "尚未确认：指出栈只在 top 端操作、队列在队尾入队头出，从而分别形成 LIFO 与 FIFO"
+                  ],
+                  "next_step": "直接讲清“位置受限→顺序被固定”的关键一步，再用一个具体操作序列让学生判断取出顺序。"
+                }
+              ]
+            },
+            "reply": "你卡住的这一点，关键在于“能从哪里取”被限制住了，取出的先后就跟着被固定下来。\n\n拿普通线性表来说，元素排成一列，你可以在任意位置插入、删除，也可以挑任意一个元素先取走。所以取出顺序很自由，完全由你选哪个位置决定。\n\n现在把“能操作的位置”限制住，情况就变了：\n\n- **只允许在一端插入和删除**：你每次放进去的元素都压在最上面，想取也只能从最上面取。于是最后放进去的那个，反而最先被取出来——顺序被这一端的限制“锁”成了后进先出。\n- **一端只进、另一端只出**：元素从一头进来，只能从另一头出去。先进来的排在前面，必然先出去——顺序被锁成了先进先出。\n\n所以因果关系是：**位置限制 → 可选的取出对象变少（往往只剩一个）→ 取出顺序不再自由，被固定成某种规则**。不是顺序本身有什么魔力，而是“只能从这儿取”把选择权收走了。\n\n这就是栈和队列作为受限线性表的由来。接下来请你结合这个道理说说：普通线性表在插入、删除位置上有什么自由？栈和队列各自把操作限制在哪些位置？",
+            "last_point_id": "knowledge:8aea007ebfca5273a830",
+            "current_task": {
+              "pointId": "knowledge:8aea007ebfca5273a830",
+              "stage": "recall",
+              "question": "先想一个你熟悉的场景：食堂排队打饭，和把餐盘一个个叠起来放。\n\n请你说说：普通的线性表在插入、删除位置上有什么自由？如果把它限制成“只能在某一端操作”，会得到哪两种结构？它们各自取出元素的顺序有什么不同？"
+            },
+            "points": [
+              {
+                "id": "knowledge:8aea007ebfca5273a830",
+                "gaps": [
+                  "尚未确认：说明线性表与受限线性表的区别：线性表可在任意位置插入删除，栈和队列的插入删除位置受限",
+                  "尚未理解插入删除位置受限与取出顺序之间的因果联系。",
+                  "尚未确认：指出栈只在 top 端操作、队列在队尾入队头出，从而分别形成 LIFO 与 FIFO"
+                ],
+                "type": "concept",
+                "title": "栈与队列作为受限线性表",
+                "status": "partial",
+                "content": "线性表允许在任意位置插入和删除，取出顺序可以自由决定；当插入、删除的位置受到限制后，数据存取顺序随之改变，由此得到栈和队列这两种受限线性表。栈只允许在 top 端操作，是后进先出 LIFO；队列从队尾入、队头出，是先进先出 FIFO。\n说明线性表与受限线性表的区别：线性表可在任意位置插入删除，栈和队列的插入删除位置受限\n解释插入、删除位置受限后数据存取顺序如何改变\n指出栈只在 top 端操作、队列在队尾入队头出，从而分别形成 LIFO 与 FIFO",
+                "details": {
+                  "explanation": "线性表允许在任意位置插入和删除，取出顺序可以自由决定；当插入、删除的位置受到限制后，数据存取顺序随之改变，由此得到栈和队列这两种受限线性表。栈只允许在 top 端操作，是后进先出 LIFO；队列从队尾入、队头出，是先进先出 FIFO。",
+                  "understandingPoints": [
+                    "说明线性表与受限线性表的区别：线性表可在任意位置插入删除，栈和队列的插入删除位置受限",
+                    "解释插入、删除位置受限后数据存取顺序如何改变",
+                    "指出栈只在 top 端操作、队列在队尾入队头出，从而分别形成 LIFO 与 FIFO"
+                  ]
+                },
+                "attempts": 1,
+                "evidence": "学生表示不理解位置限制为何决定顺序，请求直接讲解，未给出可评估的作答。",
+                "next_step": "直接讲清“位置受限→顺序被固定”的关键一步，再用一个具体操作序列让学生判断取出顺序。",
+                "description": "线性表允许在任意位置插入和删除，取出顺序可以自由决定；当插入、删除的位置受到限制后，数据存取顺序随之改变，由此得到栈和队列这两种受限线性表。栈只允许在 top 端操作，是后进先出 LIFO；队列从队尾入、队头出，是先进先出 FIFO。\n说明线性表与受限线性表的区别：线性表可在任意位置插入删除，栈和队列的插入删除位置受限\n解释插入、删除位置受限后数据存取顺序如何改变\n指出栈只在 top 端操作、队列在队尾入队头出，从而分别形成 LIFO 与 FIFO",
+                "known_parts": [],
+                "mastered_in": null,
+                "recall_done": false,
+                "help_history": [
+                  {
+                    "stage": "recall",
+                    "text": "先想一个你熟悉的场景：食堂排队打饭，和把餐盘一个个叠起来放。\n\n请你说说：普通的线性表在插入、删除位置上有什么自由？如果把它限制成“只能在某一端操作”，会得到哪两种结构？它们各自取出元素的顺序有什么不同？",
+                    "target_ids": [
+                      "understandingPoints:1",
+                      "understandingPoints:2",
+                      "understandingPoints:3"
+                    ],
+                    "planned_action": "ask"
+                  },
+                  {
+                    "stage": "recall",
+                    "text": "你卡住的这一点，关键在于“能从哪里取”被限制住了，取出的先后就跟着被固定下来。\n\n拿普通线性表来说，元素排成一列，你可以在任意位置插入、删除，也可以挑任意一个元素先取走。所以取出顺序很自由，完全由你选哪个位置决定。\n\n现在把“能操作的位置”限制住，情况就变了：\n\n- **只允许在一端插入和删除**：你每次放进去的元素都压在最上面，想取也只能从最上面取。于是最后放进去的那个，反而最先被取出来——顺序被这一端的限制“锁”成了后进先出。\n- **一端只进、另一端只出**：元素从一头进来，只能从另一头出去。先进来的排在前面，必然先出去——顺序被锁成了先进先出。\n\n所以因果关系是：**位置限制 → 可选的取出对象变少（往往只剩一个）→ 取出顺序不再自由，被固定成某种规则**。不是顺序本身有什么魔力，而是“只能从这儿取”把选择权收走了。\n\n这就是栈和队列作为受限线性表的由来。接下来请你结合这个道理说说：普通线性表在插入、删除位置上有什么自由？栈和队列各自把操作限制在哪些位置？",
+                    "target_ids": [
+                      "understandingPoints:2",
+                      "understandingPoints:1",
+                      "understandingPoints:3"
+                    ],
+                    "planned_action": "explain"
+                  }
+                ],
+                "requirements": [
+                  {
+                    "id": "understandingPoints:1",
+                    "text": "说明线性表与受限线性表的区别：线性表可在任意位置插入删除，栈和队列的插入删除位置受限",
+                    "status": "unconfirmed",
+                    "evidence": "",
+                    "studentText": "",
+                    "gap": ""
+                  },
+                  {
+                    "id": "understandingPoints:2",
+                    "text": "解释插入、删除位置受限后数据存取顺序如何改变",
+                    "status": "needs_help",
+                    "evidence": "学生明确说“我不懂位置限制为什么会决定顺序”。",
+                    "studentText": "我不懂位置限制为什么会决定顺序，你直接讲清楚吧。",
+                    "gap": "尚未理解插入删除位置受限与取出顺序之间的因果联系。"
+                  },
+                  {
+                    "id": "understandingPoints:3",
+                    "text": "指出栈只在 top 端操作、队列在队尾入队头出，从而分别形成 LIFO 与 FIFO",
+                    "status": "unconfirmed",
+                    "evidence": "",
+                    "studentText": "",
+                    "gap": ""
+                  }
+                ],
+                "task_question": "先想一个你熟悉的场景：食堂排队打饭，和把餐盘一个个叠起来放。\n\n请你说说：普通的线性表在插入、删除位置上有什么自由？如果把它限制成“只能在某一端操作”，会得到哪两种结构？它们各自取出元素的顺序有什么不同？",
+                "reinforce_done": false,
+                "latest_question": "你卡住的这一点，关键在于“能从哪里取”被限制住了，取出的先后就跟着被固定下来。\n\n拿普通线性表来说，元素排成一列，你可以在任意位置插入、删除，也可以挑任意一个元素先取走。所以取出顺序很自由，完全由你选哪个位置决定。\n\n现在把“能操作的位置”限制住，情况就变了：\n\n- **只允许在一端插入和删除**：你每次放进去的元素都压在最上面，想取也只能从最上面取。于是最后放进去的那个，反而最先被取出来——顺序被这一端的限制“锁”成了后进先出。\n- **一端只进、另一端只出**：元素从一头进来，只能从另一头出去。先进来的排在前面，必然先出去——顺序被锁成了先进先出。\n\n所以因果关系是：**位置限制 → 可选的取出对象变少（往往只剩一个）→ 取出顺序不再自由，被固定成某种规则**。不是顺序本身有什么魔力，而是“只能从这儿取”把选择权收走了。\n\n这就是栈和队列作为受限线性表的由来。接下来请你结合这个道理说说：普通线性表在插入、删除位置上有什么自由？栈和队列各自把操作限制在哪些位置？",
+                "recall_attempts": 1,
+                "question_history": [
+                  {
+                    "stage": "recall",
+                    "text": "先想一个你熟悉的场景：食堂排队打饭，和把餐盘一个个叠起来放。\n\n请你说说：普通的线性表在插入、删除位置上有什么自由？如果把它限制成“只能在某一端操作”，会得到哪两种结构？它们各自取出元素的顺序有什么不同？",
+                    "target_ids": [
+                      "understandingPoints:1",
+                      "understandingPoints:2",
+                      "understandingPoints:3"
+                    ],
+                    "planned_action": "ask"
+                  },
+                  {
+                    "stage": "recall",
+                    "text": "你卡住的这一点，关键在于“能从哪里取”被限制住了，取出的先后就跟着被固定下来。\n\n拿普通线性表来说，元素排成一列，你可以在任意位置插入、删除，也可以挑任意一个元素先取走。所以取出顺序很自由，完全由你选哪个位置决定。\n\n现在把“能操作的位置”限制住，情况就变了：\n\n- **只允许在一端插入和删除**：你每次放进去的元素都压在最上面，想取也只能从最上面取。于是最后放进去的那个，反而最先被取出来——顺序被这一端的限制“锁”成了后进先出。\n- **一端只进、另一端只出**：元素从一头进来，只能从另一头出去。先进来的排在前面，必然先出去——顺序被锁成了先进先出。\n\n所以因果关系是：**位置限制 → 可选的取出对象变少（往往只剩一个）→ 取出顺序不再自由，被固定成某种规则**。不是顺序本身有什么魔力，而是“只能从这儿取”把选择权收走了。\n\n这就是栈和队列作为受限线性表的由来。接下来请你结合这个道理说说：普通线性表在插入、删除位置上有什么自由？栈和队列各自把操作限制在哪些位置？",
+                    "target_ids": [
+                      "understandingPoints:2",
+                      "understandingPoints:1",
+                      "understandingPoints:3"
+                    ],
+                    "planned_action": "explain"
+                  }
+                ],
+                "question_targets": [
+                  "understandingPoints:2",
+                  "understandingPoints:1",
+                  "understandingPoints:3"
+                ],
+                "assessment_history": [
+                  {
+                    "stage": "recall",
+                    "round": 1,
+                    "result": "unanswered",
+                    "evidence": "学生表示不理解位置限制为何决定顺序，请求直接讲解，未给出可评估的作答。",
+                    "studentText": "我不懂位置限制为什么会决定顺序，你直接讲清楚吧。",
+                    "point_result": "partial",
+                    "answer_assessment": {
+                      "answer_result": "unanswered",
+                      "evidence": "学生表示不理解位置限制为何决定顺序，请求直接讲解，未给出可评估的作答。",
+                      "updates": [
+                        {
+                          "requirement_id": "understandingPoints:2",
+                          "status": "needs_help",
+                          "evidence": "学生明确说“我不懂位置限制为什么会决定顺序”。",
+                          "gap": "尚未理解插入删除位置受限与取出顺序之间的因果联系。"
+                        }
+                      ],
+                      "next_step": "直接讲清“位置受限→顺序被固定”的关键一步，再用一个具体操作序列让学生判断取出顺序。"
+                    },
+                    "target_ids": [
+                      "understandingPoints:1",
+                      "understandingPoints:2",
+                      "understandingPoints:3"
+                    ],
+                    "question": "先想一个你熟悉的场景：食堂排队打饭，和把餐盘一个个叠起来放。\n\n请你说说：普通的线性表在插入、删除位置上有什么自由？如果把它限制成“只能在某一端操作”，会得到哪两种结构？它们各自取出元素的顺序有什么不同？"
+                  }
+                ],
+                "reinforce_attempts": 0,
+                "reinforcement_required": false,
+                "excluded_from_discussion": false
+              }
+            ],
+            "curriculum_version": 10,
+            "teaching_plan": {
+              "target_ids": [
+                "understandingPoints:2",
+                "understandingPoints:1",
+                "understandingPoints:3"
+              ],
+              "action": "explain",
+              "requirements": [
+                "解释插入、删除位置受限后数据存取顺序如何改变",
+                "说明线性表与受限线性表的区别：线性表可在任意位置插入删除，栈和队列的插入删除位置受限",
+                "指出栈只在 top 端操作、队列在队尾入队头出，从而分别形成 LIFO 与 FIFO"
+              ]
+            },
+            "last_assistance": "tutor_response"
+          }
+        }
+      ],
+      "opening": "先想一个你熟悉的场景：食堂排队打饭，和把餐盘一个个叠起来放。\n\n请你说说：普通的线性表在插入、删除位置上有什么自由？如果把它限制成“只能在某一端操作”，会得到哪两种结构？它们各自取出元素的顺序有什么不同？",
+      "passed": true
+    }
+  ]
+}

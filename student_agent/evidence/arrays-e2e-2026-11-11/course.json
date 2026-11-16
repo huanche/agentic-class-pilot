@@ -1,0 +1,39 @@
+{
+  "success": true,
+  "course": {
+    "id": "04b5c284-9ef6-415c-abb1-e7910c1dff68",
+    "title": "数组短课｜本地完整流程测试 2026-11-11",
+    "status": "draft",
+    "modules": [],
+    "subject": "C语言程序设计",
+    "createdAt": 1794383846985,
+    "materials": [
+      {
+        "id": "kr-c5NEwpxWdQU",
+        "name": "第07章  数组.pptx",
+        "size": 1002026,
+        "parser": "local-pptx-xml",
+        "sha256": "21642fa0f7929641a8aee5dd20dac7264315a85f591c16631f303f12f56de54c",
+        "status": "ready",
+        "purpose": "course-material",
+        "courseId": "04b5c284-9ef6-415c-abb1-e7910c1dff68",
+        "mimeType": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "createdAt": 1794383883917,
+        "pageCount": 52,
+        "teacherId": "5abb1b05-9c6f-464c-9721-1e175583586a",
+        "updatedAt": 1794383885351,
+        "storageKey": "materials/04b5c284-9ef6-415c-abb1-e7910c1dff68/kr-c5NEwpxWdQU/source.pptx",
+        "extractedAt": 1794383885351
+      }
+    ],
+    "teacherId": "5abb1b05-9c6f-464c-9721-1e175583586a",
+    "updatedAt": 1794383885351,
+    "onboarding": {
+      "step": 1,
+      "version": 1
+    },
+    "description": "用户数组PPT的独立本地测试课，不影响已有课程。"
+  },
+  "jobs": [],
+  "artifacts": []
+}

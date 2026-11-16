@@ -1,0 +1,78 @@
+{
+  "scope": {
+    "type": "course"
+  },
+  "input": {
+    "sessionId": "arrays_short_bbee42b5b1e6",
+    "stage": {
+      "id": "arrays_short_bbee42b5b1e6",
+      "name": "一维数组短课：定义、初始化与循环构造",
+      "createdAt": 1794384646749,
+      "updatedAt": 1794384646749,
+      "languageDirective": "本课程全程使用中文讲解，代码关键字与数组名保留英文原样。术语首次出现时用中文说明，并直接配合C代码示例。语速适中，面向C语言初学者，只围绕一维数组的定义、下标、初始化和循环赋值展开。"
+    },
+    "outlines": [
+      {
+        "id": "scene_1",
+        "type": "slide",
+        "title": "一维数组的定义与下标",
+        "description": "用最简定义引入一维数组，明确下标从0开始到n-1。",
+        "keyPoints": [
+          "定义形式：存储类型 数据类型 数组名[整型常量表达式]；",
+          "示例 int a[5]; 表示5个int元素，合法下标为 a[0] 到 a[4]",
+          "下标从0开始，最大下标 = 数组大小 - 1；a[5] 不是合法元素"
+        ],
+        "teachingObjective": "能说出 int a[5] 的元素个数与合法下标范围。",
+        "estimatedDuration": 45,
+        "order": 1
+      },
+      {
+        "id": "scene_2",
+        "type": "slide",
+        "title": "初始化：int a[5]={1,2}",
+        "description": "通过部分初始化观察未显式赋值元素的默认值，并强调越界不可访问。",
+        "keyPoints": [
+          "int a[5] = {1, 2}; 只给出前两个初值",
+          "其余元素 a[2]、a[3]、a[4] 自动补0",
+          "最终元素为 1,2,0,0,0；访问 a[5] 越界，不能读写"
+        ],
+        "teachingObjective": "能解释部分初始化时剩余元素补0，并识别越界下标。",
+        "estimatedDuration": 45,
+        "order": 2
+      },
+      {
+        "id": "scene_3",
+        "type": "slide",
+        "title": "用循环逐项赋值并构造奇数数组",
+        "description": "在同一页讲清int a[5]和for(i=0;i<5;i++) a[i]=2*i+1的代码及结果，给出学生独立构造5个奇数的任务。只用一个核心代码块，逐句实际解释代码，不用空转的看代码块引导句，不用任务标题替代代码焦点。",
+        "keyPoints": [
+          "数组必须逐元素赋值",
+          "for循环下标0至4",
+          "a[i]=2*i+1得到1、3、5、7、9",
+          "独立编写5元素奇数数组，检查边界与结果"
+        ],
+        "teachingObjective": "能仿照示例写出遍历0~4下标的for循环赋值代码。",
+        "estimatedDuration": 50,
+        "order": 3
+      }
+    ],
+    "requirements": {
+      "targetDurationMinutes": 3,
+      "webSearch": false,
+      "interactiveMode": false,
+      "requirement": "根据提供的第7章数组PPT第4至11页，制作一节约3分钟的中文C语言短课。最多4页且全部普通slide，不生成PBL、网页交互、测验页、图片或视频。只讲一维数组：定义与下标从0到n-1；用int a[5]={1,2}解释其余补0、越界不可访问；用for循环逐项赋值示范，再给出独立编写int a[5]生成1、3、5、7、9的具体构造任务与成功标准。不要讲二维数组、字符串、排序、memset、memcpy，不把PPT后半章当作已经讲过。每页内容简洁，总讲解约3分钟。 教师审核：将循环示范和构造任务合为一页，总共3页；每页至多一个核心代码块，讲解须实际说明焦点代码含义，不使用空转的看这里看代码块等句子。"
+    },
+    "agents": [
+      {
+        "id": "teacher",
+        "name": "数组教师",
+        "role": "teacher",
+        "persona": "简洁清楚的C语言教师，先示范再给具体构造任务。"
+      }
+    ],
+    "enableTTS": false,
+    "enableMedia": false,
+    "enableImageGeneration": false,
+    "enableVideoGeneration": false
+  }
+}

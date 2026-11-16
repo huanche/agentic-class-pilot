@@ -1,0 +1,205 @@
+{
+  "success": true,
+  "job": {
+    "id": "cw_arrays_50fb56e551ccbd",
+    "scope": {
+      "type": "course"
+    },
+    "status": "queued",
+    "message": "等待重试未完成页面，已完成页面保留",
+    "courseId": "04b5c284-9ef6-415c-abb1-e7910c1dff68",
+    "progress": 85,
+    "createdAt": 1794384121188,
+    "teacherId": "5abb1b05-9c6f-464c-9721-1e175583586a",
+    "updatedAt": 1794384381363,
+    "artifactType": "lesson-courseware",
+    "backgroundGeneration": {
+      "phase": "queued",
+      "totalPages": 4,
+      "classroomId": "arrays_50fb56e551ccbd",
+      "failedPages": [],
+      "performance": {
+        "timings": [
+          {
+            "phase": "queue",
+            "status": "ok",
+            "startMs": 2,
+            "durationMs": 0
+          },
+          {
+            "phase": "save",
+            "status": "ok",
+            "startMs": 13,
+            "durationMs": 65
+          },
+          {
+            "phase": "content",
+            "status": "ok",
+            "attempt": 1,
+            "startMs": 108,
+            "pageOrder": 1,
+            "durationMs": 32475
+          },
+          {
+            "phase": "content",
+            "status": "ok",
+            "attempt": 1,
+            "startMs": 111,
+            "pageOrder": 2,
+            "durationMs": 40462
+          },
+          {
+            "phase": "content",
+            "status": "ok",
+            "attempt": 1,
+            "startMs": 32585,
+            "pageOrder": 3,
+            "durationMs": 45479
+          },
+          {
+            "phase": "actions",
+            "status": "ok",
+            "attempt": 1,
+            "startMs": 32607,
+            "pageOrder": 1,
+            "durationMs": 17478
+          },
+          {
+            "phase": "narration-plan",
+            "status": "ok",
+            "pageOrder": 1,
+            "durationMs": 10741
+          },
+          {
+            "phase": "focus-review",
+            "status": "ok",
+            "pageOrder": 1,
+            "durationMs": 6187
+          },
+          {
+            "phase": "audio",
+            "status": "ok",
+            "startMs": 50091,
+            "pageOrder": 1,
+            "durationMs": 0
+          },
+          {
+            "phase": "save",
+            "status": "ok",
+            "startMs": 50093,
+            "durationMs": 6
+          },
+          {
+            "phase": "content",
+            "status": "ok",
+            "attempt": 1,
+            "startMs": 50101,
+            "pageOrder": 4,
+            "durationMs": 44877
+          },
+          {
+            "phase": "actions",
+            "status": "ok",
+            "attempt": 1,
+            "startMs": 50126,
+            "pageOrder": 2,
+            "durationMs": 44884
+          },
+          {
+            "phase": "narration-plan",
+            "status": "ok",
+            "pageOrder": 2,
+            "durationMs": 35684
+          },
+          {
+            "phase": "focus-review",
+            "status": "ok",
+            "pageOrder": 2,
+            "durationMs": 9181
+          },
+          {
+            "phase": "audio",
+            "status": "ok",
+            "startMs": 95016,
+            "pageOrder": 2,
+            "durationMs": 0
+          },
+          {
+            "phase": "save",
+            "status": "ok",
+            "startMs": 95017,
+            "durationMs": 3
+          },
+          {
+            "phase": "actions",
+            "status": "ok",
+            "attempt": 1,
+            "startMs": 95025,
+            "pageOrder": 3,
+            "durationMs": 42521
+          },
+          {
+            "phase": "narration-plan",
+            "status": "ok",
+            "pageOrder": 3,
+            "durationMs": 22852
+          },
+          {
+            "phase": "focus-review",
+            "status": "ok",
+            "pageOrder": 3,
+            "durationMs": 6333
+          },
+          {
+            "phase": "narration-plan",
+            "status": "ok",
+            "pageOrder": 3,
+            "durationMs": 9454
+          },
+          {
+            "phase": "focus-review",
+            "status": "ok",
+            "pageOrder": 3,
+            "durationMs": 3856
+          },
+          {
+            "phase": "audio",
+            "status": "ok",
+            "startMs": 137552,
+            "pageOrder": 3,
+            "durationMs": 0
+          },
+          {
+            "phase": "save",
+            "status": "ok",
+            "startMs": 137553,
+            "durationMs": 4
+          },
+          {
+            "phase": "actions",
+            "status": "error",
+            "attempt": 1,
+            "startMs": 137561,
+            "pageOrder": 4,
+            "durationMs": 73533
+          }
+        ],
+        "version": 1,
+        "pipeline": true,
+        "prefetch": 2,
+        "elapsedMs": 211105,
+        "startedAt": 1794384121205,
+        "audioCache": {
+          "hits": 0,
+          "misses": 0,
+          "shared": 0,
+          "bypassed": 0
+        },
+        "finishedAt": 1794384332311,
+        "firstPageReadyMs": 50099
+      },
+      "completedPages": 3
+    }
+  },
+  "done": false
+}

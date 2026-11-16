@@ -1,0 +1,38 @@
+{
+  "sourceRevision": "96d3825f111bfaeb822b71747b73dd0fdc5a53acdf456a9a1d6709d667e914e0",
+  "note": "Existing archived published lesson snapshot, not re-fetched production revision",
+  "scenes": [
+    {
+      "sceneId": "Ud8WdPMui-Q-lavPULSGe",
+      "title": "队列：先进先出与顺序存储",
+      "actions": [
+        {
+          "id": "teaching-SVkKNsOF-2-speech",
+          "text": "队列只允许在队尾 rear 插入元素，在队头 front 删除元素，因此遵循先进先出 FIFO：先排队的元素先被取走。顺序存储时，front 指向队头元素，rear 指向队尾元素的下一位置，也就是下一个新元素应插入的空位。",
+          "type": "speech"
+        },
+        {
+          "id": "teaching-SVkKNsOF-7-speech",
+          "text": "再看 rear 指针，它指向下标 5，这是 C 后面的空位；下一元素入队时就会放在这里，然后 rear 再后移。",
+          "type": "speech"
+        },
+        {
+          "id": "teaching-SVkKNsOF-8-speech",
+          "text": "所以入队操作可以概括为：先把新元素写入 rear 所指位置，再让 rear 后移。",
+          "type": "speech"
+        }
+      ]
+    },
+    {
+      "sceneId": "PrM65g-wDN79gbnDZFvq-",
+      "title": "循环队列：解决假溢出",
+      "actions": [
+        {
+          "id": "teaching-Szl3sYay-3-speech",
+          "text": "再看右边循环队列。front 指向 2，rear 指向 7，队尾恰好在最后一个格子；下一次入队时，位置不是 8，而是用 (7+1) 对 8 取余得到 0，绕回到最前面的空位，队列首尾相连。",
+          "type": "speech"
+        }
+      ]
+    }
+  ]
+}

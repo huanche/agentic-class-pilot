@@ -1,0 +1,51 @@
+{
+  "boundary": "knowledge.learning_points, confirmed by user",
+  "mode": "real provider; old/new system prompt switched at HTTP boundary only; no injected responses",
+  "pairedCases": [
+    {
+      "case": "independent_memory",
+      "baseline": "baseline-memory-retry/independent_memory.json",
+      "current": "current/independent_memory.json",
+      "baselineSmokeCheck": "passed_fixture_smoke_check",
+      "currentSmokeCheck": "passed_fixture_smoke_check",
+      "baselinePoints": 1,
+      "currentPoints": 1
+    },
+    {
+      "case": "preserve_cause",
+      "baseline": "baseline-debug/preserve_cause.json",
+      "current": "current/preserve_cause.json",
+      "baselineSmokeCheck": "passed_fixture_smoke_check",
+      "currentSmokeCheck": "passed_fixture_smoke_check",
+      "baselinePoints": 1,
+      "currentPoints": 1
+    },
+    {
+      "case": "independent_design",
+      "baseline": "baseline-debug/independent_design.json",
+      "current": "current/independent_design.json",
+      "baselineSmokeCheck": "passed_fixture_smoke_check",
+      "currentSmokeCheck": "passed_fixture_smoke_check",
+      "baselinePoints": 1,
+      "currentPoints": 1
+    },
+    {
+      "case": "real_lesson",
+      "baseline": "baseline-debug/real_lesson.json",
+      "current": "current/real_lesson.json",
+      "baselineSmokeCheck": "failed_fixture_smoke_check",
+      "currentSmokeCheck": "failed_fixture_smoke_check",
+      "baselinePoints": 13,
+      "currentPoints": 13
+    }
+  ],
+  "successfulProviderResponses": 8,
+  "networkAttemptsWithoutResponse": 5,
+  "setupFailuresBeforeSend": 4,
+  "conclusion": "No demonstrated improvement in these four paired smoke cases; real lesson still combines independent goals. Design also turns untaught redo into a prohibition.",
+  "limitations": [
+    "one successful sample per case per variant",
+    "lexical smoke checks do not replace semantic review",
+    "no teaching consumption or production writes"
+  ]
+}
