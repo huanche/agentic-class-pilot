@@ -5,6 +5,8 @@ import { AnimatePresence, motion } from 'motion/react';
 import {
   Check,
   ChevronDown,
+  CircleHelp,
+  Clock3,
   GripVertical,
   Loader2,
   Minimize2,
@@ -66,108 +68,167 @@ interface OutlinesEditorProps {
   isRegenerating?: boolean;
 }
 
+const TRIAL_LEVEL_THEME = {
+  master: {
+    rail: 'border-s-rose-500 dark:border-s-rose-400',
+    chip: 'border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-400/30 dark:bg-rose-400/10 dark:text-rose-200',
+  },
+  familiar: {
+    rail: 'border-s-blue-500 dark:border-s-blue-400',
+    chip: 'border-blue-200 bg-blue-50 text-blue-800 dark:border-blue-400/30 dark:bg-blue-400/10 dark:text-blue-200',
+  },
+  recognize: {
+    rail: 'border-s-teal-500 dark:border-s-teal-400',
+    chip: 'border-teal-200 bg-teal-50 text-teal-800 dark:border-teal-400/30 dark:bg-teal-400/10 dark:text-teal-200',
+  },
+} satisfies Record<LearningRequirement, { rail: string; chip: string }>;
+
 function TrialOutlineRow({
   outline,
+  index,
   slide,
   sourceIndex,
   disabled,
+  sceneTypeLabel,
   onUpdate,
 }: {
   outline: SceneOutline;
+  index: number;
   slide?: Slide;
   sourceIndex?: number;
   disabled: boolean;
+  sceneTypeLabel: (type: SceneType) => string;
   onUpdate: (patch: Partial<SceneOutline>) => void;
 }) {
   const level = trialLearningRequirement(outline.learningRequirement);
+  const theme = TRIAL_LEVEL_THEME[level];
   const canAddQuestion = outline.type === 'slide' || outline.type === 'interactive';
+  const checkpoint = outline.checkpoint;
+
   return (
-    <li className="flex flex-wrap gap-3 p-4">
-      {sourceIndex !== undefined && (
-        <div className="w-28 shrink-0 text-xs text-muted-foreground">
-          {slide && (
-            <Popover>
-              <PopoverTrigger asChild>
-                <button
-                  type="button"
-                  className="block overflow-hidden rounded border"
-                  aria-label={'查看原稿第 ' + (sourceIndex + 1) + ' 页'}
-                >
-                  <SlideThumbnail slide={slide} size={110} viewportRatio={slide.viewportRatio} />
-                </button>
-              </PopoverTrigger>
-              <PopoverContent className="w-[min(85vw,560px)] p-2">
-                <div
-                  className="overflow-hidden rounded"
-                  style={{ aspectRatio: 1 / slide.viewportRatio }}
-                >
-                  <SlideThumbnail slide={slide} viewportRatio={slide.viewportRatio} />
-                </div>
-              </PopoverContent>
-            </Popover>
-          )}
-          <p className="mt-1">原稿第 {sourceIndex + 1} 页</p>
-        </div>
+    <li
+      id={'outline-scene-' + outline.id}
+      className={cn(
+        'grid grid-cols-[1.5rem_minmax(0,1fr)] gap-x-2.5 rounded-xl border border-border/60 border-s-[3px] bg-background p-3 sm:grid-cols-[2rem_minmax(0,1fr)] sm:gap-x-3 sm:px-4',
+        canAddQuestion ? theme.rail : 'border-s-slate-400',
       )}
-      <div className="min-w-48 flex-1 space-y-2">
-        <h3 className="font-medium">{outline.title}</h3>
-        <p className="text-sm text-muted-foreground">{outline.description}</p>
+    >
+      <span className="pt-0.5 text-sm font-semibold tabular-nums text-muted-foreground">
+        {index + 1}
+      </span>
+      <div className="flex min-w-0 flex-wrap items-start gap-x-4 gap-y-2.5">
+        <div className="flex min-w-0 flex-[1_1_15rem] flex-wrap items-baseline gap-x-2 gap-y-1">
+          <h3 className="min-w-0 break-words text-[15px] font-semibold leading-6 text-foreground">
+            {outline.title}
+          </h3>
+          {outline.type !== 'slide' && (
+            <span
+              className={cn(
+                'rounded-md px-1.5 py-0.5 text-xs font-medium',
+                TYPE_THEME[outline.type].chip,
+              )}
+            >
+              {sceneTypeLabel(outline.type)}
+            </span>
+          )}
+        </div>
+        {sourceIndex !== undefined && (
+          <div className="w-[110px] shrink-0 text-xs text-muted-foreground">
+            {slide && (
+              <Popover>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    className="block overflow-hidden rounded-md border border-border hover:border-primary/50 focus-visible:outline-2 focus-visible:outline-primary"
+                    aria-label={'查看原稿第 ' + (sourceIndex + 1) + ' 页'}
+                  >
+                    <SlideThumbnail slide={slide} size={110} viewportRatio={slide.viewportRatio} />
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[min(85vw,560px)] p-2">
+                  <div
+                    className="overflow-hidden rounded"
+                    style={{ aspectRatio: 1 / slide.viewportRatio }}
+                  >
+                    <SlideThumbnail slide={slide} viewportRatio={slide.viewportRatio} />
+                  </div>
+                </PopoverContent>
+              </Popover>
+            )}
+            <p className={cn('tabular-nums', slide && 'mt-1 text-center')}>
+              原稿第 {sourceIndex + 1} 页
+            </p>
+          </div>
+        )}
         {canAddQuestion && (
-          <div className="flex flex-wrap items-center gap-2 text-sm">
-            <label className="flex items-center gap-2">
+          <div className="flex w-full flex-wrap items-center gap-x-3 gap-y-2 border-t border-border/50 pt-2.5">
+            <label className="flex shrink-0 items-center gap-2 text-xs font-medium text-muted-foreground">
               学习要求
-              <select
-                className="rounded-md border bg-background px-2 py-1"
-                value={level}
-                disabled={disabled}
-                title={LESSON_REQUIREMENTS[level].instruction}
-                onChange={(event) =>
-                  onUpdate({ learningRequirement: event.target.value as LearningRequirement })
-                }
-              >
-                {Object.entries(LESSON_REQUIREMENTS).map(([key, option]) => (
-                  <option key={key} value={key}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
+              <span className={cn('relative inline-flex rounded-lg', theme.chip)}>
+                <select
+                  className="min-h-8 appearance-none rounded-lg border border-inherit bg-transparent py-1 pr-7 pl-2.5 text-sm font-semibold text-inherit focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:opacity-70"
+                  value={level}
+                  disabled={disabled}
+                  title={LESSON_REQUIREMENTS[level].instruction}
+                  onChange={(event) =>
+                    onUpdate({ learningRequirement: event.target.value as LearningRequirement })
+                  }
+                >
+                  {Object.entries(LESSON_REQUIREMENTS).map(([key, option]) => (
+                    <option key={key} value={key} className="bg-background text-foreground">
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown
+                  aria-hidden
+                  className="pointer-events-none absolute top-1/2 right-2 size-3.5 -translate-y-1/2"
+                />
+              </span>
             </label>
             {!!outline.durationBudget && (
-              <span className="text-xs text-muted-foreground">
+              <span
+                className="inline-flex shrink-0 items-center gap-1.5 text-xs font-medium tabular-nums text-muted-foreground"
+                title="计划讲解时长"
+              >
+                <Clock3 aria-hidden className="size-3.5" />
+                <span className="sr-only">计划讲解时长 </span>
                 {formatPlaybackDuration(outline.durationBudget.targetSeconds)}
               </span>
             )}
-            {outline.checkpoint ? (
-              <>
-                <span
-                  className="rounded-md bg-muted px-2 py-1"
-                  title={outline.checkpoint.instruction}
-                >
-                  讲完后 · 随堂题 1 道
-                </span>
+            <div className="sm:ml-auto">
+              {checkpoint ? (
+                <div className="inline-flex min-h-8 items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 pl-2 text-xs font-medium text-amber-900 dark:border-amber-400/30 dark:bg-amber-400/10 dark:text-amber-200">
+                  <CircleHelp aria-hidden className="size-3.5" />
+                  <span title={checkpoint.instruction}>讲完后 · 随堂题 1 道</span>
+                  <button
+                    type="button"
+                    className="inline-flex size-8 items-center justify-center rounded-e-lg hover:bg-amber-200/60 focus-visible:outline-2 focus-visible:outline-primary disabled:opacity-60 dark:hover:bg-amber-400/20"
+                    title="移除随堂题"
+                    aria-label="移除随堂题"
+                    disabled={disabled}
+                    onClick={() => onUpdate({ checkpoint: undefined })}
+                  >
+                    <X aria-hidden className="size-3.5" />
+                  </button>
+                </div>
+              ) : (
                 <Button
                   type="button"
-                  variant="ghost"
+                  variant="outline"
                   size="sm"
+                  aria-label="添加随堂题"
+                  className="h-8 gap-1 rounded-lg px-2 text-xs dark:border-white/15 dark:bg-white/5 dark:text-foreground dark:hover:bg-white/10"
                   disabled={disabled}
-                  onClick={() => onUpdate({ checkpoint: undefined })}
+                  onClick={() =>
+                    onUpdate({ checkpoint: { instruction: '围绕本节重点提一道单选题。' } })
+                  }
                 >
-                  移除随堂题
+                  <Plus aria-hidden className="size-3.5" />
+                  随堂题
                 </Button>
-              </>
-            ) : (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                disabled={disabled}
-                onClick={() =>
-                  onUpdate({ checkpoint: { instruction: '围绕本节重点提一道单选题。' } })
-                }
-              >
-                ＋随堂题
-              </Button>
-            )}
+              )}
+            </div>
           </div>
         )}
       </div>
@@ -377,8 +438,9 @@ export function OutlinesEditor({
         ? t('generation.outlineEditorStreamingProgress', { count: outlines.length })
         : t('generation.outlineEditorStreamingWaiting');
     }
+    if (trial) return '共 ' + outlines.length + ' 个小节';
     return t('generation.outlineEditorSummary', { count: outlines.length });
-  }, [isStreaming, outlines.length, t]);
+  }, [isStreaming, outlines.length, t, trial]);
 
   return (
     <motion.div
@@ -457,7 +519,7 @@ export function OutlinesEditor({
               onChange={(event) => onOverviewChange(event.target.value)}
               disabled={editingDisabled}
               maxLength={4000}
-              rows={5}
+              rows={trial ? 3 : 5}
               placeholder="说明本节课要讲什么、重点是什么、希望学生掌握什么。"
               className="mt-3 block w-full resize-y rounded-lg border border-slate-200 bg-background px-3 py-2 text-sm leading-6 outline-none focus:border-[#B00055] disabled:opacity-70"
             />
@@ -484,12 +546,14 @@ export function OutlinesEditor({
           </section>
         )}
         {trial ? (
-          <ol className="divide-y rounded-xl border divide-border">
+          <ol className="mx-2 space-y-2.5 pb-1 md:mx-4">
             {outlines.map((outline, index) => (
               <TrialOutlineRow
                 key={outline.id}
                 outline={outline}
+                index={index}
                 disabled={editingDisabled}
+                sceneTypeLabel={sceneTypeLabel}
                 sourceIndex={sourceKey ? outline.sourceSlideOriginalIndex : undefined}
                 slide={sourceKey ? sourceSlides[outline.sourceSlideOriginalIndex ?? -1] : undefined}
                 onUpdate={(patch) => updateOutline(index, patch)}
