@@ -6,6 +6,7 @@ requests are replaced before deploy(); no Docker, systemctl or database is used.
 """
 import json
 import io
+from http.server import BaseHTTPRequestHandler, HTTPServer
 import os
 from pathlib import Path
 import shlex
@@ -15,6 +16,7 @@ import sys
 import tempfile
 import tarfile
 import time
+import threading
 from types import SimpleNamespace
 import unittest
 
@@ -67,6 +69,9 @@ class WebReleaseTest(unittest.TestCase):
         self.health = [True]
         self.fail_ready = False
         self.fail_start = False
+        self.fail_teacher = False
+        self.fail_teacher_after_start = False
+        self.teacher_checks = []
         self.archive = None
         self.uv_directories = []
         self.env = {"STUDENT_DATABASE_URL": "postgresql://unused@127.0.0.1/unused"}
@@ -75,6 +80,7 @@ class WebReleaseTest(unittest.TestCase):
             return self.root / value.lstrip("/") if value.startswith("/") else Path(value)
         self.ns.update(Path=mapped, BASE=self.base, OLD=self.root / "opt/old", FROZEN=self.frozen,
                        output=self.output, call=self.call, healthy=self.healthy,
+                       require_teacher_compatible=self.teacher_compatible,
                        live_environment=lambda unit: self.env.copy(),
                        sys=SimpleNamespace(argv=["deployer", self.sha]))
         for path in (self.old, self.target, self.root / "run/lock"):
@@ -146,6 +152,11 @@ class WebReleaseTest(unittest.TestCase):
     def healthy(self):
         return self.health.pop(0) if len(self.health) > 1 else self.health[0]
 
+    def teacher_compatible(self, environment):
+        self.teacher_checks.append(environment)
+        if self.fail_teacher or (self.fail_teacher_after_start and len(self.teacher_checks) > 1):
+            raise RuntimeError('Active teacher published-content endpoint is unavailable')
+
     def mutations(self):
         return [event for event in self.events if event[0] in {"systemctl", "/usr/local/sbin/agentic-mainland-backup"}
                 and event[1] != "show"]
@@ -163,6 +174,7 @@ class WebReleaseTest(unittest.TestCase):
         self.assertEqual(self.mutations(), [])
         self.assertFalse(any("alembic" in event for event in self.events))
         self.assertEqual((self.base / "current").resolve(), self.old)
+        self.assertEqual(self.teacher_checks, [])
 
     def test_fresh_dependency_checks_use_the_release_directory_not_the_ci_home(self):
         shutil.rmtree(self.target)
@@ -215,6 +227,69 @@ class WebReleaseTest(unittest.TestCase):
         self.assertIn(str(self.target / 'platform/.venv/bin/python'),
                       next(event for event in uv_calls if 'sync' in event))
         self.assertEqual((self.base / 'current').resolve(), self.old)
+
+    def test_incompatible_active_teacher_blocks_activation_before_backup_or_stop(self):
+        self.fail_teacher = True
+        with self.assertRaisesRegex(RuntimeError, 'published-content endpoint'):
+            self.ns['deploy']()
+        self.assertEqual(len(self.teacher_checks), 1)
+        self.assertEqual(self.mutations(), [])
+        self.assertEqual((self.base / 'current').resolve(), self.old)
+
+    def test_teacher_becoming_incompatible_during_activation_rolls_back(self):
+        self.fail_teacher_after_start = True
+        (self.old / 'student_agent').mkdir()
+        (self.old / 'student_agent/RELEASE_COMPATIBILITY.json').write_text(
+            (self.target / 'student_agent/RELEASE_COMPATIBILITY.json').read_text())
+        with self.assertRaisesRegex(RuntimeError, 'published-content endpoint'):
+            self.ns['deploy']()
+        self.assertEqual(len(self.teacher_checks), 2)
+        self.assertEqual((self.base / 'current').resolve(), self.old)
+        self.assertIn(('systemctl', 'restart'), [event[:2] for event in self.events])
+
+    def test_teacher_probe_rejects_missing_route_and_accepts_contract(self):
+        class Handler(BaseHTTPRequestHandler):
+            status = 200
+            content_type = 'application/json'
+            body = b'{"published":false,"content":null}'
+            received_key = None
+
+            def do_GET(self):
+                Handler.received_key = self.headers.get('X-Platform-Service-Key')
+                self.send_response(Handler.status)
+                self.send_header('Content-Type', Handler.content_type)
+                self.end_headers()
+                self.wfile.write(Handler.body)
+
+            def log_message(self, *args):
+                pass
+
+        server = HTTPServer(('127.0.0.1', 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        env = {'TEACHER_URL': f'http://127.0.0.1:{server.server_port}',
+               'TEACHER_SERVICE_KEY': 'test-only-key'}
+        try:
+            # Test the real probe, rather than the deploy simulation's stub.
+            namespace = {'__name__': 'probe_test'}
+            exec(compile(SOURCE, 'probe_test', 'exec'), namespace)
+            probe = namespace['require_teacher_compatible']
+            probe(env)
+            self.assertEqual(Handler.received_key, 'test-only-key')
+            Handler.status = 404
+            Handler.content_type = 'text/html'
+            Handler.body = b'<html>Not Found</html>'
+            with self.assertRaisesRegex(RuntimeError, 'unavailable or incompatible'):
+                probe(env)
+            Handler.status = 200
+            Handler.content_type = 'application/json'
+            Handler.body = b'{"published":true,"content":{}}'
+            with self.assertRaisesRegex(RuntimeError, 'contract is incompatible'):
+                probe(env)
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
 
     def test_command_timeout_terminates_child_processes(self):
         marker = self.root / 'orphan-marker'
