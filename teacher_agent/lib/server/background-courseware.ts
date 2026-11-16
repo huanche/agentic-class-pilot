@@ -1,3 +1,4 @@
+import { expandTrialCheckpoints, normalizeTrialOutlines } from '@/lib/generation/courseware-trial';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { withGenerationRetry } from '@openmaic/generation';
@@ -152,11 +153,31 @@ export async function createBackgroundCoursewareJob(
     if (occupied) throw new Error('课堂编号已使用，请重新创建生成会话');
     const now = Date.now();
     await prepareNativePptxSource(input, context.courseId);
+    if (input.stage.coursewareTrial) {
+      if (input.stage.coursewareTrial.mode === 'faithful' && !input.stage.nativePptx)
+        throw new Error('高保真测试需要可播放的 PPTX 原稿');
+      input.stage.coursewareTrial.voice = input.ttsVoice;
+      input.stage.coursewareTrial.courseId = context.courseId;
+      const sections = normalizeTrialOutlines(input.outlines);
+      const byId = new Map(sections.map((section) => [section.id, section.order - 1]));
+      input.outlines = expandTrialCheckpoints(sections);
+      const slides = input.importedSlides;
+      if (slides) {
+        const ordered: typeof slides = [];
+        for (const page of input.outlines) {
+          const index = byId.get(page.id);
+          if (index !== undefined && slides[index]) ordered[page.order - 1] = slides[index];
+        }
+        input.importedSlides = ordered;
+      }
+      const scripts = input.narrationScripts;
+      if (scripts) input.narrationScripts = input.outlines.map((page) => scripts[byId.get(page.id) ?? -1] ?? '');
+    }
     await writeJsonFileAtomic(inputFile(jobId), {
       input,
       baseUrl: context.baseUrl,
       teacherId: context.teacherId,
-      ...(process.env.COURSEWARE_GENERATION_ENGINE === 'openmaic'
+      ...(input.stage.coursewareTrial || process.env.COURSEWARE_GENERATION_ENGINE === 'openmaic'
         ? { engine: 'openmaic' as const }
         : {}),
     } satisfies StoredInput);
@@ -845,6 +866,7 @@ async function executeLegacy(
         scope: job.scope,
         type: 'lesson-courseware',
         title: stage.name,
+        ...(stage.coursewareTrial ? { coursewareTrial: true } : {}),
         status: 'review',
         citations: [],
         content: `互动课件已完整生成，共 ${scenes.length} 页。\n\n课堂地址：/classroom/${stage.id}`,

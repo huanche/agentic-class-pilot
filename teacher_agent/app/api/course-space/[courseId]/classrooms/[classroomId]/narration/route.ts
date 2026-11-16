@@ -2,6 +2,7 @@ import { type NextRequest } from 'next/server';
 import { apiError, apiSuccess, API_ERROR_CODES } from '@/lib/server/api-response';
 import {
   buildRequestOrigin,
+  ClassroomSnapshotConflictError,
   isValidClassroomId,
   persistClassroom,
   readClassroom,
@@ -30,6 +31,19 @@ export async function POST(
       return apiError(API_ERROR_CODES.INVALID_REQUEST, 404, 'Classroom not found in this course');
     }
 
+    const body = await request.json().catch(() => null);
+    if (body?.operation === 'trial-revise') {
+      const { readServerCourse } = await import('@/lib/server/course-space-storage');
+      const course = await readServerCourse(courseId);
+      if (!course || (process.env.PLATFORM_AUTH_ENABLED === 'true' &&
+        (request.headers.get('x-platform-role') === 'student' ||
+          (request.headers.get('x-platform-user-id') !== course.teacherId && request.headers.get('x-platform-admin') !== 'true'))))
+        return apiError('INVALID_REQUEST', 403, '无权修改试用课件');
+      const config = await getPlatformUserModelConfigForRequest(request);
+      const { reviseTrialNarration } = await import('@/lib/server/courseware-trial-narration');
+      const result = await reviseTrialNarration(classroomId, body, buildRequestOrigin(request), course.teacherId, config, request.signal);
+      return apiSuccess(result);
+    }
     const classroom = await readClassroom(classroomId);
     if (!classroom) {
       return apiError(API_ERROR_CODES.INVALID_REQUEST, 404, 'Classroom not found');
@@ -59,6 +73,8 @@ export async function POST(
     );
     return apiSuccess({ classroomId, ...result });
   } catch (error) {
+    if (error instanceof ClassroomSnapshotConflictError)
+      return apiError('INVALID_REQUEST', 409, error.message);
     log.error(`Narration regeneration failed [course=${courseId}, classroom=${classroomId}]`, error);
     return apiError(
       API_ERROR_CODES.INTERNAL_ERROR,

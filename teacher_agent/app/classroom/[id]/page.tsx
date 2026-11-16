@@ -52,7 +52,7 @@ export default function ClassroomRoute() {
   const id = params?.id as string;
   const capture = query.get('capture');
   if (capture) return <ClassroomCaptureSurface key={`${id}:${capture}`} id={id} version={capture} />;
-  if (query.get('video') === '1') return <ClassroomVideoViewer key={id} id={id} draft={query.get('draft') === '1'} returnTo={query.get('from')} />;
+  if (query.get('video') === '1') return <ClassroomVideoViewer key={id} id={id} draft={query.get('draft') === '1'} trial={query.get('trial') === '1'} returnTo={query.get('from')} />;
   if (pathname.startsWith('/classroom-player/'))
     return <PublishedClassroomGate key={id} id={id} embedded={query.get('embedded') === 'player'} />;
   return <ClassroomDetailPage />;

@@ -325,6 +325,7 @@ export interface CourseMaterialExtraction {
 }
 
 export interface CourseArtifactRecord {
+  coursewareTrial?: true;
   pinned?: boolean;
   sourceMaterialId?: string;
   publicationPlacement?: CoursePublicationPlacement;

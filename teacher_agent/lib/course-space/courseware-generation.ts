@@ -65,6 +65,7 @@ export interface CoursewareGenerationOptions {
   targetDurationMinutes: string;
   instruction: string;
   conversionMode?: CoursewareConversionMode;
+  trial?: boolean;
 }
 
 export function faithfulCoursewareDisabledReason(course: CourseSpace, materialIds: string[]) {
@@ -160,6 +161,7 @@ export async function createCoursewareGenerationSession(
     currentStep: 'generating',
     previewPhase: 'preparing',
     conversionMode,
+    trial: input.trial,
     sourceType: conversionMode === 'faithful' ? 'pptx-faithful' : 'learning-skills-enhanced',
     courseSpaceContext: { courseId: course.id, scope, materialIds },
   };

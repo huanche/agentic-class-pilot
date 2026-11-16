@@ -7,6 +7,7 @@ import { registerNativeDriver } from '@/lib/onlyoffice/native-player';
 const CHANNEL = 'agentic-native-pptx-v1';
 interface NativePptxViewProps {
   scene: Scene;
+  sourceStageId?: string;
   preview?: boolean;
   loadTimeoutMs?: number;
 }
@@ -24,11 +25,12 @@ export function NativePptxView(props: NativePptxViewProps) {
 
 function NativePptxSession({
   scene,
+  sourceStageId,
   preview = false,
   onRetry,
   loadTimeoutMs = 45000,
 }: NativePptxViewProps & { onRetry: () => void }) {
-  const stageId = useStageStore((s) => s.stage?.id);
+  const stageId = useStageStore((s) => sourceStageId ?? s.stage?.id);
   const previewSteps = useStageStore(
     (s) => s.stage?.nativePptx?.clicks?.[scene.outlineId || '']?.length ?? 0,
   );
