@@ -248,17 +248,6 @@ export function ClassroomVideoViewer({
           </button>
         )}
       </header>
-      {draft && (trial || manifest?.stage.coursewareTrial) && (
-        <TrialNarrationReview
-          classroomId={id}
-          index={index}
-          onSelect={(next) => {
-            setIndex(next);
-            setAutoPlay(false);
-          }}
-          onSaved={() => setPreviewRequest({})}
-        />
-      )}
       {error && (!ready || !clip) && (
         <p role="alert" className="my-4 rounded-xl bg-red-50 p-4 text-red-700">
           {error}
@@ -526,6 +515,17 @@ export function ClassroomVideoViewer({
             </nav>
           </dialog>
         </div>
+      )}
+      {draft && (trial || manifest?.stage.coursewareTrial) && (
+        <TrialNarrationReview
+          classroomId={id}
+          index={index}
+          onSelect={(next) => {
+            setIndex(next);
+            setAutoPlay(false);
+          }}
+          onSaved={() => setPreviewRequest({})}
+        />
       )}
     </main>
   );

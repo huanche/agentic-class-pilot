@@ -55,6 +55,7 @@ export function TrialNarrationReview({
   const hasNative = Boolean(nativePptxPage(stage, scene));
   const clicks = hasNative ? (stage?.nativePptx?.clicks?.[scene?.outlineId ?? ''] ?? []) : [];
   const speech = (scene?.actions ?? []).filter((action) => action.type === 'speech');
+  const hasEdits = speech.some(({ id }) => Object.hasOwn(edits, id));
   async function save(regenerate = false) {
     if (busy || !trial?.courseId || !scene) return;
     setBusy(true);
@@ -77,6 +78,7 @@ export function TrialNarrationReview({
               speech.flatMap(({ id }) => (Object.hasOwn(edits, id) ? [[id, edits[id]]] : [])),
             ),
             regenerate,
+            revoice: !regenerate && !hasEdits,
           }),
         },
       );
@@ -96,7 +98,7 @@ export function TrialNarrationReview({
   }
   return (
     <details
-      className="mx-auto mt-4 w-full max-w-5xl rounded-xl border bg-background p-4"
+      className="mx-auto my-4 w-full max-w-5xl rounded-xl border bg-background p-4"
       data-trial-narration
     >
       <summary className="cursor-pointer font-medium">逐页讲稿与原稿检查</summary>
@@ -222,7 +224,7 @@ export function TrialNarrationReview({
               ))}
               <div className="flex flex-wrap items-center gap-2">
                 <Button type="button" disabled={busy || !speech.length} onClick={() => void save()}>
-                  {busy ? '更新中…' : '保存并更新本页配音'}
+                  {busy ? '更新中…' : hasEdits ? '保存并更新本页配音' : '用优化读法重新配音'}
                 </Button>
                 <Button
                   type="button"

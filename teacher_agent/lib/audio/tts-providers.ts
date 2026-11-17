@@ -301,6 +301,8 @@ async function generateLemonadeTTS(
       voice,
       speed: config.speed || 1.0,
       response_format: config.format || 'wav',
+      ...(config.providerOptions?.trialNarration === true &&
+        new URL(baseUrl).hostname === 'agentic-kokoro' && { trial_narration: true }),
     }),
   });
 
@@ -818,6 +820,8 @@ async function generateMiniMaxTTS(
         channel: 1,
       },
       language_boost: 'auto',
+      ...(config.providerOptions?.trialNarration === true &&
+        text.includes('按行') && { pronunciation_dict: { tone: ['按行/(an4)(hang2)'] } }),
     }),
   });
 

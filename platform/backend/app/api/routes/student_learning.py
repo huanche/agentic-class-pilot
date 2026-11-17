@@ -5,13 +5,31 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
+from sqlalchemy import text
 
 from app.core.config import settings
 from app.services import student_learning_gateway as gateway
 from app.services.browser_learning_auth import BrowserStudent, browser_student, reject
+from app.services.browser_sessions import COOKIE_NAME, digest
+from app.api.deps import SessionDep
 
 router = APIRouter(prefix="/api/session", tags=["student-learning"])
 Identity = Annotated[BrowserStudent, Depends(browser_student)]
+
+
+class StudentPresence(BaseModel):
+    sessionId: str | None = Field(default=None, pattern=r"^[A-Za-z0-9_-]{1,128}$")
+
+
+@router.post("/presence", status_code=204)
+def presence(body: StudentPresence, request: Request, user: Identity, session: SessionDep):
+    # 仅记录学生页面活动，课件归属由学生服务核对会话。
+    session.execute(text(
+        "UPDATE browser_session SET student_seen_at=now(), student_session_key=:key "
+        "WHERE token_hash=:token AND user_id=:user AND expires_at>now()"
+    ), {"key": body.sessionId, "token": digest(request.cookies[COOKIE_NAME]), "user": user.user_id})
+    session.commit()
 
 
 def result(status: int, data: dict, request_id: str) -> JSONResponse:

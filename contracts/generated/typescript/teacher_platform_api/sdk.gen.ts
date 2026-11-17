@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { AuthorizeTeacherRequestData, AuthorizeTeacherRequestErrors, AuthorizeTeacherRequestResponses, EnqueuePublishedLessonKnowledgeData, EnqueuePublishedLessonKnowledgeErrors, EnqueuePublishedLessonKnowledgeResponses, GetTeacherCourseEnrollmentData, GetTeacherCourseEnrollmentErrors, GetTeacherCourseEnrollmentResponses, GetTeacherCourseMembersData, GetTeacherCourseMembersErrors, GetTeacherCourseMembersResponses, GetUserModelConfigData, GetUserModelConfigErrors, GetUserModelConfigResponses, RegisterTeacherCourseData, RegisterTeacherCourseErrors, RegisterTeacherCourseResponses, ResolveTeacherCourseAliasData, ResolveTeacherCourseAliasErrors, ResolveTeacherCourseAliasResponses } from './types.gen';
+import type { AuthorizeTeacherRequestData, AuthorizeTeacherRequestErrors, AuthorizeTeacherRequestResponses, EnqueuePublishedLessonKnowledgeData, EnqueuePublishedLessonKnowledgeErrors, EnqueuePublishedLessonKnowledgeResponses, GetTeacherCourseEnrollmentData, GetTeacherCourseEnrollmentErrors, GetTeacherCourseEnrollmentResponses, GetTeacherCourseMembersData, GetTeacherCourseMembersErrors, GetTeacherCourseMembersResponses, GetTeacherCourseRosterProgressData, GetTeacherCourseRosterProgressErrors, GetTeacherCourseRosterProgressResponses, GetUserModelConfigData, GetUserModelConfigErrors, GetUserModelConfigResponses, RegisterTeacherCourseData, RegisterTeacherCourseErrors, RegisterTeacherCourseResponses, ResolveTeacherCourseAliasData, ResolveTeacherCourseAliasErrors, ResolveTeacherCourseAliasResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -73,6 +73,15 @@ export const getTeacherCourseEnrollment = <ThrowOnError extends boolean = false>
 export const getTeacherCourseMembers = <ThrowOnError extends boolean = false>(options: Options<GetTeacherCourseMembersData, ThrowOnError>): RequestResult<GetTeacherCourseMembersResponses, GetTeacherCourseMembersErrors, ThrowOnError> => (options.client ?? client).get<GetTeacherCourseMembersResponses, GetTeacherCourseMembersErrors, ThrowOnError>({
     security: [{ name: 'X-Platform-Subject', type: 'apiKey' }, { name: 'X-Teacher-Service-Key', type: 'apiKey' }],
     url: '/internal/teacher/courses/{course_id}/members',
+    ...options
+});
+
+/**
+ * 教师读取已选课学生的在线状态及当前发布版本的知识点掌握情况
+ */
+export const getTeacherCourseRosterProgress = <ThrowOnError extends boolean = false>(options: Options<GetTeacherCourseRosterProgressData, ThrowOnError>): RequestResult<GetTeacherCourseRosterProgressResponses, GetTeacherCourseRosterProgressErrors, ThrowOnError> => (options.client ?? client).get<GetTeacherCourseRosterProgressResponses, GetTeacherCourseRosterProgressErrors, ThrowOnError>({
+    security: [{ name: 'X-Platform-Subject', type: 'apiKey' }, { name: 'X-Teacher-Service-Key', type: 'apiKey' }],
+    url: '/internal/teacher/courses/{course_id}/roster-progress',
     ...options
 });
 

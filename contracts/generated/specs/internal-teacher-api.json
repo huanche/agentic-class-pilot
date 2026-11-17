@@ -400,6 +400,177 @@
         "summary": "课程花名册只读投影（选课关系归平台所有，教师端不落副本）"
       }
     },
+    "/internal/teacher/courses/{course_id}/roster-progress": {
+      "get": {
+        "operationId": "getTeacherCourseRosterProgress",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "course_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "student_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "assessments": {
+                      "items": {
+                        "properties": {
+                          "evidence": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "lessonId": {
+                            "type": "string"
+                          },
+                          "pointId": {
+                            "type": "string"
+                          },
+                          "stars": {
+                            "type": "integer"
+                          },
+                          "status": {
+                            "type": "string"
+                          },
+                          "title": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "lessonId",
+                          "pointId",
+                          "title",
+                          "status",
+                          "stars",
+                          "evidence"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "lessons": {
+                      "items": {
+                        "properties": {
+                          "classroomId": {
+                            "type": "string"
+                          },
+                          "id": {
+                            "type": "string"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "total": {
+                            "type": [
+                              "integer",
+                              "null"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "title",
+                          "classroomId",
+                          "total"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "students": {
+                      "items": {
+                        "properties": {
+                          "classroomIds": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "mastered": {
+                            "additionalProperties": {
+                              "type": "integer"
+                            },
+                            "type": "object"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "online": {
+                            "type": "boolean"
+                          },
+                          "studentId": {
+                            "format": "uuid",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "studentId",
+                          "name",
+                          "online",
+                          "classroomIds",
+                          "mastered"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "lessons",
+                    "students",
+                    "assessments"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "课程名单与学情，指定学生时附带该学生的评估证据"
+          },
+          "401": {
+            "description": "教师身份无效"
+          },
+          "403": {
+            "description": "服务密钥无效或教师无权访问课程"
+          },
+          "404": {
+            "description": "课程不存在或指定学生未选课"
+          },
+          "422": {
+            "description": "学生标识格式错误"
+          },
+          "503": {
+            "description": "学情依赖服务不可用"
+          }
+        },
+        "security": [
+          {
+            "delegatedTeacher": [],
+            "serviceKey": []
+          }
+        ],
+        "summary": "教师读取已选课学生的在线状态及当前发布版本的知识点掌握情况"
+      }
+    },
     "/internal/teacher/published-lesson-knowledge": {
       "post": {
         "description": "重复发布同一视频版本时按课程、课时和视频版本幂等登记。",

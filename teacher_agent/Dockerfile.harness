@@ -54,15 +54,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* \
     && python3 -m venv /opt/deepseek-harness \
     && /opt/deepseek-harness/bin/pip install --no-cache-dir deepseek-harness-sdk==0.1.5rc1 \
-    && /opt/deepseek-harness/bin/python -c 'import deepseek_harness'
+    && /opt/deepseek-harness/bin/pip install --no-cache-dir wetext==0.1.9 \
+    && /opt/deepseek-harness/bin/python -c 'import deepseek_harness, wetext'
 ENV DEEPSEEK_HARNESS_PYTHON=/opt/deepseek-harness/bin/python
 ENV DEEPSEEK_HARNESS_BRIDGE=/app/scripts/deepseek-harness-bridge.py
+ENV COURSEWARE_TRIAL_TN_PYTHON=/opt/deepseek-harness/bin/python
 ENV HOME=/app/data XDG_CACHE_HOME=/app/data/.cache
 RUN groupadd --system --gid 1001 nodejs && useradd --system --uid 1001 --gid nodejs --home-dir /app nextjs
 COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --chown=nextjs:nodejs scripts/deepseek-harness-bridge.py /app/scripts/deepseek-harness-bridge.py
+COPY --chown=nextjs:nodejs scripts/normalize-trial-tts.py /app/scripts/normalize-trial-tts.py
 USER nextjs
 EXPOSE 3000
 CMD ["node", "server.js"]

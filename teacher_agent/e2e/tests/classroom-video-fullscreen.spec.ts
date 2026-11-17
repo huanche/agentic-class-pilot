@@ -163,3 +163,71 @@ test('a teacher can play an existing video, see both active conversions, and ret
   await page.getByRole('button', { name: '上一页' }).click();
   await expect(video).toHaveAttribute('src', '/first-test-fixture.webm');
 });
+
+test('puts trial narration below the video and revoices the selected page', async ({ page }) => {
+  const version = 'trial-preview';
+  const stage = {
+    id: version,
+    name: '测试课件',
+    coursewareTrial: { courseId: 'test-course', revision: 3 },
+  };
+  const scenes = [
+    {
+      id: 's1',
+      title: '一维数组',
+      type: 'slide',
+      order: 1,
+      actions: [{ id: 'speech-1', type: 'speech', text: '数组有 20 个元素。' }],
+    },
+  ];
+  let revoice: unknown;
+  await page.route('**/api/classroom?**', (route) => {
+    const request = route.request();
+    if (request.method() === 'POST') return route.fulfill({ json: { version } });
+    if (!new URL(request.url()).searchParams.has('video')) {
+      return route.fulfill({ json: { classroom: { stage, scenes } } });
+    }
+    return route.fulfill({
+      json: {
+        manifest: {
+          version,
+          title: stage.name,
+          stage,
+          scenes,
+          status: { state: 'ready', completed: 1, total: 1 },
+          clips: [{ sceneId: 's1', url: '/trial-fixture.webm' }],
+        },
+      },
+    });
+  });
+  await page.route('**/trial-fixture.webm', (route) =>
+    route.fulfill({ contentType: 'video/webm', body: Buffer.alloc(0) }),
+  );
+  await page.route('**/classrooms/trial-preview/narration', (route) => {
+    revoice = route.request().postDataJSON();
+    return route.fulfill({ json: { success: true, revision: 4 } });
+  });
+  await page.goto('/classroom-player/trial-preview?video=1&draft=1&trial=1');
+  const summary = page.getByText('逐页讲稿与原稿检查');
+  await expect(summary).toBeVisible();
+  expect(
+    await page.locator('video').evaluate((video) => {
+      const panel = document.querySelector('[data-trial-narration]');
+      return Boolean(
+        panel && video.compareDocumentPosition(panel) & Node.DOCUMENT_POSITION_FOLLOWING,
+      );
+    }),
+  ).toBe(true);
+  await summary.click();
+  await page.getByRole('button', { name: '用优化读法重新配音' }).click();
+  await expect
+    .poll(() => revoice)
+    .toEqual({
+      operation: 'trial-revise',
+      sceneId: 's1',
+      revision: 3,
+      segments: {},
+      regenerate: false,
+      revoice: true,
+    });
+});
