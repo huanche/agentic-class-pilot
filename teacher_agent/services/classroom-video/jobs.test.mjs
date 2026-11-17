@@ -1,8 +1,23 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createBrowserSession, renderVideoJob } from './jobs.mjs';
+import { createBrowserSession, forwardTeacherCaptureRequest, renderVideoJob } from './jobs.mjs';
 
 const clips = ['s1', 's2', 's3', 's4', 's5'].map((sceneId) => ({ sceneId }));
+
+test('aborts a capture request when the teacher service disconnects instead of crashing the worker', async () => {
+  let aborted = false;
+  const route = {
+    async fetch() {
+      throw new Error('getaddrinfo EAI_AGAIN');
+    },
+    async abort() {
+      aborted = true;
+      throw new Error('context already closed');
+    },
+  };
+  await forwardTeacherCaptureRequest(route, { url: 'http://teacher:3200/classroom-player/test' });
+  assert.equal(aborted, true);
+});
 
 test('a failed page does not block later pages, and a single retry reuses four completed clips', async () => {
   const cache = new Set();
