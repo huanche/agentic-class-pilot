@@ -21,7 +21,6 @@ export default function LessonProgress({ id, phase, agentStage, progress, postcl
         aria-current={i === index ? "step" : undefined}>
         <span className="lesson-progress__marker" aria-hidden="true">{i + 1}</span><div><strong>{title}</strong></div>
       </li>)}</ol>
-      {progress?.currentPoint && phase === "discussion" && <p>当前知识点：{progress.currentPoint}</p>}
       {phase === "postclass" && <p>接着尚未掌握的部分学习，可随时退出并保留进度。</p>}
     </aside>;
   }

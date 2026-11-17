@@ -200,7 +200,9 @@ export function createLearningSession({ request = requestSession, storage = () =
         return result;
       }
       let result;
-      if (type === "exit_after_class") {
+      if (["next_point", "previous_point"].includes(type)) result = await client.dispatch(
+        sid, type, { taskId: session.currentTaskPublic?.taskId }, { signal: t.signal });
+      else if (type === "exit_after_class") {
         try { result = await api(t, `/session/${sid}/end`, "POST"); }
         catch (failure) {
           const latest = failure.sessionView;

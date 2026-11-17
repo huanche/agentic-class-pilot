@@ -72,7 +72,8 @@ def validate_group(payload, point):
 
 
 def public_group(group):
-    return {"id": group["id"], "point_id": group["point_id"], "questions": [
+    return {"id": group["id"], "point_id": group["point_id"],
+            "phase": group.get("phase"), "questions": [
         {k: deepcopy(q[k]) for k in ("id", "prompt", "options")}
         for q in group["questions"]], "results": deepcopy(group["results"])}
 

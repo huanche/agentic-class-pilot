@@ -7,6 +7,31 @@ import LessonFeedback from "./LessonFeedback";
 import QuestionGroup from "./QuestionGroup";
 import LessonProgress, { STAGE_TITLES } from "./LessonProgress";
 
+function conversationTimeline(messages, groups) {
+  const groupsById = new Map(groups.map(group => [group.id, group]));
+  const oldAnswerLines = new Set(groups.flatMap(group => group.questions.flatMap(question => {
+    const result = group.results?.[question.id];
+    return result ? [`${question.prompt}：选择 ${question.options[result.choice]}`] : [];
+  })));
+  const placedGroups = new Set();
+  const items = [];
+  messages.forEach((message, index) => {
+    if (oldAnswerLines.size && ((message.role === "student" && message.text?.split("\n").every(line => oldAnswerLines.has(line)))
+      || (message.role === "assistant" && (message.text?.startsWith("已记录本次作答，请查看各题解析。")
+        || message.text === "本组题已完成。可以查看解析、继续提问，准备好后再切换知识点。")))) return;
+    items.push({ kind: "message", key: message.messageId || `message-${index}`, message });
+    const group = groupsById.get(message.cardId);
+    if (group && !placedGroups.has(group.id)) {
+      placedGroups.add(group.id);
+      items.push({ kind: "card", key: `card-${group.id}`, group });
+    }
+  });
+  groups.forEach(group => {
+    if (!placedGroups.has(group.id)) items.push({ kind: "card", key: `card-${group.id}`, group });
+  });
+  return items;
+}
+
 export default function StudentApp() {
   const controllerRef = useRef(null);
   if (!controllerRef.current) controllerRef.current = createLearningSession();
@@ -19,6 +44,7 @@ export default function StudentApp() {
   const busy = learning.busy;
   const dynamicFlow = flowVersion === "dynamic_dialogue_v1";
   const typedFlow = Boolean(learning.typedTeaching);
+  const reviewingCard = typedFlow && Boolean(learning.reviewingCard);
   const stageTitle = stage => typedFlow
     ? ({ recall: "逐点学习", reinforce: "补强", wrapup: "总结反馈" }[stage] || "知识点学习")
     : STAGE_TITLES[stage];
@@ -28,6 +54,10 @@ export default function StudentApp() {
   const extra = optimistic && optimistic.sessionId === learning.sessionId && optimistic.screen === phase ? optimistic : null;
   const messages = [...learning.messages, ...(extra && phase === "discussion" && learning.messages.length <= extra.count ? [extra] : [])];
   const postclassMessages = [...learning.postclassMessages, ...(extra && phase === "postclass" && learning.postclassMessages.length <= extra.count ? [extra] : [])];
+  const visibleGroups = typedFlow ? (learning.questionGroups || []).filter(group =>
+    !group.phase || group.phase === (phase === "postclass" ? "postclass" : "discussion")) : [];
+  const conversationItems = conversationTimeline(phase === "postclass" ? postclassMessages : messages, visibleGroups);
+  const historyItems = conversationTimeline(messages, typedFlow ? learning.questionGroups || [] : []);
   const [input, setInput] = useState("");
   const draftKey = learning.userId && learning.sessionId
     ? `student_draft:${learning.userId}:${learning.sessionId}` : "";
@@ -135,7 +165,10 @@ export default function StudentApp() {
     return () => { if (typeof handle === "function") handle(); };
   }, [phase, lesson]);
 
-  useEffect(() => { chatLog.current?.scrollTo({ top: chatLog.current.scrollHeight }); }, [messages, postclassMessages, replyPending, phase]);
+  useEffect(() => {
+    if (typedFlow && !replyPending) return;
+    chatLog.current?.scrollTo({ top: chatLog.current.scrollHeight });
+  }, [messages, postclassMessages, replyPending, phase, typedFlow]);
   useEffect(() => {
     if (!composerInput.current) return;
     composerInput.current.style.height = "44px";
@@ -146,6 +179,26 @@ export default function StudentApp() {
     setError("");
     try { return await controller.dispatch({ type, ...extra }); }
     catch (err) { if (controller.getView().error !== err.message) setError(err.message); return null; }
+  }
+
+  async function navigatePoint(direction) {
+    if (!await perform(direction)) return;
+    requestAnimationFrame(() => {
+      const log = chatLog.current;
+      if (!log) return;
+      const activeCards = log.querySelectorAll('[data-active-card]');
+      const card = activeCards[activeCards.length - 1];
+      log.scrollTo({ top: card ? card.getBoundingClientRect().top - log.getBoundingClientRect().top + log.scrollTop - 8 : log.scrollHeight });
+    });
+  }
+
+  async function submitCard(cardId, answers) {
+    const log = chatLog.current;
+    const scrollTop = log?.scrollTop;
+    await perform(phase === "postclass" ? "postclass_answer" : "submit_answer", { cardId, answers });
+    if (log && scrollTop !== undefined) requestAnimationFrame(() => {
+      if (chatLog.current === log) log.scrollTop = scrollTop;
+    });
   }
 
   async function chooseLesson(selected) {
@@ -168,7 +221,7 @@ export default function StudentApp() {
 
   async function send(event, type = phase === "postclass" ? "postclass_answer" : "submit_answer") {
     event?.preventDefault();
-    if (!input.trim() || busy || (dynamicFlow && !can(type)) || (phase === "discussion" && agentStage === "wrapup")) return;
+    if (!input.trim() || busy || (dynamicFlow && !can(type)) || (phase === "discussion" && agentStage === "wrapup" && !reviewingCard)) return;
     const text = input.trim();
     setInput(""); setReplyPending(true); setError("");
     setOptimistic({ role: "student", text, screen: phase, sessionId: learning.sessionId,
@@ -248,24 +301,31 @@ export default function StudentApp() {
             <h3 className="new-stage-title">{phase === "postclass"
               ? typedFlow ? "继续巩固" : dynamicFlow ? "课后继续交流" : postclassStage === "remediation" ? "继续未完成的学习" : "全部完成 · 自由提问"
               : typedFlow ? "知识点学习" : "复述与讨论"}</h3>
-            <p className="conversation-stage" role="status">{phase === "postclass"
+            <div className="conversation-point-row"><p className="conversation-stage" role="status">{phase === "postclass"
               ? "本次课堂已经结束，课后对话会更新你的学习反馈。"
               : `${stageTitle(agentStage) || "初始复述"}${learningProgress?.currentPoint ? ` · 当前知识点：${learningProgress.currentPoint}` : ""}`}</p>
+              {typedFlow && <div className="conversation-point-nav" aria-label="知识点切换">
+                <button type="button" title="上一个知识点" aria-label="上一个知识点" disabled={busy || !learning.canGoPreviousPoint}
+                  onClick={() => navigatePoint("previous_point")}>←</button>
+                <button type="button" title="下一个知识点" aria-label="下一个知识点" disabled={busy || !learning.canGoNextPoint}
+                  onClick={() => navigatePoint("next_point")}>→</button>
+              </div>}
+            </div>
           </div>
           <div className="chat conversation-log" role="log" aria-live="polite" ref={chatLog}>
-            {(phase === "postclass" ? postclassMessages : messages).map((message, index) => <div className={`msg msg--${message.role === "student" ? "me" : "ai"}`} key={message.messageId || index}>
-              {message.role !== "student" && <div className="msg__avatar">AI</div>}
-              <div className="msg__bubble">{message.role !== "student" && STAGE_TITLES[message.phase]
-                && <span className="msg__stage">{stageTitle(message.phase)}</span>}{message.text}</div>
+            {conversationItems.map(item => item.kind === "message" ? <div className={`msg msg--${item.message.role === "student" ? "me" : "ai"}`} key={item.key}>
+              {item.message.role !== "student" && <div className="msg__avatar">AI</div>}
+              <div className="msg__bubble">{item.message.role !== "student" && STAGE_TITLES[item.message.phase]
+                && <span className="msg__stage">{stageTitle(item.message.phase)}</span>}{item.message.text}</div>
+            </div> : <div className="msg msg--ai" data-active-card={item.group.active ? "" : undefined} key={item.key}>
+              <div className="msg__avatar">AI</div>
+              <div className="msg__bubble question-group__bubble"><QuestionGroup group={item.group}
+                busy={busy || item.group.active === false || (phase === "discussion" && agentStage === "wrapup" && !reviewingCard)}
+                onSubmit={submitCard} /></div>
             </div>)}
             {replyPending && <div className="msg msg--ai" role="status" aria-label="AI 正在回复"><div className="msg__avatar" aria-hidden="true">AI</div><div className="msg__bubble typing" aria-hidden="true"><span /><span /><span /></div></div>}
           </div>
-          {typedFlow && learning.questionGroups?.length > 0 && <div className="question-groups">
-            {learning.questionGroups.map(group => <QuestionGroup key={group.id} group={group}
-              busy={busy || group.active === false || (phase === "discussion" && agentStage === "wrapup")}
-              onSubmit={(cardId, answers) => perform(phase === "postclass" ? "postclass_answer" : "submit_answer", { cardId, answers })} />)}
-          </div>}
-          {((phase === "discussion" || (dynamicFlow && phase === "postclass")) && agentStage === "wrapup") || (typedFlow && phase === "postclass" && postclassStage !== "remediation")
+          {((phase === "discussion" || (dynamicFlow && phase === "postclass")) && agentStage === "wrapup" && !reviewingCard) || (typedFlow && phase === "postclass" && postclassStage !== "remediation")
             ? <div className="conversation-complete" role="status"><strong>课堂对话已完成</strong><p>{typedFlow ? "点击下方按钮查看反馈，再选择回看或继续巩固。" : "点击下方按钮查看本课反馈。还想继续学习，可以在课后回看视频或与 AI 对话。"}</p></div>
             : <form className="composer" onSubmit={event => send(event)}>
               <textarea className="composer__input" ref={composerInput} rows={1} disabled={dynamicFlow && (paused || !can(phase === "postclass" ? "postclass_answer" : "submit_answer"))} value={input} onChange={(event) => editInput(event.target.value)} onKeyDown={handleComposerKeyDown} placeholder={phase === "postclass" && postclassStage === "open" ? "自由向 AI 提问…" : "说说你的理解，或提出问题…"} aria-label="输入复述或讨论" />
@@ -286,12 +346,15 @@ export default function StudentApp() {
         </div>
       </div>}
       {phase === "done" && <div className="stage stage--done"><div className="done done--feedback"><span className="done__check" aria-hidden="true">✓</span><p>第 {lesson?.week} 周 · 第 {lesson?.lessonNumber} 次课</p><h3 className="done__title">本节课结束</h3><LessonFeedback feedback={feedback} />{typedFlow && postclassStage === "completed" && <p role="status">本课知识点已全部掌握。</p>}
-        {messages.length > 0 && <details className="conversation-history">
-          <summary>查看历史会话（{messages.length} 条）</summary>
+        {historyItems.length > 0 && <details className="conversation-history">
+          <summary>查看历史会话与题卡（{historyItems.length} 项）</summary>
           <div className="chat conversation-log" role="log" aria-label="历史课堂与课后对话">
-            {messages.map((message, index) => <div className={`msg msg--${message.role === "student" ? "me" : "ai"}`} key={message.messageId || index}>
-              {message.role !== "student" && <div className="msg__avatar">AI</div>}
-              <div className="msg__bubble"><span className="msg__stage">{String(message.phase || "").startsWith("postclass-") ? "课后对话" : STAGE_TITLES[message.phase] || "课堂对话"}</span>{message.text}</div>
+            {historyItems.map(item => item.kind === "message" ? <div className={`msg msg--${item.message.role === "student" ? "me" : "ai"}`} key={item.key}>
+              {item.message.role !== "student" && <div className="msg__avatar">AI</div>}
+              <div className="msg__bubble"><span className="msg__stage">{String(item.message.phase || "").startsWith("postclass-") ? "课后对话" : STAGE_TITLES[item.message.phase] || "课堂对话"}</span>{item.message.text}</div>
+            </div> : <div className="msg msg--ai" key={item.key}>
+              <div className="msg__avatar">AI</div>
+              <div className="msg__bubble question-group__bubble"><QuestionGroup group={item.group} busy onSubmit={() => {}} /></div>
             </div>)}
           </div>
         </details>}{replayError && <p className="replay-error" role="alert">暂时无法回看：{replayError}</p>}<div className="postclass-actions"><button className="btn btn--primary" type="button" disabled={busy} onClick={() => openReplay(Boolean(replayError))}>{replayLoading ? "正在获取播放信息…" : replayError ? "重试回看" : "回看视频"}</button><button className="btn btn--primary" type="button" disabled={busy} onClick={openPostclass}>{typedFlow ? "继续巩固" : postclassStage === "open" ? "与 AI 自由提问" : "继续未完成的学习"}</button><button className="btn btn--ghost" type="button" disabled={busy} onClick={() => controller.dispatch({ type: "catalog" })}>返回课时列表</button><a className="btn btn--ghost" href={`${platformUrl || "http://localhost:8088"}/student`}>返回首页</a></div><div className="lesson-reset"><button className="btn btn--reset" type="button" disabled={busy} onClick={() => setShowResetConfirm(true)}>重置本课学习进度</button>{showResetConfirm && <div className="lesson-reset__confirm" role="group" aria-label="确认重置本课学习进度"><p>确定重新学习「{lesson?.title}」吗？本课的对话、知识点掌握情况和反馈将被删除，其他课时不受影响。此操作无法撤销。</p><div><button className="btn btn--ghost" type="button" disabled={busy} onClick={() => setShowResetConfirm(false)}>取消</button><button className="btn btn--reset-confirm" type="button" disabled={busy} onClick={resetLesson}>{busy ? "正在重置…" : "确认重置本课"}</button></div></div>}</div></div></div>}

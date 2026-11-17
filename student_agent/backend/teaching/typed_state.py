@@ -91,6 +91,11 @@ def teaching_plan(state, *, after_class=False):
 
 
 def current(state, *, after_class=False):
+    review_id = state.get("review_point_id")
+    if review_id:
+        review = next((p for p in state["points"] if p["id"] == review_id), None)
+        if review:
+            return review
     if after_class:
         selected = state.get("postclass_point_id")
         if selected:
@@ -98,11 +103,63 @@ def current(state, *, after_class=False):
             if point:
                 return point
         return next((p for p in state["points"] if p["status"] != "mastered"), None)
+    selected = state.get("selected_point_id")
+    if selected and state["stage"] in {"recall", "reinforce"}:
+        point = next((p for p in state["points"] if p["id"] == selected and p["status"] != "mastered"), None)
+        if point:
+            return point
     if state["stage"] == "recall":
         return next((p for p in state["points"] if not p["recall_done"]), None)
     if state["stage"] == "reinforce":
         return next((p for p in state["points"] if p["status"] != "mastered" and not p["reinforce_done"]), None)
     return None
+
+
+def next_point(state, *, after_class=False):
+    focus = current(state, after_class=after_class)
+    if not focus:
+        return None
+    index = state["points"].index(focus)
+    return state["points"][index + 1] if index + 1 < len(state["points"]) else None
+
+
+def previous_point(state, *, after_class=False):
+    focus = current(state, after_class=after_class)
+    if not focus:
+        return None
+    index = state["points"].index(focus)
+    return state["points"][index - 1] if index else None
+
+
+def skip_to_next(state, *, after_class=False):
+    result = deepcopy(state)
+    focus = current(result, after_class=after_class)
+    following = next_point(result, after_class=after_class)
+    if not focus or not following:
+        raise ValueError("没有下一个待学习知识点")
+    if after_class:
+        result["postclass_point_id"] = following["id"]
+    else:
+        field = "recall_done" if result["stage"] == "recall" else "reinforce_done"
+        if focus["status"] != "mastered":
+            focus[field] = True
+        if result["stage"] == "recall" and focus["status"] != "mastered":
+            focus["reinforcement_required"] = True
+        result["selected_point_id"] = following["id"]
+    result["review_point_id"] = following["id"] if following["status"] == "mastered" else None
+    result["transition"] = "manual_next"
+    result["current_task"] = task(result, after_class=after_class)
+    return result
+
+
+def go_to_previous(state, *, after_class=False):
+    result = deepcopy(state)
+    previous = previous_point(result, after_class=after_class)
+    if not previous:
+        raise ValueError("没有上一个知识点")
+    result["review_point_id"] = previous["id"]
+    result["current_task"] = task(result, after_class=after_class)
+    return result
 
 
 def task(state, *, after_class=False):
@@ -172,6 +229,7 @@ def advance(state, intent, assessment, *, after_class=False, observation=None, c
                           else "clarify" if outcome == "unclear" else "hint")
     result["transition"] = "continue"
     if outcome == "mastered":
+        result["selected_point_id"] = None
         point.update(recall_done=True, reinforce_done=True, reinforcement_required=False,
                      mastered_in=stage, gaps=[])
         result["transition"] = "mastered_next"
@@ -186,6 +244,7 @@ def advance(state, intent, assessment, *, after_class=False, observation=None, c
             result["stage"] = "reinforce" if any(
                 p["status"] != "mastered" and not p["reinforce_done"] for p in result["points"]) else "wrapup"
         if result["stage"] != old_stage:
+            result["selected_point_id"] = None
             result["transition"] = "enter_" + result["stage"]
         if result["stage"] == "wrapup":
             result["completion_reason"] = ("all_mastered" if all(p["status"] == "mastered" for p in result["points"])
