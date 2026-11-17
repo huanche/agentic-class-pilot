@@ -214,3 +214,21 @@ describe('server narration language', () => {
     expect(scene.actions?.[0]).toMatchObject({ type: 'spotlight', elementId: 'median' });
   });
 });
+
+it('optimizes trial TTS input while preserving the lecture and standard synthesis', async () => {
+  const text = '这个数组占 40 B。';
+  for (const trialNarration of [false, true]) {
+    const scene = narrationScene();
+    scene.actions = [{ id: 'speech', type: 'speech', text }];
+    await generateTTSForClassroom([scene], 'trial-voice', 'http://localhost', undefined, {
+      trialNarration,
+    });
+    const [config, input] = mocks.tts.mock.lastCall as unknown as [
+      { providerOptions: { trialNarration?: boolean } },
+      string,
+    ];
+    expect(config.providerOptions.trialNarration).toBe(trialNarration || undefined);
+    expect(input).toBe(trialNarration ? '这个数组占 40个字节。' : text);
+    expect(scene.actions[0]).toMatchObject({ text });
+  }
+});

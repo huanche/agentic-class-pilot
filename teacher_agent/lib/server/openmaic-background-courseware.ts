@@ -207,6 +207,7 @@ export async function executeOpenmaicCourseware(
                   concurrency: getParallelTtsConcurrency(),
                   signal,
                   failFast: !stage.coursewareTrial,
+                  trialNarration: Boolean(stage.coursewareTrial),
                   isolateAudio: true,
                   recordUsage: true,
                   cacheScope: teacherId,

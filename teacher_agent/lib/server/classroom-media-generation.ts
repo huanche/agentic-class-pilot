@@ -44,12 +44,17 @@ import type { CoursewareVoiceSelection } from '@/lib/generation/background-cours
 import type { ImageProviderId } from '@/lib/media/types';
 import type { VideoProviderId } from '@/lib/media/types';
 import type { TTSProviderId } from '@/lib/audio/types';
-import { filterUnspeakableSpeechActions, splitLongSpeechActions } from '@/lib/audio/tts-utils';
+import {
+  filterUnspeakableSpeechActions,
+  splitLongSpeechActions,
+  TTS_MAX_TEXT_LENGTH,
+} from '@/lib/audio/tts-utils';
 import { isGeneratedMediaPlaceholder } from '@/lib/media/media-ref';
 import { VOXCPM_AUTO_VOICE_ID, VOXCPM_TTS_PROVIDER_ID } from '@/lib/audio/voxcpm';
 import { type PlatformTtsConfig } from '@/lib/server/platform-user-model-config';
 import { recordGenerationUsage } from '@/lib/server/usage-storage';
 import { generateCachedTts, ttsAudioCacheKey, type AudioCacheStatus } from './tts-audio-cache';
+import { prepareTrialNarration } from './trial-tts-text';
 import { lazyBoundedMap } from '@/lib/utils/concurrency';
 import { ttsConcurrency } from '@/lib/audio/tts-concurrency';
 
@@ -313,6 +318,7 @@ export async function generateTTSForClassroom(
     concurrency?: number;
     isolateAudio?: boolean;
     languageDirective?: string;
+    trialNarration?: boolean;
     signal?: AbortSignal;
     failFast?: boolean;
     recordUsage?: boolean;
@@ -416,6 +422,25 @@ export async function generateTTSForClassroom(
       providerId,
     );
 
+    const speech = scene.actions.filter((action) => action.type === 'speech');
+    const trialInputs = options?.trialNarration
+      ? await prepareTrialNarration(
+          speech.map(({ text }) => text),
+          options.signal,
+        )
+      : [];
+    const maxLength = TTS_MAX_TEXT_LENGTH[providerId] ?? Infinity;
+    const spokenById = new Map(
+      speech.map(({ id, text }, i) => {
+        const spoken = trialInputs[i];
+        return [id, spoken && spoken.length <= maxLength ? spoken : text];
+      }),
+    );
+    const providerOptions = {
+      languageType: options?.languageDirective,
+      ...(options?.trialNarration && { trialNarration: true }),
+    };
+
     // Use scene order to make audio IDs unique across scenes
     const sceneOrder = scene.order;
     let narrationFailed = false;
@@ -441,12 +466,12 @@ export async function generateTTSForClassroom(
             baseUrl: ttsBaseUrl,
             voice,
             speed: speechAction.speed,
-            providerOptions: { languageType: options?.languageDirective },
+            providerOptions,
             signal: options?.signal
               ? AbortSignal.any([options.signal, AbortSignal.timeout(120_000)])
               : undefined,
           },
-          speechAction.text,
+          spokenById.get(action.id) ?? speechAction.text,
           { scope: options?.cacheScope || classroomId, onCache: options?.onAudioCache },
           async (config, text) => {
             const result = await generateTTS(config, text);
@@ -477,7 +502,7 @@ export async function generateTTSForClassroom(
                 baseUrl: ttsBaseUrl,
                 voice,
                 speed: speechAction.speed,
-                providerOptions: { languageType: options?.languageDirective },
+                providerOptions,
               },
               '__narration-pace__',
               options.cacheScope || classroomId,

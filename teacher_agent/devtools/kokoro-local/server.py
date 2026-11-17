@@ -63,7 +63,7 @@ class Engine:
         self.threads = threads
         self.max_phonemes = max_phonemes
 
-    def phonemize(self, text: str, voice: str) -> str:
+    def phonemize(self, text: str, voice: str, trial_narration: bool = False) -> str:
         if not voice.startswith("z"):
             return self.model.tokenizer.phonemize(text, lang="en-us")
         # The v1.0 Chinese frontend preserves Latin text verbatim. Phonemize it
@@ -76,14 +76,22 @@ class Engine:
             if index % 2:
                 phonemes.append(self.model.tokenizer.phonemize(part, lang="en-us"))
             else:
-                phonemes.append(self.zh(part)[0])
+                if not trial_narration:
+                    phonemes.append(self.zh(part)[0])
+                    continue
+                for span in re.split(r"(按行|第一行)", part):
+                    correction = {"按行": ("an4", "hang2"), "第一行": ("di4", "yi1", "hang2")}.get(span)
+                    if correction:
+                        phonemes.append("".join(self.zh.py2ipa(syllable) for syllable in correction))
+                    elif span.strip():
+                        phonemes.append(self.zh(span)[0])
         return " ".join(phonemes)
 
-    def synthesize(self, text: str, voice: str, speed: float):
+    def synthesize(self, text: str, voice: str, speed: float, trial_narration: bool = False):
         import soundfile as sf
 
         started = time.perf_counter()
-        phonemes = self.phonemize(text, voice)
+        phonemes = self.phonemize(text, voice, trial_narration)
         if not self.model.tokenizer.tokenize(phonemes, limit=None):
             raise ValueError("文字没有可朗读的内容")
         samples, rate = self.model.create(phonemes, voice, speed, is_phonemes=True)
@@ -174,7 +182,9 @@ def handler_for(engine: Engine, root: Path):
                 self.error(429, "合成繁忙，请稍后重试")
                 return
             try:
-                audio, duration, seconds = engine.synthesize(text.strip(), voice, speed)
+                audio, duration, seconds = engine.synthesize(
+                    text.strip(), voice, speed, request.get("trial_narration") is True
+                )
                 self.send(200, audio, "audio/wav", {
                     "X-Audio-Duration": f"{duration:.3f}",
                     "X-Generation-Seconds": f"{seconds:.3f}",
