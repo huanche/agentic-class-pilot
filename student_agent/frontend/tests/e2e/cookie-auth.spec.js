@@ -9,6 +9,7 @@ test("expired login preserves a draft for its owner and another account cannot l
   const writes=[];
   await page.route("**/api/session/**", async route => {
     const path=new URL(route.request().url()).pathname;
+    if (path.endsWith("/presence")) return route.fulfill({ json: { ok: true } });
     if (expired) return route.fulfill({status:401,json:{code:"SESSION_EXPIRED",detail:"登录已失效，请重新登录"}});
     if(path.endsWith("/identity"))return route.fulfill({json:{userId,csrfToken:"test-session-bound-csrf"}});
     if(path.endsWith("/platform-entry"))return route.fulfill({json:{platformUrl:"http://127.0.0.1:3107",demoEnabled:false}});

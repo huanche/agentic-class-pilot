@@ -19,6 +19,7 @@ async function setup(page, pendingAnswer = false, delayAcknowledgement = false) 
   await page.addInitScript(() => localStorage.setItem("student_last_course:u", "c"));
   await page.route("**/api/session/**", async route => {
     const path = new URL(route.request().url()).pathname;
+    if (path.endsWith("/presence")) return route.fulfill({ json: { ok: true } });
     if (path.endsWith("/identity")) return route.fulfill({ json: { userId: "u", csrfToken: "test-csrf" } });
     if (path.endsWith("/platform-entry")) return route.fulfill({ json: { platformUrl: "http://platform.test" } });
     if (path === "/api/session/start") return route.fulfill({ json: { sessionId: "catalog", userId: "u", phase: "idle", courses, messages: [], stateVersion: 0 } });
