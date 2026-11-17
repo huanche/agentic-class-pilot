@@ -21,6 +21,7 @@ import { createCoursewarePerformance } from './courseware-performance';
 import { createOpenmaicCoursewareSteps, type OpenmaicContent } from './openmaic-courseware-steps';
 import { generateOpenmaicCourseware, type OpenmaicCheckpoint } from './openmaic-courseware-engine';
 import { getParallelTtsConcurrency } from './provider-config';
+import { prequeueClassroomVideo } from './classroom-video';
 import {
   generateTTSForClassroom,
   finalizeClassroomTtsAudio,
@@ -324,6 +325,8 @@ export async function executeOpenmaicCourseware(
       };
     });
     if ((await readCourseJob(jobId))?.status === 'review') {
+      if (input.enableTTS && scenes.some((scene) => scene.type === 'slide'))
+        await prequeueClassroomVideo(stage.id, teacherId, baseUrl);
       await Promise.all(
         outlines.map((outline) => fs.unlink(checkpointPath(outline.order)).catch(() => undefined)),
       );

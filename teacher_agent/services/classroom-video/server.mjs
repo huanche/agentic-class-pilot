@@ -4,8 +4,10 @@ import path from 'node:path';
 import os from 'node:os';
 import { spawn } from 'node:child_process';
 import { timingSafeEqual, randomUUID } from 'node:crypto';
+import { setTimeout as delay } from 'node:timers/promises';
 import { chromium } from 'playwright-core';
 import { prepareRecordingWithRetry } from './readiness.mjs';
+import { createBrowserSession, renderVideoJob } from './jobs.mjs';
 
 const root = process.env.CLASSROOM_VIDEOS_DIR || '/videos';
 const origin = new URL(process.env.VIDEO_PUBLIC_ORIGIN || 'https://agenticclasspilot.com').origin;
@@ -29,7 +31,21 @@ async function atomic(file, data) {
   await fs.mkdir(path.dirname(file), { recursive: true });
   const tmp = `${file}.${randomUUID()}.tmp`;
   await fs.writeFile(tmp, JSON.stringify(data));
-  await fs.rename(tmp, file);
+  try {
+    // Windows readers can briefly prevent replacing the status file.
+    for (let attempt = 0; ; attempt++) {
+      try {
+        await fs.rename(tmp, file);
+        return;
+      } catch (error) {
+        if (!['EPERM', 'EBUSY', 'EACCES'].includes(error.code) || attempt === 4) throw error;
+        await delay(25 * (attempt + 1));
+      }
+    }
+  } catch (error) {
+    await fs.unlink(tmp).catch(() => {});
+    throw error;
+  }
 }
 const reply = (r, status, body) => {
   r.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' });
@@ -67,12 +83,19 @@ async function probe(file) {
 async function bounded(promise, ms, message) {
   let timer;
   try {
-    return await Promise.race([promise, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(message)), ms); })]);
-  } finally { clearTimeout(timer); }
+    return await Promise.race([
+      promise,
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(message)), ms);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
-async function capture(job, plan, clip, onPhase) {
+async function capture(session, job, plan, clip, onPhase) {
   const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'classroom-video-'));
-  let browser, page;
+  let context, page, staging;
   const writes = [];
   try {
     const durations = {};
@@ -87,21 +110,7 @@ async function capture(job, plan, clip, onPhase) {
     }
     const narrationSeconds = Object.values(durations).reduce((a, b) => a + b, 0);
     if (narrationSeconds > 900) throw new Error('单页讲解超过十五分钟，请拆分页面');
-    const args = [
-      '--disable-dev-shm-usage',
-      '--no-sandbox',
-      '--autoplay-policy=no-user-gesture-required',
-    ];
-    if (process.env.VIDEO_ORIGIN_IP)
-      args.push(
-        `--host-resolver-rules=MAP ${new URL(origin).hostname} ${process.env.VIDEO_ORIGIN_IP}`,
-      );
-    browser = await chromium.launch({
-      executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium',
-      headless: true,
-      args,
-    });
-    const context = await browser.newContext({
+    context = await session.newContext({
       viewport: { width: 1280, height: 720 },
       deviceScaleFactor: 1,
       serviceWorkers: 'block',
@@ -169,8 +178,11 @@ async function capture(job, plan, clip, onPhase) {
     await prepareRecordingWithRetry(page, clip.sceneId, onPhase);
     const cdp = await context.newCDPSession(page);
     const frames = [];
-    let byteCount = 0, rejectCapture;
-    const captureFailure = new Promise((_, reject) => { rejectCapture = reject; });
+    let byteCount = 0,
+      rejectCapture;
+    const captureFailure = new Promise((_, reject) => {
+      rejectCapture = reject;
+    });
     void captureFailure.catch(() => {});
     let firstResolve;
     const first = new Promise((resolve) => {
@@ -181,7 +193,10 @@ async function capture(job, plan, clip, onPhase) {
       void cdp.send('Page.screencastFrameAck', { sessionId: event.sessionId }).catch(() => {});
       const bytes = Buffer.from(event.data, 'base64');
       byteCount += bytes.length;
-      if (n > 30_000 || byteCount > 800 * 1024 * 1024) { rejectCapture(new Error('单页动画过大，请拆分页面后重试')); return; }
+      if (n > 30_000 || byteCount > 800 * 1024 * 1024) {
+        rejectCapture(new Error('单页动画过大，请拆分页面后重试'));
+        return;
+      }
       const file = `frame-${String(n).padStart(6, '0')}.jpg`;
       frames.push({ file, epoch: event.metadata.timestamp * 1000 });
       writes.push(fs.writeFile(path.join(temp, file), bytes).catch(rejectCapture));
@@ -194,12 +209,15 @@ async function capture(job, plan, clip, onPhase) {
       maxHeight: 720,
       everyNthFrame: 1,
     });
-    await Promise.race([
-      first,
-      new Promise((_, reject) => setTimeout(() => reject(new Error('视频采集未返回画面')), 15_000)),
-    ]);
-    const result = await bounded(Promise.race([page.evaluate((d) => window.classroomCapture.run(d), durations), captureFailure]),
-      (narrationSeconds + 300) * 1000, '此页录制超时，请重试未完成视频');
+    await bounded(first, 15_000, '视频采集未返回画面');
+    const result = await bounded(
+      Promise.race([
+        page.evaluate((d) => window.classroomCapture.run(d), durations),
+        captureFailure,
+      ]),
+      (narrationSeconds + 300) * 1000,
+      '此页录制超时，请重试未完成视频',
+    );
     await cdp.send('Page.stopScreencast');
     await Promise.all(writes);
     const start = frames[0].epoch;
@@ -282,9 +300,8 @@ async function capture(job, plan, clip, onPhase) {
     const dest = path.join(root, plan.id, 'clips', `${clip.key}.mp4`);
     await fs.mkdir(path.dirname(dest), { recursive: true });
     // Same filesystem publication: readers never see a partial MP4.
-    const staging = `${dest}.${randomUUID()}.tmp`;
+    staging = `${dest}.${randomUUID()}.tmp`;
     await fs.copyFile(output, staging);
-    await fs.rename(staging, dest);
     await atomic(`${dest}.json`, {
       duration: Number(info.format.duration),
       frames: frames.length,
@@ -295,60 +312,86 @@ async function capture(job, plan, clip, onPhase) {
       })),
       createdAt: Date.now(),
     });
+    await fs.rename(staging, dest);
+    staging = undefined;
   } catch (error) {
     const debug = path.join(root, plan.id, 'debug');
     await fs.mkdir(debug, { recursive: true });
     await page?.screenshot({ path: path.join(debug, `${clip.key}.png`) }).catch(() => {});
     throw error;
   } finally {
-    await browser?.close();
+    await context?.close().catch(() => {});
+    if (staging) await fs.unlink(staging).catch(() => {});
     await Promise.allSettled(writes);
-    await fs.rm(temp, { recursive: true, force: true });
+    await fs.rm(temp, { recursive: true, force: true }).catch(() => {});
   }
 }
+async function launchBrowser() {
+  const args = [
+    '--disable-dev-shm-usage',
+    '--no-sandbox',
+    '--autoplay-policy=no-user-gesture-required',
+  ];
+  if (process.env.VIDEO_ORIGIN_IP)
+    args.push(
+      '--host-resolver-rules=MAP ' + new URL(origin).hostname + ' ' + process.env.VIDEO_ORIGIN_IP,
+    );
+  return chromium.launch({
+    executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium',
+    headless: true,
+    args,
+  });
+}
+
 async function pump() {
   if (active) return;
   active = true;
-  while (queue.length) {
-    const job = queue.shift(),
-      key = `${job.id}:${job.version}`;
-    const statusFile = path.join(root, job.id, 'jobs', `${job.version}.json`);
-    let plan,
-      completed = 0;
-    const status = (state, extra = {}) =>
-      atomic(statusFile, {
-        version: job.version,
-        state,
-        completed,
-        total: plan?.clips.length || 0,
-        updatedAt: Date.now(),
-        ...extra,
-      });
-    try {
-      plan = JSON.parse(
-        await fs.readFile(path.join(root, job.id, 'versions', `${job.version}.json`), 'utf8'),
-      );
-      for (const clip of plan.clips) {
-        if (!safeHash(clip.key) || !safeId(clip.sceneId)) throw new Error('Invalid video clip');
-        if (
-          !(await fs.stat(path.join(root, plan.id, 'clips', `${clip.key}.mp4`)).catch(() => null))
-            ?.size
-        ) {
-          await status('rendering', { currentSceneId: clip.sceneId, phase: 'loading' });
-          await capture(job, plan, clip, phase => status('rendering', { currentSceneId: clip.sceneId, phase }));
-        }
-        completed++;
-        await status('rendering');
+  const session = createBrowserSession(launchBrowser);
+  try {
+    while (queue.length) {
+      const job = queue.shift();
+      const key = job.id + ':' + job.version;
+      const statusFile = path.join(root, job.id, 'jobs', job.version + '.json');
+      let total = 0;
+      const status = (state, extra = {}) =>
+        atomic(statusFile, {
+          version: job.version,
+          state,
+          completed: 0,
+          total,
+          updatedAt: Date.now(),
+          ...extra,
+        });
+      try {
+        const plan = JSON.parse(
+          await fs.readFile(path.join(root, job.id, 'versions', job.version + '.json'), 'utf8'),
+        );
+        if (plan.clips.some((clip) => !safeHash(clip.key) || !safeId(clip.sceneId)))
+          throw new Error('Invalid video clip');
+        total = plan.clips.length;
+        await renderVideoJob(job, plan.clips, job.previous, {
+          isReady: async (clip) =>
+            Boolean(
+              (await fs.stat(path.join(root, job.id, 'clips', clip.key + '.mp4')).catch(() => null))
+                ?.size,
+            ),
+          capture: (clip, phase) => capture(session, job, plan, clip, phase),
+          report: status,
+        });
+      } catch (error) {
+        await status('failed', { error: String(error.message || error).slice(0, 800) }).catch(
+          () => {},
+        );
+        console.error('video job failed', job.id, error.name);
+      } finally {
+        jobs.delete(key);
       }
-      await status('ready');
-    } catch (e) {
-      await status('failed', { error: String(e.message || e).slice(0, 800) });
-      console.error('video render failed', job.id, e.name);
-    } finally {
-      jobs.delete(key);
     }
+  } finally {
+    await session.close().catch(() => {});
+    active = false;
+    if (queue.length) void pump();
   }
-  active = false;
 }
 // A container restart keeps completed MP4s but cannot keep a browser session.
 // Surface interrupted jobs as retryable instead of polling "rendering" forever.
@@ -371,9 +414,14 @@ for (const id of await fs.readdir(root).catch(() => [])) {
 http
   .createServer(async (req, res) => {
     if (req.url === '/health' && req.method === 'GET')
-      return reply(res, 200, { success: true, active, queued: queue.length, submissions, draining: draining() });
-    if (!equal(req.headers['x-video-worker-key']))
-      return reply(res, 403, { error: 'Forbidden' });
+      return reply(res, 200, {
+        success: true,
+        active,
+        queued: queue.length,
+        submissions,
+        draining: draining(),
+      });
+    if (!equal(req.headers['x-video-worker-key'])) return reply(res, 403, { error: 'Forbidden' });
     if (req.url === '/drain' && ['POST', 'DELETE'].includes(req.method)) {
       // A lease also releases the queue if the operator loses the deploy connection.
       drainUntil = req.method === 'POST' ? Date.now() + 40 * 60 * 1000 : 0;
@@ -395,20 +443,38 @@ http
         !safeHash(job.version) ||
         typeof job.grant !== 'string' ||
         job.grant.length > 600 ||
-        job.origin !== origin
+        job.origin !== origin ||
+        (job.sceneId !== undefined && !safeId(job.sceneId))
       )
         throw new Error('Invalid job');
       const key = `${job.id}:${job.version}`;
-      await fs.access(path.join(root, job.id, 'versions', `${job.version}.json`));
-      if (!jobs.has(key)) {
+      const planFile = path.join(root, job.id, 'versions', job.version + '.json');
+      await fs.access(planFile);
+      if (job.sceneId) {
+        const plan = JSON.parse(await fs.readFile(planFile, 'utf8'));
+        if (!plan.clips.some((clip) => clip.sceneId === job.sceneId))
+          throw new Error('Invalid retry scene');
+      }
+      const existing = jobs.get(key);
+      if (existing) {
+        if (job.sceneId && existing.currentSceneId !== job.sceneId)
+          existing.retries.add(job.sceneId);
+      } else {
         if (jobs.size >= 10) return reply(res, 429, { error: 'Queue full' });
+        job.retries = new Set();
         jobs.set(key, job);
         try {
-          await atomic(path.join(root, job.id, 'jobs', `${job.version}.json`), {
+          const statusFile = path.join(root, job.id, 'jobs', job.version + '.json');
+          job.previous = await fs
+            .readFile(statusFile, 'utf8')
+            .then(JSON.parse)
+            .catch(() => null);
+          await atomic(statusFile, {
             version: job.version,
             state: 'queued',
-            completed: 0,
-            total: 0,
+            completed: job.previous?.completed ?? 0,
+            failedPages: job.previous?.failedPages,
+            total: job.previous?.total ?? 0,
             updatedAt: Date.now(),
           });
         } catch (error) {
