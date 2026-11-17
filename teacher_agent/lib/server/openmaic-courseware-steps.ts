@@ -188,7 +188,7 @@ export function createOpenmaicCoursewareSteps(
             '本节课概述：' + trial.overview,
             '本小节学习要求：' + level.label + '。' + level.instruction,
             next ? '下一小节：' + next.title + '。这里仅留自然过渡。' : '这是最后一节，简要总结。',
-            '用自然口语解释代码、公式和图表。随堂题仅在答题后显示解析，课件讲稿不要念题或预告答案。',
+            '用自然口语解释代码、公式和图表。说明代码符号在这行的含义，例如星号在乘法和指针解引用里读法不同。把公式、单位和运算符说成完整句子，保留原来的数值和逻辑。随堂题仅在答题后显示解析，课件讲稿不要念题或预告答案。',
             imported
               ? '原稿讲者备注：' + (imported.canvas.script || '无')
               : '先聚焦最终画面真实元素，再讲对应内容。',

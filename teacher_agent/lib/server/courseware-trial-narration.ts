@@ -20,6 +20,7 @@ interface TrialNarrationRequest {
   sceneId?: string;
   revision?: number;
   regenerate?: boolean;
+  revoice?: boolean;
   segments?: Record<string, string>;
 }
 
@@ -97,7 +98,12 @@ export async function reviseTrialNarration(
             prior.text === action.text && prior.speed === action.speed && trialSpeechAudio(prior),
         )
       : old;
-    if (reuse?.type === 'speech' && reuse.text === action.text && trialSpeechAudio(reuse)) {
+    if (
+      request.revoice !== true &&
+      reuse?.type === 'speech' &&
+      reuse.text === action.text &&
+      trialSpeechAudio(reuse)
+    ) {
       const index = unusedAudio.indexOf(reuse);
       if (index >= 0) unusedAudio.splice(index, 1);
       return reuse;
@@ -116,6 +122,7 @@ export async function reviseTrialNarration(
         failFast: true,
         voiceSelection: trial.voice,
         cacheScope: teacherId,
+        trialNarration: true,
         languageDirective: classroom.stage.languageDirective,
       });
       if (!result.generated || result.failed) throw new Error('配音未完成，请检查语音服务后重试');
