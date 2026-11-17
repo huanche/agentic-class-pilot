@@ -1,4 +1,5 @@
 import json
+import pytest
 from copy import deepcopy
 from uuid import uuid4
 
@@ -7,6 +8,11 @@ from backend import main
 from backend.teaching import service, card_teaching
 from backend.evidence import records
 from backend.infrastructure import persistence
+
+
+@pytest.fixture(autouse=True)
+def stable_option_order(monkeypatch):
+    monkeypatch.setattr(card_teaching.question_cards.random, "shuffle", lambda values: None)
 
 
 def test_group_partial_submission_restore_and_completion(monkeypatch):
@@ -83,3 +89,52 @@ def test_formal_command_submits_card_without_student_chat_bubble(pg, monkeypatch
         "cardId": group["id"], "answers": {"q1": 0}})
     assert answered["messages"] == opened["messages"]
     assert answered["questionGroups"][0]["results"]["q1"]["explanation"] == "Push 将元素放入栈中。"
+
+
+@pytest.mark.parametrize("complete_group", [False, True])
+def test_card_help_receives_submitted_choices_after_restore(monkeypatch, complete_group):
+    point = {"id": "p", "title": "定义", "type": "memory", "details": {
+        "statement": "两个事实", "requiredElements": ["事实一", "事实二"]}}
+    base = {"phase": "video", "messages": [], "dialogue": service.new_dialogue([point])}
+    raw = {"questions": [{"prompt": f"问题{i}", "options": ["对", "错"], "answer": 0,
+                         "explanation": f"解析{i}", "target_ids": [f"requiredElements:{i}"]} for i in (1, 2)]}
+    monkeypatch.setattr(card_teaching.model, "complete", lambda *args: json.dumps(raw))
+    opened = dict(base, **service.start_discussion(base))
+    group = opened["dialogue"]["question_groups"][0]
+    answers = {"q1": 1, "q2": 0} if complete_group else {"q1": 1}
+    partial = dict(opened, **service.card_turn(opened, group["id"], answers))
+    restored = json.loads(json.dumps(partial))
+    captured = []
+    def complete(system, user):
+        captured.append(json.loads(user))
+        return "你选择了 B：错。"
+    monkeypatch.setattr(card_teaching.model, "complete", complete)
+    service.classroom_turn(restored, "我的作答是什么？")
+    assert captured[0]["questionGroups"][0]["results"]["q1"]["choice"] == 1
+    assert captured[0]["currentQuestionGroup"]["id"] == group["id"]
+    assert ("q2" in captured[0]["questionGroups"][0]["results"]) == complete_group
+
+
+def test_postclass_resumes_same_partial_card_and_accepts_remaining_answer(monkeypatch):
+    point = {"id": "p", "title": "facts", "type": "memory", "details": {
+        "statement": "two facts", "requiredElements": ["first", "second"]}}
+    base = {"phase": "video", "messages": [], "dialogue": service.new_dialogue([point])}
+    raw = {"questions": [{"prompt": f"question{i}", "options": ["yes", "no"], "answer": 0,
+                         "explanation": "reason", "target_ids": [f"requiredElements:{i}"]} for i in (1, 2)]}
+    monkeypatch.setattr(card_teaching.model, "complete", lambda *args: json.dumps(raw))
+    opened = dict(base, **service.start_discussion(base))
+    group_id = opened["dialogue"]["question_groups"][0]["id"]
+    partial = dict(opened, **service.card_turn(opened, group_id, {"q1": 0}))
+    ended = dict(partial, **service.finish(partial))
+    resumed = dict(ended, **service.start_postclass(ended))
+    assert resumed["messages"][-1]["cardId"] == group_id
+    assert len(resumed["dialogue"]["question_groups"]) == 1
+    assert resumed["dialogue"]["question_groups"][0]["results"]["q1"]["correct"]
+    restored = json.loads(json.dumps(resumed))
+    completed = service.card_turn(restored, group_id, {"q2": 0})
+    assert completed["dialogue"]["points"][0]["status"] == "mastered"
+    # Only the latest group at the focus is actionable; older groups are history.
+    newer = deepcopy(resumed["dialogue"]["question_groups"][0])
+    newer["id"] = "newer-group"
+    resumed["dialogue"]["question_groups"].append(newer)
+    assert [g["id"] for g in service.describe_session(resumed)["questionGroups"] if g["active"]] == ["newer-group"]
