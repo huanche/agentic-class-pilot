@@ -7,7 +7,12 @@ import { timingSafeEqual, randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import { chromium } from 'playwright-core';
 import { prepareRecordingWithRetry } from './readiness.mjs';
-import { createBrowserSession, forwardTeacherCaptureRequest, renderVideoJob } from './jobs.mjs';
+import {
+  createBrowserSession,
+  forwardTeacherCaptureRequest,
+  MAX_CONCURRENT_PAGES,
+  renderVideoJob,
+} from './jobs.mjs';
 
 const root = process.env.CLASSROOM_VIDEOS_DIR || '/videos';
 const origin = new URL(process.env.VIDEO_PUBLIC_ORIGIN || 'https://agenticclasspilot.com').origin;
@@ -345,7 +350,9 @@ async function launchBrowser() {
 async function pump() {
   if (active) return;
   active = true;
-  const session = createBrowserSession(launchBrowser);
+  const sessions = Array.from({ length: MAX_CONCURRENT_PAGES }, () =>
+    createBrowserSession(launchBrowser),
+  );
   try {
     while (queue.length) {
       const job = queue.shift();
@@ -374,7 +381,7 @@ async function pump() {
               (await fs.stat(path.join(root, job.id, 'clips', clip.key + '.mp4')).catch(() => null))
                 ?.size,
             ),
-          capture: (clip, phase) => capture(session, job, plan, clip, phase),
+          capture: (clip, phase, lane) => capture(sessions[lane], job, plan, clip, phase),
           report: status,
         });
       } catch (error) {
@@ -387,7 +394,7 @@ async function pump() {
       }
     }
   } finally {
-    await session.close().catch(() => {});
+    await Promise.allSettled(sessions.map((session) => session.close()));
     active = false;
     if (queue.length) void pump();
   }
@@ -456,7 +463,7 @@ http
       }
       const existing = jobs.get(key);
       if (existing) {
-        if (job.sceneId && existing.currentSceneId !== job.sceneId)
+        if (job.sceneId && !existing.activePages?.has(job.sceneId))
           existing.retries.add(job.sceneId);
       } else {
         if (jobs.size >= 10) return reply(res, 429, { error: 'Queue full' });

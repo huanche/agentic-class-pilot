@@ -4,6 +4,70 @@ import { createBrowserSession, forwardTeacherCaptureRequest, renderVideoJob } fr
 
 const clips = ['s1', 's2', 's3', 's4', 's5'].map((sceneId) => ({ sceneId }));
 
+test('finishes the first video alone before recording the remaining pages with two lanes', async () => {
+  const firstStarted = Promise.withResolvers();
+  const allowFirst = Promise.withResolvers();
+  const pairStarted = Promise.withResolvers();
+  const allowPair = Promise.withResolvers();
+  const started = [];
+  const recording = new Set();
+  let latest;
+  let maxParallel = 0;
+  const job = renderVideoJob({ retries: new Set() }, clips, undefined, {
+    isReady: () => false,
+    async capture({ sceneId }, phase, lane) {
+      started.push([sceneId, lane]);
+      recording.add(sceneId);
+      maxParallel = Math.max(maxParallel, recording.size);
+      await phase('recording');
+      if (sceneId === 's1') {
+        firstStarted.resolve();
+        await allowFirst.promise;
+      } else if (sceneId === 's2' || sceneId === 's3') {
+        await allowPair.promise;
+      }
+      recording.delete(sceneId);
+    },
+    report(state, progress) {
+      latest = { state, ...progress };
+      if (progress.activePages?.s2 === 'recording' && progress.activePages?.s3 === 'recording')
+        pairStarted.resolve();
+    },
+  });
+  try {
+    await firstStarted.promise;
+    assert.deepEqual(started, [['s1', 0]]);
+    assert.deepEqual(latest.activePages, { s1: 'recording' });
+    allowFirst.resolve();
+    await pairStarted.promise;
+    assert.deepEqual(started.slice(1), [
+      ['s2', 0],
+      ['s3', 1],
+    ]);
+    assert.equal(latest.completed, 1);
+    assert.deepEqual(latest.activePages, { s2: 'recording', s3: 'recording' });
+  } finally {
+    allowFirst.resolve();
+    allowPair.resolve();
+    await job;
+  }
+  assert.equal(maxParallel, 2);
+  assert.deepEqual(latest, { state: 'ready', completed: 5, failedPages: {} });
+});
+
+test('a cached first video starts the rest immediately without rerecording it', async () => {
+  const captures = [];
+  await renderVideoJob({ retries: new Set() }, clips.slice(0, 3), undefined, {
+    isReady: ({ sceneId }) => sceneId === 's1',
+    capture: async ({ sceneId }, _phase, lane) => captures.push([sceneId, lane]),
+    report() {},
+  });
+  assert.deepEqual(captures, [
+    ['s2', 0],
+    ['s3', 1],
+  ]);
+});
+
 test('aborts a capture request when the teacher service disconnects instead of crashing the worker', async () => {
   let aborted = false;
   const route = {
@@ -61,7 +125,9 @@ test('prioritizes a teacher retry requested while a later page is recording', as
     },
     report() {},
   });
-  assert.deepEqual(attempted, ['s1', 's2', 's1', 's3', 's4', 's5']);
+  assert.equal(attempted[0], 's1');
+  assert.equal(attempted.filter((id) => id === 's1').length, 2);
+  assert(attempted.lastIndexOf('s1') < attempted.indexOf('s4'));
 });
 
 test('shares Chromium across isolated contexts and relaunches a disconnected process', async () => {

@@ -91,6 +91,24 @@ export async function videoStatus(plan: ClassroomVideoPlan): Promise<ClassroomVi
   const completed = readySceneIds.length;
   const ready = completed === plan.clips.length;
   const missing = !ready && saved?.state === 'ready';
+  const rendering = !ready && saved?.state === 'rendering';
+  const activePages =
+    rendering && saved.activePages
+      ? Object.fromEntries(
+          plan.clips.flatMap(({ sceneId }, index) => {
+            const phase = saved.activePages?.[sceneId];
+            return !checked[index] && phase ? [[sceneId, phase]] : [];
+          }),
+        )
+      : undefined;
+  const legacyId =
+    rendering && saved.currentSceneId && !readySceneIds.includes(saved.currentSceneId)
+      ? saved.currentSceneId
+      : undefined;
+  const [currentSceneId, phase] = Object.entries(activePages ?? {})[0] ?? [
+    legacyId,
+    legacyId ? saved?.phase : undefined,
+  ];
   return {
     version: plan.version,
     state: ready ? 'ready' : missing ? 'failed' : saved?.state || 'queued',
@@ -104,8 +122,9 @@ export async function videoStatus(plan: ClassroomVideoPlan): Promise<ClassroomVi
       : !ready && saved?.error
         ? { error: saved.error }
         : {}),
-    currentSceneId: saved?.currentSceneId,
-    phase: !ready && saved?.state === 'rendering' ? saved.phase : undefined,
+    currentSceneId,
+    phase,
+    activePages,
   };
 }
 const preparing = new Map<string, Promise<ClassroomVideoPlan>>();
