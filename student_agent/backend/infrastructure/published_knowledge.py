@@ -123,8 +123,9 @@ def process_next() -> bool:
                            "lease_until=now()+interval '10 minutes',attempts=attempts+1,claim_token=%s,updated_at=now() "
                            "WHERE course_id=%s AND lesson_id=%s AND video_revision=%s", (claim_token, *key))
     try:
-        result = learning_points(classroom_materials(scenes), *key[:2])
-        coverage = {"partial": result.partial, "acceptedCount": len(result.points),
+        course_name = (job[6] or {}).get("courseName", "")
+        result = learning_points(classroom_materials(scenes), *key[:2], course_name=course_name)
+        coverage = {"courseName": course_name, "partial": result.partial, "acceptedCount": len(result.points),
                     "rejectedCount": result.rejected_count, "candidateCount": result.candidate_count,
                     "repairAttempted": result.repair_attempted, "modelCalls": result.model_calls,
                     "duplicateCount": result.duplicate_count}

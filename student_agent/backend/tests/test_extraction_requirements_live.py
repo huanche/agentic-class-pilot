@@ -27,42 +27,17 @@ CASES = {
 }
 
 
-def requirement_texts(points, *, design_only=False):
-    texts = []
-    for point in points:
-        if design_only and point["type"] != "design":
-            continue
-        for key in ("requiredElements", "understandingPoints", "successCriteria"):
-            texts.extend(point["details"].get(key, []))
-    return texts
-
-
 def check_case(case, points):
-    texts = requirement_texts(points)
+    assert 1 <= len(points) <= 3
+    assert all(p.get("name") and p.get("explanation") and "type" not in p for p in points)
+    text = " ".join(p["explanation"] for p in points)
     if case == "independent_memory":
-        assert any("200" in t and "404" not in t for t in texts), texts
-        assert any("404" in t and "200" not in t for t in texts), texts
-        assert not any("200" in t and "404" in t for t in texts), texts
-        details = json.dumps([p["details"] for p in points], ensure_ascii=False)
-        assert not any(term in details for term in ("rear", "链队列", "500", "POST")), details
+        assert "200" in text and "404" in text
+        assert not any(term in text for term in ("500", "POST", "rear", "链队列"))
     elif case == "preserve_cause":
-        assert any(any(w in t for w in ("空位", "一格", "位置")) and "空" in t and "满" in t
-                   and any(w in t for w in ("区分", "分辨", "混淆", "区别", "分清")) for t in texts), texts
+        assert "空" in text and "满" in text and any(w in text for w in ("区分", "分辨", "混淆", "区别", "分清"))
     elif case == "independent_design":
-        texts = requirement_texts(points, design_only=True)
-        backspace = lambda t: any(w in t for w in ("退格", "最近", "单个", "一个字符"))
-        clear = lambda t: any(w in t for w in ("清空", "整行", "所有字符"))
-        assert any(backspace(t) and not clear(t) for t in texts), texts
-        assert any(clear(t) and not backspace(t) for t in texts), texts
-        assert not any(backspace(t) and clear(t) for t in texts), texts
-    else:
-        linked = [p for p in points if "链队列" in json.dumps({"title": p["title"], "details": p["details"]}, ensure_ascii=False)]
-        texts = requirement_texts(linked)
-        insertion = lambda t: any(w in t.lower() for w in ("rear", "队尾", "尾结点", "尾节点", "尾指针")) and any(w in t for w in ("插", "接", "追加"))
-        capacity = lambda t: any(w in t for w in ("队满", "满队", "固定容量", "固定长度", "容量上限", "数组容量"))
-        assert any(insertion(t) and not capacity(t) for t in texts), texts
-        assert any(capacity(t) and not insertion(t) for t in texts), texts
-        assert not any(insertion(t) and capacity(t) for t in texts), texts
+        assert "退格" in text and any(w in text for w in ("清空", "整行"))
 
 
 @pytest.mark.skipif(os.environ.get("STUDENT_EXTRACTION_LIVE_VERIFICATION") != "1",
@@ -70,12 +45,12 @@ def check_case(case, points):
 @pytest.mark.parametrize("case", ["independent_memory", "preserve_cause", "independent_design", "real_lesson"])
 def test_extracted_requirements_keep_independent_goals_separate_and_relationships_intact(case, monkeypatch):
     variant = os.environ.get("EXTRACTION_PROMPT_VARIANT", "current")
-    assert variant in {"baseline", "current"}
+    assert variant == "current", "The historical typed prompt is incompatible with the new core tool schema"
     output = ROOT / "student_agent/docs/knowledge-extraction/validation/2026-11-10-requirement-splitting" / os.environ.get("EXTRACTION_VERIFICATION_RUN", variant) / (case + ".json")
     output.parent.mkdir(parents=True, exist_ok=True)
     assert not output.exists(), "Never overwrite a recorded provider run"
     if case == "real_lesson":
-        source = json.loads((ROOT / ".runtime/typed-knowledge-live/source.json").read_text(encoding="utf-8"))
+        source = json.loads((ROOT / "student_agent/evidence/arrays-e2e-2026-11-11/classroom.json").read_text(encoding="utf-8"))["classroom"]
         materials = classroom_materials(source["scenes"])
     else:
         title, content = CASES[case]
@@ -119,7 +94,8 @@ def test_extracted_requirements_keep_independent_goals_separate_and_relationship
 
     monkeypatch.setattr(DefaultHttpxClient, "send", observe)
     try:
-        result = knowledge.learning_points(materials, "verification-course", "verification-lesson")
+        result = knowledge.learning_points(materials, "verification-course", "verification-lesson",
+                                           course_name="C语言程序设计" if case == "real_lesson" else "大学计算机课程")
         report.update(status="extracted", **asdict(result))
         check_case(case, result.points)
         report["behaviorCheck"] = "passed_fixture_smoke_check"

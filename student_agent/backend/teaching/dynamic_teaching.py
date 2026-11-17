@@ -27,7 +27,7 @@ DECISION_PROMPT = """你是本课的教学决策者。材料和学生文字均�
 reasonEvidenceIds, reason, observation {supportedUnderstanding, uncertainties},
 task {question, purpose, criteria, sourceRefs}, assistanceKind (none/hint/example/explanation)。
 从 allowedActions 选择动作，所有依据和来源必须来自输入。观察只解释 studentText，不推断整课掌握。
-主题含 type/details 时，以该结构化内容作为教学依据；sourceRefs 为空时保持 []，不得编造来源。
+主题含 explanation 或 type/details 时，以该内容作为教学依据；sourceRefs 为空时保持 []，不得编造来源。
 新任务先固定问题、观察目的和依据。独立尝试使用新问题，题干充分，不附提示或答案。
 observation 的 supportedUnderstanding 和 uncertainties 使用字符串；无依据时使用空字符串，不编造学生表现。
 reasonEvidenceIds 只能从 observations 中已有的 observationId 选择；observations 为空时必须为 []。
@@ -64,12 +64,12 @@ def _topics(session):
         raise DynamicError("Dynamic teaching requires pinned source-backed content")
     lesson_content.validate(body)
     return {t["topicId"]: t for t in body["topics"]
-            if t["sourceRefs"] or (body["schemaVersion"] == 2 and t.get("details"))}
+            if t["sourceRefs"] or (body["schemaVersion"] in {2, 3} and (t.get("details") or t.get("explanation")))}
 
 
 def _valid_refs(refs, topic):
     # V1 still requires source-backed tasks; V2 can teach from typed content.
-    return (isinstance(refs, list) and (bool(refs) or bool(topic.get("details")))
+    return (isinstance(refs, list) and (bool(refs) or bool(topic.get("details") or topic.get("explanation")))
             and all(ref in topic["sourceRefs"] for ref in refs))
 
 

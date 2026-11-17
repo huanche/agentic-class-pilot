@@ -42,7 +42,7 @@ def session(body, *, sid="learner", user="student"):
 
 def test_ready_content_is_shared_with_exact_sources_and_no_new_model_call(pg, monkeypatch):
     register(pg)
-    monkeypatch.setattr(published_knowledge, "learning_points", lambda *args: pytest.fail("ready content must not call model"))
+    monkeypatch.setattr(published_knowledge, "learning_points", lambda *args, **kwargs: pytest.fail("ready content must not call model"))
     first = published_knowledge.read("course", "lesson", "rev")
     body = first["contentModel"]
     assert body["validationStatus"] == "source_checked"
@@ -62,7 +62,7 @@ def test_compiler_upgrade_keeps_existing_sessions_on_their_original_version(pg, 
     persistence.save(session(original), 0)
     monkeypatch.setattr(published_knowledge, "EXTRACTOR_HASH", "new-extractor")
     assert published_knowledge.read("course", "lesson", "rev")["status"] == "pending"
-    monkeypatch.setattr(published_knowledge, "learning_points", lambda *args: KnowledgeResult([point(ALTERNATIVE)], candidate_count=1))
+    monkeypatch.setattr(published_knowledge, "learning_points", lambda *args, **kwargs: KnowledgeResult([point(ALTERNATIVE)], candidate_count=1))
     assert published_knowledge.process_next()
     latest = published_knowledge.read("course", "lesson", "rev")["contentModel"]
     assert latest["contentId"] != original["contentId"]
@@ -70,7 +70,7 @@ def test_compiler_upgrade_keeps_existing_sessions_on_their_original_version(pg, 
     old_session = persistence.restore("learner")
     assert old_session["contentRef"]["contentId"] == original["contentId"]
     assert old_session["dialogue"]["points"][0]["content"] == QUOTE
-    monkeypatch.setattr(published_knowledge, "read", lambda *args: pytest.fail("pinned session must not upgrade"))
+    monkeypatch.setattr(published_knowledge, "read", lambda *args, **kwargs: pytest.fail("pinned session must not upgrade"))
     learning_session.upgrade_curriculum(old_session)
     persistence.save(session(latest, sid="new-learner"), 0)
     with pg() as connection:
@@ -90,7 +90,7 @@ def test_an_existing_compiler_version_cannot_be_overwritten(pg):
 @pytest.mark.parametrize("lost", ["claim", "lease"])
 def test_preparation_does_not_publish_results_after_losing_ownership(pg, monkeypatch, lost):
     register(pg, status="pending")
-    def extract(*args):
+    def extract(*args, **kwargs):
         with pg() as connection:
             if lost == "claim":
                 connection.execute("UPDATE student.published_lesson_knowledge SET claim_token='new-worker'")
@@ -109,14 +109,14 @@ def test_failed_new_preparation_and_retry_do_not_damage_old_content(pg, monkeypa
     original = published_knowledge.read("course", "lesson", "rev")["contentModel"]
     monkeypatch.setattr(published_knowledge, "EXTRACTOR_HASH", "retry-compiler")
     assert published_knowledge.read("course", "lesson", "rev")["status"] == "pending"
-    def fail(*args):
+    def fail(*args, **kwargs):
         raise TimeoutError("isolated extraction timeout")
     monkeypatch.setattr(published_knowledge, "learning_points", fail)
     assert published_knowledge.process_next()
     assert published_knowledge.read("course", "lesson", "rev")["status"] == "failed"
     assert content_store.hydrate(session(original))["lessonContent"] == original
     assert published_knowledge.retry("course", "lesson", "rev")
-    monkeypatch.setattr(published_knowledge, "learning_points", lambda *args: KnowledgeResult([point(ALTERNATIVE)], candidate_count=1))
+    monkeypatch.setattr(published_knowledge, "learning_points", lambda *args, **kwargs: KnowledgeResult([point(ALTERNATIVE)], candidate_count=1))
     assert published_knowledge.process_next()
     assert published_knowledge.read("course", "lesson", "rev")["contentRef"]["contentId"] != original["contentId"]
 
@@ -124,7 +124,7 @@ def test_failed_new_preparation_and_retry_do_not_damage_old_content(pg, monkeypa
 def test_worker_result_is_tagged_with_the_compiler_that_started_it(pg, monkeypatch):
     register(pg, status="pending")
     started = published_knowledge.EXTRACTOR_HASH
-    def extract(*args):
+    def extract(*args, **kwargs):
         monkeypatch.setattr(published_knowledge, "EXTRACTOR_HASH", "next-deployment")
         return KnowledgeResult([point()], candidate_count=1)
     monkeypatch.setattr(published_knowledge, "learning_points", extract)

@@ -278,9 +278,11 @@ def ensure_published_knowledge_job(session: SessionDep, course_id: uuid.UUID,
     from app.services.student_knowledge_client import (
         StudentKnowledgeUnavailable, enqueue_student_knowledge,
     )
+    course = session.get(Course, course_id) if session is not None else None
     try:
         enqueue_student_knowledge(
             str(course_id), lesson_id, revision, classroom["id"], scenes,
+            course_name=course.title if course else "",
         )
     except StudentKnowledgeUnavailable as error:
         raise HTTPException(503, "学生知识准备服务暂不可用，请稍后重试") from error

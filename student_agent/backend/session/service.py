@@ -369,7 +369,9 @@ def prepare_in_background(session: dict) -> None:
         # The model must never hold the session lock while a video is playing.
         materials = current_materials(session)
         dialogue, coverage = teaching.prepare(materials, str((session.get("context") or {}).get("courseId") or "demo"),
-                                             str(session.get("lessonId") or "demo"))
+                                             str(session.get("lessonId") or "demo"),
+                                             course_name=(session.get("context") or {}).get("courseTitle") or
+                                             ("演示课程" if not session.get("context") else ""))
         logger.info("knowledge_preparation_completed request_id=%s elapsed_ms=%d accepted=%d rejected=%d repair=%s",
                     request_id, int((time.monotonic() - started) * 1000),
                     coverage["acceptedCount"], coverage["rejectedCount"], coverage["repairAttempted"])
@@ -458,7 +460,9 @@ def upgrade_curriculum(session: dict) -> None:
     materials = current_materials(session)
     try:
         dialogue, coverage = teaching.prepare(materials, str((session.get("context") or {}).get("courseId") or "demo"),
-                                             str(session.get("lessonId") or "demo"))
+                                             str(session.get("lessonId") or "demo"),
+                                             course_name=(session.get("context") or {}).get("courseTitle") or
+                                             ("演示课程" if not session.get("context") else ""))
     except Exception as error:
         request_id = secrets.token_hex(8)
         code, message = _safe_failure(error, request_id, 0)

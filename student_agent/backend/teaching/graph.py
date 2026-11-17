@@ -45,6 +45,13 @@ class DialogueState(TypedDict):
 
 
 def initial_state(points: list[dict]) -> DialogueState:
+    if any("name" in p or "explanation" in p for p in points):
+        from backend.content.knowledge_schema import submit_knowledge_points
+        submit_knowledge_points.model_validate({"points": [
+            {k: p[k] for k in ("name", "explanation") if k in p} for p in points]})
+        if any("type" in p or "details" in p for p in points):
+            raise ValueError("Simplified knowledge cannot contain type/details")
+        return typed_state.initial(points, explanation=True)
     if points and all(p.get("type") in {"memory", "concept", "design"} for p in points):
         return typed_state.initial(points)
     return normalize({"stage": "recall", "points": [dict(p, status="unseen", attempts=0,
