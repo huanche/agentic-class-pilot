@@ -14,6 +14,17 @@ export function createBrowserSession(launch) {
   };
 }
 
+/** Fail the page request if the teacher service is briefly unavailable. */
+export async function forwardTeacherCaptureRequest(route, options) {
+  try {
+    const response = await route.fetch(options);
+    await route.fulfill({ response });
+  } catch {
+    // A context can also close while a request is in flight.
+    await route.abort().catch(() => {});
+  }
+}
+
 /** Record independent pages and persist progress even when a page cannot be captured. */
 export async function renderVideoJob(job, clips, previous, { isReady, capture, report }) {
   const byId = new Map(clips.map((clip) => [clip.sceneId, clip]));

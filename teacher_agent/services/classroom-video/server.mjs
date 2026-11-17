@@ -7,7 +7,7 @@ import { timingSafeEqual, randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import { chromium } from 'playwright-core';
 import { prepareRecordingWithRetry } from './readiness.mjs';
-import { createBrowserSession, renderVideoJob } from './jobs.mjs';
+import { createBrowserSession, forwardTeacherCaptureRequest, renderVideoJob } from './jobs.mjs';
 
 const root = process.env.CLASSROOM_VIDEOS_DIR || '/videos';
 const origin = new URL(process.env.VIDEO_PUBLIC_ORIGIN || 'https://agenticclasspilot.com').origin;
@@ -163,11 +163,10 @@ async function capture(session, job, plan, clip, onPhase) {
         process.env.VIDEO_CAPTURE_PROXY_TEACHER === 'true' &&
         !url.pathname.startsWith('/onlyoffice')
       ) {
-        const response = await route.fetch({
+        return forwardTeacherCaptureRequest(route, {
           url: `${teacher}${url.pathname}${url.search}`,
           headers,
         });
-        return route.fulfill({ response });
       }
       return route.continue({ headers });
     });
