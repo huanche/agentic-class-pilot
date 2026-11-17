@@ -24,13 +24,30 @@ function conversationTimeline(messages, groups) {
     const group = groupsById.get(message.cardId);
     if (group && !placedGroups.has(group.id)) {
       placedGroups.add(group.id);
-      items.push({ kind: "card", key: `card-${group.id}`, group });
+      items.push({ kind: "card", key: `card-${group.id}`, group, anchorPhase: message.phase });
     }
   });
   groups.forEach(group => {
     if (!placedGroups.has(group.id)) items.push({ kind: "card", key: `card-${group.id}`, group });
   });
   return items;
+}
+
+function conversationTopics(items, { taskTopics = {}, topicTitles = {}, currentTaskPublic, agentStage }) {
+  const sections = new Map();
+  for (const item of items) {
+    const topic = taskTopics[item.message?.taskId] || item.group?.point_id || item.pointId;
+    const title = topicTitles[topic];
+    if (!title) continue;
+    const phase = item.message?.phase || item.anchorPhase;
+    const section = item.afterClass || phase === "reinforce" ? "reinforce" : "recall";
+    if (!sections.has(section)) sections.set(section, new Map());
+    const topics = sections.get(section);
+    if (!topics.has(topic)) topics.set(topic, { topic, title, anchor: item.key });
+  }
+  const section = items.some(item => item.afterClass) || agentStage === "reinforce" ? "reinforce" : "recall";
+  const active = sections.get(section)?.get(currentTaskPublic?.topicId)?.anchor;
+  return { sections, active };
 }
 
 export default function StudentApp() {
@@ -47,7 +64,7 @@ export default function StudentApp() {
   const typedFlow = Boolean(learning.typedTeaching);
   const reviewingCard = typedFlow && Boolean(learning.reviewingCard);
   const stageTitle = stage => typedFlow
-    ? ({ recall: "逐点学习", reinforce: "补强", wrapup: "总结反馈" }[stage] || "知识点学习")
+    ? ({ recall: "逐点学习", reinforce: "补强未掌握点", wrapup: "总结反馈" }[stage] || "知识点学习")
     : STAGE_TITLES[stage];
   const paused = activityStatus === "paused";
   const can = command => !busy && allowedCommands.includes(command);
@@ -55,10 +72,21 @@ export default function StudentApp() {
   const extra = optimistic && optimistic.sessionId === learning.sessionId && optimistic.screen === phase ? optimistic : null;
   const messages = [...learning.messages, ...(extra && phase === "discussion" && learning.messages.length <= extra.count ? [extra] : [])];
   const postclassMessages = [...learning.postclassMessages, ...(extra && phase === "postclass" && learning.postclassMessages.length <= extra.count ? [extra] : [])];
-  const visibleGroups = typedFlow ? (learning.questionGroups || []).filter(group =>
-    !group.phase || group.phase === (phase === "postclass" ? "postclass" : "discussion")
-      || (phase === "postclass" && group.active)) : [];
-  const conversationItems = conversationTimeline(phase === "postclass" ? postclassMessages : messages, visibleGroups);
+  const showTopics = phase === "discussion" || (phase === "postclass" && postclassStage === "remediation");
+  const allGroups = typedFlow ? learning.questionGroups || [] : [];
+  const postclassGroupIds = new Set(postclassMessages.map(message => message.cardId));
+  const afterGroups = allGroups.filter(group => group.phase === "postclass" || group.active || postclassGroupIds.has(group.id));
+  const afterGroupIds = new Set(afterGroups.map(group => group.id));
+  const groupsById = new Map(allGroups.map(group => [group.id, group]));
+  const classroomItems = conversationTimeline(messages.filter(message => !message.phase?.startsWith("postclass-")),
+    allGroups.filter(group => group.phase !== "postclass" && !(phase === "postclass" && afterGroupIds.has(group.id))));
+  const afterItems = phase === "postclass"
+    ? conversationTimeline(postclassMessages, afterGroups).map(item => ({ ...item, key: `after-${item.key}`, afterClass: true }))
+    : [];
+  const conversationItems = phase === "postclass" && !showTopics ? afterItems : [...classroomItems, ...afterItems];
+  const { sections: topicSections, active: activeTopic } = conversationTopics(conversationItems.map(item => ({
+    ...item, pointId: groupsById.get(item.message?.cardId)?.point_id,
+  })), learning);
   const historyItems = conversationTimeline(messages, typedFlow ? learning.questionGroups || [] : []);
   const [input, setInput] = useState("");
   const draftKey = learning.userId && learning.sessionId
@@ -105,14 +133,37 @@ export default function StudentApp() {
   }, [signedIn, learning.userId, activeSessionId]);
   const [learningProgressOpen, setLearningProgressOpen] = useState(true);
   const [videoProgressOpen, setVideoProgressOpen] = useState(false);
-  const progressOpen = viewingVideo ? videoProgressOpen : learningProgressOpen;
-  const setProgressOpen = viewingVideo ? setVideoProgressOpen : setLearningProgressOpen;
+  const [conversationPanel, setConversationPanel] = useState(null);
+  const [jumpedTopic, setJumpedTopic] = useState(null);
+  const visiblePanel = conversationPanel ?? (typedFlow && showTopics ? "topics" : "progress");
+  const topicsOpen = showTopics && visiblePanel === "topics";
+  const progressOpen = viewingVideo ? videoProgressOpen : showTopics ? visiblePanel === "progress" : learningProgressOpen;
+  const setProgressOpen = viewingVideo ? setVideoProgressOpen : showTopics
+    ? value => setConversationPanel((typeof value === "function" ? value(progressOpen) : value) ? "progress" : "closed")
+    : setLearningProgressOpen;
+  const selectedTopic = jumpedTopic?.active === activeTopic && jumpedTopic?.sessionId === learning.sessionId
+    && jumpedTopic?.phase === phase ? jumpedTopic.anchor : activeTopic;
   const [conversationSize, setConversationSize] = useState(null);
   const playerSlot = useRef(null);
   const chatLog = useRef(null);
   const composerInput = useRef(null);
   const conversationStage = useRef(null);
   const conversationResize = useRef(null);
+  useEffect(() => {
+    if (window.matchMedia("(max-width: 780px)").matches) setConversationPanel("closed");
+  }, []);
+
+  function jumpToTopic(anchor) {
+    const log = chatLog.current;
+    const target = Array.from(log?.children || []).find(item => item.dataset.anchor === anchor);
+    if (!target) return;
+    setJumpedTopic({ anchor, active: activeTopic, phase, sessionId: learning.sessionId });
+    if (window.matchMedia("(max-width: 780px)").matches) {
+      target.focus({ preventScroll: true });
+      setConversationPanel("closed");
+    }
+    log.scrollTo({ top: target.getBoundingClientRect().top - log.getBoundingClientRect().top + log.scrollTop - 8 });
+  }
 
   useEffect(() => {
     const unsubscribe = controller.subscribe(setLearning);
@@ -191,7 +242,13 @@ export default function StudentApp() {
   useEffect(() => {
     if (typedFlow && !replyPending) return;
     chatLog.current?.scrollTo({ top: chatLog.current.scrollHeight });
-  }, [messages, postclassMessages, replyPending, phase, typedFlow]);
+  }, [conversationItems.length, conversationItems.at(-1)?.key, replyPending, phase, typedFlow]);
+  useEffect(() => {
+    if (phase !== "postclass") return;
+    const log = chatLog.current;
+    const first = log?.querySelector("[data-after-class]");
+    if (first) log.scrollTo({ top: first.getBoundingClientRect().top - log.getBoundingClientRect().top + log.scrollTop - 8 });
+  }, [phase]);
   useEffect(() => {
     if (!composerInput.current) return;
     composerInput.current.style.height = "44px";
@@ -307,12 +364,42 @@ export default function StudentApp() {
       {!course?.lessons.length && <p>本课程暂无已开放课时。</p>}
     </section>}
     {phase === "lesson" && <section className="view"><header className="view__header"><button className="back" onClick={() => controller.dispatch({ type: "catalog" })}>← 返回课时</button><h2 className="view__title">{lesson?.title}</h2></header><div className="view__body"><div className="lesson"><p className="lesson__eyebrow">{course?.title} · 第 {lesson?.week} 周</p><h3 className="lesson__title">{lesson?.title}</h3><p className="lesson__summary">{lesson?.summary || "准备好后开始本节课。"}</p><button className="btn btn--primary" onClick={() => begin(lesson)} disabled={busy}>开始或继续上课</button></div></div></section>}
-    {(phase === "video" || phase === "discussion" || phase === "done" || phase === "replay" || phase === "postclass") && <section className="view classroom-view"><header className="view__header"><h2 className="view__title">{lesson?.title || "课堂"}</h2><span className="view__badge">{phase === "video" ? "教学视频" : phase === "discussion" ? stageTitle(agentStage) || "复述与讨论" : phase === "replay" ? "课后回看" : phase === "postclass" ? "课后对话" : "已结束"}</span></header><div className={`classroom-layout${progressOpen ? "" : " classroom-layout--progress-hidden"}${viewingVideo ? " classroom-layout--video" : ""}${phase === "discussion" || phase === "postclass" ? " classroom-layout--conversation" : ""}`}>
-      <nav className="classroom-tools" aria-label="课堂工具"><ul className="classroom-tools__list"><li><button className={`classroom-tools__button${progressOpen ? " is-active" : ""}`} type="button" title={progressOpen ? "收起课堂进程" : "打开课堂进程"} aria-label={progressOpen ? "收起课堂进程" : "打开课堂进程"} aria-controls="lesson-progress-panel" aria-expanded={progressOpen} onClick={() => setProgressOpen((open) => !open)}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3" /><path d="M9 9h7M9 12h7M9 15h5" /></svg></button></li></ul></nav>
+    {(phase === "video" || phase === "discussion" || phase === "done" || phase === "replay" || phase === "postclass") && <section className="view classroom-view"><header className="view__header"><h2 className="view__title">{lesson?.title || "课堂"}</h2><span className="view__badge">{phase === "video" ? "教学视频" : phase === "discussion" ? stageTitle(agentStage) || "复述与讨论" : phase === "replay" ? "课后回看" : phase === "postclass" ? "课后对话" : "已结束"}</span></header><div className={`classroom-layout${progressOpen || topicsOpen ? "" : " classroom-layout--progress-hidden"}${viewingVideo ? " classroom-layout--video" : ""}${phase === "discussion" || phase === "postclass" ? " classroom-layout--conversation" : ""}`}>
+      <nav className="classroom-tools" aria-label="课堂工具"><ul className="classroom-tools__list"><li><button className={`classroom-tools__button${progressOpen ? " is-active" : ""}`} type="button" title={progressOpen ? "收起课堂进程" : "打开课堂进程"} aria-label={progressOpen ? "收起课堂进程" : "打开课堂进程"} aria-controls="lesson-progress-panel" aria-expanded={progressOpen} onClick={() => setProgressOpen((open) => !open)}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3" /><path d="M9 9h7M9 12h7M9 15h5" /></svg></button></li>
+        {showTopics && <li><button className={`classroom-tools__button${topicsOpen ? " is-active" : ""}`} type="button"
+          title="知识点目录" aria-label="知识点目录" aria-controls="conversation-topics" aria-expanded={topicsOpen}
+          onClick={() => setConversationPanel(topicsOpen ? "closed" : "topics")}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 6h.01M5 12h.01M5 18h.01M10 6h9M10 12h9M10 18h9" /></svg>
+        </button></li>}
+      </ul></nav>
       <div className="classroom-progress-slot" hidden={!progressOpen}>
         <LessonProgress id="lesson-progress-panel" phase={phase} agentStage={agentStage} progress={learningProgress} postclassStage={postclassStage} flowVersion={flowVersion} progressSummary={progressSummary} typedTeaching={typedFlow} />
         <button className="classroom-progress-close" type="button" aria-label="收起课堂进程" title="收起课堂进程" onClick={() => setProgressOpen(false)}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m14 5-7 7 7 7" /></svg></button>
       </div>
+      {showTopics && <nav className="classroom-progress-slot conversation-topics" id="conversation-topics"
+        aria-label="知识点对话位置" hidden={!topicsOpen}>
+        {typedFlow && <div className="conversation-topics__controls" role="group" aria-label="切换知识点">
+          <button className="classroom-tools__button" type="button"
+            title="上一个知识点" aria-label="上一个知识点" disabled={busy || !learning.canGoPreviousPoint}
+            onClick={() => navigatePoint("previous_point")}>←</button>
+          <button className="classroom-tools__button" type="button"
+            title="下一个知识点" aria-label="下一个知识点" disabled={busy || !learning.canGoNextPoint}
+            onClick={() => navigatePoint("next_point")}>→</button>
+        </div>}
+        <div className="conversation-topics__list">
+          {["recall", "reinforce"].map(section => {
+            const links = topicSections.get(section);
+            if (section === "reinforce" && !links && agentStage !== "reinforce" && phase !== "postclass") return null;
+            return <section key={section}>
+              <h3>{section === "recall" ? "逐点学习" : "补强未掌握点"}</h3>
+              {links ? <ul>{Array.from(links.values(), ({ title, anchor }) => <li key={anchor}>
+                <button type="button" aria-current={selectedTopic === anchor ? "location" : undefined}
+                  onClick={() => jumpToTopic(anchor)}>{title}</button>
+              </li>)}</ul> : <p>有对应对话后会显示在这里</p>}
+            </section>;
+          })}
+        </div>
+      </nav>}
       <div className="view__body classroom-content">
       {phase === "video" && <div className="stage stage--video"><div className="video"><div className="video-player-slot" ref={playerSlot} aria-label="视频播放器挂载区域" /><div className="video-player-actions"><p className="video-player-status">{videoEnded ? "视频播放完毕，可以进入复述与讨论。" : "视频尚未播放完，提前进入下一阶段时会再次确认。"}</p><button className="btn btn--primary" type="button" disabled={busy || preparation === "pending"} onClick={preparation === "error" ? retryPreparation : requestDiscussion}>{preparation === "pending" ? "复述与讨论准备中…" : preparation === "error" ? "重试准备复述与讨论" : "进入复述与讨论 →"}</button>{preparation === "error" && preparationError && <p role="alert">{preparationError}{preparationRequestId && `（问题编号：${preparationRequestId}）`}</p>}</div>{showVideoAdvanceConfirm && !videoEnded && <div className="video-advance-confirm" role="alert"><strong>视频还没有播放完</strong><p>现在进入复述与讨论会跳过剩余的视频内容，是否确定进入下一阶段？</p><div className="video-advance-confirm__actions"><button className="btn btn--ghost" type="button" disabled={busy} onClick={() => setShowVideoAdvanceConfirm(false)}>继续观看视频</button><button className="btn btn--primary" type="button" disabled={busy} onClick={goDiscussion}>{busy ? "正在进入…" : "确定进入复述与讨论"}</button></div></div>}</div></div>}
       {phase === "replay" && <div className="stage stage--video"><div className="video"><div className="video-player-slot" ref={playerSlot} aria-label="课后视频播放器" /><div className="video-player-actions"><p className="video-player-status">可以按自己的节奏回看本节课。</p><button className="btn btn--primary" type="button" onClick={() => controller.dispatch({ type: "back_feedback" })}>返回学习反馈</button></div></div></div>}
@@ -320,27 +407,22 @@ export default function StudentApp() {
         <div className="conversation-panel" style={conversationSize ? { width: conversationSize.width, marginLeft: conversationSize.left, marginRight: 0 } : undefined}>
           <div className="conversation-resize-handle conversation-resize-handle--left" role="separator" aria-label="拖动调整对话框左边缘" aria-orientation="vertical" onPointerDown={(event) => startConversationResize(event, "left")} onPointerMove={moveConversationResize} onPointerUp={() => { conversationResize.current = null; }} onPointerCancel={() => { conversationResize.current = null; }} />
           <div className="conversation-resize-handle conversation-resize-handle--right" role="separator" aria-label="拖动调整对话框右边缘" aria-orientation="vertical" onPointerDown={(event) => startConversationResize(event, "right")} onPointerMove={moveConversationResize} onPointerUp={() => { conversationResize.current = null; }} onPointerCancel={() => { conversationResize.current = null; }} />
-          <div className="conversation-heading">
+          {(!typedFlow || phase === "postclass") && <div className="conversation-heading">
             <h3 className="new-stage-title">{phase === "postclass"
               ? typedFlow ? "继续巩固" : dynamicFlow ? "课后继续交流" : postclassStage === "remediation" ? "继续未完成的学习" : "全部完成 · 自由提问"
-              : typedFlow ? "知识点学习" : "复述与讨论"}</h3>
-            <div className="conversation-point-row"><p className="conversation-stage" role="status">{phase === "postclass"
+              : "复述与讨论"}</h3>
+            <p className="conversation-stage" role="status">{phase === "postclass"
               ? "本次课堂已经结束，课后对话会更新你的学习反馈。"
               : `${stageTitle(agentStage) || "初始复述"}${learningProgress?.currentPoint ? ` · 当前知识点：${learningProgress.currentPoint}` : ""}`}</p>
-              {typedFlow && <div className="conversation-point-nav" aria-label="知识点切换">
-                <button type="button" title="上一个知识点" aria-label="上一个知识点" disabled={busy || !learning.canGoPreviousPoint}
-                  onClick={() => navigatePoint("previous_point")}>←</button>
-                <button type="button" title="下一个知识点" aria-label="下一个知识点" disabled={busy || !learning.canGoNextPoint}
-                  onClick={() => navigatePoint("next_point")}>→</button>
-              </div>}
-            </div>
-          </div>
+          </div>}
           <div className="chat conversation-log" role="log" aria-live="polite" ref={chatLog}>
-            {conversationItems.map(item => item.kind === "message" ? <div className={`msg msg--${item.message.role === "student" ? "me" : "ai"}`} key={item.key}>
+            {conversationItems.map(item => item.kind === "message" ? <div className={`msg msg--${item.message.role === "student" ? "me" : "ai"}`} key={item.key}
+              data-anchor={item.key} data-after-class={item.afterClass || undefined} tabIndex={-1}>
               {item.message.role !== "student" && <div className="msg__avatar">AI</div>}
               <div className="msg__bubble">{item.message.role !== "student" && STAGE_TITLES[item.message.phase]
                 && <span className="msg__stage">{stageTitle(item.message.phase)}</span>}{item.message.text}</div>
-            </div> : <div className="msg msg--ai" data-active-card={item.group.active ? "" : undefined} key={item.key}>
+            </div> : <div className="msg msg--ai" data-active-card={item.group.active ? "" : undefined} key={item.key}
+              data-anchor={item.key} data-after-class={item.afterClass || undefined} tabIndex={-1}>
               <div className="msg__avatar">AI</div>
               <div className="msg__bubble question-group__bubble"><QuestionGroup group={item.group}
                 busy={busy || item.group.active === false || (phase === "discussion" && agentStage === "wrapup" && !reviewingCard)}

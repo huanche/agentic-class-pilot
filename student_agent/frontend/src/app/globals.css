@@ -1729,10 +1729,54 @@ body::before { background: none; }
 .classroom-tools__list li { display: grid; place-items: center; min-height: 58px; border-bottom: 1px solid var(--hairline); }
 .classroom-tools__list li:last-child { border-bottom: 0; }
 .classroom-tools__button { display: grid; place-items: center; width: 42px; height: 42px; padding: 0; border: 0; border-radius: 12px; background: transparent; color: var(--text-2); cursor: pointer; }
-.classroom-tools__button:hover, .classroom-tools__button.is-active { background: var(--brand-soft); color: var(--brand); }
+.classroom-tools__button:hover:not(:disabled), .classroom-tools__button.is-active { background: var(--brand-soft); color: var(--brand); }
+.classroom-tools__button:disabled { opacity: .35; cursor: default; }
 .classroom-tools__button svg { width: 23px; height: 23px; }
 .classroom-progress-slot { position: sticky; top: 24px; min-width: 0; }
 .classroom-progress-slot[hidden] { display: none; }
+.conversation-topics {
+  display: flex;
+  flex-direction: column;
+  max-height: min(620px, calc(100dvh - 120px));
+  background: var(--surface-solid);
+  border: 1px solid var(--surface-border);
+  border-radius: 18px;
+}
+.conversation-topics__controls {
+  display: flex;
+  flex-shrink: 0;
+  justify-content: space-between;
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--hairline);
+  font-size: 20px;
+}
+.conversation-topics__controls button { font-size: inherit; }
+.conversation-topics__list {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  padding: 12px 10px;
+}
+.conversation-topics section + section { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--hairline); }
+.conversation-topics h3 { margin: 0 8px 6px; color: var(--text-2); font-size: 13px; }
+.conversation-topics ul { list-style: none; margin: 0; padding: 0; }
+.conversation-topics p { margin: 8px; color: var(--text-2); font-size: 13px; }
+.conversation-topics__list button {
+  display: block;
+  width: 100%;
+  padding: 8px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.conversation-topics__list button:hover, .conversation-topics__list button[aria-current] { background: var(--brand-soft); color: var(--brand); }
+.conversation-topics button:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }
 .classroom-progress-close { position: absolute; right: -13px; top: 36%; z-index: 2; display: grid; place-items: center; width: 28px; height: 48px; padding: 0; border: 1px solid var(--surface-border); border-radius: 10px; background: var(--surface-solid); color: var(--brand); box-shadow: var(--shadow-rest); cursor: pointer; }
 .classroom-progress-close:hover { background: var(--brand-soft); }
 .classroom-progress-close svg { width: 20px; height: 20px; }
@@ -1745,10 +1789,6 @@ body::before { background: none; }
 .conversation-resize-handle:hover, .conversation-resize-handle:active { background: rgba(176, 0, 85, .12); }
 .conversation-heading { position: relative; padding: 18px 24px 14px; border-bottom: 1px solid var(--hairline); flex-shrink: 0; }
 .conversation-heading .new-stage-title { padding: 0; }
-.conversation-point-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.conversation-point-nav { display: flex; gap: 6px; flex-shrink: 0; }
-.conversation-point-nav button { width: 32px; height: 32px; border: 1px solid var(--hairline); border-radius: 50%; background: var(--surface); color: var(--brand); cursor: pointer; }
-.conversation-point-nav button:disabled { opacity: .35; cursor: default; }
 .conversation-stage { margin: 6px 0 0; font-size: 14px; color: var(--brand); overflow-wrap: anywhere; }
 .conversation-log > *:first-child { margin-top: 0; }
 .msg__stage { display: block; margin-bottom: 7px; color: var(--brand); font-size: 12px; font-weight: 700; }

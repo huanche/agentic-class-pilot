@@ -366,7 +366,22 @@ def validate(session, before=None):
             if item["studentMessageIds"] or item["independence"] != "unknown":
                 raise InvalidRecord("Historical associations cannot be invented")
             continue
-        if item["taskId"] not in tasks or len(item["studentMessageIds"]) != 1:
+        if item["taskId"] not in tasks:
+            raise InvalidRecord("Observation task is invalid")
+        # Previously saved question-card answers have a card source instead of a
+        # chat message. Keep those records usable when the lesson is resumed.
+        if item.get("cardSource") and not item["studentMessageIds"]:
+            card = item["cardSource"]
+            if (not isinstance(card, dict) or not card.get("cardId") or not card.get("questionId")
+                    or item["episodeId"] != tasks[item["taskId"]]["episodeId"]):
+                raise InvalidRecord("Observation card source is invalid")
+            if any(ref not in tasks[item["taskId"]]["sourceRefs"] for ref in item["sourceRefs"]):
+                raise InvalidRecord("Observation source is invalid")
+            if any(aid not in assistance or assistance[aid]["taskId"] != item["taskId"]
+                   for aid in item["assistanceRefs"]):
+                raise InvalidRecord("Observation help is invalid")
+            continue
+        if len(item["studentMessageIds"]) != 1:
             raise InvalidRecord("Observation task is invalid")
         message = messages.get(item["studentMessageIds"][0])
         if not message or message["role"] != "student" or item["studentExcerpt"] != message["text"]:
@@ -442,8 +457,14 @@ def feedback_links(feedback, session):
 
 
 def public_view(session):
-    current = _by_task(session["learningRecords"], session.get("currentTaskId"))
+    records = session["learningRecords"]
+    current = _by_task(records, session.get("currentTaskId"))
     task = ({key: current[key] for key in ("taskId", "episodeId", "type", "topicId", "questionMessageId",
                                           "question", "purpose", "status")} if current else None)
+    topic_titles = {point["id"]: point["title"] for point in (session.get("dialogue") or {}).get("points", [])}
+    topic_titles.update({topic["topicId"]: topic["title"]
+                         for topic in (session.get("lessonContent") or {}).get("topics", [])})
     return {"currentTaskPublic": task, "contentRef": session.get("contentRef"),
+            "topicTitles": topic_titles,
+            "taskTopics": {task["taskId"]: task["topicId"] for task in records["tasks"] if task.get("topicId")},
             "recordSchemaVersion": 1}

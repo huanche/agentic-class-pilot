@@ -75,6 +75,7 @@ test('group submits only selected children and restores remaining questions', as
         view.stateVersion++;
         view.currentTaskPublic = { taskId: 'next' };
         view.learningProgress = { currentPoint: '下一个知识点' };
+        view.messages = [{ role: 'assistant', text: '开始学习下一个知识点。', phase: 'recall' }];
         view.questionGroups[0].active = false;
         view.canGoNextPoint = false;
         return route.fulfill({ json: { commandId: command.commandId, status: 'completed', sessionView: view } });
@@ -104,8 +105,10 @@ test('group submits only selected children and restores remaining questions', as
   await expect(page.getByLabel('事实一', { exact: true })).toBeChecked();
   await page.getByRole('button', { name: '下一题 →' }).click();
   await expect(page.getByLabel('事实二', { exact: true })).toBeEnabled();
-  await page.getByRole('button', { name: '下一个知识点' }).click();
-  await expect(page.getByText('当前知识点：下一个知识点')).toBeVisible();
+  const directory = page.getByRole('navigation', { name: '知识点对话位置' });
+  await directory.getByRole('button', { name: '下一个知识点' }).click();
+  await expect(page.getByRole('log')).toContainText('开始学习下一个知识点。');
+  await expect(page.getByText(/当前知识点：/)).toHaveCount(0);
   await page.screenshot({ path: testInfo.outputPath('question-group.png'), fullPage: true });
   await page.reload();
   const lesson = page.getByRole('button', { name: /组合题课时/ });

@@ -54,6 +54,22 @@ def test_question_is_bound_before_answer_and_ids_survive_retry(video, monkeypatc
     assert records.normalize(answered) == answered
 
 
+def test_saved_card_observation_without_chat_message_survives_later_turn(video):
+    begun = start(video)
+    task = begun["learningRecords"]["tasks"][0]
+    card_observation = {"observationId": "card-observation", "topicId": task["topicId"],
+        "taskId": task["taskId"], "episodeId": task["episodeId"], "contentId": task["contentId"],
+        "studentMessageIds": [], "studentExcerpt": "选择了正确答案", "assessmentResult": "correct",
+        "modelRationale": "", "sourceRefs": [], "assistanceRefs": [], "independence": "unknown",
+        "recordOrigin": "recorded", "limitations": ["selection_not_independent_mastery"],
+        "recordedAt": None, "cardSource": {"cardId": "card-1", "questionId": "q1", "choice": 0}}
+    saved = deepcopy(begun)
+    saved["learningRecords"]["observations"].append(card_observation)
+    records.validate(saved)
+    finished = records.transition(saved, dict(saved, **teaching.finish(saved)), command_id="finish")
+    assert finished["learningRecords"]["observations"][-1] == card_observation
+
+
 def test_help_after_an_answer_only_affects_later_evidence(video, monkeypatch):
     first = turn(start(video), "partial", monkeypatch, command_id="one")
     observation = first["learningRecords"]["observations"][0]
