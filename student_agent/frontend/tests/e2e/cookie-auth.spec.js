@@ -7,10 +7,16 @@ test("expired login preserves a draft for its owner and another account cannot l
     stateVersion:1,contentGeneration:0,preparation:"ready",agentStage:"recall",courses,
     messages:[{role:"assistant",text:"请复述本课内容"}],browserCourseKey:`${userId}:c`,browserKey:`${userId}:c:L1`});
   const writes=[];
+  const presence=[];
   await page.route("**/api/session/**", async route => {
     const path=new URL(route.request().url()).pathname;
-    if (path.endsWith("/presence")) return route.fulfill({ json: { ok: true } });
     if (expired) return route.fulfill({status:401,json:{code:"SESSION_EXPIRED",detail:"登录已失效，请重新登录"}});
+    if(path.endsWith("/presence")) {
+      expect(route.request().method()).toBe("POST");
+      expect(route.request().headers()["x-csrf-token"]).toBe("test-session-bound-csrf");
+      presence.push({userId,...route.request().postDataJSON()});
+      return route.fulfill({status:204});
+    }
     if(path.endsWith("/identity"))return route.fulfill({json:{userId,csrfToken:"test-session-bound-csrf"}});
     if(path.endsWith("/platform-entry"))return route.fulfill({json:{platformUrl:"http://127.0.0.1:3107",demoEnabled:false}});
     if(path.endsWith("/start"))return route.fulfill({json:{...view(),phase:"idle",lessonId:null,messages:[]}});
@@ -20,6 +26,8 @@ test("expired login preserves a draft for its owner and another account cannot l
   });
   await page.goto("/app/?course_id=c");
   await page.getByRole("button",{name:/会话测试课时/}).click();
+  await expect.poll(() => presence.some(item => item.userId === "u" && item.sessionId === "session-u")).toBe(true);
+  expect(presence).toContainEqual({userId:"u",sessionId:null});
   await page.getByRole("textbox").fill("只属于原账号的未提交草稿");
   expired=true;
   await page.evaluate(()=>window.dispatchEvent(new Event("focus")));
@@ -28,6 +36,7 @@ test("expired login preserves a draft for its owner and another account cannot l
   expired=false;userId="other";
   await page.reload();
   await page.getByRole("button",{name:/会话测试课时/}).click();
+  await expect.poll(() => presence.some(item => item.userId === "other" && item.sessionId === "session-other")).toBe(true);
   await expect(page.getByRole("textbox")).toHaveValue("");
   expect(writes).toHaveLength(0);
   userId="u";

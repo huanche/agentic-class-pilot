@@ -319,6 +319,173 @@
         "summary": "Bounded student-owned rows for an authorized platform course view"
       }
     },
+    "/api/internal/platform/courses/{course_id}/roster-progress": {
+      "post": {
+        "operationId": "getStudentCourseRosterProgress",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "course_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "activeSessionKeys": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "maxItems": 10000,
+                    "type": "array"
+                  },
+                  "detailUserId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "lessonRevisions": {
+                    "additionalProperties": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "userIds": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "maxItems": 10000,
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "userIds",
+                  "lessonRevisions",
+                  "activeSessionKeys"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "active": {
+                      "items": {
+                        "properties": {
+                          "classroomId": {
+                            "type": "string"
+                          },
+                          "sessionId": {
+                            "type": "string"
+                          },
+                          "studentId": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "sessionId",
+                          "studentId",
+                          "classroomId"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "assessments": {
+                      "items": {
+                        "properties": {
+                          "evidence": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "lessonId": {
+                            "type": "string"
+                          },
+                          "pointId": {
+                            "type": "string"
+                          },
+                          "stars": {
+                            "type": "integer"
+                          },
+                          "status": {
+                            "type": "string"
+                          },
+                          "title": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "lessonId",
+                          "pointId",
+                          "title",
+                          "status",
+                          "stars",
+                          "evidence"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "mastered": {
+                      "additionalProperties": {
+                        "additionalProperties": {
+                          "type": "integer"
+                        },
+                        "type": "object"
+                      },
+                      "type": "object"
+                    },
+                    "totals": {
+                      "additionalProperties": {
+                        "type": "integer"
+                      },
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "totals",
+                    "mastered",
+                    "active",
+                    "assessments"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Prepared knowledge totals, mastery counts, active sessions and optional evidence"
+          },
+          "403": {
+            "description": "Invalid service credentials"
+          },
+          "422": {
+            "description": "Invalid roster request"
+          },
+          "503": {
+            "description": "Student data unavailable"
+          }
+        },
+        "security": [
+          {
+            "studentServiceKey": []
+          }
+        ],
+        "summary": "Current published revision mastery and active sessions for platform-authorized students"
+      }
+    },
     "/api/internal/platform/courses/{course_id}/users/{user_id}/progress": {
       "get": {
         "operationId": "getStudentCourseProgress",

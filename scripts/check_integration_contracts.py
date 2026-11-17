@@ -47,6 +47,11 @@ def arguments(function: ast.FunctionDef | ast.AsyncFunctionDef):
 
 
 def type_schema(node: ast.AST) -> dict:
+    if isinstance(node, ast.Subscript) and function_name(node.value) == "dict":
+        key, value = node.slice.elts
+        if function_name(key) != "str":
+            raise ValueError("OpenAPI object keys must be strings")
+        return {"type": "object", "additionalProperties": type_schema(value)}
     if isinstance(node, ast.Subscript) and function_name(node.value) == "list":
         return {"type": "array", "items": type_schema(node.slice)}
     if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):

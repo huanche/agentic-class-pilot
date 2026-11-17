@@ -14,6 +14,14 @@ from .get_student_course_learning_data_response_200_event_summary import GetStud
 from .get_student_course_learning_data_response_200_mastery_item import GetStudentCourseLearningDataResponse200MasteryItem
 from .get_student_course_learning_data_response_200_sessions_item import GetStudentCourseLearningDataResponse200SessionsItem
 from .get_student_course_progress_response_200 import GetStudentCourseProgressResponse200
+from .get_student_course_roster_progress_body import GetStudentCourseRosterProgressBody
+from .get_student_course_roster_progress_body_lesson_revisions import GetStudentCourseRosterProgressBodyLessonRevisions
+from .get_student_course_roster_progress_response_200 import GetStudentCourseRosterProgressResponse200
+from .get_student_course_roster_progress_response_200_active_item import GetStudentCourseRosterProgressResponse200ActiveItem
+from .get_student_course_roster_progress_response_200_assessments_item import GetStudentCourseRosterProgressResponse200AssessmentsItem
+from .get_student_course_roster_progress_response_200_mastered import GetStudentCourseRosterProgressResponse200Mastered
+from .get_student_course_roster_progress_response_200_mastered_additional_property import GetStudentCourseRosterProgressResponse200MasteredAdditionalProperty
+from .get_student_course_roster_progress_response_200_totals import GetStudentCourseRosterProgressResponse200Totals
 
 __all__ = (
     "EnqueuePublishedLessonKnowledgeAtStudentBody",
@@ -30,4 +38,12 @@ __all__ = (
     "GetStudentCourseLearningDataResponse200MasteryItem",
     "GetStudentCourseLearningDataResponse200SessionsItem",
     "GetStudentCourseProgressResponse200",
+    "GetStudentCourseRosterProgressBody",
+    "GetStudentCourseRosterProgressBodyLessonRevisions",
+    "GetStudentCourseRosterProgressResponse200",
+    "GetStudentCourseRosterProgressResponse200ActiveItem",
+    "GetStudentCourseRosterProgressResponse200AssessmentsItem",
+    "GetStudentCourseRosterProgressResponse200Mastered",
+    "GetStudentCourseRosterProgressResponse200MasteredAdditionalProperty",
+    "GetStudentCourseRosterProgressResponse200Totals",
 )

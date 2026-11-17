@@ -17,6 +17,61 @@ info:
 servers:
   - url: http://127.0.0.1:8080/api/v1
 paths:
+  /internal/teacher/courses/{course_id}/roster-progress:
+    get:
+      operationId: getTeacherCourseRosterProgress
+      summary: 教师读取已选课学生的在线状态及当前发布版本的知识点掌握情况
+      security: [{ serviceKey: [], delegatedTeacher: [] }]
+      parameters:
+        - { name: course_id, in: path, required: true, schema: { type: string } }
+        - { name: student_id, in: query, required: false, schema: { type: [string, 'null'], format: uuid } }
+      responses:
+        '200':
+          description: 课程名单与学情，指定学生时附带该学生的评估证据
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [lessons, students, assessments]
+                properties:
+                  lessons:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, title, classroomId, total]
+                      properties:
+                        id: { type: string }
+                        title: { type: string }
+                        classroomId: { type: string }
+                        total: { type: [integer, 'null'] }
+                  students:
+                    type: array
+                    items:
+                      type: object
+                      required: [studentId, name, online, classroomIds, mastered]
+                      properties:
+                        studentId: { type: string, format: uuid }
+                        name: { type: string }
+                        online: { type: boolean }
+                        classroomIds: { type: array, items: { type: string } }
+                        mastered: { type: object, additionalProperties: { type: integer } }
+                  assessments:
+                    type: array
+                    items:
+                      type: object
+                      required: [lessonId, pointId, title, status, stars, evidence]
+                      properties:
+                        lessonId: { type: string }
+                        pointId: { type: string }
+                        title: { type: string }
+                        status: { type: string }
+                        stars: { type: integer }
+                        evidence: { type: [string, 'null'] }
+        '401': { description: 教师身份无效 }
+        '403': { description: 服务密钥无效或教师无权访问课程 }
+        '404': { description: 课程不存在或指定学生未选课 }
+        '422': { description: 学生标识格式错误 }
+        '503': { description: 学情依赖服务不可用 }
   /internal/teacher/published-lesson-knowledge:
     post:
       operationId: enqueuePublishedLessonKnowledge

@@ -213,6 +213,73 @@ export type GetTeacherCourseMembersResponses = {
 
 export type GetTeacherCourseMembersResponse = GetTeacherCourseMembersResponses[keyof GetTeacherCourseMembersResponses];
 
+export type GetTeacherCourseRosterProgressData = {
+    body?: never;
+    path: {
+        course_id: string;
+    };
+    query?: {
+        student_id?: string | null;
+    };
+    url: '/internal/teacher/courses/{course_id}/roster-progress';
+};
+
+export type GetTeacherCourseRosterProgressErrors = {
+    /**
+     * 教师身份无效
+     */
+    401: unknown;
+    /**
+     * 服务密钥无效或教师无权访问课程
+     */
+    403: unknown;
+    /**
+     * 课程不存在或指定学生未选课
+     */
+    404: unknown;
+    /**
+     * 学生标识格式错误
+     */
+    422: unknown;
+    /**
+     * 学情依赖服务不可用
+     */
+    503: unknown;
+};
+
+export type GetTeacherCourseRosterProgressResponses = {
+    /**
+     * 课程名单与学情，指定学生时附带该学生的评估证据
+     */
+    200: {
+        assessments: Array<{
+            evidence: string | null;
+            lessonId: string;
+            pointId: string;
+            stars: number;
+            status: string;
+            title: string;
+        }>;
+        lessons: Array<{
+            classroomId: string;
+            id: string;
+            title: string;
+            total: number | null;
+        }>;
+        students: Array<{
+            classroomIds: Array<string>;
+            mastered: {
+                [key: string]: number;
+            };
+            name: string;
+            online: boolean;
+            studentId: string;
+        }>;
+    };
+};
+
+export type GetTeacherCourseRosterProgressResponse = GetTeacherCourseRosterProgressResponses[keyof GetTeacherCourseRosterProgressResponses];
+
 export type EnqueuePublishedLessonKnowledgeData = {
     body: {
         artifact_id: string;

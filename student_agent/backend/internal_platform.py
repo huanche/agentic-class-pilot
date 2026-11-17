@@ -58,7 +58,8 @@ class LearningDataRequest(BaseModel):
     userIds: list[str] = Field(max_length=10000)
 
 
-class RosterRequest(LearningDataRequest):
+class RosterRequest(BaseModel):
+    userIds: list[str] = Field(max_length=10000)
     lessonRevisions: dict[str, str]
     activeSessionKeys: list[str] = Field(max_length=10000)
     detailUserId: str | None = None
