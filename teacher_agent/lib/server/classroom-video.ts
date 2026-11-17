@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { createLogger } from '@/lib/logger';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import type {
@@ -74,17 +75,28 @@ export async function videoStatus(plan: ClassroomVideoPlan): Promise<ClassroomVi
   const saved = await readJson<ClassroomVideoStatus>(
     videoPath(plan.id, 'jobs', `${plan.version}.json`),
   );
-  let completed = 0;
-  for (const clip of plan.clips) {
-    if ((await fs.stat(videoPath(plan.id, 'clips', `${clip.key}.mp4`)).catch(() => null))?.size)
-      completed++;
-  }
+  const checked = await Promise.all(
+    plan.clips.map(async (clip) => {
+      const file = await fs.stat(videoPath(plan.id, 'clips', clip.key + '.mp4')).catch(() => null);
+      return file?.size ? clip.sceneId : undefined;
+    }),
+  );
+  const readySceneIds = checked.filter((id): id is string => id !== undefined);
+  const failedPages = Object.fromEntries(
+    plan.clips.flatMap(({ sceneId }, index) => {
+      const error = saved?.failedPages?.[sceneId];
+      return !checked[index] && typeof error === 'string' ? [[sceneId, error]] : [];
+    }),
+  );
+  const completed = readySceneIds.length;
   const ready = completed === plan.clips.length;
   const missing = !ready && saved?.state === 'ready';
   return {
     version: plan.version,
     state: ready ? 'ready' : missing ? 'failed' : saved?.state || 'queued',
     completed,
+    readySceneIds,
+    failedPages,
     total: plan.clips.length,
     updatedAt: saved?.updatedAt || plan.createdAt,
     ...(missing
@@ -97,14 +109,19 @@ export async function videoStatus(plan: ClassroomVideoPlan): Promise<ClassroomVi
   };
 }
 const preparing = new Map<string, Promise<ClassroomVideoPlan>>();
-export async function prepareClassroomVideo(id: string, ownerId: string, origin: string) {
+export async function prepareClassroomVideo(
+  id: string,
+  ownerId: string,
+  origin: string,
+  retry?: true | string,
+) {
   const active = preparing.get(id);
   // Serialize snapshot creation; a later request must still observe later edits.
   if (active) {
     await active.catch(() => {});
-    return prepareClassroomVideo(id, ownerId, origin);
+    return prepareClassroomVideo(id, ownerId, origin, retry);
   }
-  const promise = prepare(id, ownerId, origin);
+  const promise = prepare(id, ownerId, origin, retry);
   preparing.set(id, promise);
   try {
     return await promise;
@@ -112,7 +129,12 @@ export async function prepareClassroomVideo(id: string, ownerId: string, origin:
     if (preparing.get(id) === promise) preparing.delete(id);
   }
 }
-async function prepare(id: string, ownerId: string, origin: string): Promise<ClassroomVideoPlan> {
+async function prepare(
+  id: string,
+  ownerId: string,
+  origin: string,
+  retry?: true | string,
+): Promise<ClassroomVideoPlan> {
   if (!videoEnabled() || !videoSecret()) throw new Error('视频转换服务尚未启用');
   const classroom = await readClassroom(id);
   if (!classroom?.scenes.length) throw new Error('课件尚未生成');
@@ -195,6 +217,8 @@ async function prepare(id: string, ownerId: string, origin: string): Promise<Cla
       ),
     }),
   );
+  if (typeof retry === 'string' && !clips.some((clip) => clip.sceneId === retry))
+    throw new Error('找不到要重试的视频页面');
   const plan: ClassroomVideoPlan = {
     schema: 1,
     id,
@@ -209,7 +233,7 @@ async function prepare(id: string, ownerId: string, origin: string): Promise<Cla
     await writeJsonFileAtomic(videoPath(id, 'versions', `${version}.json`), plan);
   await writeJsonFileAtomic(videoPath(id, 'draft.json'), { version });
   const status = await videoStatus(plan);
-  if (status.state !== 'ready') {
+  if (status.state !== 'ready' && (retry || status.state === 'queued')) {
     const grant = await signRenderGrant(
       { id, version, exp: Date.now() + 6 * 3600_000 },
       videoSecret(),
@@ -220,13 +244,29 @@ async function prepare(id: string, ownerId: string, origin: string): Promise<Cla
         'content-type': 'application/json',
         'x-video-worker-key': process.env.CLASSROOM_VIDEO_WORKER_KEY || '',
       },
-      body: JSON.stringify({ id, version, grant, origin }),
+      body: JSON.stringify({
+        id,
+        version,
+        grant,
+        origin,
+        ...(typeof retry === 'string' && { sceneId: retry }),
+      }),
       signal: AbortSignal.timeout(10_000),
     });
     if (!response.ok) throw new Error('视频转换服务暂不可用，请重试');
   }
   return plan;
 }
+export async function prequeueClassroomVideo(id: string, ownerId: string, origin: string) {
+  if (!videoEnabled()) return;
+  try {
+    await prepareClassroomVideo(id, ownerId, origin);
+  } catch (error) {
+    // The classroom and its review status have already been saved.
+    createLogger('ClassroomVideo').warn('Video pre-generation could not be queued', error);
+  }
+}
+
 export async function nativeVideoConfig(plan: ClassroomVideoPlan, sceneId: string) {
   if (!plan.clips.some((c) => c.sceneId === sceneId)) throw new Error('Invalid scene');
   const url = new URL(

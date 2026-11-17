@@ -2,7 +2,7 @@ import { expandTrialCheckpoints, normalizeTrialOutlines } from '@/lib/generation
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { withGenerationRetry } from '@openmaic/generation';
-import { videoEnabled, prepareClassroomVideo } from './classroom-video';
+import { prequeueClassroomVideo } from './classroom-video';
 import { createLogger } from '@/lib/logger';
 import type { BackgroundCoursewareInput } from '@/lib/generation/background-courseware';
 import { isActiveCourseJob } from '@/lib/generation/background-courseware';
@@ -892,15 +892,8 @@ async function executeLegacy(
         },
       };
     });
-    if (videoReadyToPrepare && videoEnabled()) {
-      // A renderer outage must not fail a complete, editable classroom.
-      void prepareClassroomVideo(stage.id, teacherId, baseUrl).catch((error) => {
-        createLogger('BackgroundCourseware').error(
-          'Video pre-generation could not be queued:',
-          error instanceof Error ? error.message : error,
-        );
-      });
-    }
+    if (videoReadyToPrepare && input.enableTTS && scenes.some((scene) => scene.type === 'slide'))
+      await prequeueClassroomVideo(stage.id, teacherId, baseUrl);
     await fs.unlink(inputFile(jobId)).catch(() => undefined);
   } catch (error) {
     if (pendingPage) await pendingPage.work; // Retain a usable predecessor checkpoint on a later-page failure.

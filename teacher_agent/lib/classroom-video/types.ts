@@ -24,6 +24,8 @@ export interface ClassroomVideoStatus {
   total: number;
   error?: string;
   currentSceneId?: string;
+  readySceneIds?: string[];
+  failedPages?: Record<string, string>;
   updatedAt: number;
 }
 export interface ClassroomVideoManifest {

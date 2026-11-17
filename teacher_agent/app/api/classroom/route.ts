@@ -26,14 +26,22 @@ export async function POST(request: NextRequest) {
   let sceneCount: number | undefined;
   try {
     const body = await request.json();
-    if (body.operation === 'prepare-video') {
+    if (body.operation === 'prepare-video' || body.operation === 'retry-video') {
       const id = request.nextUrl.searchParams.get('id') || '';
       if (!isValidClassroomId(id) || request.headers.get('x-platform-role') === 'student')
         return apiError(API_ERROR_CODES.INVALID_REQUEST, 403, '无权转换此课件');
+      const sceneId = body.sceneId;
+      if (
+        body.operation === 'retry-video' &&
+        sceneId !== undefined &&
+        (typeof sceneId !== 'string' || !/^[A-Za-z0-9_-]{1,100}$/.test(sceneId))
+      )
+        return apiError(API_ERROR_CODES.INVALID_REQUEST, 400, '无效的视频页面');
       const plan = await prepareClassroomVideo(
         id,
         request.headers.get('x-platform-user-id') || '',
         buildRequestOrigin(request),
+        body.operation === 'retry-video' ? (sceneId ?? true) : undefined,
       );
       return apiSuccess({ version: plan.version, status: await videoStatus(plan) }, 202);
     }
@@ -117,6 +125,8 @@ export async function GET(request: NextRequest) {
         : request.nextUrl.searchParams.get('version') || pointer?.version;
       const plan = version ? await readVideoPlan(id, version) : null;
       if (!plan) return apiSuccess({ manifest: null, enabled: videoEnabled() });
+      const status = await videoStatus(plan);
+      const readyScenes = new Set(status.readySceneIds);
       return apiSuccess({
         enabled: videoEnabled(),
         manifest: {
@@ -124,13 +134,15 @@ export async function GET(request: NextRequest) {
           title: plan.stage.name,
           stage: plan.stage,
           scenes: plan.scenes,
-          status: await videoStatus(plan),
+          status,
           clips: await Promise.all(
-            plan.clips.map(async (c) => ({
-              sceneId: c.sceneId,
-              url: `/api/classroom-media/${id}/video/${c.key}.mp4`,
-              captions: await readClipCaptions(plan, c),
-            })),
+            plan.clips
+              .filter((clip) => readyScenes.has(clip.sceneId))
+              .map(async (c) => ({
+                sceneId: c.sceneId,
+                url: `/api/classroom-media/${id}/video/${c.key}.mp4`,
+                captions: await readClipCaptions(plan, c),
+              })),
           ),
         },
       });

@@ -55,7 +55,7 @@ jobs:
           echo "IMAGE_TAG=main-${SHA:0:7}" >> "$GITHUB_ENV"
 
       - name: Verify media contracts
-        run: node --test teacher_agent/services/classroom-video/readiness.test.mjs teacher_agent/services/onlyoffice/server.test.mjs
+        run: node --test teacher_agent/services/classroom-video/readiness.test.mjs teacher_agent/services/classroom-video/jobs.test.mjs teacher_agent/services/onlyoffice/server.test.mjs
 
       - name: Prepare teacher and changed media images
         env:
