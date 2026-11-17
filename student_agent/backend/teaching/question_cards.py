@@ -5,6 +5,7 @@ each question identifies the requirements for which it may supply evidence.
 """
 from copy import deepcopy
 import json
+import random
 from uuid import uuid4
 
 
@@ -14,7 +15,8 @@ QUESTION_PROMPT = """你是课堂出题助手。仅使用提供的课程内容�
 不引入未讲过的前提，不泄露其他题的答案。解析说明正确答案及必要原因。
 仅输出JSON对象：{"questions":[{"prompt":"题干","options":["选项一","选项二"],
 "answer":0,"explanation":"解析","target_ids":["要求id"]}]}。
-answer是options中正确选项从0开始的整数位置。target_ids必须来自输入要求。"""
+answer是options中正确选项从0开始的整数位置。target_ids必须来自输入要求。
+选项显示顺序会由程序随机调整；题干、选项和解析引用选项内容，不使用A/B等位置标记或“以上皆是”。"""
 
 
 def generate(point, complete):
@@ -33,6 +35,11 @@ def generate(point, complete):
             group = validate_group(json_object(raw), point)
             if any(not set(q["target_ids"]) <= eligible for q in group["questions"]):
                 raise ValueError("题目引用了已确认的要求")
+            for question in group["questions"]:
+                order = list(range(len(question["options"])))
+                random.shuffle(order)
+                question["answer"] = order.index(question["answer"])
+                question["options"] = [question["options"][i] for i in order]
             return group
         except ValueError as failure:
             error = "\n上次结构校验未通过，请重新生成完整题组：" + str(failure)

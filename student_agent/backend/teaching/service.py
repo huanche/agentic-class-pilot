@@ -176,7 +176,9 @@ def _typed_assistant(dialogue, phase, *, after_class=False):
     focus = typed_state.current(dialogue, after_class=after_class)
     group = next((group for group in reversed(dialogue.get("question_groups", []))
                   if focus and group["point_id"] == focus["id"]
-                  and group.get("phase", "discussion") == ("postclass" if after_class else "discussion")), None)
+                  and (group.get("phase", "discussion") == ("postclass" if after_class else "discussion")
+                       or (after_class and (len(group["results"]) < len(group["questions"])
+                                            or dialogue.get("review_point_id") == focus["id"])))), None)
     if group:
         message["cardId"] = group["id"]
     return message
@@ -271,8 +273,10 @@ def describe_session(session):
         view = describe(session["dialogue"])
         view["questionGroups"] = [question_cards.public_group(g) for g in session["dialogue"].get("question_groups", [])]
         current = typed_state.current(session["dialogue"], after_class=session.get("phase") == "done")
+        active_group = next((group for group in reversed(view["questionGroups"])
+                             if current and current["id"] == group["point_id"]), None)
         for group in view["questionGroups"]:
-            group["active"] = bool(current and current["id"] == group["point_id"])
+            group["active"] = bool(active_group and group["id"] == active_group["id"])
         view["afterClassComplete"] = all(p["status"] == "mastered" for p in session["dialogue"]["points"])
         view["reviewingCard"] = bool(session["dialogue"].get("review_point_id"))
         view["canGoNextPoint"] = typed_state.next_point(session["dialogue"], after_class=session.get("phase") == "done") is not None
