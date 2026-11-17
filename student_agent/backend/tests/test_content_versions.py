@@ -142,3 +142,81 @@ def test_visual_or_missing_sources_are_reported_as_limitations():
     assert body["inputCapabilities"]["originalPpt"] is False
     legacy = lesson_content.build("course", "lesson", "rev", "unknown", [point()], [])
     assert legacy["validationStatus"] == "limited" and legacy["topics"][0]["sourceRefs"] == []
+
+@pytest.mark.parametrize('schema', [1, 2, 3])
+@pytest.mark.parametrize('path', ['read', 'worker'])
+@pytest.mark.parametrize('old_name,new_name', [(None, '课程'), ('课程', ''), ('课程', None), ('旧名', '新名')])
+def test_course_name_metadata_reuses_immutable_archive(pg, monkeypatch, path, old_name, new_name, schema):
+    register(pg)
+    with pg() as c:
+        if schema != 1:
+            p = point()
+            if schema == 2:
+                p.update(type='memory', details={'statement': QUOTE, 'requiredElements': [QUOTE]})
+            else:
+                p.update(name=p['title'], explanation=QUOTE)
+            c.execute('UPDATE student.published_lesson_knowledge SET points=%s::jsonb', (json.dumps([p]),))
+        if old_name is not None:
+            c.execute("UPDATE student.published_lesson_knowledge SET coverage=coverage || %s::jsonb", (json.dumps({'courseName': old_name}),))
+    original = published_knowledge.read('course', 'lesson', 'rev')['contentModel']
+    persistence.save(session(original), 0)
+    with pg() as c:
+        c.execute("UPDATE student.published_lesson_knowledge SET coverage=(coverage - 'courseName') || %s::jsonb,status='pending'", (json.dumps({'courseName': new_name}),))
+    monkeypatch.setattr(published_knowledge, 'learning_points', lambda *a, **k: pytest.fail('must reuse without model'))
+    for _ in range(2):
+        if path == 'worker':
+            published_knowledge.process_next()
+        assert published_knowledge.read('course', 'lesson', 'rev')['contentModel'] == original
+    assert persistence.restore('learner')['contentRef'] == lesson_content.reference(original)
+    with pg() as c:
+        assert c.execute('SELECT payload FROM student.lesson_content_versions').fetchall() == [(original,)]
+
+@pytest.mark.parametrize('field,value', [('acceptedCount', 2), ('scope', 'changed')])
+def test_archive_reuse_rejects_non_whitelisted_coverage(pg, field, value):
+    register(pg)
+    original = published_knowledge.read('course', 'lesson', 'rev')['contentModel']
+    with pg() as c:
+        c.execute('UPDATE student.published_lesson_knowledge SET coverage=coverage || %s::jsonb,status=\'pending\'', (json.dumps({field: value}),))
+    assert published_knowledge.read('course', 'lesson', 'rev')['error'] == 'published_content_conflict'
+    assert published_knowledge.process_next()
+    assert published_knowledge.read('course', 'lesson', 'rev')['status'] == 'failed'
+    with pg() as c:
+        assert c.execute('SELECT payload FROM student.lesson_content_versions').fetchall() == [(original,)]
+
+
+def test_duplicate_enqueue_and_concurrent_read_worker(pg, monkeypatch):
+    from backend.internal_platform import PublishedLessonKnowledgeRequest, enqueue_published_lesson_knowledge
+    from concurrent.futures import ThreadPoolExecutor
+    revision = 'a' * 64
+    scenes = register(pg, revision=revision)
+    original = published_knowledge.read('course', 'lesson', revision)['contentModel']
+    request = PublishedLessonKnowledgeRequest(courseId='course', lessonId='lesson', videoRevision=revision, classroomId='room', scenes=scenes, courseName='Course')
+    for _ in range(2):
+        enqueue_published_lesson_knowledge(request, 'isolated-command-test-key')
+    with pg() as c:
+        c.execute("UPDATE student.published_lesson_knowledge SET status='pending'")
+    monkeypatch.setattr(published_knowledge, 'learning_points', lambda *a, **k: pytest.fail('no extraction'))
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        results = list(pool.map(lambda n: published_knowledge.process_next() if n % 2 else published_knowledge.read('course','lesson',revision), range(8)))
+    assert published_knowledge.read('course','lesson',revision)['contentModel'] == original
+
+
+def test_session_sync_reports_conflict_and_recovers_without_rebinding_history(pg):
+    register(pg)
+    original = published_knowledge.read('course', 'lesson', 'rev')['contentModel']
+    pinned = session(original)
+    before = deepcopy(pinned)
+    pending = {'id': 'waiting', 'context': {'courseId': 'course'}, 'phase': 'video',
+               'lessonId': 'lesson', 'videoRevision': 'rev', 'dialogue': None}
+    with pg() as c:
+        c.execute("UPDATE student.published_lesson_knowledge SET coverage=coverage || '{\"acceptedCount\":2}'::jsonb")
+    learning_session.sync_published_preparation(pending, persist=False)
+    assert pending['preparation'] == 'error'
+    assert pending['preparationErrorCode'] == 'published_content_conflict'
+    learning_session.sync_published_preparation(pinned, persist=False)
+    assert pinned == before
+    with pg() as c:
+        c.execute("UPDATE student.published_lesson_knowledge SET coverage=coverage || '{\"acceptedCount\":1,\"courseName\":\"Recovered\"}'::jsonb")
+    learning_session.sync_published_preparation(pending, persist=False)
+    assert pending['preparation'] == 'ready'
+    assert pending['contentRef'] == lesson_content.reference(original)

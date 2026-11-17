@@ -435,7 +435,8 @@ def sync_published_preparation(session: dict, *, persist: bool = True) -> None:
             session.update(changed)
     elif result and result["status"] == "failed":
         session.update(preparation="error", preparationError="知识点整理失败，可点击重试",
-                       preparationErrorCode="published_extraction_failed")
+                       preparationErrorCode=("published_content_conflict" if result.get("error") == "published_content_conflict"
+                                             else "published_extraction_failed"))
     else:
         session.update(preparation="pending", preparationError="", preparationErrorCode="")
 
