@@ -266,15 +266,19 @@ class LearningContextRequest(BaseModel):
     refresh_session: bool = False
 
 
+def published_video_revision(classroom: dict, published_at: int | None) -> str:
+    return hashlib.sha256(json.dumps(
+        [classroom["id"], published_at, classroom.get("scenes") or []],
+        sort_keys=True, ensure_ascii=False,
+    ).encode()).hexdigest()
+
+
 def ensure_published_knowledge_job(session: SessionDep, course_id: uuid.UUID,
                                    lesson_id: str, classroom: dict,
                                    published_at: int | None) -> str:
     """Idempotent publication job, also backfilling lessons published earlier."""
     scenes = classroom.get("scenes") or []
-    revision = hashlib.sha256(json.dumps(
-        [classroom["id"], published_at, scenes],
-        sort_keys=True, ensure_ascii=False,
-    ).encode()).hexdigest()
+    revision = published_video_revision(classroom, published_at)
     from app.services.student_knowledge_client import (
         StudentKnowledgeUnavailable, enqueue_student_knowledge,
     )

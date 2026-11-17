@@ -16,7 +16,8 @@ from app.api.deps import CurrentUser, SessionDep, TeacherUser
 from app.core.config import settings
 from app.models import Course
 from app.api.routes.student_bridge import (
-    _content_from_teacher_snapshot, ensure_published_knowledge_job,
+    _content_from_teacher_snapshot, _load_published_content, ensure_published_knowledge_job,
+    published_video_revision,
 )
 from app.services.browser_sessions import user_for_cookie
 from app.services.course_access import get_accessible_course, get_owned_course
@@ -516,3 +517,58 @@ def teacher_course_members(
             for row in rows
         ],
     }
+
+
+@router.get("/internal/teacher/courses/{course_id}/roster-progress")
+def teacher_roster_progress(
+    course_id: str, session: SessionDep, student_id: uuid.UUID | None = None,
+    x_teacher_service_key: str | None = Header(default=None),
+    x_platform_subject: str | None = Header(default=None),
+):
+    roster = teacher_course_members(course_id, session, x_teacher_service_key, x_platform_subject)
+    members = roster["members"]
+    if student_id is not None:
+        members = [member for member in members if member["studentId"] == str(student_id)]
+        if not members:
+            raise HTTPException(404, "该学生未加入本课程")
+    course_uuid = uuid.UUID(roster["courseId"])
+    _, lessons = _load_published_content(session, course_uuid, uuid.UUID(x_platform_subject))
+    online = session.execute(text("""
+        SELECT DISTINCT b.user_id::text, b.student_session_key
+        FROM browser_session b JOIN enrollment e ON e.student_id=b.user_id
+        JOIN "user" u ON u.id=b.user_id
+        WHERE e.course_id=:course AND u.is_active AND b.expires_at>now()
+          AND b.student_seen_at >= now() - interval '65 seconds'
+    """), {"course": course_uuid}).all()
+    user_ids = [member["studentId"] for member in members]
+    # 浏览器会话确定在线，学生服务负责核对具体课件和评估版本。
+    try:
+        with httpx.Client(timeout=5, trust_env=False) as client:
+            response = client.post(
+                f"{settings.STUDENT_URL.rstrip('/')}/api/internal/platform/courses/{course_uuid}/roster-progress",
+                headers={"X-Student-Service-Key": settings.STUDENT_SERVICE_KEY or ""},
+                json={"userIds": user_ids,
+                      "activeSessionKeys": list({key for user, key in online if key and user in user_ids}),
+                      "detailUserId": str(student_id) if student_id else None,
+                      "lessonRevisions": {lesson["id"]: published_video_revision(
+                          lesson["classroom"], lesson["publishedAt"]) for lesson in lessons}},
+            )
+            response.raise_for_status()
+            data = response.json()
+    except (httpx.HTTPError, ValueError) as error:
+        raise HTTPException(503, "学生学情服务暂不可用") from error
+    active_pairs = {(user, key) for user, key in online if key}
+    online_ids = {user for user, _ in online}
+    active_by_student = {}
+    for item in data["active"]:
+        user, key = item["studentId"], item["sessionId"]
+        if (user, key) in active_pairs:
+            active_by_student.setdefault(user, []).append(item["classroomId"])
+    return {"lessons": [{"id": lesson["id"], "title": lesson["title"],
+                         "classroomId": lesson["classroom"]["id"],
+                         "total": data["totals"].get(lesson["id"])} for lesson in lessons],
+            "students": [{"studentId": member["studentId"], "name": member["name"],
+                          "online": member["studentId"] in online_ids,
+                          "classroomIds": active_by_student.get(member["studentId"], []),
+                          "mastered": data["mastered"].get(member["studentId"], {})} for member in members],
+            "assessments": data["assessments"]}

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { platformPlayerAdapter } from "../integration/platform-player-adapter";
 import { createLearningSession } from "../integration/learning-session.mjs";
+import { requestSession } from "../integration/session-http.mjs";
 import LessonFeedback from "./LessonFeedback";
 import QuestionGroup from "./QuestionGroup";
 import LessonProgress, { STAGE_TITLES } from "./LessonProgress";
@@ -80,6 +81,27 @@ export default function StudentApp() {
   const [showEarlyEndWarning, setShowEarlyEndWarning] = useState(false);
   const [showVideoAdvanceConfirm, setShowVideoAdvanceConfirm] = useState(false);
   const viewingVideo = phase === "video" || phase === "replay";
+  const activeSessionId = ["video", "discussion", "replay"].includes(phase) ? learning.sessionId : null;
+  const signedIn = Boolean(learning.userId) && phase !== "auth";
+  useEffect(() => {
+    if (!signedIn) return;
+    const abort = new AbortController();
+    const report = () => {
+      if (document.hidden) return;
+      requestSession("/session/presence", "POST", { sessionId: activeSessionId ?? null },
+        { signal: abort.signal }).catch(error => {
+        if (error.name !== "AbortError") console.warn("学生在线状态上报失败", error);
+      });
+    };
+    report();
+    const timer = window.setInterval(report, 20000);
+    document.addEventListener("visibilitychange", report);
+    return () => {
+      abort.abort();
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", report);
+    };
+  }, [signedIn, learning.userId, activeSessionId]);
   const [learningProgressOpen, setLearningProgressOpen] = useState(true);
   const [videoProgressOpen, setVideoProgressOpen] = useState(false);
   const progressOpen = viewingVideo ? videoProgressOpen : learningProgressOpen;

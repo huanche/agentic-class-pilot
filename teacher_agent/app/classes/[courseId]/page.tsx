@@ -5,7 +5,6 @@ import { useParams, useRouter } from 'next/navigation';
 import {
   ArrowLeft,
   BookOpen,
-  Bot,
   ChevronDown,
   ChevronRight,
   ExternalLink,
@@ -13,11 +12,11 @@ import {
   Folder,
   Presentation,
   Sparkles,
-  Users,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { CourseEnrollment } from '@/components/platform/course-enrollment';
-import type { CourseModule, CourseStudentLearningState } from '@/lib/course-space/types';
+import type { CourseModule } from '@/lib/course-space/types';
+import { StudentRoster } from './roster';
 
 type ClassResource = {
   id: string;
@@ -48,14 +47,6 @@ type Detail = {
     modules: CourseModule[];
   };
   resources: ClassResource[];
-  students: CourseStudentLearningState[];
-};
-
-const statusLabel: Record<CourseStudentLearningState['status'], string> = {
-  'not-started': '未开始',
-  learning: '学习中',
-  completed: '已完成',
-  'needs-attention': '需要关注',
 };
 
 function PublishedResourceRow({ resource }: { resource: ClassResource }) {
@@ -137,7 +128,7 @@ export default function ClassDetailPage() {
         </div>
       </header>
 
-      <div className="mx-auto grid max-w-7xl gap-6 px-6 py-8 lg:grid-cols-[1.15fr_.85fr]">
+      <div className="mx-auto grid max-w-[calc(80rem+1cm)] gap-6 px-6 py-8 lg:grid-cols-[minmax(0,1fr)_calc(42.5%_-_0.6375rem_+_0.575cm)]">
         <section className="space-y-6">
           <CourseEnrollment courseId={courseId} />
           <div className="rounded-3xl bg-gradient-to-br from-[#B00055] to-[#78113f] p-7 text-white shadow-xl">
@@ -295,70 +286,7 @@ export default function ClassDetailPage() {
           </div>
         </section>
 
-        <section className="rounded-3xl border bg-white p-6 shadow-sm">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Users className="size-5 text-[#B00055]" />
-              <h2 className="text-lg font-semibold">学生与学习状态</h2>
-            </div>
-            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-500">
-              {detail.students.length} 人
-            </span>
-          </div>
-          {detail.students.length === 0 ? (
-            <div className="mt-6 rounded-2xl border border-dashed p-10 text-center">
-              <Bot className="mx-auto size-10 text-slate-300" />
-              <h3 className="mt-3 font-medium">尚未同步学生名单</h3>
-              <p className="mt-2 text-xs leading-5 text-slate-400">
-                接入底座的班级与学生账号后，姓名、学习进度和最近活动会显示在这里。
-              </p>
-            </div>
-          ) : (
-            <div className="mt-5 space-y-3">
-              {detail.students.map((student) => (
-                <div key={student.studentId} className="rounded-2xl border p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="font-medium">{student.name}</p>
-                      <p className="text-[11px] text-slate-400">
-                        {student.studentNumber || student.studentId} ·{' '}
-                        {student.className || '当前班级'}
-                      </p>
-                    </div>
-                    <span
-                      className={`rounded-full px-2.5 py-1 text-[11px] ${student.status === 'needs-attention' ? 'bg-red-50 text-red-600' : student.status === 'completed' ? 'bg-emerald-50 text-emerald-700' : 'bg-blue-50 text-blue-700'}`}
-                    >
-                      {statusLabel[student.status]}
-                    </span>
-                  </div>
-                  <div className="mt-4 flex items-center gap-3">
-                    <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100">
-                      <div
-                        className="h-full rounded-full bg-[#B00055]"
-                        style={{ width: `${Math.min(100, Math.max(0, student.progress))}%` }}
-                      />
-                    </div>
-                    <span className="text-xs font-medium tabular-nums">{student.progress}%</span>
-                  </div>
-                  <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-slate-500">
-                    {typeof student.totalLessons === 'number' && student.totalLessons > 0 && (
-                      <span>已学 {student.learnedLessons ?? 0}/{student.totalLessons} 节</span>
-                    )}
-                    {typeof student.sessionCount === 'number' && student.sessionCount > 0 && (
-                      <span>会话 {student.sessionCount} 次 · 完成 {student.endedCount ?? 0}</span>
-                    )}
-                    {!!student.stars && <span className="text-amber-500">知识点 ★ {student.stars}</span>}
-                    {!!student.lastActiveAt && (
-                      <span>
-                        最近活跃 {new Date(student.lastActiveAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
+        <StudentRoster courseId={courseId} />
       </div>
     </main>
   );
