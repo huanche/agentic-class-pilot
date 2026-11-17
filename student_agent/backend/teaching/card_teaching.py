@@ -21,6 +21,7 @@ def ensure_card(dialogue, after_class=False):
     if pending:
         return
     group = question_cards.generate(focus, model.complete)
+    group["phase"] = "postclass" if after_class else "discussion"
     groups.append(group)
     text = f"一起检查「{focus['title']}」的相关内容。可以分次提交，也可以随时提问。"
     focus["task_question"] = "\n".join(q["prompt"] for q in group["questions"])
@@ -30,7 +31,7 @@ def ensure_card(dialogue, after_class=False):
     dialogue["current_task"] = typed_state.task(dialogue, after_class=after_class)
 
 
-def submit(session, group_id, answers, *, open_dialogue):
+def submit(session, group_id, answers):
     after_class = session["phase"] == "done"
     dialogue = deepcopy(session["dialogue"])
     focus = typed_state.current(dialogue, after_class=after_class)
@@ -75,24 +76,12 @@ def submit(session, group_id, answers, *, open_dialogue):
         "answer_result": "correct" if all(group["results"][key]["correct"] for key in answers) else "misconception",
         "evidence": text, "updates": list(updates.values()), "next_step": "查看解析后继续未完成的内容。"},
         after_class=after_class, count_attempt=not incomplete)
-    reply = "已记录本次作答，请查看各题解析。" + ("其余题目可以继续提交。" if incomplete else "")
-    dialogue["reply"] = reply
     if not incomplete:
-        next_point = typed_state.current(dialogue, after_class=after_class)
-        if next_point and next_point["type"] == "memory":
-            ensure_card(dialogue, after_class)
-            dialogue["reply"] = reply + "\n\n" + dialogue["reply"]
-        elif next_point:
-            dialogue = open_dialogue(dialogue, opening=True, after_class=after_class)
-            dialogue["reply"] = reply + "\n\n" + dialogue["reply"]
-        else:
-            dialogue["reply"] += "本轮学习已结束，可以查看学习反馈。"
-    phase = "postclass-remediation" if after_class else dialogue["stage"]
-    changed = {"dialogue": dialogue, "messages": session["messages"] + [
-        {"role": "student", "text": text, "phase": phase},
-        {"role": "assistant", "text": dialogue["reply"], "phase": phase}]}
+        dialogue["review_point_id"] = focus["id"]
+        dialogue["current_task"] = typed_state.task(dialogue, after_class=after_class)
+    changed = {"dialogue": dialogue}
     if after_class:
-        changed.update(postclassStage="remediation" if typed_state.current(dialogue, after_class=True) else "completed",
+        changed.update(postclassStage="remediation",
                        feedback=typed_state.feedback(dict(session, dialogue=dialogue)))
     return changed
 
@@ -100,8 +89,8 @@ def submit(session, group_id, answers, *, open_dialogue):
 def answer_help(dialogue, *, after_class=False):
     """Answer alongside an unfinished card; return whether one was found."""
     focus = typed_state.current(dialogue, after_class=after_class)
-    pending = next((g for g in dialogue.get("question_groups", []) if focus and g["point_id"] == focus["id"]
-                    and len(g["results"]) < len(g["questions"])), None)
+    pending = next((g for g in reversed(dialogue.get("question_groups", [])) if focus and g["point_id"] == focus["id"]
+                    and (len(g["results"]) < len(g["questions"]) or dialogue.get("review_point_id") == focus["id"])), None)
     if pending:
         import json
         pending["assisted"] = True
