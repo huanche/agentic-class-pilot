@@ -13,7 +13,7 @@ from langgraph.types import Command
 from pydantic import BaseModel, ConfigDict, Field
 
 from backend.infrastructure import model
-from backend.teaching import typed_state
+from backend.teaching import typed_state, question_cards
 
 
 TYPE_PROMPTS = {
@@ -279,6 +279,7 @@ def run(dialogue, *, opening=False, after_class=False):
                 "stage": "postclass" if after_class else state["stage"],
                 "transition": state.get("transition"), "evaluation": evaluation,
                 "studentText": "" if opening else state["student_text"],
+                "questionGroups": [question_cards.public_group(g) for g in state.get("question_groups", [])],
                 "lastExchange": last_exchange,
                 "pointConversation": point_conversation,
                 "currentTask": typed_state.task(state, after_class=after_class),

@@ -34,3 +34,20 @@ def test_generated_questions_cannot_target_already_mastered_requirements():
     raw = '{"questions":[{"prompt":"题","options":["是","否"],"answer":0,"explanation":"依据","target_ids":["done"]}]}'
     with pytest.raises(ValueError):
         generate(point, lambda _system, _user: raw)
+
+
+@pytest.mark.parametrize("answer", range(4))
+def test_generation_shuffles_options_with_answer_key(monkeypatch, answer):
+    import json
+    from backend.teaching import question_cards
+    point = {"id": "p", "type": "memory", "requirements": [
+        {"id": "r", "text": "事实", "status": "unconfirmed"}]}
+    raw = {"questions": [{"prompt": "题", "options": ["一", "二", "三", "四"], "answer": answer,
+                          "explanation": "正确是事实", "target_ids": ["r"]}]}
+    import random
+    monkeypatch.setattr(random, "shuffle", lambda values: values.reverse())
+    group = generate(point, lambda *args: json.dumps(raw))
+    expected = 3 - answer
+    assert group["questions"][0]["answer"] == expected
+    assert group["questions"][0]["options"][expected] == raw["questions"][0]["options"][answer]
+    assert grade(group, {"q1": expected})["results"]["q1"]["correct"]

@@ -164,3 +164,47 @@ test('wrong answer and its original explanation stay on the teacher card after r
   await expect(page.getByText('回答错误 ×')).toBeVisible();
   await expect(page.getByText('解析：叶绿体含有叶绿素，能吸收光能。')).toBeVisible();
 });
+
+test('postclass resumes an unfinished classroom card after reload and submits through card command', async ({ page }) => {
+  const courses = [{ id: 'c', title: 'course', lessons: [{ id: 'lesson', title: 'continued card', week: 1 }] }];
+  let view = { sessionId: 's', userId: 'u', lessonId: 'lesson', courses, phase: 'done', typedTeaching: true,
+    postclassStage: 'remediation', agentStage: 'recall', stateVersion: 1, contentGeneration: 0,
+    currentTaskPublic: { taskId: 't' }, messages: [],
+    postclassMessages: [{ role: 'assistant', text: 'Continue original card', cardId: 'g' }],
+    questionGroups: [{ id: 'g', point_id: 'p', phase: 'discussion', active: true,
+      questions: [{ id: 'q1', prompt: 'first fact', options: ['yes', 'no'] },
+        { id: 'q2', prompt: 'second fact', options: ['right', 'wrong'] }],
+      results: { q1: { choice: 0, correct: true, answer: 0, explanation: 'first explanation' } } }] };
+  await page.route('**/api/session/**', async route => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith('/identity')) return route.fulfill({ json: { userId: 'u', csrfToken: 'test' } });
+    if (path.endsWith('/platform-entry')) return route.fulfill({ json: { platformUrl: '' } });
+    if (path.endsWith('/start')) return route.fulfill({ json: { sessionId: 'catalog', userId: 'u', phase: 'idle', courses, messages: [], stateVersion: 0 } });
+    if (path.endsWith('/commands')) {
+      const command = route.request().postDataJSON();
+      if (command.type === 'continue_after_class') {
+        return route.fulfill({ json: { commandId: command.commandId, status: 'completed', sessionView: view } });
+      }
+      expect(command.type).toBe('postclass_answer');
+      expect(command.payload.cardId).toBe('g');
+      expect(command.payload.answers).toEqual({ q2: 0 });
+      view = structuredClone(view);
+      view.stateVersion++;
+      view.questionGroups[0].results.q2 = { choice: 0, correct: true, answer: 0, explanation: 'second explanation' };
+      return route.fulfill({ json: { commandId: command.commandId, status: 'completed', sessionView: view } });
+    }
+    return route.fulfill({ json: view });
+  });
+  await page.goto('/app/?course_id=c');
+  await page.getByRole('button', { name: /continued card/ }).click();
+  await page.getByRole('button', { name: '继续巩固', exact: true }).click();
+  await expect(page.getByText('first explanation')).toBeVisible();
+  await page.reload();
+  await page.getByRole('button', { name: /continued card/ }).click();
+  await page.getByRole('button', { name: '继续巩固', exact: true }).click();
+  await expect(page.getByText('first explanation')).toBeVisible();
+  await page.getByRole('button', { name: '下一题 →' }).click();
+  await page.getByLabel('right', { exact: true }).check();
+  await page.getByRole('button', { name: '提交已完成的题目' }).click();
+  await expect(page.getByText('second explanation')).toBeVisible();
+});

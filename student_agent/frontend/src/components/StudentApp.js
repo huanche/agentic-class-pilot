@@ -56,7 +56,8 @@ export default function StudentApp() {
   const messages = [...learning.messages, ...(extra && phase === "discussion" && learning.messages.length <= extra.count ? [extra] : [])];
   const postclassMessages = [...learning.postclassMessages, ...(extra && phase === "postclass" && learning.postclassMessages.length <= extra.count ? [extra] : [])];
   const visibleGroups = typedFlow ? (learning.questionGroups || []).filter(group =>
-    !group.phase || group.phase === (phase === "postclass" ? "postclass" : "discussion")) : [];
+    !group.phase || group.phase === (phase === "postclass" ? "postclass" : "discussion")
+      || (phase === "postclass" && group.active)) : [];
   const conversationItems = conversationTimeline(phase === "postclass" ? postclassMessages : messages, visibleGroups);
   const historyItems = conversationTimeline(messages, typedFlow ? learning.questionGroups || [] : []);
   const [input, setInput] = useState("");
