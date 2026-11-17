@@ -25,6 +25,8 @@ export async function forwardTeacherCaptureRequest(route, options) {
   }
 }
 
+export const MAX_CONCURRENT_PAGES = 2;
+
 /** Record independent pages and persist progress even when a page cannot be captured. */
 export async function renderVideoJob(job, clips, previous, { isReady, capture, report }) {
   const byId = new Map(clips.map((clip) => [clip.sceneId, clip]));
@@ -38,37 +40,70 @@ export async function renderVideoJob(job, clips, previous, { isReady, capture, r
     ),
   );
   const pending = new Set(job.sceneId ? [job.sceneId] : byId.keys());
-  const status = (state, extra) =>
-    report(state, { completed: completed.size, failedPages: Object.fromEntries(failed), ...extra });
+  const activePages = new Map();
+  job.activePages = activePages;
+  let writes = Promise.resolve();
+  function status(state, extra) {
+    const [currentSceneId, phase] = activePages.entries().next().value ?? [];
+    const snapshot = {
+      completed: completed.size,
+      failedPages: Object.fromEntries(failed),
+      ...(currentSceneId && {
+        currentSceneId,
+        phase,
+        activePages: Object.fromEntries(activePages),
+      }),
+      ...extra,
+    };
+    // The two lanes can change phase concurrently. Keep disk snapshots in that order.
+    writes = writes.then(() => report(state, snapshot));
+    return writes;
+  }
 
-  while (true) {
-    const id = job.retries.values().next().value ?? pending.values().next().value;
-    if (id === undefined) {
-      if (completed.size === clips.length) await status('ready');
-      else
-        await status('failed', {
-          error: failed.size ? '部分页面转换失败，可以逐页重试' : '还有页面待转换',
-        });
-      if (!job.retries.size) return;
-      continue;
-    }
+  async function record(id, lane) {
     job.retries.delete(id);
     pending.delete(id);
-    if (completed.has(id)) continue;
     const clip = byId.get(id);
-    if (!clip) continue;
-    job.currentSceneId = id;
+    if (!clip || completed.has(id) || activePages.has(id)) return;
     failed.delete(id);
-    const phase = (value) => status('rendering', { currentSceneId: id, phase: value });
-    await phase('loading');
+    const phase = (value) => {
+      activePages.set(id, value);
+      return status('rendering');
+    };
     try {
-      await capture(clip, phase);
+      await phase('loading');
+      await capture(clip, phase, lane);
       completed.add(id);
     } catch (error) {
       failed.set(id, String(error?.message || error).slice(0, 800));
     } finally {
-      job.currentSceneId = undefined;
+      activePages.delete(id);
     }
     await status('rendering');
   }
+
+  async function runLane(lane) {
+    while (job.retries.size || pending.size) {
+      const id = job.retries.values().next().value ?? pending.values().next().value;
+      await record(id, lane);
+    }
+  }
+
+  // Publish the first clip before the other lanes contend for CPU and memory.
+  const first = clips[0];
+  if (!job.sceneId && first) await record(first.sceneId, 0);
+
+  do {
+    const lanes = await Promise.allSettled(
+      Array.from({ length: MAX_CONCURRENT_PAGES }, (_, lane) => runLane(lane)),
+    );
+    const rejected = lanes.find((lane) => lane.status === 'rejected');
+    if (rejected) throw rejected.reason;
+    if (completed.size === clips.length) await status('ready');
+    else {
+      await status('failed', {
+        error: failed.size ? '部分页面转换失败，可以逐页重试' : '还有页面待转换',
+      });
+    }
+  } while (job.retries.size);
 }

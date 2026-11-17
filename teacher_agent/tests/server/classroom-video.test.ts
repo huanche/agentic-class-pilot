@@ -77,11 +77,29 @@ describe('teacher video snapshots', () => {
       });
       await expect(preparedVideoForPublication('lesson')).rejects.toThrow('视频尚未转换完成');
     }
-    for (const clip of plan.clips)
-      await fs.writeFile(
-        videoPath('lesson', 'clips', `${clip.key}.mp4`),
-        'validated-worker-output',
-      );
+    await fs.writeFile(
+      videoPath('lesson', 'jobs', `${plan.version}.json`),
+      JSON.stringify({
+        state: 'rendering',
+        currentSceneId: 's1',
+        phase: 'encoding',
+        activePages: { s1: 'encoding', s2: 'recording', stale: 'loading' },
+      }),
+    );
+    expect((await videoStatus(plan)).activePages).toEqual({ s1: 'encoding', s2: 'recording' });
+    const [first, second] = plan.clips;
+    await fs.writeFile(videoPath('lesson', 'clips', `${first.key}.mp4`), 'validated-worker-output');
+    expect(await videoStatus(plan)).toMatchObject({
+      completed: 1,
+      activePages: { s2: 'recording' },
+      currentSceneId: 's2',
+      phase: 'recording',
+    });
+    await expect(preparedVideoForPublication('lesson')).rejects.toThrow('视频尚未转换完成');
+    await fs.writeFile(
+      videoPath('lesson', 'clips', `${second.key}.mp4`),
+      'validated-worker-output',
+    );
     expect(await videoStatus(plan)).toMatchObject({ state: 'ready', completed: 2 });
     expect((await videoStatus(plan)).phase).toBeUndefined();
     expect(await preparedVideoForPublication('lesson')).toBe(plan.version);

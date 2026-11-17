@@ -200,6 +200,11 @@ export function ClassroomVideoViewer({
   }, [embedded, fullscreen]);
   const preparationPhase = manifest?.status.phase;
   const loadingSource = preparationPhase === 'loading';
+  const phaseForPage = (id: string) => {
+    const status = manifest?.status;
+    return status?.activePages?.[id] ?? (status?.currentSceneId === id ? status.phase : undefined);
+  };
+  const pagePhase = scene ? phaseForPage(scene.id) : undefined;
   return (
     <main
       ref={viewer}
@@ -384,13 +389,7 @@ export function ClassroomVideoViewer({
               ) : scene?.type === 'slide' ? (
                 <div
                   className="flex min-h-52 flex-col items-center justify-center gap-3 p-5 text-center"
-                  data-video-preparation-phase={
-                    pageFailure
-                      ? 'failed'
-                      : workspace.status.currentSceneId === scene.id
-                        ? preparationPhase || 'queued'
-                        : 'queued'
-                  }
+                  data-video-preparation-phase={pageFailure ? 'failed' : pagePhase || 'queued'}
                   aria-busy={
                     !pageFailure && ['queued', 'rendering'].includes(workspace.status.state)
                   }
@@ -398,13 +397,13 @@ export function ClassroomVideoViewer({
                   <p className="font-semibold">
                     {pageFailure
                       ? '本页视频转换失败'
-                      : workspace.status.currentSceneId === scene.id
-                        ? loadingSource
-                          ? '正在加载本页原稿'
-                          : preparationPhase === 'encoding'
-                            ? '正在合成本页 MP4'
-                            : '正在录制本页'
-                        : '本页视频待转换'}
+                      : pagePhase === 'loading'
+                        ? '正在加载本页原稿'
+                        : pagePhase === 'encoding'
+                          ? '正在合成本页 MP4'
+                          : pagePhase === 'recording'
+                            ? '正在录制本页'
+                            : '本页视频待转换'}
                   </p>
                   {pageFailure && <p className="max-w-lg text-sm text-red-700">{pageFailure}</p>}
                   {draft && (pageFailure || workspace.status.state === 'failed') && (
@@ -516,7 +515,7 @@ export function ClassroomVideoViewer({
                           ? '可播放'
                           : Object.hasOwn(sceneFailures ?? {}, s.id)
                             ? '转换失败'
-                            : workspace.status.currentSceneId === s.id
+                            : phaseForPage(s.id)
                               ? '转换中'
                               : '待转换'}
                       </small>

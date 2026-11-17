@@ -95,17 +95,19 @@ test('standalone videos fit the window and fullscreen gives all available height
   await expect(page.getByRole('button', { name: '下一页' })).toBeVisible();
 });
 
-test('a teacher can play an existing video and retry one failed page while the rest are pending', async ({
+test('a teacher can play an existing video, see both active conversions, and retry a failed page', async ({
   page,
 }) => {
   let retry: unknown;
   const version = 'preview-test';
   const bytes = await createVideoFixture(page);
-  const scenes = ['可播放的第一页', '原稿打不开的第二页', '排队中的第三页'].map((title, index) => ({
-    id: 's' + (index + 1),
-    title,
-    type: 'slide',
-  }));
+  const scenes = ['可播放的第一页', '原稿打不开的第二页', '加载中的第三页', '合成中的第四页'].map(
+    (title, index) => ({
+      id: 's' + (index + 1),
+      title,
+      type: 'slide',
+    }),
+  );
   await page.route('**/api/classroom?**', (route) => {
     const request = route.request();
     if (request.method() === 'POST') {
@@ -123,11 +125,12 @@ test('a teacher can play an existing video and retry one failed page while the r
           status: {
             state: 'rendering',
             completed: 1,
-            total: 3,
+            total: 4,
             readySceneIds: ['s1'],
             failedPages: retry ? {} : { s2: '原稿播放器初始化失败' },
             currentSceneId: retry ? 's2' : 's3',
             phase: 'loading',
+            activePages: { [retry ? 's2' : 's3']: 'loading', s4: 'encoding' },
           },
           clips: [{ sceneId: 's1', url: '/first-test-fixture.webm' }],
         },
@@ -145,7 +148,11 @@ test('a teacher can play an existing video and retry one failed page while the r
   await expect.poll(() => video.evaluate((element) => element.videoWidth)).toBe(320);
   await page.getByRole('button', { name: '播放视频' }).click();
   await expect.poll(() => video.evaluate((element) => element.currentTime)).toBeGreaterThan(0);
-  await expect(page.getByText('已完成 1/3 页 · 失败 1 页')).toBeVisible();
+  await expect(page.getByText('已完成 1/4 页 · 失败 1 页')).toBeVisible();
+  await page.getByRole('button', { name: '课程目录' }).click();
+  await expect(page.getByRole('button', { name: /加载中的第三页.*转换中/ })).toBeVisible();
+  await page.getByRole('button', { name: /合成中的第四页.*转换中/ }).click();
+  await expect(page.getByText('正在合成本页 MP4')).toBeVisible();
   await page.getByRole('button', { name: '课程目录' }).click();
   await page.getByRole('button', { name: /原稿打不开的第二页.*转换失败/ }).click();
   await expect(page.locator('video')).toHaveCount(0);
