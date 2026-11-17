@@ -122,7 +122,11 @@ fetch('http://127.0.0.1:9010' + route, {
                 time.sleep(1)
             else:
                 raise RuntimeError('The in-flight recording did not finish after draining')
-            result = request('GET', '/health')[1]
+            for _ in range(15):
+                result = request('GET', '/health')[1]
+                if not result['active']:
+                    break
+                time.sleep(1)
             assert result['draining'] and not result['active'] and not result['queued']
             assert request('DELETE', '/drain') == [200, {'draining': False}]
             clip = f'/videos/{ROOM}/clips/{CLIP}.mp4'

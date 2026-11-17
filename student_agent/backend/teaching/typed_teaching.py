@@ -177,7 +177,7 @@ point_changed=true时，上一点未掌握就仅承接；不要回放其定义�
 上一点掌握时一句反馈即可；若学生纠正老师，要承认纠正。不能因达到限额而称为掌握，不追问已切走的题。
 ask：提出一个尚待学生完成的主要任务，不先解释待考答案；新点按当前类型整体组织任务，已有原题只补未确认的关键内容，不逐项盘问。
 clarify：只问一个具体定位问题，确认题意、概念或操作哪一步卡住；不要先讲完整解法，也不要用换比喻重放同一解释。
-unresolved_teacher_feedback非空表示学生对重复/讲法的反馈尚未被后续实际作答消解。即使本轮泛泛说“请解释当前卡住的一步”，也不能断言学生已经选定某个卡点；如果刚问过两个选项而学生未选择，改用一个短小具体情境，给一个实际可作答的判断、选取或操作任务定位。不要再问“是A还是B卡住”、不要用小例子包装相同的二选一定位，也不重播被反馈过的段落。课后重开也遵循该反馈；可简短衔接未完成的小任务，不重放其完整说明。
+unresolved_teacher_feedback非空表示学生对重复/讲法的反馈尚未被后续实际作答消解。仅当本轮action为clarify时，借一个短小具体情境定位卡点，不反复问“是A还是B卡住”。当action为concept_hint时给一轮完整启发；当action为concept_explain时直接给答案、解释原因并用例子帮助记忆，不再定位卡点、要求猜测或强制复述。这两种concept动作优先于澄清规则，课后重开也遵循该优先级。
 explain：讲清具体求助的一步，不代答其余尚未涉及要求。
 correct：纠正实际错误，保留已做对部分，不要求复述刚讲的纠正。
 respond：只如实回应控制请求；不提供未请求的整题讲解或追问。
@@ -297,6 +297,7 @@ def run(dialogue, *, opening=False, after_class=False):
             try:
                 applied = typed_state.advance(runtime.state["dialogue"], intent,
                     assessment.model_dump() if assessment else None, after_class=after_class,
+                    count_attempt=assessment is not None or runtime.state["dialogue"].get("cards_version") != 1,
                     observation=observation.model_dump() if natural and observation else None)
             except typed_state.InvalidObservation as error:
                 raise ToolException(str(error)) from error
@@ -325,6 +326,8 @@ def run(dialogue, *, opening=False, after_class=False):
                 action = typed_state.teaching_plan(state, after_class=after_class)["action"]
                 action_instruction = {
                     "ask": "只提出一个主要任务，不提前给答案。本点无原题时组织整体任务；已有原题时简短反馈后直接问未确认的关键内容，不先逐条讲答案再要求复述。切点时仍先完成必要的上一问收尾。",
+                    "concept_hint": "针对学生尚未讲清的关系，给一轮完整、具体的提示和启发，帮助回想，然后邀请一次尝试。不要连续拆成多个提问，也不要逼迫学生猜。",
+                    "concept_explain": "直接给出当前卡点的答案，解释原因、关键关系和必要步骤，可用贴近课程的例子帮助记忆。讲清后结束，不再要求学生立即复述或继续猜。老师讲解不是学生掌握的证据。",
                     "clarify": "只提出一个具体的卡点定位问题，借最近的任务确认学生卡在题意、先修概念还是某一步操作；不要猜定他卡在哪，不要附整份实现或先讲完答案再问。",
                     "explain": "直接讲清学生请求帮助的具体一步，不要求复述刚给出的解释，也不只换字母数字重问同题。若有自然的下一步，让学生完成尚未示范的操作；否则本轮可以只讲解，不强制加问题。",
                     "correct": "指出具体错误并讲清关键一步，不要求照着重述纠正内容；只在确有必要时留下尚未示范的下一步任务。",
@@ -348,6 +351,12 @@ def run(dialogue, *, opening=False, after_class=False):
                         "若留下下一步操作，它必须是学生尚未完成且本轮没有直接演示出答案的一步；本轮已讲出的结论不能再要求立即复述。"
                         "design的capability是整点目标，不能把宽泛的‘不会写程序’当作必须再展示完整程序的具体卡点。学生明确要求完整示范时可以提供，但之后仍无进展就定位卡点。"
                     )
+                if action == "concept_hint":
+                    action_instruction += "本轮优先执行concept_hint：给一次完整提示并邀请尝试，不执行只定位卡点的指令。"
+                elif action == "concept_explain":
+                    action_instruction += "本轮优先执行concept_explain：直接给答案并展开解释，不再问卡点或要求作答。"
+                if focus and focus["type"] == "concept" and action == "explain":
+                    action_instruction += "学生已经求助：直接给出相关答案并展开原因、关系和例子，不再让他猜，不要求复述。"
                 plan = teaching_context["teaching_plan"]
                 action_instruction += (
                     "程序确认的point_changed决定是否实际换点；false时不得宣布进入下一点。"

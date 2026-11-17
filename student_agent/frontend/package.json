@@ -2,7 +2,21 @@
   "name": "student-agent-frontend",
   "version": "0.1.0",
   "private": true,
-  "scripts": { "dev": "next dev", "build": "next build", "lint": "eslint .", "test:unit": "node --test tests/unit/*.test.mjs", "test:e2e": "playwright test" },
-  "dependencies": { "next": "latest", "react": "latest", "react-dom": "latest" },
-  "devDependencies": { "@playwright/test": "^1.63.0", "eslint": "latest", "eslint-config-next": "latest" }
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "lint": "eslint .",
+    "test:unit": "node --test tests/unit/*.test.mjs",
+    "test:e2e": "playwright test"
+  },
+  "dependencies": {
+    "next": "^16.4.6",
+    "react": "latest",
+    "react-dom": "latest"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "eslint": "latest",
+    "eslint-config-next": "^16.4.6"
+  }
 }

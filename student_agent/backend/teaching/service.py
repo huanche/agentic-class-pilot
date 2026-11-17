@@ -24,6 +24,7 @@ from backend.teaching.postclass import opening_task
 from backend.contracts import SessionError
 from backend.teaching import dynamic_teaching
 from backend.teaching import typed_state, typed_teaching
+from backend.teaching import question_cards, card_teaching, learner_feedback
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +35,7 @@ def _model_messages(messages):
 
 
 def new_dialogue(points: list[dict]) -> dict:
-    return dict(initial_state(points), curriculum_version=CURRICULUM_VERSION)
+    return dict(initial_state(points), curriculum_version=CURRICULUM_VERSION, cards_version=1)
 
 
 def describe(dialogue: dict | None) -> dict:
@@ -55,7 +56,7 @@ def prepare(materials: list[dict], course_id: str | None = None, lesson_id: str 
                 "candidateCount": result.candidate_count,
                 "repairAttempted": result.repair_attempted, "modelCalls": result.model_calls,
                 "duplicateCount": result.duplicate_count}
-    return dict(initial_state(result.points), curriculum_version=CURRICULUM_VERSION), coverage
+    return new_dialogue(result.points), coverage
 
 
 def current_feedback(session: dict) -> dict | None:
@@ -153,10 +154,55 @@ def is_typed(session):
 
 def _typed_run(dialogue, **kwargs):
     try:
-        return typed_teaching.run(dialogue, **kwargs)
+        focus = typed_state.current(dialogue, after_class=kwargs.get("after_class", False))
+        if dialogue.get("cards_version") == 1 and kwargs.get("opening") and focus and focus["type"] == "memory":
+            result = deepcopy(dialogue)
+            card_teaching.ensure_card(result, kwargs.get("after_class", False))
+            return result
+        result = typed_teaching.run(dialogue, **kwargs)
+        card_teaching.ensure_card(result, kwargs.get("after_class", False))
+        return result
     except Exception as error:
         logger.exception("三类型教学运行失败")
         raise SessionError(503, "课堂导师暂不可用，进度未改变，请重试", code="MODEL_UNAVAILABLE") from error
+
+
+def card_turn(session, group_id, answers):
+    return card_teaching.submit(session, group_id, answers)
+
+
+def _typed_assistant(dialogue, phase, *, after_class=False):
+    message = {"role": "assistant", "text": dialogue["reply"], "phase": phase}
+    focus = typed_state.current(dialogue, after_class=after_class)
+    group = next((group for group in reversed(dialogue.get("question_groups", []))
+                  if focus and group["point_id"] == focus["id"]
+                  and group.get("phase", "discussion") == ("postclass" if after_class else "discussion")), None)
+    if group:
+        message["cardId"] = group["id"]
+    return message
+
+
+def navigate_point_turn(session, direction="next"):
+    if not is_typed(session):
+        raise SessionError(409, "当前学习流程不支持切换知识点")
+    after_class = session["phase"] == "done"
+    try:
+        dialogue = (typed_state.skip_to_next(session["dialogue"], after_class=after_class)
+                    if direction == "next" else typed_state.go_to_previous(session["dialogue"], after_class=after_class))
+    except ValueError as error:
+        raise SessionError(409, str(error), code="INVALID_ACTION") from error
+    focus = typed_state.current(dialogue, after_class=after_class)
+    pending = next((g for g in dialogue.get("question_groups", []) if g["point_id"] == focus["id"]
+                    and len(g["results"]) < len(g["questions"])), None)
+    if pending:
+        dialogue["reply"] = f"继续学习「{focus['title']}」，可以接着完成这组题。"
+    elif dialogue.get("review_point_id") == focus["id"]:
+        dialogue["reply"] = f"已回到「{focus['title']}」，可以查看之前的内容并提问。"
+    else:
+        dialogue = _typed_run(dialogue, opening=True, after_class=after_class)
+    phase = "postclass-remediation" if after_class else dialogue["stage"]
+    messages = session["messages"] + [_typed_assistant(dialogue, phase, after_class=after_class)]
+    return {"dialogue": dialogue, "messages": messages}
 
 
 def _typed_open(session, *, after_class=False):
@@ -165,7 +211,7 @@ def _typed_open(session, *, after_class=False):
     dialogue = _typed_run(dialogue, opening=True, after_class=after_class)
     phase = "postclass-remediation" if after_class else dialogue["stage"]
     changed = {"dialogue": dialogue, "messages": session["messages"] + [
-        {"role": "assistant", "text": dialogue["reply"], "phase": phase}]}
+        _typed_assistant(dialogue, phase, after_class=after_class)]}
     if after_class:
         changed["postclassStage"] = "remediation"
     else:
@@ -177,20 +223,24 @@ def _typed_turn(session, text, *, after_class=False):
     if after_class:
         if session["phase"] != "done" or session.get("postclassStage") != "remediation":
             raise SessionError(409, "请先进入课后巩固")
-    elif session["phase"] != "discussion" or session["dialogue"]["stage"] == "wrapup":
+    elif session["phase"] != "discussion" or (session["dialogue"]["stage"] == "wrapup"
+            and not session["dialogue"].get("review_point_id")):
         raise SessionError(409, "当前不在知识点学习阶段")
     dialogue = deepcopy(session["dialogue"])
     student = {"role": "student", "text": text.strip(),
                "phase": "postclass-remediation" if after_class else dialogue["stage"]}
     dialogue["student_text"] = student["text"]
     dialogue["messages"] = _model_messages(session["messages"] + [student])
-    dialogue = _typed_run(dialogue, after_class=after_class)
-    complete = after_class and typed_state.current(dialogue, after_class=True) is None
-    assistant = {"role": "assistant", "text": dialogue["reply"],
-                 "phase": "postclass-completed" if complete else "postclass-remediation" if after_class else dialogue["stage"]}
+    learner_feedback.record(dialogue, after_class=after_class)
+    if not card_teaching.answer_help(dialogue, after_class=after_class):
+        dialogue = _typed_run(dialogue, after_class=after_class)
+    complete = after_class and all(p["status"] == "mastered" for p in dialogue["points"])
+    assistant = _typed_assistant(dialogue,
+                 "postclass-completed" if complete else "postclass-remediation" if after_class else dialogue["stage"],
+                 after_class=after_class)
     changed = {"dialogue": dialogue, "messages": session["messages"] + [student, assistant]}
     if after_class:
-        changed.update(postclassStage="completed" if complete else "remediation",
+        changed.update(postclassStage="completed" if complete and not dialogue.get("review_point_id") else "remediation",
                        feedback=typed_state.feedback(dict(session, dialogue=dialogue)))
     return changed
 
@@ -219,7 +269,14 @@ def _dynamic_call(function, *args, **kwargs):
 def describe_session(session):
     if is_typed(session):
         view = describe(session["dialogue"])
-        view["afterClassComplete"] = typed_state.current(session["dialogue"], after_class=True) is None
+        view["questionGroups"] = [question_cards.public_group(g) for g in session["dialogue"].get("question_groups", [])]
+        current = typed_state.current(session["dialogue"], after_class=session.get("phase") == "done")
+        for group in view["questionGroups"]:
+            group["active"] = bool(current and current["id"] == group["point_id"])
+        view["afterClassComplete"] = all(p["status"] == "mastered" for p in session["dialogue"]["points"])
+        view["reviewingCard"] = bool(session["dialogue"].get("review_point_id"))
+        view["canGoNextPoint"] = typed_state.next_point(session["dialogue"], after_class=session.get("phase") == "done") is not None
+        view["canGoPreviousPoint"] = typed_state.previous_point(session["dialogue"], after_class=session.get("phase") == "done") is not None
         return view
     return _dynamic_call(dynamic_teaching.describe, session) if is_dynamic(session) else describe(session.get("dialogue"))
 

@@ -53,6 +53,11 @@ def _credential(session, supplied=None) -> PlatformIdentity | str | None:
 def _browser_snapshot(session: dict) -> str:
     payload = {key: value for key, value in session.items()
                if key not in {"lock", "launchToken"}}
+    if (session.get("dialogue") or {}).get("question_groups") and not session.get("context"):
+        # Signed base64 is readable, so private keys cannot be included.
+        from copy import deepcopy
+        payload = deepcopy(payload)
+        payload["dialogue"].pop("question_groups", None)
     if session.get("context"):
         payload = {"id": session["id"], "context": {key: session["context"][key]
                     for key in ("userId", "courseId", "publication")}, "courses": [], "messages": [],

@@ -20,6 +20,7 @@ def session(*types):
     dialogue = service.new_dialogue(points)
     # These archived fixtures exercise the earlier, pinned assessment protocol.
     dialogue.pop("mastery_version", None)
+    dialogue.pop("cards_version", None)  # Archived pre-card session compatibility.
     return {"id": "typed", "phase": "video", "lessonId": "lesson", "videoRevision": "rev",
             "courses": [], "messages": [], "preparation": "ready", "stateVersion": 1,
             "dialogue": dialogue}
@@ -328,6 +329,7 @@ def test_natural_reply_does_not_receive_previous_points_conversation(monkeypatch
 @pytest.mark.parametrize("student_text", ["好，然后呢", "不知道，你直接说吧"])
 def test_switch_distinguishes_continuation_from_help_without_replaying_teacher(monkeypatch, student_text):
     state = service.new_dialogue(compile_points(submit_knowledge_points(points=[MEMORY, CONCEPT])))
+    state.pop("cards_version", None)  # Prior sessions counted every message.
     previous_reply = "定义形式已讲清：存储类型 数据类型 数组名[整型常量表达式]。"
     point = state["points"][0]
     point.update(recall_attempts=4, attempts=4, latest_question=previous_reply,

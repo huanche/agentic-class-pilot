@@ -1687,7 +1687,7 @@ export function CourseWorkspaceExplorer({
                     );
                 }}
               />
-              {selectedFile?.artifact?.type === 'lesson-courseware' &&
+              {selectedFile?.artifact?.type === 'lesson-courseware' && !selectedFile.artifact.coursewareTrial &&
                 (course.status === 'active' &&
                 selectedFile.artifact.classPublicationId &&
                 selectedFile.artifact.publicationPlacement ? (
@@ -1755,14 +1755,16 @@ export function CourseWorkspaceExplorer({
                   setOpeningVideo(true);
                   void (async () => {
                     try {
-                      if (!classroomFrameRef.current) throw new Error('请等待课件编辑器加载完成');
-                      await flushEmbeddedClassroom(classroomFrameRef.current, id);
-                      popup.location.replace(`/classroom-player/${encodeURIComponent(id)}?video=1&draft=1&from=${encodeURIComponent(courseWorkspaceUrl(course.id))}`);
+                      if (!artifact.coursewareTrial) {
+                        if (!classroomFrameRef.current) throw new Error('请等待课件编辑器加载完成');
+                        await flushEmbeddedClassroom(classroomFrameRef.current, id);
+                      }
+                      popup.location.replace(`/classroom-player/${encodeURIComponent(id)}?video=1&draft=1${artifact.coursewareTrial ? '&trial=1' : ''}&from=${encodeURIComponent(courseWorkspaceUrl(course.id))}`);
                     } catch (e) { popup.close(); setTreeMessage(e instanceof Error ? e.message : String(e)); }
                     finally { setOpeningVideo(false); }
                   })();
                 }}>
-                  {openingVideo ? '正在保存…' : '全屏打开'}
+                  {openingVideo ? '正在保存…' : selectedFile.artifact.coursewareTrial ? '试用预览' : '全屏打开'}
                   <ExternalLink className="ml-1 size-3.5" />
                 </Button>
               )}

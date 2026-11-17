@@ -77,11 +77,29 @@ describe('teacher video snapshots', () => {
       });
       await expect(preparedVideoForPublication('lesson')).rejects.toThrow('视频尚未转换完成');
     }
-    for (const clip of plan.clips)
-      await fs.writeFile(
-        videoPath('lesson', 'clips', `${clip.key}.mp4`),
-        'validated-worker-output',
-      );
+    await fs.writeFile(
+      videoPath('lesson', 'jobs', `${plan.version}.json`),
+      JSON.stringify({
+        state: 'rendering',
+        currentSceneId: 's1',
+        phase: 'encoding',
+        activePages: { s1: 'encoding', s2: 'recording', stale: 'loading' },
+      }),
+    );
+    expect((await videoStatus(plan)).activePages).toEqual({ s1: 'encoding', s2: 'recording' });
+    const [first, second] = plan.clips;
+    await fs.writeFile(videoPath('lesson', 'clips', `${first.key}.mp4`), 'validated-worker-output');
+    expect(await videoStatus(plan)).toMatchObject({
+      completed: 1,
+      activePages: { s2: 'recording' },
+      currentSceneId: 's2',
+      phase: 'recording',
+    });
+    await expect(preparedVideoForPublication('lesson')).rejects.toThrow('视频尚未转换完成');
+    await fs.writeFile(
+      videoPath('lesson', 'clips', `${second.key}.mp4`),
+      'validated-worker-output',
+    );
     expect(await videoStatus(plan)).toMatchObject({ state: 'ready', completed: 2 });
     expect((await videoStatus(plan)).phase).toBeUndefined();
     expect(await preparedVideoForPublication('lesson')).toBe(plan.version);
@@ -142,6 +160,39 @@ describe('teacher video snapshots', () => {
       JSON.stringify({ state: 'ready' }),
     );
     expect((await videoStatus(p)).state).toBe('failed');
+  });
+  it('retains partial playback and submits only an explicit retry for a failed draft', async () => {
+    lesson();
+    await audio();
+    const { prequeueClassroomVideo, prepareClassroomVideo, videoPath, videoStatus } =
+      await import('@/lib/server/classroom-video');
+    const fetchMock = vi.mocked(fetch);
+    await prequeueClassroomVideo('lesson', 'owner', 'https://example.com');
+    const plan = await prepareClassroomVideo('lesson', 'owner', 'https://example.com');
+    await fs.mkdir(videoPath('lesson', 'clips'), { recursive: true });
+    await fs.mkdir(videoPath('lesson', 'jobs'), { recursive: true });
+    await fs.writeFile(videoPath('lesson', 'clips', plan.clips[0].key + '.mp4'), 'ready');
+    await fs.writeFile(
+      videoPath('lesson', 'jobs', plan.version + '.json'),
+      JSON.stringify({ state: 'failed', failedPages: { s1: 'stale', s2: 'unavailable' } }),
+    );
+    expect(await videoStatus(plan)).toMatchObject({
+      state: 'failed',
+      readySceneIds: ['s1'],
+      failedPages: { s2: 'unavailable' },
+    });
+    fetchMock.mockClear();
+    await prepareClassroomVideo('lesson', 'owner', 'https://example.com');
+    expect(fetchMock).not.toHaveBeenCalled();
+    await prepareClassroomVideo('lesson', 'owner', 'https://example.com', 's2');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toMatchObject({
+      sceneId: 's2',
+      version: plan.version,
+    });
+    await expect(
+      prepareClassroomVideo('lesson', 'owner', 'https://example.com', 'unknown'),
+    ).rejects.toThrow('找不到要重试的视频页面');
   });
   it('ignores layout measurement drift for native PPTX but invalidates a real canvas edit', async () => {
     const c = lesson();

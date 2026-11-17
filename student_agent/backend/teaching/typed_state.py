@@ -1,6 +1,6 @@
 """Program-owned progress for typed lessons. No model, storage or transport calls."""
 from copy import deepcopy
-from backend.teaching import requirements
+from backend.teaching import requirements, concept_guidance
 
 VERSION = 4
 
@@ -75,6 +75,9 @@ def teaching_plan(state, *, after_class=False):
         # Preserve any real learning evidence, but do not ignore the coexisting
         # control request merely because mastery moved the program to a new point.
         action = "respond"
+    action = concept_guidance.select_action(
+        point, pending, evaluation, state.get("student_text", ""),
+        changed=changed, fallback=action)
     return {"target_ids": [r["id"] for r in pending], "action": action,
             "requirements": [r["text"] for r in pending], "point_changed": changed,
             "unresolved_teacher_feedback": unresolved_feedback,
@@ -82,12 +85,17 @@ def teaching_plan(state, *, after_class=False):
                 (p["assessment_history"][-1]["result"] for p in state["points"]
                  if p["id"] == previous_id and p["assessment_history"]), None),
             "control": {"request": control, "applied": bool(after_class and changed and control == "skip")},
-            "solicitation": "none" if action == "respond" or (not changed and action != "clarify" and (
+            "solicitation": "none" if action in {"respond", "concept_explain"} else "one_task" if action == "concept_hint" else "none" if (not changed and action != "clarify" and (
                 observation.get("help_quote") or action == "correct"
                 or any(r["status"] == "needs_help" for r in pending))) else "one_task"}
 
 
 def current(state, *, after_class=False):
+    review_id = state.get("review_point_id")
+    if review_id:
+        review = next((p for p in state["points"] if p["id"] == review_id), None)
+        if review:
+            return review
     if after_class:
         selected = state.get("postclass_point_id")
         if selected:
@@ -95,11 +103,63 @@ def current(state, *, after_class=False):
             if point:
                 return point
         return next((p for p in state["points"] if p["status"] != "mastered"), None)
+    selected = state.get("selected_point_id")
+    if selected and state["stage"] in {"recall", "reinforce"}:
+        point = next((p for p in state["points"] if p["id"] == selected and p["status"] != "mastered"), None)
+        if point:
+            return point
     if state["stage"] == "recall":
         return next((p for p in state["points"] if not p["recall_done"]), None)
     if state["stage"] == "reinforce":
         return next((p for p in state["points"] if p["status"] != "mastered" and not p["reinforce_done"]), None)
     return None
+
+
+def next_point(state, *, after_class=False):
+    focus = current(state, after_class=after_class)
+    if not focus:
+        return None
+    index = state["points"].index(focus)
+    return state["points"][index + 1] if index + 1 < len(state["points"]) else None
+
+
+def previous_point(state, *, after_class=False):
+    focus = current(state, after_class=after_class)
+    if not focus:
+        return None
+    index = state["points"].index(focus)
+    return state["points"][index - 1] if index else None
+
+
+def skip_to_next(state, *, after_class=False):
+    result = deepcopy(state)
+    focus = current(result, after_class=after_class)
+    following = next_point(result, after_class=after_class)
+    if not focus or not following:
+        raise ValueError("没有下一个待学习知识点")
+    if after_class:
+        result["postclass_point_id"] = following["id"]
+    else:
+        field = "recall_done" if result["stage"] == "recall" else "reinforce_done"
+        if focus["status"] != "mastered":
+            focus[field] = True
+        if result["stage"] == "recall" and focus["status"] != "mastered":
+            focus["reinforcement_required"] = True
+        result["selected_point_id"] = following["id"]
+    result["review_point_id"] = following["id"] if following["status"] == "mastered" else None
+    result["transition"] = "manual_next"
+    result["current_task"] = task(result, after_class=after_class)
+    return result
+
+
+def go_to_previous(state, *, after_class=False):
+    result = deepcopy(state)
+    previous = previous_point(result, after_class=after_class)
+    if not previous:
+        raise ValueError("没有上一个知识点")
+    result["review_point_id"] = previous["id"]
+    result["current_task"] = task(result, after_class=after_class)
+    return result
 
 
 def task(state, *, after_class=False):
@@ -108,7 +168,7 @@ def task(state, *, after_class=False):
              "question": point["task_question"]} if point else None)
 
 
-def advance(state, intent, assessment, *, after_class=False, observation=None):
+def advance(state, intent, assessment, *, after_class=False, observation=None, count_attempt=True):
     result = deepcopy(state)
     point = current(result, after_class=after_class)
     if not point:
@@ -145,7 +205,7 @@ def advance(state, intent, assessment, *, after_class=False, observation=None):
     else:
         counter = "recall_attempts" if old_stage == "recall" else "reinforce_attempts"
         stage = old_stage
-    point[counter] = point.get(counter, 0) + 1
+    point[counter] = point.get(counter, 0) + int(count_attempt)
     point["attempts"] = point["recall_attempts"] + point["reinforce_attempts"]
     point["assessment_history"].append({"stage": stage, "round": point[counter],
         "result": outcome, "evidence": evidence, "studentText": result["student_text"]})
@@ -169,6 +229,7 @@ def advance(state, intent, assessment, *, after_class=False, observation=None):
                           else "clarify" if outcome == "unclear" else "hint")
     result["transition"] = "continue"
     if outcome == "mastered":
+        result["selected_point_id"] = None
         point.update(recall_done=True, reinforce_done=True, reinforcement_required=False,
                      mastered_in=stage, gaps=[])
         result["transition"] = "mastered_next"
@@ -183,6 +244,7 @@ def advance(state, intent, assessment, *, after_class=False, observation=None):
             result["stage"] = "reinforce" if any(
                 p["status"] != "mastered" and not p["reinforce_done"] for p in result["points"]) else "wrapup"
         if result["stage"] != old_stage:
+            result["selected_point_id"] = None
             result["transition"] = "enter_" + result["stage"]
         if result["stage"] == "wrapup":
             result["completion_reason"] = ("all_mastered" if all(p["status"] == "mastered" for p in result["points"])

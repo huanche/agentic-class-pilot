@@ -130,6 +130,9 @@ export interface SceneOutline {
   description: string; // 1-2 sentences describing the purpose
   keyPoints: string[]; // 3-5 core key points
   teachingObjective?: string;
+  learningRequirement?: 'master' | 'familiar' | 'recognize';
+  checkpoint?: { instruction: string };
+  checkpointFor?: string;
   estimatedDuration?: number; // seconds
   /** App-normalized automatic playback budget; absent on legacy/manual activities. */
   durationBudget?: { targetSeconds: number };

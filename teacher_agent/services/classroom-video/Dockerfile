@@ -8,7 +8,7 @@ RUN sed -i "s|http://deb.debian.org|${DEBIAN_MIRROR}|g" /etc/apt/sources.list.d/
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --registry=${NPM_REGISTRY} --no-audit --no-fund
-COPY server.mjs readiness.mjs ./
+COPY server.mjs readiness.mjs jobs.mjs ./
 RUN groupadd --gid 1001 renderer && useradd --uid 1001 --gid 1001 --create-home renderer \
  && mkdir -p /videos && chown renderer:renderer /videos
 USER renderer

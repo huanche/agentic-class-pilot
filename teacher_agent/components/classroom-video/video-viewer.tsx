@@ -10,6 +10,7 @@ import { postPlayerHostEvent } from '@/lib/integration/player-host-events';
 import { postSaasHostMessage } from '@/lib/integration/host-bridge';
 import { InteractiveIframeHost } from '@/components/scene-renderers/InteractiveIframeHost';
 import styles from './course-video-player.module.css';
+import { TrialNarrationReview } from './trial-narration-review';
 import { CoursePageNavigation } from './course-page-navigation';
 
 const SCENE_LABELS = { slide: '课程视频', interactive: '互动练习', quiz: '测验', pbl: '项目实践' };
@@ -20,14 +21,17 @@ export function ClassroomVideoViewer({
   returnTo,
   initial,
   embedded = false,
+  trial = false,
 }: {
   id: string;
   draft: boolean;
   returnTo?: string | null;
   initial?: ClassroomVideoManifest;
   embedded?: boolean;
+  trial?: boolean;
 }) {
   const [manifest, setManifest] = useState(initial);
+  const [previewRequest, setPreviewRequest] = useState<{ retry?: true | string }>({});
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [index, setIndex] = useState(0);
@@ -66,28 +70,34 @@ export function ClassroomVideoViewer({
         : { ...current, ...patch },
     );
   }, []);
-  const prepare = useCallback(async () => {
-    setBusy(true);
-    setError('');
-    try {
-      const r = await fetch(`/api/classroom?id=${encodeURIComponent(id)}`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ operation: 'prepare-video' }),
-      });
-      const body = await r.json();
-      if (!r.ok) throw new Error(body.details || body.error || '视频转换失败');
-      return body.version as string;
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
-  }, [id]);
+  const prepare = useCallback(
+    async (retry?: true | string) => {
+      setBusy(true);
+      setError('');
+      try {
+        const r = await fetch(`/api/classroom?id=${encodeURIComponent(id)}`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            operation: retry ? 'retry-video' : 'prepare-video',
+            ...(typeof retry === 'string' && { sceneId: retry }),
+          }),
+        });
+        const body = await r.json();
+        if (!r.ok) throw new Error(body.details || body.error || '视频转换失败');
+        return body.version as string;
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setBusy(false);
+      }
+    },
+    [id],
+  );
   useEffect(() => {
     let cancelled = false,
       timer: ReturnType<typeof setTimeout>;
-    const poll = async (version?: string) => {
+    const poll = async (version?: string, schedule = true) => {
       try {
         const r = await fetch(
           `/api/classroom?id=${encodeURIComponent(id)}&video=${draft ? 'draft' : 'published'}${version ? `&version=${version}` : ''}`,
@@ -97,21 +107,28 @@ export function ClassroomVideoViewer({
         if (!r.ok) throw new Error(body.details || body.error || '视频读取失败');
         if (cancelled) return;
         setManifest(body.manifest || undefined);
-        if (body.manifest && ['queued', 'rendering'].includes(body.manifest.status.state))
+        if (
+          schedule &&
+          body.manifest &&
+          ['queued', 'rendering'].includes(body.manifest.status.state)
+        )
           timer = setTimeout(() => void poll(version), 2500);
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : String(e));
       }
     };
     void (async () => {
-      const version = draft ? await prepare() : undefined;
+      // An automatically prepared draft may already have playable pages.
+      if (draft && !previewRequest.retry) await poll(undefined, false);
+      if (cancelled) return;
+      const version = draft ? await prepare(previewRequest.retry) : undefined;
       if (!cancelled) await poll(version);
     })();
     return () => {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [id, draft, prepare]);
+  }, [id, draft, prepare, previewRequest]);
   useEffect(() => {
     if (!manifest) return;
     useStageStore.setState({
@@ -123,7 +140,16 @@ export function ClassroomVideoViewer({
     });
   }, [manifest, index]);
   const scene = manifest?.scenes[index];
-  const clip = manifest?.clips.find((c) => c.sceneId === scene?.id);
+  const ready = manifest?.status.state === 'ready';
+  const clip =
+    ready || (scene && draft && manifest?.status.readySceneIds?.includes(scene.id))
+      ? manifest?.clips.find((c) => c.sceneId === scene?.id)
+      : undefined;
+  const workspace = manifest && (draft || ready) ? manifest : undefined;
+  const sceneFailures = manifest?.status.failedPages;
+  const failedCount = Object.keys(sceneFailures ?? {}).length;
+  const pageFailure =
+    scene && Object.hasOwn(sceneFailures ?? {}, scene.id) ? sceneFailures?.[scene.id] : undefined;
   const navigate = (next: number) => {
     setIndex(next);
     setAutoPlay(true);
@@ -153,8 +179,7 @@ export function ClassroomVideoViewer({
       postPlayerHostEvent('PLAYBACK_ENDED');
     }
   };
-  const ready = manifest?.status.state === 'ready';
-  const theater = !embedded && ready && Boolean(clip);
+  const theater = !embedded && Boolean(clip);
   const ratio = videoSize && videoSize.url === clip?.url ? videoSize.ratio : 16 / 9;
   useEffect(() => {
     if (!embedded || !ready) return;
@@ -175,6 +200,11 @@ export function ClassroomVideoViewer({
   }, [embedded, fullscreen]);
   const preparationPhase = manifest?.status.phase;
   const loadingSource = preparationPhase === 'loading';
+  const phaseForPage = (id: string) => {
+    const status = manifest?.status;
+    return status?.activePages?.[id] ?? (status?.currentSceneId === id ? status.phase : undefined);
+  };
+  const pagePhase = scene ? phaseForPage(scene.id) : undefined;
   return (
     <main
       ref={viewer}
@@ -205,7 +235,7 @@ export function ClassroomVideoViewer({
             {(embedded && scene?.title) || manifest?.title || '课程课堂'}
           </strong>
         )}
-        {ready && (
+        {workspace && (
           <button
             type="button"
             className={styles.catalogueToggle}
@@ -218,12 +248,23 @@ export function ClassroomVideoViewer({
           </button>
         )}
       </header>
-      {error && !ready && (
+      {draft && (trial || manifest?.stage.coursewareTrial) && (
+        <TrialNarrationReview
+          classroomId={id}
+          index={index}
+          onSelect={(next) => {
+            setIndex(next);
+            setAutoPlay(false);
+          }}
+          onSaved={() => setPreviewRequest({})}
+        />
+      )}
+      {error && (!ready || !clip) && (
         <p role="alert" className="my-4 rounded-xl bg-red-50 p-4 text-red-700">
           {error}
         </p>
       )}
-      {!ready ? (
+      {!workspace ? (
         <section
           className="mx-auto mt-20 max-w-xl rounded-2xl border bg-white p-8"
           data-video-preparation-phase={
@@ -279,7 +320,7 @@ export function ClassroomVideoViewer({
             <button
               disabled={busy}
               className="mt-5 rounded-lg bg-[#a51b57] px-4 py-2 text-white"
-              onClick={() => location.reload()}
+              onClick={() => setPreviewRequest({ retry: true })}
             >
               重试未完成视频
             </button>
@@ -287,13 +328,35 @@ export function ClassroomVideoViewer({
         </section>
       ) : (
         <div className={styles.viewerWorkspace}>
+          {draft && !ready && (
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border bg-background px-4 py-2 text-sm">
+              <span>
+                已完成 {workspace.status.completed}/{workspace.status.total} 页
+                {failedCount > 0 && ' · 失败 ' + failedCount + ' 页'}
+                {workspace.status.state === 'failed' &&
+                  !failedCount &&
+                  workspace.status.error &&
+                  ' · ' + workspace.status.error}
+              </span>
+              {workspace.status.state === 'failed' && (
+                <button
+                  type="button"
+                  disabled={busy}
+                  className="font-medium text-primary underline-offset-4 hover:underline disabled:opacity-60"
+                  onClick={() => setPreviewRequest({ retry: true })}
+                >
+                  重试未完成视频
+                </button>
+              )}
+            </div>
+          )}
           {!theater && (
             <div className={styles.lessonHeading}>
               <div className={styles.lessonMeta}>
                 <span>{sceneKind}</span>
                 <i />
                 <span>
-                  {String(index + 1).padStart(2, '0')} / {manifest.scenes.length}
+                  {String(index + 1).padStart(2, '0')} / {workspace.scenes.length}
                 </span>
               </div>
               <h1>{scene?.title}</h1>
@@ -303,9 +366,9 @@ export function ClassroomVideoViewer({
             <div className={styles.frameBody}>
               {clip ? (
                 <CourseVideoPlayer
-                  key={`${manifest.version}:${scene?.id}`}
+                  key={`${workspace.version}:${scene?.id}`}
                   src={clip.url}
-                  title={scene?.title || manifest.title}
+                  title={scene?.title || workspace.title}
                   autoPlay={autoPlay}
                   fullscreenTarget={playerFrame}
                   isFullscreen={fullscreen}
@@ -314,7 +377,7 @@ export function ClassroomVideoViewer({
                   onAspectRatio={(next) => setVideoSize({ url: clip.url, ratio: next })}
                   onPrevious={fullscreen && index > 0 ? () => navigate(index - 1) : undefined}
                   onNext={
-                    fullscreen && index < manifest.scenes.length - 1
+                    fullscreen && index < workspace.scenes.length - 1
                       ? () => navigate(index + 1)
                       : undefined
                   }
@@ -323,6 +386,37 @@ export function ClassroomVideoViewer({
                   onError={setError}
                   onPlay={() => setError('')}
                 />
+              ) : scene?.type === 'slide' ? (
+                <div
+                  className="flex min-h-52 flex-col items-center justify-center gap-3 p-5 text-center"
+                  data-video-preparation-phase={pageFailure ? 'failed' : pagePhase || 'queued'}
+                  aria-busy={
+                    !pageFailure && ['queued', 'rendering'].includes(workspace.status.state)
+                  }
+                >
+                  <p className="font-semibold">
+                    {pageFailure
+                      ? '本页视频转换失败'
+                      : pagePhase === 'loading'
+                        ? '正在加载本页原稿'
+                        : pagePhase === 'encoding'
+                          ? '正在合成本页 MP4'
+                          : pagePhase === 'recording'
+                            ? '正在录制本页'
+                            : '本页视频待转换'}
+                  </p>
+                  {pageFailure && <p className="max-w-lg text-sm text-red-700">{pageFailure}</p>}
+                  {draft && (pageFailure || workspace.status.state === 'failed') && (
+                    <button
+                      type="button"
+                      disabled={busy}
+                      className="rounded-lg bg-primary px-4 py-2 text-sm text-primary-foreground disabled:opacity-60"
+                      onClick={() => setPreviewRequest({ retry: scene.id })}
+                    >
+                      重试本页
+                    </button>
+                  )}
+                </div>
               ) : (
                 scene && (
                   <div className={styles.activity} data-course-activity={scene.type}>
@@ -343,7 +437,7 @@ export function ClassroomVideoViewer({
             {(!clip || !fullscreen) && (
               <CoursePageNavigation
                 index={index}
-                total={manifest.scenes.length}
+                total={workspace.scenes.length}
                 fullscreen={fullscreen}
                 onPrevious={() => navigate(index - 1)}
                 onNext={() =>
@@ -369,7 +463,7 @@ export function ClassroomVideoViewer({
                     : '可拖动进度回看，也可调整播放速度。'}
             </p>
           )}
-          {index === manifest.scenes.length - 1 &&
+          {index === workspace.scenes.length - 1 &&
             scene &&
             ['interactive', 'pbl'].includes(scene.type) && (
               <button type="button" className={styles.activityPrimary} onClick={advance}>
@@ -397,13 +491,13 @@ export function ClassroomVideoViewer({
               </button>
             </div>
             <div className={styles.catalogueCourse}>
-              {manifest.title}
+              {workspace.title}
               <span>
-                共 {manifest.scenes.length} 节 · 当前第 {index + 1} 节
+                共 {workspace.scenes.length} 节 · 当前第 {index + 1} 节
               </span>
             </div>
             <nav aria-label="课程目录" className={styles.catalogueList}>
-              {manifest.scenes.map((s, i) => (
+              {workspace.scenes.map((s, i) => (
                 <button
                   key={s.id}
                   aria-current={i === index ? 'step' : undefined}
@@ -413,9 +507,19 @@ export function ClassroomVideoViewer({
                   <span className={styles.chapterNumber}>{String(i + 1).padStart(2, '0')}</span>
                   <span className="min-w-0 break-words leading-5">
                     {s.title}
-                    {s.type !== 'slide' && (
+                    {s.type !== 'slide' ? (
                       <small className={styles.chapterKind}>{SCENE_LABELS[s.type]}</small>
-                    )}
+                    ) : draft && !ready ? (
+                      <small className={styles.chapterKind}>
+                        {workspace.status.readySceneIds?.includes(s.id)
+                          ? '可播放'
+                          : Object.hasOwn(sceneFailures ?? {}, s.id)
+                            ? '转换失败'
+                            : phaseForPage(s.id)
+                              ? '转换中'
+                              : '待转换'}
+                      </small>
+                    ) : null}
                   </span>
                 </button>
               ))}

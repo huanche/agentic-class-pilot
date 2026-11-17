@@ -119,4 +119,54 @@ describe('high-fidelity mixed scene generation', () => {
     );
     expect(mocks.content).toHaveBeenCalledOnce();
   });
+
+  it('requires numbered narration to follow each original click', async () => {
+    const selected = input('slide');
+    selected.stage.coursewareTrial = { mode: 'faithful', overview: '掌握数组边界' };
+    selected.stage.nativePptx = {
+      version: 1,
+      pages: { outline: 5 },
+      sha256: 'hash',
+      sourceSha256: 'source',
+      compatibility: { converted: 1, unresolved: 0 },
+      clicks: {
+        outline: [
+          {
+            id: 'onlyoffice-click-1',
+            description: '显示案例',
+            durationMs: 500,
+            sourceEffectIds: [],
+          },
+          {
+            id: 'onlyoffice-click-2',
+            description: '移出案例后显示正文',
+            durationMs: 1,
+            sourceEffectIds: [],
+          },
+        ],
+      },
+    };
+    selected.outlines[0].learningRequirement = 'master';
+    const steps = createOpenmaicCoursewareSteps(selected, undefined, {});
+    const signal = new AbortController().signal;
+    const content = await steps.content(selected.outlines[0], signal);
+    mocks.actions.mockResolvedValueOnce([{ id: 'a', type: 'speech', text: '[2]先讲正文' }]);
+    await expect(steps.actions(selected.outlines[0], content, undefined, signal)).rejects.toThrow(
+      '原稿动画步骤不一致',
+    );
+    mocks.actions.mockResolvedValueOnce([
+      { id: 'a', type: 'speech', text: '[1]先观察案例' },
+      { id: 'b', type: 'speech', text: '[2]现在看正文' },
+    ]);
+    const scene = await steps.actions(selected.outlines[0], content, undefined, signal);
+    expect(
+      scene.actions?.map((action) => (action.type === 'speech' ? action.text : action.id)),
+    ).toEqual([
+      'source-onlyoffice-click-1',
+      '先观察案例',
+      'source-onlyoffice-click-2',
+      '现在看正文',
+    ]);
+    expect(mocks.actions.mock.calls.at(-1)?.[0].description).toContain('本小节学习要求：掌握');
+  });
 });

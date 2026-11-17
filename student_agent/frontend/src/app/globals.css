@@ -1384,6 +1384,21 @@ body::before {
 }
 
 /* ── 响应式 ──────────────────────────────────────────────── */
+.question-group__bubble { width: min(100%, 760px); max-width: 100%; }
+.question-group { padding: 12px 0; border-top: 1px solid #ddd; }
+.question-group h4 { margin: 0 0 8px; }
+.question-group > p { font-size: 13px; color: #666; }
+.question-group__question { margin: 12px 0; padding: 12px; border: 0; border-left: 2px solid #ddd; min-width: 0; }
+.question-group__question legend { font-weight: 600; white-space: pre-wrap; }
+.question-group__option { display: flex; gap: 10px; align-items: baseline; padding: 8px; cursor: pointer; }
+.question-group__question p { line-height: 1.6; white-space: pre-wrap; }
+.question-group__feedback { margin-top: 12px; padding: 12px 14px; border-radius: 10px; background: #fff; }
+.question-group__feedback p { margin: 6px 0 0; }
+.question-group__result { font-weight: 800; }
+.question-group__result span { font-size: 20px; line-height: 1; vertical-align: -1px; }
+.question-group__result--correct { color: #167b3a; }
+.question-group__result--wrong { color: #c52b2b; }
+.question-group__actions { display: flex; flex-wrap: wrap; gap: 10px; }
 @media (max-width: 780px) {
   .hub       { padding: 44px 22px; gap: 32px; }
   .hub__grid { grid-template-columns: 1fr; gap: 18px; }
@@ -1730,6 +1745,10 @@ body::before { background: none; }
 .conversation-resize-handle:hover, .conversation-resize-handle:active { background: rgba(176, 0, 85, .12); }
 .conversation-heading { position: relative; padding: 18px 24px 14px; border-bottom: 1px solid var(--hairline); flex-shrink: 0; }
 .conversation-heading .new-stage-title { padding: 0; }
+.conversation-point-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.conversation-point-nav { display: flex; gap: 6px; flex-shrink: 0; }
+.conversation-point-nav button { width: 32px; height: 32px; border: 1px solid var(--hairline); border-radius: 50%; background: var(--surface); color: var(--brand); cursor: pointer; }
+.conversation-point-nav button:disabled { opacity: .35; cursor: default; }
 .conversation-stage { margin: 6px 0 0; font-size: 14px; color: var(--brand); overflow-wrap: anywhere; }
 .conversation-log > *:first-child { margin-top: 0; }
 .msg__stage { display: block; margin-bottom: 7px; color: var(--brand); font-size: 12px; font-weight: 700; }

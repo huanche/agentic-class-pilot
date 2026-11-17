@@ -200,7 +200,9 @@ export function createLearningSession({ request = requestSession, storage = () =
         return result;
       }
       let result;
-      if (type === "exit_after_class") {
+      if (["next_point", "previous_point"].includes(type)) result = await client.dispatch(
+        sid, type, { taskId: session.currentTaskPublic?.taskId }, { signal: t.signal });
+      else if (type === "exit_after_class") {
         try { result = await api(t, `/session/${sid}/end`, "POST"); }
         catch (failure) {
           const latest = failure.sessionView;
@@ -212,6 +214,8 @@ export function createLearningSession({ request = requestSession, storage = () =
           result = await api(t, `/session/${sid}/end`, "POST");
         }
       }
+      else if (["submit_answer", "postclass_answer"].includes(type) && action.cardId) result = await client.dispatch(
+        sid, type, { text: "提交题卡作答", cardId: action.cardId, answers: action.answers }, { signal: t.signal });
       else if (["submit_answer", "postclass_answer"].includes(type)) result = await api(t,
         `/session/${sid}/${type === "submit_answer" ? "message" : "postclass/message"}`, "POST", { text: action.text });
       else if (["request_help", "ask_question", "pause", "resume_activity"].includes(type)) result = await client.dispatch(

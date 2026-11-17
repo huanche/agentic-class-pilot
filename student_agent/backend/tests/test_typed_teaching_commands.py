@@ -51,6 +51,10 @@ def conversation(pg, monkeypatch, request):
         seed["dialogue"].pop("mastery_version", None)
     if not scenario.get("natural_reply"):
         seed["dialogue"].pop("reply_version", None)
+    # These scenarios assert the earlier free-response protocol. New typed
+    # sessions use cards_version=1 and are covered by the card-specific tests.
+    if not scenario.get("cards_version"):
+        seed["dialogue"].pop("cards_version", None)
     persistence.save(seed, 0)  # Arrange the lesson; assertions use only HTTP below.
     client = TestClient(main.app, headers={"X-Platform-Learning-Key": "tdd-forward-key",
         "X-Platform-Protocol": "platform-cookie-v1", "X-Platform-User-Id": "student", "X-Platform-Course-Id": "course"})

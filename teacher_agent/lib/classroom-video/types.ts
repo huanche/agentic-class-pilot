@@ -16,14 +16,19 @@ export interface ClassroomVideoPlan {
   scenes: Scene[];
   clips: VideoClipPlan[];
 }
+export type ClassroomVideoPhase = 'loading' | 'recording' | 'encoding';
+
 export interface ClassroomVideoStatus {
   version: string;
   state: 'queued' | 'rendering' | 'failed' | 'ready';
-  phase?: 'loading' | 'recording' | 'encoding';
+  phase?: ClassroomVideoPhase;
+  activePages?: Record<string, ClassroomVideoPhase>;
   completed: number;
   total: number;
   error?: string;
   currentSceneId?: string;
+  readySceneIds?: string[];
+  failedPages?: Record<string, string>;
   updatedAt: number;
 }
 export interface ClassroomVideoManifest {

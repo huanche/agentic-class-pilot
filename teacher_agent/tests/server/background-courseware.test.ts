@@ -11,6 +11,7 @@ const state = vi.hoisted(() => ({
   snapshots: new Map<string, { stage: unknown; scenes: unknown[] }>(),
   artifacts: vi.fn(),
   audio: vi.fn(),
+  prequeueVideo: vi.fn(),
   dispose: vi.fn(),
   content: vi.fn(),
   actions: vi.fn(),
@@ -61,6 +62,7 @@ vi.mock('@/lib/server/classroom-media-generation', () => ({
   generateMediaForClassroom: vi.fn(async () => ({})),
   replaceMediaPlaceholders: vi.fn(),
 }));
+vi.mock('@/lib/server/classroom-video', () => ({ prequeueClassroomVideo: state.prequeueVideo }));
 vi.mock('@/lib/server/platform-user-model-config', () => ({
   fetchPlatformUserModelConfig: vi.fn(),
 }));
@@ -131,6 +133,7 @@ beforeEach(() => {
   state.snapshots.clear();
   state.artifacts.mockReset();
   state.audio.mockReset();
+  state.prequeueVideo.mockReset();
   state.dispose.mockReset();
   state.content.mockReset();
   state.actions.mockReset();
@@ -214,10 +217,16 @@ describe('server-owned courseware generation', () => {
     expect(partial.backgroundGeneration?.completedPages).toBe(1);
     expect(partial.backgroundGeneration?.performance?.engine).toBe('openmaic');
     expect(state.actions).toHaveBeenCalledTimes(2);
+    expect(state.prequeueVideo).not.toHaveBeenCalled();
     state.audio.mockResolvedValue({ generated: 1, failed: 0, skipped: 0 });
     await retryBackgroundCoursewareJob(job.id);
     await runBackgroundCoursewareJob(job.id);
     expect(state.jobs.get(job.id)?.status).toBe('review');
+    expect(state.prequeueVideo).toHaveBeenCalledExactlyOnceWith(
+      selected.stage.id,
+      context.teacherId,
+      context.baseUrl,
+    );
     expect(state.content).toHaveBeenCalledTimes(2);
     expect(state.actions).toHaveBeenCalledTimes(2);
     expect(fetch).not.toHaveBeenCalled(); // Models are called in process, not through the public HTTP routes.
@@ -387,6 +396,11 @@ describe('server-owned courseware generation', () => {
     expect(repair.narrationRevision.actions[0].text).toHaveLength(30);
     expect(repair.durationFeedback).toBeUndefined(); // Partial sampling is not a full-page measurement.
     expect(state.audio).toHaveBeenCalledTimes(2); // One probe, one full page; no whole-page correction.
+    expect(state.prequeueVideo).toHaveBeenCalledExactlyOnceWith(
+      selected.stage.id,
+      context.teacherId,
+      context.baseUrl,
+    );
     const saved = state.snapshots.get(selected.stage.id)!.scenes[0] as Scene;
     expect(saved.timing?.measuredDurationSec).toBe(20);
     expect(saved.timing?.correctionAttempts).toBe(0);

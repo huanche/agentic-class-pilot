@@ -388,6 +388,7 @@ export async function upsertClassroomDatabaseRecord(
      WHERE NOT $9::boolean OR (
        COALESCE(mentra_classrooms.stage #>> '{nativePptx,renderRevision}', '0') =
          COALESCE(EXCLUDED.stage #>> '{nativePptx,renderRevision}', '0')
+       AND (mentra_classrooms.stage->'coursewareTrial') IS NOT DISTINCT FROM (EXCLUDED.stage->'coursewareTrial')
        AND (COALESCE(mentra_classrooms.stage #>> '{generationPlan,serverJobId}', '') = ''
        OR (mentra_classrooms.stage #>> '{generationPlan,serverJobId}' = EXCLUDED.stage #>> '{generationPlan,serverJobId}'
          AND mentra_classrooms.stage #>> '{generationPlan,complete}' = 'true'
