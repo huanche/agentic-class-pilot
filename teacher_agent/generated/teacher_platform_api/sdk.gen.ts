@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { AuthorizeTeacherRequestData, AuthorizeTeacherRequestErrors, AuthorizeTeacherRequestResponses, EnqueuePublishedLessonKnowledgeData, EnqueuePublishedLessonKnowledgeErrors, EnqueuePublishedLessonKnowledgeResponses, GetTeacherCourseEnrollmentData, GetTeacherCourseEnrollmentErrors, GetTeacherCourseEnrollmentResponses, GetTeacherCourseMembersData, GetTeacherCourseMembersErrors, GetTeacherCourseMembersResponses, GetTeacherCourseRosterProgressData, GetTeacherCourseRosterProgressErrors, GetTeacherCourseRosterProgressResponses, GetUserModelConfigData, GetUserModelConfigErrors, GetUserModelConfigResponses, RegisterTeacherCourseData, RegisterTeacherCourseErrors, RegisterTeacherCourseResponses, ResolveTeacherCourseAliasData, ResolveTeacherCourseAliasErrors, ResolveTeacherCourseAliasResponses } from './types.gen';
+import type { AuthorizeTeacherRequestData, AuthorizeTeacherRequestErrors, AuthorizeTeacherRequestResponses, EnqueuePublishedLessonKnowledgeData, EnqueuePublishedLessonKnowledgeErrors, EnqueuePublishedLessonKnowledgeResponses, GetTeacherCourseEnrollmentData, GetTeacherCourseEnrollmentErrors, GetTeacherCourseEnrollmentResponses, GetTeacherCourseMembersData, GetTeacherCourseMembersErrors, GetTeacherCourseMembersResponses, GetTeacherCourseRosterProgressData, GetTeacherCourseRosterProgressErrors, GetTeacherCourseRosterProgressResponses, GetTeacherStudentProfilesData, GetTeacherStudentProfilesErrors, GetTeacherStudentProfilesResponses, GetUserModelConfigData, GetUserModelConfigErrors, GetUserModelConfigResponses, RegisterTeacherCourseData, RegisterTeacherCourseErrors, RegisterTeacherCourseResponses, ResolveTeacherCourseAliasData, ResolveTeacherCourseAliasErrors, ResolveTeacherCourseAliasResponses, SaveTeacherStudentProfilesData, SaveTeacherStudentProfilesErrors, SaveTeacherStudentProfilesResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -83,6 +83,28 @@ export const getTeacherCourseRosterProgress = <ThrowOnError extends boolean = fa
     security: [{ name: 'X-Platform-Subject', type: 'apiKey' }, { name: 'X-Teacher-Service-Key', type: 'apiKey' }],
     url: '/internal/teacher/courses/{course_id}/roster-progress',
     ...options
+});
+
+/**
+ * 读取课程名单与可关联的已选课账号
+ */
+export const getTeacherStudentProfiles = <ThrowOnError extends boolean = false>(options: Options<GetTeacherStudentProfilesData, ThrowOnError>): RequestResult<GetTeacherStudentProfilesResponses, GetTeacherStudentProfilesErrors, ThrowOnError> => (options.client ?? client).get<GetTeacherStudentProfilesResponses, GetTeacherStudentProfilesErrors, ThrowOnError>({
+    security: [{ name: 'X-Platform-Subject', type: 'apiKey' }, { name: 'X-Teacher-Service-Key', type: 'apiKey' }],
+    url: '/internal/teacher/courses/{course_id}/student-profiles',
+    ...options
+});
+
+/**
+ * 教师确认后保存名单和账号关联
+ */
+export const saveTeacherStudentProfiles = <ThrowOnError extends boolean = false>(options: Options<SaveTeacherStudentProfilesData, ThrowOnError>): RequestResult<SaveTeacherStudentProfilesResponses, SaveTeacherStudentProfilesErrors, ThrowOnError> => (options.client ?? client).put<SaveTeacherStudentProfilesResponses, SaveTeacherStudentProfilesErrors, ThrowOnError>({
+    security: [{ name: 'X-Platform-Subject', type: 'apiKey' }, { name: 'X-Teacher-Service-Key', type: 'apiKey' }],
+    url: '/internal/teacher/courses/{course_id}/student-profiles',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
 });
 
 /**

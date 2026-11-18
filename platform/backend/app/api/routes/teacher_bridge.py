@@ -12,6 +12,8 @@ import httpx
 from fastapi import APIRouter, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import text
+from pydantic import ValidationError
+from app.services.course_roster import RosterEntry, load_roster, save_roster
 
 from app.api.deps import CurrentUser, SessionDep, TeacherUser
 from app.core.config import settings
@@ -534,6 +536,7 @@ def teacher_roster_progress(
         if not members:
             raise HTTPException(404, "该学生未加入本课程")
     course_uuid = uuid.UUID(roster["courseId"])
+    profiles = {row["studentId"]: row for row in load_roster(session, course_uuid) if row["studentId"]}
     _, lessons = _load_published_content(session, course_uuid, uuid.UUID(x_platform_subject))
     online = session.execute(text("""
         SELECT DISTINCT b.user_id::text, b.student_session_key
@@ -571,7 +574,38 @@ def teacher_roster_progress(
                          "classroomId": lesson["classroom"]["id"],
                          "total": data["totals"].get(lesson["id"])} for lesson in lessons],
             "students": [{"studentId": member["studentId"], "name": member["name"],
+                          **profiles.get(member["studentId"], {}), "registeredName": member["name"],
                           "online": member["studentId"] in online_ids,
                           "classroomIds": active_by_student.get(member["studentId"], []),
                           "mastered": data["mastered"].get(member["studentId"], {})} for member in members],
             "assessments": data["assessments"]}
+
+
+class CourseRosterSave(BaseModel):
+    entries: list[dict] = Field(min_length=1, max_length=2000)
+    previous: list[dict] = Field(max_length=2000)
+
+
+@router.get("/internal/teacher/courses/{course_id}/student-profiles")
+def teacher_student_profiles(
+    course_id: str, session: SessionDep,
+    x_teacher_service_key: str | None = Header(default=None),
+    x_platform_subject: str | None = Header(default=None),
+):
+    roster = teacher_course_members(course_id, session, x_teacher_service_key, x_platform_subject)
+    return {"entries": load_roster(session, uuid.UUID(roster["courseId"])), "members": roster["members"]}
+
+
+@router.put("/internal/teacher/courses/{course_id}/student-profiles")
+def teacher_save_student_profiles(
+    course_id: str, body: CourseRosterSave, session: SessionDep,
+    x_teacher_service_key: str | None = Header(default=None),
+    x_platform_subject: str | None = Header(default=None),
+):
+    roster = teacher_course_members(course_id, session, x_teacher_service_key, x_platform_subject)
+    try:
+        entries = [RosterEntry.model_validate(row) for row in body.entries]
+        previous = [RosterEntry.model_validate(row) for row in body.previous]
+    except ValidationError as error:
+        raise HTTPException(422, "名单字段无效，请核对姓名、学号和账号关联") from error
+    return {"entries": save_roster(session, uuid.UUID(roster["courseId"]), entries, previous)}

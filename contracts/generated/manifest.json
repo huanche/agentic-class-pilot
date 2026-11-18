@@ -168,7 +168,7 @@
   "pythonToolLock": "d87e65a8676d18843d4fe27da803b69d80ad3bdec02e57c69835dc81a315933d",
   "sources": {
     "internal-student-api.yaml": "93f7060ce7b0db4bc54c7dbd01b3b3fd5a0bc8669199d6b25a2153517e216444",
-    "internal-teacher-api.yaml": "b5597ba18a376d04df0fe6f6490e66e524e7da34b31c5aeebd45f3def2fc5a61",
+    "internal-teacher-api.yaml": "d738fbadbd7e0c2384db6522ff4ba61ab79605119fbfb9563c9552114d67308c",
     "student-service-api.yaml": "c592f0000131bf5ac7e92bca8e38bb651403f4fce80f0da521086fdeac64323d",
     "teacher-service-api.yaml": "aff303ffeb96c7648578ff44571f0930c11cbc6c0e8406c72b81dd43ee3963bf"
   }
