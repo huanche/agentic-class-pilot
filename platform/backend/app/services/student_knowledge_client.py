@@ -22,14 +22,13 @@ class StudentKnowledgeUnavailable(Exception):
 
 def enqueue_student_knowledge(
     course_id: str, lesson_id: str, revision: str, classroom_id: str,
-    scenes: list[dict], *, course_name: str = "",
+    scenes: list[dict],
 ) -> None:
     if not settings.STUDENT_SERVICE_KEY:
         raise StudentKnowledgeUnavailable("Student service credential is missing")
     try:
         body = EnqueuePublishedLessonKnowledgeAtStudentBody(
             course_id=course_id,
-            course_name=course_name,
             lesson_id=lesson_id,
             video_revision=revision,
             classroom_id=classroom_id,

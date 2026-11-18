@@ -50,11 +50,11 @@ jobs:
           node-version: '24'
       - run: uv sync --project platform/backend --frozen
       - run: uv pip install --python platform/.venv/bin/python -r student_agent/backend/requirements.txt
+      - name: Cookie BFF and real database regression
+        run: platform/.venv/bin/python -m pytest -q student_agent/backend/tests tests/test_cookie_learning_boundary.py
       - run: npm ci --prefix student_agent/frontend
       - run: npm run test:unit --prefix student_agent/frontend
       - run: npm run build --prefix student_agent/frontend
-      - name: Cookie BFF and real database regression
-        run: platform/.venv/bin/python -m pytest -q student_agent/backend/tests tests/test_cookie_learning_boundary.py
       - run: npx playwright install chromium --with-deps
         working-directory: student_agent/frontend
       - run: npm run test:e2e --prefix student_agent/frontend

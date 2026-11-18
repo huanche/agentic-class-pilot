@@ -7,14 +7,14 @@ from langchain_openai import ChatOpenAI
 
 from backend.content import knowledge
 from backend.infrastructure import model
-from test_typed_knowledge import CORE, MATERIALS
+from test_typed_knowledge import MEMORY, MATERIALS
 
 
 def test_deepseek_receives_native_output_budget_and_a_complete_large_tool_submission(monkeypatch):
     monkeypatch.setenv('STUDENT_AGENT_API_KEY', 'offline-budget-test')
     monkeypatch.setenv('STUDENT_AGENT_BASE_URL', 'https://api.deepseek.com/v1')
     monkeypatch.setenv('STUDENT_AGENT_MODEL', 'deepseek-v4-flash')
-    points = [{**deepcopy(CORE), 'name': f'知识点 {i}'} for i in range(3)]
+    points = [{**deepcopy(MEMORY), 'title': f'知识点 {i}'} for i in range(42)]
     requests = []
 
     def provider(request):
@@ -32,8 +32,8 @@ def test_deepseek_receives_native_output_budget_and_a_complete_large_tool_submis
         return ChatOpenAI(api_key='offline-budget-test', base_url='https://api.deepseek.com/v1',
             model='deepseek-v4-flash', max_retries=0, http_client=httpx.Client(transport=httpx.MockTransport(provider)))
     monkeypatch.setattr(model, '_model', client)
-    result = knowledge.learning_points(MATERIALS, course_name="程序设计基础")
-    assert len(result.points) == 3 and result.model_calls == 1
+    result = knowledge.learning_points(MATERIALS)
+    assert len(result.points) == 42 and result.model_calls == 1
     assert len(requests) == 1
     assert requests[0]['max_tokens'] == 32768
     assert 'max_completion_tokens' not in requests[0]

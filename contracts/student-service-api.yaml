@@ -134,7 +134,6 @@ paths:
               required: [courseId, lessonId, videoRevision, classroomId, scenes]
               properties:
                 courseId: { type: string, minLength: 1, maxLength: 128 }
-                courseName: { type: string, maxLength: 255, default: "" }
                 lessonId: { type: string, minLength: 1, maxLength: 128 }
                 videoRevision: { type: string, pattern: '^[0-9a-f]{64}$' }
                 classroomId: { type: string, minLength: 1, maxLength: 128 }

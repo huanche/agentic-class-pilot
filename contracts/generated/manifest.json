@@ -169,7 +169,7 @@
   "sources": {
     "internal-student-api.yaml": "93f7060ce7b0db4bc54c7dbd01b3b3fd5a0bc8669199d6b25a2153517e216444",
     "internal-teacher-api.yaml": "b5597ba18a376d04df0fe6f6490e66e524e7da34b31c5aeebd45f3def2fc5a61",
-    "student-service-api.yaml": "ffd47946bdb595d11347a09e699261ceae3cecf2d9915e4d0566f703190c627f",
+    "student-service-api.yaml": "c592f0000131bf5ac7e92bca8e38bb651403f4fce80f0da521086fdeac64323d",
     "teacher-service-api.yaml": "aff303ffeb96c7648578ff44571f0930c11cbc6c0e8406c72b81dd43ee3963bf"
   }
 }

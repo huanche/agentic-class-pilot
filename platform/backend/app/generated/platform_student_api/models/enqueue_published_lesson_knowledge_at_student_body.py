@@ -8,7 +8,6 @@ from attrs import field as _attrs_field
 
 from ..types import UNSET, Unset
 
-from ..types import UNSET, Unset
 from typing import cast
 
 if TYPE_CHECKING:
@@ -31,7 +30,6 @@ class EnqueuePublishedLessonKnowledgeAtStudentBody:
             lesson_id (str):
             scenes (list[EnqueuePublishedLessonKnowledgeAtStudentBodyScenesItem]):
             video_revision (str):
-            course_name (str | Unset):  Default: ''.
      """
 
     classroom_id: str
@@ -39,7 +37,6 @@ class EnqueuePublishedLessonKnowledgeAtStudentBody:
     lesson_id: str
     scenes: list[EnqueuePublishedLessonKnowledgeAtStudentBodyScenesItem]
     video_revision: str
-    course_name: str | Unset = ''
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
 
@@ -63,8 +60,6 @@ class EnqueuePublishedLessonKnowledgeAtStudentBody:
 
         video_revision = self.video_revision
 
-        course_name = self.course_name
-
 
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
@@ -75,8 +70,6 @@ class EnqueuePublishedLessonKnowledgeAtStudentBody:
             "scenes": scenes,
             "videoRevision": video_revision,
         })
-        if course_name is not UNSET:
-            field_dict["courseName"] = course_name
 
         return field_dict
 
@@ -104,15 +97,12 @@ class EnqueuePublishedLessonKnowledgeAtStudentBody:
 
         video_revision = d.pop("videoRevision")
 
-        course_name = d.pop("courseName", UNSET)
-
         enqueue_published_lesson_knowledge_at_student_body = cls(
             classroom_id=classroom_id,
             course_id=course_id,
             lesson_id=lesson_id,
             scenes=scenes,
             video_revision=video_revision,
-            course_name=course_name,
         )
 
 

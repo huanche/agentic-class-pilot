@@ -25,7 +25,6 @@ def _check_platform_service_key(value: str | None) -> None:
 
 class PublishedLessonKnowledgeRequest(BaseModel):
     courseId: str = Field(min_length=1, max_length=128)
-    courseName: str = Field(default="", max_length=255)
     lessonId: str = Field(min_length=1, max_length=128)
     videoRevision: str = Field(pattern=r"^[0-9a-f]{64}$")
     classroomId: str = Field(min_length=1, max_length=128)
@@ -42,18 +41,11 @@ def enqueue_published_lesson_knowledge(
         with _db() as connection:
             connection.execute(
                 "INSERT INTO student.published_lesson_knowledge "
-                "(course_id, lesson_id, video_revision, classroom_id, scenes, coverage) "
-                "VALUES (%s,%s,%s,%s,%s,%s) "
-                "ON CONFLICT (course_id, lesson_id, video_revision) DO UPDATE SET "
-                "coverage=(COALESCE(student.published_lesson_knowledge.coverage,'{}'::jsonb) "
-                "- 'extractionFailure') || EXCLUDED.coverage, "
-                "status=CASE WHEN student.published_lesson_knowledge.status='failed' THEN 'pending' "
-                "ELSE student.published_lesson_knowledge.status END,next_retry_at=now() "
-                "WHERE NOT (COALESCE(student.published_lesson_knowledge.coverage,'{}'::jsonb) ? 'courseName') "
-                "AND EXCLUDED.coverage ? 'courseName' ",
+                "(course_id, lesson_id, video_revision, classroom_id, scenes) "
+                "VALUES (%s,%s,%s,%s,%s) "
+                "ON CONFLICT (course_id, lesson_id, video_revision) DO NOTHING",
                 (body.courseId, body.lessonId, body.videoRevision,
-                 body.classroomId, Jsonb(body.scenes),
-                 Jsonb({"courseName": body.courseName.strip()} if body.courseName.strip() else {})),
+                 body.classroomId, Jsonb(body.scenes)),
             )
     except Exception as error:
         log.exception("Student knowledge queue storage failed")

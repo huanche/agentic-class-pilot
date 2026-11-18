@@ -32,13 +32,13 @@ def test_generated_student_queue_preserves_identity_and_service_key(monkeypatch)
 
     monkeypatch.setattr(student_knowledge_client, "sync_detailed", generated_call)
     student_knowledge_client.enqueue_student_knowledge(
-        "course", "lesson", revision, "classroom", [{"id": "slide"}], course_name="数据结构",
+        "course", "lesson", revision, "classroom", [{"id": "slide"}],
     )
     assert captured == {
         "key": "test-key",
         "body": {"courseId": "course", "lessonId": "lesson",
                  "videoRevision": revision, "classroomId": "classroom",
-                 "scenes": [{"id": "slide"}], "courseName": "数据结构"},
+                 "scenes": [{"id": "slide"}]},
     }
 
 
@@ -60,13 +60,10 @@ def test_platform_enqueues_through_student_api_without_writing_student_table(mon
     called = []
     monkeypatch.setattr(
         student_knowledge_client, "enqueue_student_knowledge",
-        lambda *args, **kwargs: called.append((args, kwargs)),
+        lambda *args: called.append(args),
     )
 
     class NoSqlSession:
-        def get(self, *_args):
-            return SimpleNamespace(title="数据结构")
-
         def execute(self, *_args):
             raise AssertionError("platform must not write the student table")
 
@@ -76,12 +73,12 @@ def test_platform_enqueues_through_student_api_without_writing_student_table(mon
     assert revision == hashlib.sha256(json.dumps(
         ["classroom", 123, []], sort_keys=True, ensure_ascii=False,
     ).encode()).hexdigest()
-    assert called == [((str(uuid.UUID(int=1)), "lesson", revision, "classroom", []), {"course_name": "数据结构"})]
+    assert called == [(str(uuid.UUID(int=1)), "lesson", revision, "classroom", [])]
 
 
 def test_student_outage_fails_closed(monkeypatch):
 
-    def unavailable(*_args, **_kwargs):
+    def unavailable(*_args):
         raise student_knowledge_client.StudentKnowledgeUnavailable()
 
     monkeypatch.setattr(student_knowledge_client, "enqueue_student_knowledge", unavailable)

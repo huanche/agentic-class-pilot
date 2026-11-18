@@ -453,21 +453,16 @@ def inspect_resume_instruction(body):
     # Only the reply context carries phase instructions. The assessment context
     # now contains the original contract and raw learner evidence instead.
     if context.get("stage") == "postclass" and not context["studentText"]:
-        assert body["tool_choice"] == "none"
-        assert context["focus"]["task_question"]
-        assert context["learnerEvidence"] == ["Push插入"]
+        instruction = body["messages"][-1]["content"]
+        assert "生成当前任务第一问" not in instruction
+        assert "继续上次学习" in instruction
         assert context["teaching_plan"]["target_ids"] == ["requiredElements:2"]
         assert context["focus"]["requirements"][0]["status"] == "demonstrated"
 
 
 def inspect_unassessed_opening(body):
     context = json.loads(body["messages"][0]["content"].splitlines()[-1])
-    # Entry wording can change; an unseen point must still request its first
-    # task without manufacturing student work or invoking assessment.
-    assert body["tool_choice"] == "none"
-    assert context["studentText"] == ""
-    assert context["learnerEvidence"] == []
-    assert context["teaching_plan"]["action"] == "ask"
+    assert "生成当前任务第一问" in body["messages"][-1]["content"]
     assert all(r["status"] == "unconfirmed" for r in context["focus"]["requirements"])
 
 

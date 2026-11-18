@@ -24,7 +24,7 @@ class ConceptDetails(StrictModel):
     explanation: Text
     understandingPoints: Elements = Field(description=
         "每项是一个可分别确认的理解目标，完整因果关系保留一项，独立事实必须分项。"
-        "需要不同事实或能力才能证明的独立目标应分别记录，不用因果或并列连接词将它们重新合为一项。"
+        "如‘入队把新结点接在rear之后’与‘链队列无固定容量的队满限制’必须是两个元素，不能用‘因此’或‘同时’合并。"
         "不要另加综合对比条目重新捆绑这些事实，不靠常识新增未教内容。")
 
 
@@ -56,7 +56,7 @@ class DesignPoint(StrictModel):
 Point = Annotated[MemoryPoint | ConceptPoint | DesignPoint, Field(discriminator="type")]
 
 
-class LegacyKnowledgePoints(StrictModel):
+class submit_knowledge_points(StrictModel):
     """Submit the complete lesson's typed knowledge points; empty means no teachable content."""
 
     points: Annotated[list[Point], Field(max_length=120)]
@@ -64,8 +64,6 @@ class LegacyKnowledgePoints(StrictModel):
 
 def compatibility_text(point: dict) -> str:
     """Derive legacy prose from typed content; this is not a source quote."""
-    if "explanation" in point:
-        return point["explanation"]
     details = point["details"]
     if point["type"] == "memory":
         parts = [details["statement"], *details["requiredElements"]]
@@ -74,17 +72,3 @@ def compatibility_text(point: dict) -> str:
     else:
         parts = [details["capability"], *details["constraints"], *details["successCriteria"]]
     return "\n".join(dict.fromkeys(parts))
-
-
-SIMPLE_SCHEMA_VERSION = 3
-
-
-class CoreKnowledgePoint(StrictModel):
-    name: Text
-    explanation: Text
-
-
-class submit_knowledge_points(StrictModel):
-    """Submit one to three core points using only name and explanation."""
-
-    points: Annotated[list[CoreKnowledgePoint], Field(min_length=1, max_length=3)]
