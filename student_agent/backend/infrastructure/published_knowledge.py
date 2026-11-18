@@ -36,9 +36,13 @@ def _compiled(course, lesson, revision, compiler, scenes, points, coverage):
 
 
 def _archive(connection, row):
-    from backend.content import lesson_content
     course, lesson, revision, scenes, points, coverage, compiler = row
     if points and compiler:
+        if compiler != EXTRACTOR_HASH and any("name" in point or "explanation" in point for point in points):
+            # The newer, simplified format was archived by its own extractor.
+            # Rebuilding it here would assign a different fingerprint to that
+            # same version. Only the current extractor can supply new sessions.
+            return
         # Retry diagnostics describe a job attempt, not the old immutable content.
         frozen_coverage = {k: v for k, v in (coverage or {}).items() if k != "extractionFailure"}
         body = _compiled(course, lesson, revision, compiler, scenes, points, frozen_coverage)

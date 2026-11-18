@@ -87,6 +87,49 @@ def test_an_existing_compiler_version_cannot_be_overwritten(pg):
     assert content_store.hydrate(session(original))["lessonContent"] == original
 
 
+@pytest.mark.parametrize("cached", [False, True])
+def test_current_typed_preparation_ignores_simplified_archive(pg, monkeypatch, cached):
+    compiler = "simplified-extractor"
+    scenes = register(pg, compiler=compiler)
+    typed = dict(point(), type="memory", details={"statement": QUOTE, "requiredElements": [QUOTE]})
+    simple = {"id": "simple", "title": "平均数", "name": "平均数", "explanation": QUOTE, "content": QUOTE}
+    archive = published_knowledge._compiled("course", "lesson", "rev", compiler, scenes, [simple], {})
+    archive["schemaVersion"] = 3
+    archive["points"] = [simple]
+    archive["topics"][0].update(name=simple["name"], explanation=simple["explanation"])
+    archive["contentId"] = "content:" + lesson_content.digest({key: value for key, value in archive.items() if key != "contentId"})
+    with pg() as connection:
+        connection.execute("UPDATE student.published_lesson_knowledge SET points=%s", (json.dumps([simple]),))
+        connection.execute(
+            "INSERT INTO student.lesson_content_versions "
+            "(content_id,course_id,lesson_id,video_revision,compiler_version,source_manifest_hash,payload) "
+            "VALUES (%s,'course','lesson','rev',%s,%s,%s)",
+            (archive["contentId"], archive["compilerVersion"], archive["sourceManifestHash"], json.dumps(archive)),
+        )
+        if cached:
+            body = published_knowledge._compiled("course", "lesson", "rev", published_knowledge.EXTRACTOR_HASH, scenes, [typed], {})
+            content_store.store(body, connection=connection)
+    calls = []
+
+    def extract(*args):
+        calls.append(args)
+        return KnowledgeResult([typed], candidate_count=1)
+
+    monkeypatch.setattr(published_knowledge, "learning_points", extract)
+    result = published_knowledge.read("course", "lesson", "rev")
+    assert result["status"] == ("ready" if cached else "pending")
+    if not cached:
+        assert published_knowledge.process_next()
+        result = published_knowledge.read("course", "lesson", "rev")
+    assert result["status"] == "ready"
+    assert result["points"][0]["type"] == "memory"
+    assert teaching.new_dialogue(result["points"])["flow_version"] == 4
+    assert len(calls) == (0 if cached else 1)
+    with pg() as connection:
+        assert connection.execute("SELECT payload FROM student.lesson_content_versions WHERE content_id=%s",
+                                  (archive["contentId"],)).fetchone() == (archive,)
+
+
 @pytest.mark.parametrize("lost", ["claim", "lease"])
 def test_preparation_does_not_publish_results_after_losing_ownership(pg, monkeypatch, lost):
     register(pg, status="pending")
