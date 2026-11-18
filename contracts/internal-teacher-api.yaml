@@ -17,6 +17,65 @@ info:
 servers:
   - url: http://127.0.0.1:8080/api/v1
 paths:
+  /internal/teacher/courses/{course_id}/student-profiles:
+    get:
+      operationId: getTeacherStudentProfiles
+      summary: 读取课程名单与可关联的已选课账号
+      security: [{ serviceKey: [], delegatedTeacher: [] }]
+      parameters:
+        - { name: course_id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: 教师已确认的名单和当前选课账号
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [entries, members]
+                properties:
+                  entries: { type: array, items: { type: object } }
+                  members: { type: array, items: { type: object } }
+        '401': { description: 身份无效 }
+        '403': { description: 无权访问本课程 }
+        '404': { description: 课程不存在 }
+    put:
+      operationId: saveTeacherStudentProfiles
+      summary: 教师确认后保存名单和账号关联
+      security: [{ serviceKey: [], delegatedTeacher: [] }]
+      parameters:
+        - { name: course_id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [entries, previous]
+              properties:
+                entries:
+                  type: array
+                  minItems: 1
+                  maxItems: 2000
+                  items: { type: object }
+                previous:
+                  type: array
+                  maxItems: 2000
+                  items: { type: object }
+      responses:
+        '200':
+          description: 保存后的完整课程名单
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [entries]
+                properties:
+                  entries: { type: array, items: { type: object } }
+        '401': { description: 身份无效 }
+        '403': { description: 无权访问本课程 }
+        '404': { description: 课程不存在 }
+        '409': { description: 预览后的名单已被其他操作更新 }
+        '422': { description: 字段无效或账号关联冲突 }
   /internal/teacher/courses/{course_id}/roster-progress:
     get:
       operationId: getTeacherCourseRosterProgress
@@ -52,6 +111,11 @@ paths:
                       properties:
                         studentId: { type: string, format: uuid }
                         name: { type: string }
+                        registeredName: { type: string }
+                        studentNumber: { type: string }
+                        major: { type: string }
+                        grade: { type: string }
+                        gender: { type: string }
                         online: { type: boolean }
                         classroomIds: { type: array, items: { type: string } }
                         mastered: { type: object, additionalProperties: { type: integer } }

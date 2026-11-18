@@ -268,17 +268,114 @@ export type GetTeacherCourseRosterProgressResponses = {
         }>;
         students: Array<{
             classroomIds: Array<string>;
+            gender?: string;
+            grade?: string;
+            major?: string;
             mastered: {
                 [key: string]: number;
             };
             name: string;
             online: boolean;
+            registeredName?: string;
             studentId: string;
+            studentNumber?: string;
         }>;
     };
 };
 
 export type GetTeacherCourseRosterProgressResponse = GetTeacherCourseRosterProgressResponses[keyof GetTeacherCourseRosterProgressResponses];
+
+export type GetTeacherStudentProfilesData = {
+    body?: never;
+    path: {
+        course_id: string;
+    };
+    query?: never;
+    url: '/internal/teacher/courses/{course_id}/student-profiles';
+};
+
+export type GetTeacherStudentProfilesErrors = {
+    /**
+     * 身份无效
+     */
+    401: unknown;
+    /**
+     * 无权访问本课程
+     */
+    403: unknown;
+    /**
+     * 课程不存在
+     */
+    404: unknown;
+};
+
+export type GetTeacherStudentProfilesResponses = {
+    /**
+     * 教师已确认的名单和当前选课账号
+     */
+    200: {
+        entries: Array<{
+            [key: string]: unknown;
+        }>;
+        members: Array<{
+            [key: string]: unknown;
+        }>;
+    };
+};
+
+export type GetTeacherStudentProfilesResponse = GetTeacherStudentProfilesResponses[keyof GetTeacherStudentProfilesResponses];
+
+export type SaveTeacherStudentProfilesData = {
+    body: {
+        entries: Array<{
+            [key: string]: unknown;
+        }>;
+        previous: Array<{
+            [key: string]: unknown;
+        }>;
+    };
+    path: {
+        course_id: string;
+    };
+    query?: never;
+    url: '/internal/teacher/courses/{course_id}/student-profiles';
+};
+
+export type SaveTeacherStudentProfilesErrors = {
+    /**
+     * 身份无效
+     */
+    401: unknown;
+    /**
+     * 无权访问本课程
+     */
+    403: unknown;
+    /**
+     * 课程不存在
+     */
+    404: unknown;
+    /**
+     * 预览后的名单已被其他操作更新
+     */
+    409: unknown;
+    /**
+     * 字段无效或账号关联冲突
+     */
+    422: unknown;
+};
+
+export type SaveTeacherStudentProfilesResponses = {
+    /**
+     * 保存后的完整课程名单
+     */
+    200: {
+        entries: Array<{
+            [key: string]: unknown;
+        }>;
+    };
+};
+
+export type SaveTeacherStudentProfilesResponse = SaveTeacherStudentProfilesResponses[keyof SaveTeacherStudentProfilesResponses];
 
 export type EnqueuePublishedLessonKnowledgeData = {
     body: {

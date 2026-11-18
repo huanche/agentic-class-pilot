@@ -86,7 +86,7 @@ def model_schema(model: ast.ClassDef) -> dict:
                 is_required = isinstance(default.args[0], ast.Constant) and default.args[0].value is Ellipsis
             for python_name, json_name in CONSTRAINTS.items():
                 if python_name in keywords:
-                    field_name = "maxItems" if json_name == "maxLength" and schema["type"] == "array" else json_name
+                    field_name = {"maxLength": "maxItems", "minLength": "minItems"}.get(json_name, json_name) if schema["type"] == "array" else json_name
                     schema[field_name] = ast.literal_eval(keywords[python_name])
             if "pattern" in keywords:
                 schema["pattern"] = ast.literal_eval(keywords["pattern"])
