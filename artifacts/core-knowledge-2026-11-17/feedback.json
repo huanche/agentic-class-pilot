@@ -1,0 +1,100 @@
+{
+  "schemaVersion": 3,
+  "sessionId": "local-core-review",
+  "studentId": null,
+  "courseId": "local-review",
+  "lessonId": "arrays",
+  "classroomId": null,
+  "completedAt": "2026-11-17T12:49:07.940543+00:00",
+  "updatedAt": "2026-11-17T12:49:07.940558+00:00",
+  "postclassStage": null,
+  "recallRoundLimit": 8,
+  "reinforceRoundLimit": 4,
+  "points": [
+    {
+      "id": "knowledge:3228b975e74c3227564d",
+      "title": "一维数组的定义形式与下标范围",
+      "category": "incomplete",
+      "label": "评估未完成",
+      "status": "partial",
+      "recallRounds": 2,
+      "reinforceRounds": 0,
+      "postclassRounds": 0,
+      "evidence": "学生能说明数组下标从0开始，int a[5]的合法下标为0到4，并指出a[5]越界；但未说明一维数组的定义形式（如存储类型、数据类型、数组名、整型常量表达式及元素个数等）以及元素在内存中连续存放等要点。",
+      "assessments": [
+        {
+          "stage": "recall",
+          "round": 1,
+          "result": "unanswered",
+          "evidence": "学生表示“不太确定数组的下标从哪里开始”，明确说明对下标起始位置不记得，未给出可评估的复述内容。",
+          "studentText": "我不太确定数组的下标从哪里开始。"
+        },
+        {
+          "stage": "recall",
+          "round": 2,
+          "result": "partial",
+          "evidence": "学生能说明数组下标从0开始，int a[5]的合法下标为0到4，并指出a[5]越界；但未说明一维数组的定义形式（如存储类型、数据类型、数组名、整型常量表达式及元素个数等）以及元素在内存中连续存放等要点。",
+          "studentText": "数组下标从0开始，int a[5]的合法下标是0到4，a[5]越界。"
+        }
+      ],
+      "suggestion": "已开始复述，但课堂结束时尚未完成检查，建议继续梳理。",
+      "excludedFromDiscussion": false,
+      "discussionResult": null,
+      "discussionEvidence": "",
+      "discussionNeedsReview": false,
+      "discussionIncomplete": false,
+      "masteredIn": null
+    },
+    {
+      "id": "knowledge:3b8d4e90889ffae132ab",
+      "title": "一维数组的部分初始化规则",
+      "category": "not_assessed",
+      "label": "尚未评估",
+      "status": "unseen",
+      "recallRounds": 0,
+      "reinforceRounds": 0,
+      "postclassRounds": 0,
+      "evidence": "",
+      "assessments": [],
+      "suggestion": "本次尚未检查这个知识点，不能据此判断是否掌握。",
+      "excludedFromDiscussion": false,
+      "discussionResult": null,
+      "discussionEvidence": "",
+      "discussionNeedsReview": false,
+      "discussionIncomplete": false,
+      "masteredIn": null
+    },
+    {
+      "id": "knowledge:045c55235b114a346c9a",
+      "title": "用 for 循环逐项给数组元素赋值",
+      "category": "not_assessed",
+      "label": "尚未评估",
+      "status": "unseen",
+      "recallRounds": 0,
+      "reinforceRounds": 0,
+      "postclassRounds": 0,
+      "evidence": "",
+      "assessments": [],
+      "suggestion": "本次尚未检查这个知识点，不能据此判断是否掌握。",
+      "excludedFromDiscussion": false,
+      "discussionResult": null,
+      "discussionEvidence": "",
+      "discussionNeedsReview": false,
+      "discussionIncomplete": false,
+      "masteredIn": null
+    }
+  ],
+  "counts": {
+    "mastered": 0,
+    "needs_review": 0,
+    "incomplete": 1,
+    "not_assessed": 2,
+    "postclass_completed": 0,
+    "discussion_needs_review": 0,
+    "discussion_incomplete": 0
+  },
+  "endedEarly": true,
+  "endedAtStage": "recall",
+  "preparationCoverage": null,
+  "summary": "本次共涉及 3 个知识点：已掌握 0 个（其中课后补完 0 个），概念仍需巩固 0 个，讨论题待巩固 0 个，讨论未完成 0 个，评估未完成 1 个，尚未评估 2 个。本课由学生提前结束。"
+}

@@ -317,3 +317,9 @@
 - 公网Caddy关闭admin接口，配置为单文件绑定，切换需验证后重启该网关容器（不能使用caddy reload）。发布时维护入口关闭，备份覆盖所有共享目录写入容器并保持原镜像。
 - 已验证的网关方案仅将课堂API送往平台、封锁公网内部API，保留既有OnlyOffice/教学/视频路由；维护配置只允许生产机本机验证来源绕过503。
 - 生产恢复验证使用当前解耦后47张表的精确集合，不能沿用旧发布记录53张表数量；15项知识任务最终全部ready，生产QA13项通过。
+
+2026-11-17 live-validation：真实模型deepseek-v4-flash可访问；首批服务链出现追加题作为掌握门槛、开场泄露核心事实、未执行暂停却称已暂停。证据保存在student_agent/.personal-dev/docs/prompt-rewrite/live-validation，未改业务/提示词。
+
+最终结论见student_agent/.personal-dev/docs/prompt-rewrite/live-validation/report.md：追加推演门槛由HTTP复现；控制回复偶发不一致；连续讲解与课后重复含程序计划因素；题卡正式提交无新导师消息。请求模型deepseek-v4-flash，响应标识deepseek-flash。程序已测链路通过，真实模型行为未通过，浏览器及完整恢复矩阵尚未验证。
+
+2026-11-18定向修复结论：提示文字单独补充仍不能阻止门槛扩张，历史评估与课程依据来源隔离后原输入持续通过；控制结果改程序生成；完整讲解后定位，定位无进展时只讲一步；开场特定执行指令避免核心答案预告；最终/非最终点补齐教师原话与纠错收尾；课后开场屏蔽旧控制观察仅用于本轮计划计算，历史仍保存。逐项次数及限制见student_agent/.personal-dev/docs/prompt-rewrite/live-fixes/report.md，不能外推整体真人教学收益。

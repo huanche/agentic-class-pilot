@@ -1,0 +1,47 @@
+{
+  "date": "2026-11-17",
+  "skill": "Matt Pocock codebase-design",
+  "frontendUnit": {
+    "passed": 42
+  },
+  "frontendBrowserE2E": {
+    "passed": 26,
+    "scope": "Playwright browser tests with existing test fixtures"
+  },
+  "frontendBuild": "passed",
+  "platformAdapterUnit": {
+    "passed": 4,
+    "scope": "isolated unit configuration; no platform production DB"
+  },
+  "contracts": {
+    "passed": 27,
+    "subtests": 146,
+    "schemaCheck": "passed",
+    "generatedClientsReproducible": true
+  },
+  "realModel": {
+    "input": "archived C-language arrays lesson, 3 scenes",
+    "points": 3,
+    "calls": 2,
+    "simulatedStudentTurns": 2,
+    "feedbackGenerated": true
+  },
+  "deployment": "not performed",
+  "productionDataWrites": false,
+  "limitations": [
+    "真实模型验收使用仓库内已归档课时材料，并非全部大学课程逐课验证。",
+    "浏览器测试使用现有测试数据；未执行线上平台账号登录与三端部署联调。",
+    "模型专项可选测试只执行本次真实提取与问答验收，未逐个执行全部历史模型行为场景。"
+  ],
+  "backendWithIsolatedPostgres": {
+    "passed": 347,
+    "skipped": 19,
+    "reason": "remaining opt-in real model behavior tests; real extraction and two teaching turns ran separately"
+  },
+  "actualServerStartup": {
+    "health": 200,
+    "frontend": 200,
+    "database": "isolated disposable PostgreSQL",
+    "platformLoginTested": false
+  }
+}

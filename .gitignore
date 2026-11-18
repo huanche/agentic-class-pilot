@@ -10,6 +10,8 @@
 
 # Build and tool output
 **/.next/
+# Local build backups created before restarting Next.js.
+**/.next.before-start-*/
 **/__pycache__/
 *.tar
 **/*.pyc

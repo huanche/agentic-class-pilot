@@ -1,0 +1,262 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "学生看完视频后的学习流程",
+    "locale": "zh-CN",
+    "output": ".archify/workflow-student-after-video-20261118-160000/student-after-video.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/huanche/agentic-class-pilot.git",
+      "revision": "3a55eb486b37ee7fe2c638a0bdda8dd4061f9247",
+      "link_mode": "local-only"
+    }
+  },
+  "lanes": [
+    {
+      "id": "main",
+      "label": "学生学习主线"
+    },
+    {
+      "id": "branch",
+      "label": "对应分支与副作用"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "video",
+      "lane": "main",
+      "col": 0,
+      "type": "frontend",
+      "label": "视频结束",
+      "sublabel": "事件→已播完",
+      "sources": [
+        {
+          "path": "student_agent/frontend/src/components/StudentApp.js",
+          "line": 233
+        }
+      ]
+    },
+    {
+      "id": "prepare",
+      "lane": "main",
+      "col": 1,
+      "type": "frontend",
+      "label": "检查知识点准备",
+      "sublabel": "共享内容→准备状态",
+      "sources": [
+        {
+          "path": "student_agent/backend/session/service.py",
+          "line": 415
+        }
+      ]
+    },
+    {
+      "id": "enter",
+      "lane": "main",
+      "col": 2,
+      "type": "frontend",
+      "label": "学生点击进入",
+      "sublabel": "点击→首问或题卡",
+      "sources": [
+        {
+          "path": "student_agent/backend/teaching/service.py",
+          "line": 327
+        }
+      ]
+    },
+    {
+      "id": "advance",
+      "lane": "main",
+      "col": 3,
+      "type": "backend",
+      "label": "逐点教学与评估",
+      "sublabel": "题卡或文字→证据",
+      "sources": [
+        {
+          "path": "student_agent/backend/teaching/typed_state.py",
+          "line": 213
+        }
+      ]
+    },
+    {
+      "id": "finish",
+      "lane": "main",
+      "col": 4,
+      "type": "backend",
+      "label": "总结并结束本课",
+      "sublabel": "结束→反馈",
+      "sources": [
+        {
+          "path": "student_agent/backend/teaching/service.py",
+          "line": 350
+        }
+      ]
+    },
+    {
+      "id": "post",
+      "lane": "main",
+      "col": 5,
+      "type": "backend",
+      "label": "课后继续巩固",
+      "sublabel": "缺口→续学或完成",
+      "sources": [
+        {
+          "path": "student_agent/backend/teaching/service.py",
+          "line": 372
+        }
+      ]
+    },
+    {
+      "id": "retry",
+      "lane": "branch",
+      "col": 1,
+      "type": "backend",
+      "label": "等待或重试准备",
+      "sublabel": "等待或重试",
+      "sources": [
+        {
+          "path": "student_agent/backend/session/service.py",
+          "line": 680
+        }
+      ]
+    },
+    {
+      "id": "compat",
+      "lane": "branch",
+      "col": 2,
+      "type": "backend",
+      "label": "保存版本分流",
+      "sublabel": "旧版或白名单试点",
+      "sources": [
+        {
+          "path": "student_agent/backend/teaching/service.py",
+          "line": 327
+        }
+      ]
+    },
+    {
+      "id": "reinforce",
+      "lane": "branch",
+      "col": 3,
+      "type": "backend",
+      "label": "未掌握点补强",
+      "sublabel": "首轮5轮 / 补强8轮",
+      "sources": [
+        {
+          "path": "student_agent/backend/teaching/typed_state.py",
+          "line": 293
+        }
+      ]
+    },
+    {
+      "id": "replay",
+      "lane": "branch",
+      "col": 4,
+      "type": "backend",
+      "label": "回看 / 重置",
+      "sublabel": "只读回看 / 删除重置",
+      "sources": [
+        {
+          "path": "student_agent/backend/session/service.py",
+          "line": 641
+        }
+      ]
+    },
+    {
+      "id": "save",
+      "lane": "branch",
+      "col": 5,
+      "type": "backend",
+      "label": "命令事务与恢复",
+      "sublabel": "每轮保存 / 回执恢复",
+      "sources": [
+        {
+          "path": "student_agent/backend/session/command_runtime.py",
+          "line": 134
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "video",
+      "to": "prepare",
+      "label": "手动进入"
+    },
+    {
+      "from": "prepare",
+      "to": "enter",
+      "label": "就绪"
+    },
+    {
+      "from": "enter",
+      "to": "advance",
+      "label": "当前三类型"
+    },
+    {
+      "from": "advance",
+      "to": "finish",
+      "label": "总结或提前结束"
+    },
+    {
+      "from": "finish",
+      "to": "post",
+      "label": "继续巩固"
+    },
+    {
+      "from": "prepare",
+      "to": "retry",
+      "label": "等待 / 失败重试"
+    },
+    {
+      "from": "enter",
+      "to": "compat",
+      "label": "保存的旧版 / 试点"
+    },
+    {
+      "from": "advance",
+      "to": "reinforce",
+      "label": "尚未掌握"
+    },
+    {
+      "from": "finish",
+      "to": "replay",
+      "label": "回看 / 重置"
+    },
+    {
+      "from": "post",
+      "to": "save",
+      "label": "命令保存"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "阅读方式",
+      "items": [
+        "当前新建三类型会话为主线；旧会话及动态试点另行分流。类型按知识点出现，不是固定的三个连续阶段。",
+        "视频播完不会自动进入讨论。题卡提交后可以停留查看解析，使用箭头切换知识点。"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "输入输出与限制",
+      "items": [
+        "详见配套机制说明，包含接口、数据字段、源码及数据库位置。",
+        "5/8轮限制用于课堂；课后不套用该限制。达到上限不等于掌握。",
+        "此图核查本地源码，不代表已验证线上配置或真实模型效果。"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "逐点教学的内部回路",
+      "items": [
+        "记忆点：选项 → 题卡判分 → 要求证据；可分批提交，未完成的子题保留。",
+        "概念/构造：学生原文 → 评估工具 → 程序汇总要求与选点 → 导师回复。未完成继续当前点，全部要求满足才算掌握。",
+        "首轮耗尽暂存未掌握点；补强后仍有缺口则记入反馈。课后接原题继续，不套用课堂轮数限制。",
+        "每轮成功变更均经过命令事务保存；课后分支的保存节点代表全程公共机制。"
+      ]
+    }
+  ]
+}

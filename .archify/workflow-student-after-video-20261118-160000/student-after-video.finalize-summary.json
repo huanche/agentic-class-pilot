@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "command": "finalize",
+  "status": "pass",
+  "type": "workflow",
+  "quality": "showcase",
+  "specification": {
+    "path": "E:\\LMS系统参考\\项目\\agentic-class-pilot-running\\.archify\\workflow-student-after-video-20261118-160000\\candidate.json",
+    "sha256": "7795905e9257113793d7ee6b4cf1da3bee529a1195a0933357ad9f57a69db79c",
+    "bytes": 6713
+  },
+  "artifact": {
+    "path": "E:\\LMS系统参考\\项目\\agentic-class-pilot-running\\.archify\\workflow-student-after-video-20261118-160000\\student-after-video.html",
+    "sha256": "c3461cb200acbdd60dccb3d1914f69c74057cbd3149349822672df068b448462",
+    "bytes": 846706
+  },
+  "gates": {
+    "validate": "pass",
+    "deliver": "pass",
+    "check": "pass",
+    "browser-check": "pass"
+  },
+  "diagnostics": [],
+  "diagnosticSummary": {
+    "total": 0,
+    "shown": 0,
+    "truncated": false
+  },
+  "evidence": {
+    "receipt": "E:\\LMS系统参考\\项目\\agentic-class-pilot-running\\.archify\\workflow-student-after-video-20261118-160000\\student-after-video.finalize.json",
+    "summaryReceipt": "E:\\LMS系统参考\\项目\\agentic-class-pilot-running\\.archify\\workflow-student-after-video-20261118-160000\\student-after-video.finalize-summary.json",
+    "browserCheckReceipt": "E:\\LMS系统参考\\项目\\agentic-class-pilot-running\\.archify\\workflow-student-after-video-20261118-160000\\student-after-video.browser-check.json"
+  },
+  "update": {
+    "status": "current",
+    "installedVersion": "3.2.0",
+    "availableVersion": "3.2.0",
+    "releaseNotes": null,
+    "checkedAt": "2026-11-18T05:00:50.506Z",
+    "source": "cache",
+    "noticeRequired": false,
+    "noticeText": null
+  },
+  "visualReview": "not-requested",
+  "durationMs": 3868,
+  "browserCheck": {
+    "requested": true,
+    "ran": true
+  }
+}

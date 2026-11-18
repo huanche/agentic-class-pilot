@@ -1,0 +1,128 @@
+{
+  "schemaVersion": 3,
+  "courseId": "local-review",
+  "lessonId": "arrays",
+  "sourceRevision": "archived-2026-11-11",
+  "compilerVersion": "core-v3",
+  "sourceManifestHash": "314ae2f6a8fb158093fd86c0b52947bc5651f6c86e94c6c9e1356c318152ea69",
+  "sourceManifest": [
+    {
+      "sourceId": "scene:y7hhE2Xae0gxjg9Lv6kpd",
+      "kind": "published-classroom-scene",
+      "locator": {
+        "sceneId": "y7hhE2Xae0gxjg9Lv6kpd"
+      },
+      "textHash": "2e9a0608e0cdd413a2e3ca7f39abd82eeefeb32812d1c3d358106298f8847e1a"
+    },
+    {
+      "sourceId": "scene:yqb9KzzVjYnb-cmF2OB87",
+      "kind": "published-classroom-scene",
+      "locator": {
+        "sceneId": "yqb9KzzVjYnb-cmF2OB87"
+      },
+      "textHash": "29361f2f696808b4822ce2110b21e4f88d43e469d0e3f45166aadc168ca7a6c1"
+    },
+    {
+      "sourceId": "scene:NWJCDhp-xZApxifAVMtnx",
+      "kind": "published-classroom-scene",
+      "locator": {
+        "sceneId": "NWJCDhp-xZApxifAVMtnx"
+      },
+      "textHash": "ad2fbd7b7159cd979360b650e83c66d676a90c8ce9e3df48647976f7345bccc6"
+    }
+  ],
+  "sources": [
+    {
+      "sourceId": "scene:y7hhE2Xae0gxjg9Lv6kpd",
+      "kind": "published-classroom-scene",
+      "locator": {
+        "sceneId": "y7hhE2Xae0gxjg9Lv6kpd"
+      },
+      "text": "画面文字：一维数组的定义与下标；定义形式；存储类型  数据类型  数组名[整型常量表达式];；示例；int a[5];；定义 5 个 int 元素，内存连续存放；合法下标：0 ~ 4（从 0 开始计）；a[0]；a[1]；a[2]；a[3]；a[4]；最大下标 = 数组大小 - 1（此处为 4）； a[5] 越界，不是合法元素\n讲解旁白：同学们好，这节课我们学习一维数组的定义与下标。 一维数组的定义形式由四部分组成：存储类型、数据类型、数组名，以及方括号中的整型常量表达式。存储类型说明存储特性，数据类型决定每个元素的类型，数组名是标识符，方括号里的整型常量表达式给出元素个数。 看示例：int a[5]; 这里数据类型是 int，数组名是 a，方括号里的 5 表示元素个数，所以它定义的是 5 个 int 类型的元素。 这 5 个 int 元素在内存中连续存放，这一点对后面用……",
+      "title": "一维数组的定义与下标",
+      "textHash": "2e9a0608e0cdd413a2e3ca7f39abd82eeefeb32812d1c3d358106298f8847e1a"
+    },
+    {
+      "sourceId": "scene:yqb9KzzVjYnb-cmF2OB87",
+      "kind": "published-classroom-scene",
+      "locator": {
+        "sceneId": "yqb9KzzVjYnb-cmF2OB87"
+      },
+      "text": "画面文字：初始化：int a[5] = {1, 2};；int a[5] = {1, 2};；• 只给出前两个初值 1、2  • 其余元素由编译器自动补 0  • 最终数组：1, 2, 0, 0, 0；a[0]；a[1]；a[2]；a[3]；a[4]；a[5]；1；2；0；0；0；✕；未显式赋值 → 自动补 0；越界，不可读写\n讲解旁白：上一页我们已经知道，int a[5] 定义了 5 个连续存放的 int 元素。这一页我们看部分初始化：如果只写出一部分初值，剩下的元素会变成什么。 先看这段代码：int a[5] = {1, 2}; 方括号里的 5 说明数组一共有 5 个元素，而花括号里只写了两个初值 1 和 2，所以这是一次部分初始化。 初始化按下标从小到大依次对应：第一个初值 1 给 a[0]，所以 a[0] 里存的就是 1。 第二个初值 2 紧跟着给 a[1]，所以……",
+      "title": "初始化：int a[5]={1,2}",
+      "textHash": "29361f2f696808b4822ce2110b21e4f88d43e469d0e3f45166aadc168ca7a6c1"
+    },
+    {
+      "sourceId": "scene:NWJCDhp-xZApxifAVMtnx",
+      "kind": "published-classroom-scene",
+      "locator": {
+        "sceneId": "NWJCDhp-xZApxifAVMtnx"
+      },
+      "text": "画面文字：用循环逐项赋值并构造奇数数组；核心代码；int  a[5], i;   for  (i = 0; i < 5; i++)      a[i] = 2 * i + 1;   // 得到 1 3 5 7 9；• 数组逐个元素赋值，共 5 个  • 循环 i = 0~4 依次覆盖下标  • a[i] = 2*i+1 → 1 3 5 7 9；a = {1, 3, 5, 7, 9}；任务：写出 int a[5]，用 for(i=0; i<5; i++) 赋值，得到 5 个奇数并检查结果\n讲解旁白：前面我们已经学了数组的定义与初始化。最后一页，把下标和 for 循环结合起来，看怎样逐项给数组元素赋值，并构造出五个奇数。 先看第一行：int a[5], i; 这里定义了一个包含 5 个 int 元素的数组 a，同时定义循环变量 i。数组的每个元素还没有赋值，接下来要逐个填入。 循环条件是 for (i = 0; i < 5; i++)。i 从 0 开始，只要 i 小于 5 就继续执行；因此 i 依次取 0、1、2、3、4，正好对应数……",
+      "title": "用循环逐项赋值并构造奇数数组",
+      "textHash": "ad2fbd7b7159cd979360b650e83c66d676a90c8ce9e3df48647976f7345bccc6"
+    }
+  ],
+  "topics": [
+    {
+      "topicId": "knowledge:3228b975e74c3227564d",
+      "title": "一维数组的定义形式与下标范围",
+      "sourceRefs": [],
+      "name": "一维数组的定义形式与下标范围",
+      "explanation": "一维数组的定义形式为：存储类型 数据类型 数组名[整型常量表达式];。其中存储类型说明存储特性，数据类型决定每个元素的类型，数组名是标识符，方括号中的整型常量表达式给出元素个数。例如 int a[5]; 定义了 5 个 int 类型的元素，这 5 个元素在内存中连续存放。数组下标从 0 开始计，合法下标为 0 ~ 4，最大下标 = 数组大小 - 1；a[5] 已越界，不是合法元素，不可读写。"
+    },
+    {
+      "topicId": "knowledge:3b8d4e90889ffae132ab",
+      "title": "一维数组的部分初始化规则",
+      "sourceRefs": [],
+      "name": "一维数组的部分初始化规则",
+      "explanation": "定义数组时可用花括号给出初值，初始化按下标从小到大依次对应。若只给出一部分初值，如 int a[5] = {1, 2};，则第一个初值 1 赋给 a[0]，第二个初值 2 赋给 a[1]，其余未显式赋值的元素由编译器自动补 0，最终数组为 1, 2, 0, 0, 0。"
+    },
+    {
+      "topicId": "knowledge:045c55235b114a346c9a",
+      "title": "用 for 循环逐项给数组元素赋值",
+      "sourceRefs": [],
+      "name": "用 for 循环逐项给数组元素赋值",
+      "explanation": "数组元素可以借助 for 循环逐个赋值，循环变量依次取 0 到 数组大小-1，正好覆盖全部合法下标。例如 int a[5], i; for (i = 0; i < 5; i++) a[i] = 2 * i + 1; 中，i 依次取 0、1、2、3、4，分别给 a[0] 到 a[4] 赋值，得到 1、3、5、7、9 共 5 个奇数。"
+    }
+  ],
+  "points": [
+    {
+      "id": "knowledge:3228b975e74c3227564d",
+      "title": "一维数组的定义形式与下标范围",
+      "content": "一维数组的定义形式为：存储类型 数据类型 数组名[整型常量表达式];。其中存储类型说明存储特性，数据类型决定每个元素的类型，数组名是标识符，方括号中的整型常量表达式给出元素个数。例如 int a[5]; 定义了 5 个 int 类型的元素，这 5 个元素在内存中连续存放。数组下标从 0 开始计，合法下标为 0 ~ 4，最大下标 = 数组大小 - 1；a[5] 已越界，不是合法元素，不可读写。",
+      "description": "一维数组的定义形式为：存储类型 数据类型 数组名[整型常量表达式];。其中存储类型说明存储特性，数据类型决定每个元素的类型，数组名是标识符，方括号中的整型常量表达式给出元素个数。例如 int a[5]; 定义了 5 个 int 类型的元素，这 5 个元素在内存中连续存放。数组下标从 0 开始计，合法下标为 0 ~ 4，最大下标 = 数组大小 - 1；a[5] 已越界，不是合法元素，不可读写。",
+      "name": "一维数组的定义形式与下标范围",
+      "explanation": "一维数组的定义形式为：存储类型 数据类型 数组名[整型常量表达式];。其中存储类型说明存储特性，数据类型决定每个元素的类型，数组名是标识符，方括号中的整型常量表达式给出元素个数。例如 int a[5]; 定义了 5 个 int 类型的元素，这 5 个元素在内存中连续存放。数组下标从 0 开始计，合法下标为 0 ~ 4，最大下标 = 数组大小 - 1；a[5] 已越界，不是合法元素，不可读写。"
+    },
+    {
+      "id": "knowledge:3b8d4e90889ffae132ab",
+      "title": "一维数组的部分初始化规则",
+      "content": "定义数组时可用花括号给出初值，初始化按下标从小到大依次对应。若只给出一部分初值，如 int a[5] = {1, 2};，则第一个初值 1 赋给 a[0]，第二个初值 2 赋给 a[1]，其余未显式赋值的元素由编译器自动补 0，最终数组为 1, 2, 0, 0, 0。",
+      "description": "定义数组时可用花括号给出初值，初始化按下标从小到大依次对应。若只给出一部分初值，如 int a[5] = {1, 2};，则第一个初值 1 赋给 a[0]，第二个初值 2 赋给 a[1]，其余未显式赋值的元素由编译器自动补 0，最终数组为 1, 2, 0, 0, 0。",
+      "name": "一维数组的部分初始化规则",
+      "explanation": "定义数组时可用花括号给出初值，初始化按下标从小到大依次对应。若只给出一部分初值，如 int a[5] = {1, 2};，则第一个初值 1 赋给 a[0]，第二个初值 2 赋给 a[1]，其余未显式赋值的元素由编译器自动补 0，最终数组为 1, 2, 0, 0, 0。"
+    },
+    {
+      "id": "knowledge:045c55235b114a346c9a",
+      "title": "用 for 循环逐项给数组元素赋值",
+      "content": "数组元素可以借助 for 循环逐个赋值，循环变量依次取 0 到 数组大小-1，正好覆盖全部合法下标。例如 int a[5], i; for (i = 0; i < 5; i++) a[i] = 2 * i + 1; 中，i 依次取 0、1、2、3、4，分别给 a[0] 到 a[4] 赋值，得到 1、3、5、7、9 共 5 个奇数。",
+      "description": "数组元素可以借助 for 循环逐个赋值，循环变量依次取 0 到 数组大小-1，正好覆盖全部合法下标。例如 int a[5], i; for (i = 0; i < 5; i++) a[i] = 2 * i + 1; 中，i 依次取 0、1、2、3、4，分别给 a[0] 到 a[4] 赋值，得到 1、3、5、7、9 共 5 个奇数。",
+      "name": "用 for 循环逐项给数组元素赋值",
+      "explanation": "数组元素可以借助 for 循环逐个赋值，循环变量依次取 0 到 数组大小-1，正好覆盖全部合法下标。例如 int a[5], i; for (i = 0; i < 5; i++) a[i] = 2 * i + 1; 中，i 依次取 0、1、2、3、4，分别给 a[0] 到 a[4] 赋值，得到 1、3、5、7、9 共 5 个奇数。"
+    }
+  ],
+  "coverage": {},
+  "coverageGaps": [
+    {
+      "code": "visual_content_not_interpreted"
+    }
+  ],
+  "validationStatus": "structure_checked",
+  "inputCapabilities": {
+    "classroomText": true,
+    "originalPpt": false,
+    "visualSemantics": false
+  },
+  "contentId": "content:4d410f849aec6d728c24f4732cb6349547cb2f3e3bdff202f3d2b515a7086274"
+}
