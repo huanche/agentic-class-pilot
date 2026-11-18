@@ -14,13 +14,13 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from pydantic import ValidationError
 
 from backend.infrastructure import model
-from backend.content.knowledge_schema import compatibility_text, submit_knowledge_points
+from backend.content.knowledge_schema import StoredKnowledgePoints, canonical_point, compatibility_text, submit_knowledge_points
 from backend.content.prompts import KNOWLEDGE_EXTRACTION_PROMPT
 
 # Teaching/session compatibility is independent of the extraction compiler version.
 # Do not upgrade existing students' curricula just because extraction changed.
 CURRICULUM_VERSION = 10
-EXTRACTION_VERSION = 2
+EXTRACTION_VERSION = 3
 MAX_MODEL_CALLS = 3
 TOTAL_TIMEOUT_SECONDS = 180
 MODEL_TIMEOUT_SECONDS = 120
@@ -90,22 +90,11 @@ def _model_error(error: Exception) -> KnowledgePreparationError:
     return KnowledgePreparationError(code)
 
 
-def _canonical(value):
-    """Only trim edges/normalize newlines; preserve code, punctuation and list order."""
-    if isinstance(value, str):
-        return value.replace("\r\n", "\n").replace("\r", "\n").strip()
-    if isinstance(value, list):
-        return [_canonical(item) for item in value]
-    if isinstance(value, dict):
-        return {key: _canonical(item) for key, item in value.items()}
-    return value
-
-
-def compile_points(submission: submit_knowledge_points, *, scope: tuple[str, str] | None = None) -> list[dict]:
+def compile_points(submission: StoredKnowledgePoints, *, scope: tuple[str, str] | None = None) -> list[dict]:
     """Merge exact duplicates and derive legacy text before assigning identities."""
     points, seen = [], set()
     for candidate in submission.points:
-        data = _canonical(candidate.model_dump())
+        data = canonical_point(candidate.model_dump())
         key = json.dumps(data, ensure_ascii=False, sort_keys=True)
         if key in seen:
             continue

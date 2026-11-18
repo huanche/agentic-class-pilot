@@ -6,7 +6,7 @@ import pytest
 from langchain_core.messages import AIMessage, HumanMessage
 
 from backend.content.knowledge import compile_points
-from backend.content.knowledge_schema import submit_knowledge_points
+from backend.content.knowledge_schema import StoredKnowledgePoints as submit_knowledge_points
 from backend.evidence import records
 from backend.infrastructure import model
 from backend.teaching import service, typed_state, typed_teaching

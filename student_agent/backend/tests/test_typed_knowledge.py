@@ -9,7 +9,7 @@ from langchain_core.outputs import ChatGeneration, ChatResult
 from pydantic import Field, ValidationError
 
 from backend.content import knowledge
-from backend.content.knowledge_schema import submit_knowledge_points
+from backend.content.knowledge_schema import StoredKnowledgePoints, submit_knowledge_points
 from backend.infrastructure import model
 
 MATERIALS = [{"id": "scene:one", "source": "published-classroom-scene",
@@ -78,7 +78,7 @@ def test_three_types_are_preserved_and_paraphrases_need_no_quotes(monkeypatch):
     {**MEMORY, "sourceRefs": [{"sourceId": "unknown"}]},
 ])
 def test_invalid_first_submission_gets_tool_feedback_and_repairs_in_same_agent(monkeypatch, broken):
-    client = run(monkeypatch, submission(broken), submission(MEMORY))
+    client = run(monkeypatch, submission(broken), submission(MEMORY, CONCEPT, DESIGN))
     result = knowledge.learning_points(MATERIALS)
     assert result.model_calls == 2 and result.repair_attempted
     assert result.points[0]["type"] == "memory"
@@ -90,7 +90,7 @@ def test_invalid_first_submission_gets_tool_feedback_and_repairs_in_same_agent(m
 
 def test_structural_errors_exhaust_shared_budget_without_partial_result(monkeypatch):
     invalid = {**DESIGN, "details": {**DESIGN["details"], "successCriteria": []}}
-    client = run(monkeypatch, submission(MEMORY, invalid))
+    client = run(monkeypatch, submission(MEMORY, CONCEPT, invalid))
     with pytest.raises(knowledge.KnowledgePreparationError) as caught:
         knowledge.learning_points(MATERIALS)
     assert caught.value.code == "format" and caught.value.model_calls == 3
@@ -101,7 +101,7 @@ def test_structural_errors_exhaust_shared_budget_without_partial_result(monkeypa
 
 
 def test_plain_text_is_feedback_not_success(monkeypatch):
-    client = run(monkeypatch, AIMessage(content="整理完成"), submission(CONCEPT))
+    client = run(monkeypatch, AIMessage(content="整理完成"), submission(CONCEPT, MEMORY, DESIGN))
     result = knowledge.learning_points(MATERIALS)
     assert result.model_calls == 2
     assert "尚未收到有效的工具提交" in client.seen[1][-1].content
@@ -121,16 +121,16 @@ def test_only_plain_text_stops_at_three_calls(monkeypatch):
                                       {"name": "submit_knowledge_points", "id": "second", "args": {"points": [CONCEPT]}}]),
 ])
 def test_bad_tool_calls_receive_feedback_before_resubmitting(monkeypatch, bad_message):
-    client = run(monkeypatch, bad_message, submission(MEMORY))
+    client = run(monkeypatch, bad_message, submission(MEMORY, CONCEPT, DESIGN))
     assert knowledge.learning_points(MATERIALS).model_calls == 2
     assert any(isinstance(m, ToolMessage) for m in client.seen[1])
 
 
-def test_empty_submission_is_no_content_not_format_retry(monkeypatch):
+def test_empty_submission_exhausts_repair_budget(monkeypatch):
     client = run(monkeypatch, submission())
     with pytest.raises(knowledge.KnowledgePreparationError) as caught:
         knowledge.learning_points(MATERIALS)
-    assert caught.value.code == "no_content" and len(client.seen) == 1
+    assert caught.value.code == "format" and len(client.seen) == 3
 
 
 def test_no_input_does_not_call_model(monkeypatch):
@@ -167,7 +167,7 @@ def test_deduplication_is_exact_preserves_type_details_order_and_code(monkeypatc
     assert len({p["id"] for p in result.points}) == 3
     code1 = {**DESIGN, "details": {**DESIGN["details"], "capability": '输出字符串 "a b"'}}
     code2 = {**DESIGN, "details": {**DESIGN["details"], "capability": '输出字符串 "ab"'}}
-    assert len(knowledge.compile_points(submit_knowledge_points(points=[code1, code2]))) == 2
+    assert len(knowledge.compile_points(StoredKnowledgePoints(points=[code1, code2]))) == 2
 
 
 def test_schema_forbids_type_specific_field_mismatch():
@@ -176,7 +176,7 @@ def test_schema_forbids_type_specific_field_mismatch():
 
 
 def test_same_content_in_different_lessons_has_distinct_program_owned_ids(monkeypatch):
-    run(monkeypatch, submission(MEMORY))
+    run(monkeypatch, submission(MEMORY, CONCEPT, DESIGN))
     first = knowledge.learning_points(MATERIALS, "course", "lesson-1")
     second = knowledge.learning_points(MATERIALS, "course", "lesson-2")
     assert first.points[0]["id"] != second.points[0]["id"]
@@ -203,7 +203,7 @@ def test_real_chatopenai_serialization_and_repair_over_mock_http(monkeypatch):
             "model": "test-model", "choices": [{"index": 0, "finish_reason": "tool_calls", "message": {
                 "role": "assistant", "content": None, "tool_calls": [{"id": f"call_{len(requests)}",
                 "type": "function", "function": {"name": "submit_knowledge_points",
-                "arguments": json.dumps({"points": [candidate]}, ensure_ascii=False)}}]}}]})
+                "arguments": json.dumps({"points": [candidate, CONCEPT, DESIGN]}, ensure_ascii=False)}}]}}]})
     with httpx.Client(transport=httpx.MockTransport(handle)) as http_client:
         client = ChatOpenAI(api_key="mock-only", base_url="https://model.example.test/v1",
                             model="test-model", max_retries=0, http_client=http_client)
@@ -234,3 +234,45 @@ def test_other_providers_do_not_receive_deepseek_specific_parameters(monkeypatch
     monkeypatch.setenv("STUDENT_AGENT_API_KEY", "mock-only")
     monkeypatch.setenv("STUDENT_AGENT_BASE_URL", "https://custom.example.test/v1")
     assert not model.extraction_model().extra_body
+
+
+@pytest.mark.parametrize("count", [0, 1, 2, 9])
+def test_out_of_range_submission_is_repaired(monkeypatch, count):
+    points = [{**MEMORY, "title": f"Point {i}"} for i in range(count)]
+    run(monkeypatch, submission(*points), submission(MEMORY, CONCEPT, DESIGN))
+    result = knowledge.learning_points(MATERIALS)
+    assert len(result.points) == 3 and result.repair_attempted
+
+
+def test_duplicates_cannot_satisfy_minimum_and_are_repaired(monkeypatch):
+    run(monkeypatch, submission(MEMORY, MEMORY, CONCEPT), submission(MEMORY, CONCEPT, DESIGN))
+    result = knowledge.learning_points(MATERIALS)
+    assert len(result.points) == 3 and result.repair_attempted
+
+
+@pytest.mark.parametrize("count", [3, 8])
+def test_quantity_boundaries_are_accepted(monkeypatch, count):
+    points = [{**MEMORY, "title": f"Point {i}"} for i in range(count)]
+    run(monkeypatch, submission(*points))
+    result = knowledge.learning_points(MATERIALS)
+    assert len(result.points) == count and not result.repair_attempted
+
+
+@pytest.mark.parametrize("points", [[MEMORY, CONCEPT], [MEMORY, MEMORY, CONCEPT],
+                                     [{**MEMORY, "title": f"Point {i}"} for i in range(9)]])
+def test_invalid_quantity_never_returns_partial_success(monkeypatch, points):
+    run(monkeypatch, submission(*points))
+    with pytest.raises(knowledge.KnowledgePreparationError) as caught:
+        knowledge.learning_points(MATERIALS)
+    assert caught.value.code == "format" and caught.value.model_calls == 3
+    assert caught.value.accepted_count == 0
+
+
+@pytest.mark.parametrize("count", [1, 9])
+def test_historical_content_outside_new_limits_remains_readable(count):
+    from backend.content import lesson_content
+    points = knowledge.compile_points(StoredKnowledgePoints(points=[
+        {**MEMORY, "title": f"Point {i}"} for i in range(count)]))
+    body = lesson_content.build("course", "lesson", "rev", "historical", points, MATERIALS)
+    lesson_content.validate(body)
+    assert len(body["points"]) == count

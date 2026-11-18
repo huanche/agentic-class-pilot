@@ -5,7 +5,7 @@ from copy import deepcopy
 import hashlib
 import json
 
-from backend.content.knowledge_schema import SCHEMA_VERSION, compatibility_text, submit_knowledge_points
+from backend.content.knowledge_schema import SCHEMA_VERSION, compatibility_text, StoredKnowledgePoints
 
 POINT_FIELDS = ("id", "title", "content", "description", "source", "sourceIds", "type", "details")
 
@@ -16,7 +16,7 @@ def point_payload(point):
 
 
 def _validate_typed(points):
-    submitted = submit_knowledge_points.model_validate({"points": [
+    submitted = StoredKnowledgePoints.model_validate({"points": [
         {key: p[key] for key in ("title", "type", "details") if key in p} for p in points]})
     for saved, candidate in zip(points, submitted.points):
         canonical = candidate.model_dump()

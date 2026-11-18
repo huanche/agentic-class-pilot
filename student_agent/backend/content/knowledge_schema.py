@@ -1,9 +1,11 @@
 """One protocol for tool arguments, content validation and compatibility text."""
 from __future__ import annotations
 
+import json
+
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 SCHEMA_VERSION = 2
 Text = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=6000)]
@@ -56,10 +58,36 @@ class DesignPoint(StrictModel):
 Point = Annotated[MemoryPoint | ConceptPoint | DesignPoint, Field(discriminator="type")]
 
 
-class submit_knowledge_points(StrictModel):
-    """Submit the complete lesson's typed knowledge points; empty means no teachable content."""
+class StoredKnowledgePoints(StrictModel):
+    """Validate stored typed content independently of current extraction limits."""
 
     points: Annotated[list[Point], Field(max_length=120)]
+
+
+def canonical_point(value):
+    """Only trim edges/normalize newlines; preserve code, punctuation and list order."""
+    if isinstance(value, str):
+        return value.replace("\r\n", "\n").replace("\r", "\n").strip()
+    if isinstance(value, list):
+        return [canonical_point(item) for item in value]
+    if isinstance(value, dict):
+        return {key: canonical_point(item) for key, item in value.items()}
+    return value
+
+
+class submit_knowledge_points(StoredKnowledgePoints):
+    """Submit 3 to 8 knowledge points for a new extraction."""
+
+    points: Annotated[list[Point], Field(min_length=3, max_length=8)]
+
+    @model_validator(mode="after")
+    def require_distinct_points(self):
+        unique = {json.dumps(canonical_point(point.model_dump()), ensure_ascii=False, sort_keys=True)
+                  for point in self.points}
+        if len(unique) < 3:
+            raise ValueError("After deduplication, provide at least 3 distinct knowledge points (maximum 8). "
+                             "Resubmit the complete list using only taught content; do not invent or duplicate points.")
+        return self
 
 
 def compatibility_text(point: dict) -> str:
