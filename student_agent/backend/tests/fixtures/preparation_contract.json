@@ -1,0 +1,165 @@
+{
+  "scenes": [
+    {
+      "id": "second",
+      "order": 2,
+      "title": "Apply",
+      "visibleText": [
+        "Visible priority"
+      ],
+      "content": {
+        "canvas": {
+          "elements": [
+            {
+              "type": "text",
+              "content": "Ignored fallback"
+            }
+          ]
+        }
+      },
+      "actions": [
+        {
+          "type": "speech",
+          "text": " Explain the result. "
+        },
+        {
+          "type": "animation",
+          "text": "Ignored action"
+        }
+      ]
+    },
+    {
+      "id": "first",
+      "order": 1,
+      "title": "Recall",
+      "content": {
+        "canvas": {
+          "elements": [
+            {
+              "type": "text",
+              "content": "<b>A &amp; B</b>"
+            },
+            {
+              "type": "image",
+              "content": "Ignored image"
+            }
+          ]
+        }
+      },
+      "actions": [
+        {
+          "type": "speech",
+          "text": " Recall two facts. "
+        }
+      ]
+    },
+    {
+      "id": "empty",
+      "order": 3,
+      "visibleText": [],
+      "actions": []
+    }
+  ],
+  "submission": [
+    {
+      "title": " Facts ",
+      "type": "memory",
+      "details": {
+        "statement": "A\r\nB",
+        "requiredElements": [
+          " A ",
+          "B"
+        ]
+      }
+    },
+    {
+      "title": "Facts",
+      "type": "memory",
+      "details": {
+        "statement": "A\nB",
+        "requiredElements": [
+          "A",
+          "B"
+        ]
+      }
+    },
+    {
+      "title": "Build",
+      "type": "design",
+      "details": {
+        "capability": "Construct a sequence.",
+        "constraints": [],
+        "successCriteria": [
+          "Preserve order."
+        ]
+      }
+    }
+  ],
+  "expected": {
+    "materials": [
+      {
+        "id": "scene:first",
+        "title": "Recall",
+        "content": "画面文字：A & B\n讲解旁白：Recall two facts.",
+        "source": "published-classroom-scene"
+      },
+      {
+        "id": "scene:second",
+        "title": "Apply",
+        "content": "画面文字：Visible priority\n讲解旁白：Explain the result.",
+        "source": "published-classroom-scene"
+      }
+    ],
+    "points": [
+      {
+        "id": "knowledge:0a6b898de8b5afd39148",
+        "title": "Facts",
+        "type": "memory",
+        "details": {
+          "statement": "A\nB",
+          "requiredElements": [
+            "A",
+            "B"
+          ]
+        },
+        "content": "A\nB\nA\nB",
+        "description": "A\nB\nA\nB"
+      },
+      {
+        "id": "knowledge:813a9ee5578649559e81",
+        "title": "Build",
+        "type": "design",
+        "details": {
+          "capability": "Construct a sequence.",
+          "constraints": [],
+          "successCriteria": [
+            "Preserve order."
+          ]
+        },
+        "content": "Construct a sequence.\nPreserve order.",
+        "description": "Construct a sequence.\nPreserve order."
+      }
+    ],
+    "coverage": {
+      "partial": false,
+      "acceptedCount": 2,
+      "rejectedCount": 0,
+      "candidateCount": 3,
+      "repairAttempted": false,
+      "modelCalls": 1,
+      "duplicateCount": 1
+    },
+    "contentRef": {
+      "contentId": "content:64bd19abb56207404386cf017789cdb517397bc980a99346f57c6e086839c395",
+      "compilerVersion": "lesson-content-v1:392efb103503dd4652cadd06a9af146ff388c95f7d8480e6f812c1e1f5dd5223",
+      "sourceRevision": "contract-revision",
+      "sourceManifestHash": "f0ed1b06e50801e634980c4dae744063cf8a6a8805583848c4ef21e2e7bbeba7"
+    },
+    "extractorHash": "392efb103503dd4652cadd06a9af146ff388c95f7d8480e6f812c1e1f5dd5223",
+    "coverageGaps": [
+      {
+        "code": "visual_content_not_interpreted"
+      }
+    ]
+  }
+}

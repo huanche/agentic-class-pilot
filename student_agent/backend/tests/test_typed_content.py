@@ -8,6 +8,7 @@ from backend.content import knowledge, lesson_content
 from backend.content.knowledge_schema import submit_knowledge_points
 from backend.infrastructure import content_store, persistence, published_knowledge
 from backend.teaching import service as teaching
+from backend.session import content_binding
 
 
 def points():
@@ -81,6 +82,83 @@ def test_legacy_versions_are_not_inferred_as_concept_or_upgraded():
     assert body["schemaVersion"] == 1 and "type" not in body["points"][0]
     bound = lesson_content.bind(session(body))
     assert bound["lessonContent"] == body
+
+
+@pytest.mark.parametrize("bind_content", [lesson_content.bind, content_binding.bind], ids=["compatibility", "session"])
+def test_binding_pinned_reference_without_body_never_rebuilds_or_mutates_input(bind_content):
+    state = session(build())
+    del state["lessonContent"]
+    before = deepcopy(state)
+    bound = bind_content(state)
+    assert bound == before and bound is not state
+    assert "lessonContent" not in bound
+    assert state == before
+
+
+@pytest.mark.parametrize("bind_content", [lesson_content.bind, content_binding.bind], ids=["compatibility", "session"])
+def test_binding_copies_content_and_leaves_both_inputs_unchanged(bind_content):
+    body = build()
+    state = session(body)
+    del state["lessonContent"]
+    result = {"contentModel": body, "points": body["points"]}
+    before_state, before_result = deepcopy(state), deepcopy(result)
+    bound = bind_content(state, result)
+    assert state == before_state and result == before_result
+    bound["lessonContent"]["points"][0]["details"]["statement"] = "local change"
+    assert state == before_state and result == before_result
+
+
+@pytest.mark.parametrize("bind_content", [lesson_content.bind, content_binding.bind], ids=["compatibility", "session"])
+def test_unbound_legacy_capture_is_frozen_without_changing_original_session(bind_content):
+    state = {"lessonId": "legacy-lesson", "dialogue": {"points": [
+        {"id": "old", "title": "Old point", "content": "Old text", "status": "mastered"}]}}
+    before = deepcopy(state)
+    bound = bind_content(state)
+    assert state == before
+    body = bound["lessonContent"]
+    assert body["schemaVersion"] == 1 and body["sourceRevision"] == "legacy-unversioned"
+    assert body["compilerVersion"].startswith("legacy-frozen:")
+    assert body["points"] == [{"id": "old", "title": "Old point", "content": "Old text"}]
+    assert bind_content(bound)["contentRef"] == bound["contentRef"]
+
+
+@pytest.mark.parametrize("hydrate_content", [content_store.hydrate, content_binding.hydrate], ids=["compatibility", "session"])
+def test_hydration_uses_borrowed_connection_and_does_not_rebuild_missing_pin(monkeypatch, hydrate_content):
+    body = build()
+    state = session(body)
+    del state["lessonContent"]
+    before = deepcopy(state)
+    monkeypatch.setattr(content_store.database, "_db", lambda: pytest.fail("must use borrowed transaction"))
+
+    class Connection:
+        def __init__(self):
+            self.rows = [(deepcopy(body),), None]
+            self.content_ids = []
+
+        def execute(self, _sql, params):
+            self.content_ids.append(params)
+            return self
+
+        def fetchone(self):
+            return self.rows.pop(0)
+
+    connection = Connection()
+    restored = hydrate_content(state, connection=connection)
+    assert restored["lessonContent"] == body
+    assert restored["contentRef"] == before["contentRef"] and state == before
+    with pytest.raises(ValueError, match="Pinned lesson content is unavailable"):
+        hydrate_content(state, connection=connection)
+    assert state == before
+    assert connection.content_ids == [(body["contentId"],), (body["contentId"],)]
+
+
+@pytest.mark.parametrize("hydrate_content", [content_store.hydrate, content_binding.hydrate], ids=["compatibility", "session"])
+def test_hydration_of_cached_content_does_not_open_a_database(monkeypatch, hydrate_content):
+    state = session(build())
+    before = deepcopy(state)
+    monkeypatch.setattr(content_store.database, "_db", lambda: pytest.fail("cached content needs no database"))
+    assert hydrate_content(state) == before
+    assert state == before
 
 
 def test_optional_dynamic_consumer_accepts_typed_content_without_citations(monkeypatch):

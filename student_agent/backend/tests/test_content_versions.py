@@ -185,3 +185,56 @@ def test_visual_or_missing_sources_are_reported_as_limitations():
     assert body["inputCapabilities"]["originalPpt"] is False
     legacy = lesson_content.build("course", "lesson", "rev", "unknown", [point()], [])
     assert legacy["validationStatus"] == "limited" and legacy["topics"][0]["sourceRefs"] == []
+
+
+def test_content_storage_failure_rolls_back_ready_and_preserves_old_pinned_version(pg, monkeypatch):
+    register(pg)
+    original = published_knowledge.read("course", "lesson", "rev")["contentModel"]
+    monkeypatch.setattr(published_knowledge, "EXTRACTOR_HASH", "storage-failure-compiler")
+    assert published_knowledge.read("course", "lesson", "rev")["status"] == "pending"
+    monkeypatch.setattr(published_knowledge, "learning_points", lambda *args:
+                        KnowledgeResult([point(ALTERNATIVE)], candidate_count=1))
+    real_store = content_store.store
+
+    def fail_after_insert(body, *, connection=None):
+        saved = real_store(body, connection=connection)
+        if body["compilerVersion"].endswith("storage-failure-compiler"):
+            raise RuntimeError("injected failure after content insert")
+        return saved
+
+    monkeypatch.setattr(content_store, "store", fail_after_insert)
+    assert published_knowledge.process_next()
+    with pg() as connection:
+        assert connection.execute("SELECT status,points FROM student.published_lesson_knowledge").fetchone() == ("failed", [point()])
+        assert connection.execute("SELECT count(*) FROM student.lesson_content_versions").fetchone() == (1,)
+    assert published_knowledge.read("course", "lesson", "rev")["status"] == "failed"
+    assert content_store.hydrate(session(original))["lessonContent"] == original
+
+
+def test_read_archives_without_retry_diagnostics_and_reschedules_old_compiler(pg, monkeypatch):
+    register(pg)
+    original = published_knowledge.read("course", "lesson", "rev")["contentModel"]
+    with pg() as connection:
+        connection.execute("DELETE FROM student.lesson_content_versions")
+        connection.execute("UPDATE student.published_lesson_knowledge SET "
+                           "coverage=coverage || '{\"extractionFailure\":{\"draft\":\"retry-only\"}}'::jsonb")
+    monkeypatch.setattr(published_knowledge, "EXTRACTOR_HASH", "next-reader-compiler")
+    result = published_knowledge.read("course", "lesson", "rev")
+    assert result == {"status": "pending", "points": None, "coverage": None, "error": None}
+    with pg() as connection:
+        assert connection.execute("SELECT status FROM student.published_lesson_knowledge").fetchone() == ("pending",)
+        assert connection.execute("SELECT payload FROM student.lesson_content_versions").fetchone() == (original,)
+
+
+def test_read_prefers_current_cached_version_over_failed_job_without_rescheduling(pg):
+    scenes = register(pg, compiler="old-reader-compiler")
+    cached = published_knowledge._compiled("course", "lesson", "rev", published_knowledge.EXTRACTOR_HASH,
+                                          scenes, [point(ALTERNATIVE)], {"acceptedCount": 1})
+    content_store.store(cached)
+    with pg() as connection:
+        connection.execute("UPDATE student.published_lesson_knowledge SET status='failed',last_error='old-failure'")
+    result = published_knowledge.read("course", "lesson", "rev")
+    assert result == {"status": "ready", "points": cached["points"], "coverage": cached["coverage"],
+                      "error": None, "contentRef": lesson_content.reference(cached), "contentModel": cached}
+    with pg() as connection:
+        assert connection.execute("SELECT status,last_error FROM student.published_lesson_knowledge").fetchone() == ("failed", "old-failure")
