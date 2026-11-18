@@ -40,22 +40,33 @@ def test_array_example_is_not_a_mandatory_algorithm():
                   'content': '本课学习根据目标序列独立编写for循环给一维数组赋值。示范：定义int a[5]，'
                   '用for(i=0;i<5;i++)执行a[i]=2*i+1，得到1、3、5、7、9。'
                   '循环覆盖所有元素且不越界。示范是一个例子，目标是学会根据要求构造循环，而非背这份代码。'}]
-    result = knowledge.learning_points(materials, 'design-verification', 'arrays', course_name='C语言程序设计')
+    result = knowledge.learning_points(materials, 'design-verification', 'arrays')
     record('extraction', {'materials': materials, 'points': result.points})
-    assert 1 <= len(result.points) <= 3
-    text = " ".join(p["explanation"] for p in result.points)
-    assert "for" in text.lower() and "越界" in text
-    assert not re.search(r"必须(?:使用|照用|采用).{0,12}2\s*\*\s*i\s*\+\s*1", text)
+    designs = [p for p in result.points if p['type'] == 'design']
+    assert designs
+    for point in designs:
+        details = point['details']
+        assert not exposes_solution(details['capability']), details
+        assert not exposes_solution(' '.join(details['constraints'])), details
+        assert any('循环' in text or 'for' in text for text in [details['capability'], *details['constraints']]), details
+        assert any('越界' in text or '下标' in text or '边界' in text for text in details['successCriteria']), details
 
 
 def test_explicit_required_formula_is_preserved():
     materials = [{'id': 'specified', 'title': '按指定公式实现', 'source': 'published-classroom-scene',
                   'content': '本课任务明确规定：定义int a[5]，必须使用for循环，按题目指定公式a[i]=2*i+1逐项赋值。'
                   '这里公式是题目给定条件，不考查推导公式。学生需要自己确定合法下标和循环边界，确保得到1、3、5、7、9且不越界。'}]
-    result = knowledge.learning_points(materials, 'design-verification', 'specified', course_name='C语言程序设计')
+    result = knowledge.learning_points(materials, 'design-verification', 'specified')
     record('specified-extraction', {'materials': materials, 'points': result.points})
-    assert 1 <= len(result.points) <= 3
-    assert any('2*i+1' in re.sub(r'\s+', '', p['explanation']) for p in result.points)
+    designs = [p for p in result.points if p['type'] == 'design']
+    assert designs
+    assert any('2*i+1' in re.sub(r'\s+', '', json.dumps(p['details'], ensure_ascii=False)) for p in designs), designs
+    session = {'id': 'specified-verification', 'phase': 'video', 'messages': [],
+               'dialogue': service.new_dialogue(designs)}
+    session.update(service.start_discussion(session))
+    reply = session['messages'][-1]['text']
+    record('specified-opening', {'reply': reply})
+    assert '2*i+1' in re.sub(r'\s+', '', reply), reply
 
 
 def test_archived_requirements_do_not_spoil_first_task_and_help_still_works():

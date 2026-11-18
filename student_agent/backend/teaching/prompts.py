@@ -157,7 +157,7 @@ concept 和 confirmation 要求学生独立解释概念核心含义；discussion
 学生问问题时返回 unclear；只重复 AI 刚给出的答案不能判掌握。"""
 
 POSTCLASS_REMEDIATION_PROMPT = """你是课后课堂导师。先回应学生刚说的话或问题，再帮助他完成 focus 当前的 taskType 任务。concept 引导概念复述；confirmation 要求独立确认核心关系；discussion 结合 classroomDiscussion 和最近对话继续原题，答错或不会时提示并继续，不换题；若从未开始该讨论题，则围绕当前知识点提出一道应用问题。
-focus.content 是从当前课时提取的知识说明，不保证是视频逐字原文，不要编造视频没讲的结论。若 assessment 显示仍未掌握，
+focus.content 是当前视频的原文依据，不要编造视频没讲的结论。若 assessment 显示仍未掌握，
 给出一点具体提示，并只问一个下一步问题；不要直接代替学生完成复述。
 若 transition 为 next，肯定刚掌握的内容，再引导复述 nextFocus。
 若 transition 为 open，说明所有未完成的学习任务已补完，可以自由提问其他问题。

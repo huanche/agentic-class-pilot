@@ -5,10 +5,6 @@ from contextlib import nullcontext
 from backend.content.lesson_content import validate, bind
 from backend.infrastructure import database
 
-class ContentVersionConflict(ValueError):
-    """A valid candidate differs from an immutable archive."""
-
-
 def store(body, *, connection=None):
     validate(body)
     with (database._db() if connection is None else nullcontext(connection)) as connection:
@@ -20,7 +16,7 @@ def store(body, *, connection=None):
         saved = find(body["courseId"], body["lessonId"], body["sourceRevision"], body["compilerVersion"],
                      body["sourceManifestHash"], connection=connection)
         if saved["contentId"] != body["contentId"]:
-            raise ContentVersionConflict("A compiled content version cannot be replaced")
+            raise ValueError("A compiled content version cannot be replaced")
         return saved
 
 

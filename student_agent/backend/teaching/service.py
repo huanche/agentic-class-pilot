@@ -49,8 +49,8 @@ def opening_text(dialogue: dict) -> str:
     return opening(dialogue["points"])
 
 
-def prepare(materials: list[dict], course_id: str | None = None, lesson_id: str | None = None, *, course_name: str = "") -> tuple[dict, dict]:
-    result = learning_points(materials, course_id, lesson_id, course_name=course_name)
+def prepare(materials: list[dict], course_id: str | None = None, lesson_id: str | None = None) -> tuple[dict, dict]:
+    result = learning_points(materials, course_id, lesson_id)
     coverage = {"partial": result.partial, "acceptedCount": len(result.points),
                 "rejectedCount": result.rejected_count,
                 "candidateCount": result.candidate_count,
@@ -155,7 +155,7 @@ def is_typed(session):
 def _typed_run(dialogue, **kwargs):
     try:
         focus = typed_state.current(dialogue, after_class=kwargs.get("after_class", False))
-        if dialogue.get("cards_version") == 1 and kwargs.get("opening") and focus and focus.get("type") == "memory":
+        if dialogue.get("cards_version") == 1 and kwargs.get("opening") and focus and focus["type"] == "memory":
             result = deepcopy(dialogue)
             card_teaching.ensure_card(result, kwargs.get("after_class", False))
             return result
@@ -168,13 +168,7 @@ def _typed_run(dialogue, **kwargs):
 
 
 def card_turn(session, group_id, answers):
-    try:
-        return card_teaching.submit(session, group_id, answers)
-    except SessionError:
-        raise
-    except Exception as error:
-        logger.exception("题卡评估失败")
-        raise SessionError(503, "课堂导师暂不可用，进度未改变，请重试", code="MODEL_UNAVAILABLE") from error
+    return card_teaching.submit(session, group_id, answers)
 
 
 def _typed_assistant(dialogue, phase, *, after_class=False):
@@ -203,9 +197,9 @@ def navigate_point_turn(session, direction="next"):
     pending = next((g for g in dialogue.get("question_groups", []) if g["point_id"] == focus["id"]
                     and len(g["results"]) < len(g["questions"])), None)
     if pending:
-        dialogue["reply"] = f"继续学习「{focus['title']}」，接着完成这组尚未提交完的题。"
+        dialogue["reply"] = f"继续学习「{focus['title']}」，可以接着完成这组题。"
     elif dialogue.get("review_point_id") == focus["id"]:
-        dialogue["reply"] = f"已回到「{focus['title']}」，可以查看已有内容并提问。"
+        dialogue["reply"] = f"已回到「{focus['title']}」，可以查看之前的内容并提问。"
     else:
         dialogue = _typed_run(dialogue, opening=True, after_class=after_class)
     phase = "postclass-remediation" if after_class else dialogue["stage"]
@@ -254,8 +248,7 @@ def _typed_turn(session, text, *, after_class=False):
 
 
 def select_flow(context, lesson_id):
-    # New lessons use the original executor; persisted dynamic sessions retain their route.
-    return {"flowVersion": dynamic_teaching.LEGACY}
+    return dynamic_teaching.select(context, lesson_id)
 
 
 def is_dynamic(session):

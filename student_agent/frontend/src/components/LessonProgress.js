@@ -21,7 +21,7 @@ export default function LessonProgress({ id, phase, agentStage, progress, postcl
         aria-current={i === index ? "step" : undefined}>
         <span className="lesson-progress__marker" aria-hidden="true">{i + 1}</span><div><strong>{title}</strong></div>
       </li>)}</ol>
-      {phase === "postclass" && <p>接着未完成或尚未确认的内容学习，可随时退出并保留进度。</p>}
+      {phase === "postclass" && <p>接着尚未掌握的部分学习，可随时退出并保留进度。</p>}
     </aside>;
   }
   if (flowVersion === "dynamic_dialogue_v1") return <aside id={id} className="lesson-progress" aria-label="课堂阶段进度">

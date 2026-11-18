@@ -80,7 +80,7 @@ def test_default_legacy_allowlist_is_scoped_and_old_sessions_never_upgrade(monke
     monkeypatch.delenv("STUDENT_DYNAMIC_PILOT_SCOPES", raising=False)
     assert teaching.select_flow({"courseId": "course"}, "lesson") == {"flowVersion": dynamic.LEGACY}
     monkeypatch.setenv("STUDENT_DYNAMIC_PILOT_SCOPES", '[{"courseId":"course","lessonId":"lesson"}]')
-    assert teaching.select_flow({"courseId": "course"}, "lesson")["flowVersion"] == dynamic.LEGACY
+    assert teaching.select_flow({"courseId": "course"}, "lesson")["flowVersion"] == dynamic.FLOW
     assert teaching.select_flow({"courseId": "other"}, "lesson")["flowVersion"] == dynamic.LEGACY
     assert teaching.select_flow(None, "lesson")["flowVersion"] == dynamic.LEGACY
     legacy = video()
@@ -301,7 +301,7 @@ def test_model_timeout_and_retry_configuration_is_applied_when_client_is_created
     assert [(s["timeout"], s["max_retries"]) for s in settings] == [(12.5, 0), (45, 1)]
 
 
-def test_new_lesson_entry_uses_original_executor_despite_dynamic_allowlist(classroom, monkeypatch):
+def test_real_lesson_entry_pins_new_flow_without_converting_existing_legacy(classroom, monkeypatch):
     client, old_sid, *_ = classroom
     monkeypatch.setenv("STUDENT_DYNAMIC_PILOT_SCOPES", '[{"courseId":"course","lessonId":"lesson"}]')
     context = learning_session.platform_access.platform_context("ticket", "lesson")
@@ -315,9 +315,9 @@ def test_new_lesson_entry_uses_original_executor_despite_dynamic_allowlist(class
     sid = client.post("/api/session/start", json={"launch_token": "ticket"}).json()["sessionId"]
     begun = client.post(f"/api/session/{sid}/begin/lesson")
     assert begun.status_code == 200, begun.text
-    assert begun.json()["flowVersion"] == dynamic.LEGACY
+    assert begun.json()["flowVersion"] == dynamic.FLOW
     assert client.post(f"/api/session/{sid}/discussion").status_code == 200
-    assert "teachingPolicy" not in learning_session.sessions[sid]
+    assert learning_session.sessions[sid]["teachingPolicy"] == dynamic.POLICY
     assert learning_session.sessions[old_sid]["flowVersion"] == dynamic.LEGACY
 
 

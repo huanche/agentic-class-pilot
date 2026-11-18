@@ -28,11 +28,6 @@ async function boot(page, { entry = "catalog", missingUrl = false, completed = t
   await page.route("**/classroom-player/**", route => route.fulfill({ contentType: "text/html", body: "<p>课堂播放器</p>" }));
   await page.route("**/api/session/**", async route => {
     const path = new URL(route.request().url()).pathname;
-    if (path === "/api/session/presence") {
-      expect(route.request().method()).toBe("POST");
-      expect(route.request().headers()["x-csrf-token"]).toBeTruthy();
-      return route.fulfill({ status: 204 });
-    }
     requests.push(path);
     let body;
     let status = 200;

@@ -80,7 +80,7 @@ def _ensure_task(session, focus):
         if typed_state.active(session.get("dialogue")):
             created = records["tasks"][-1]
             created.update(purpose="继续巩固当前知识点" if episode == "after_class" else "学习当前知识点",
-                           criteriaStatus="point_explanation" if typed_state.explanation_based(session["dialogue"]) else "typed_point_details")
+                           criteriaStatus="typed_point_details")
             question = point.get("task_question", "")
             original = next((t for t in records["tasks"][:-1]
                              if t["topicId"] == point["id"] and t.get("questionMessageId")), None)
@@ -292,7 +292,7 @@ def transition(before, candidate, *, command_id=None):
                     "kind": kind, "guidedPolicy": (kind != "none") if dynamic or typed else True if kind != "tutor_response" else None, "substantive": None,
                     "providedAt": message["createdAt"], "deliveryStatus": "committed",
                     "classificationBasis": "model_reported_help" if typed else "executed_teaching_policy"})
-                if typed and not dynamic and typed_state.natural_reply(after["dialogue"]):
+                if typed and not dynamic and typed_state.scoped(after["dialogue"]) and after["dialogue"].get("reply_version") == 1:
                     records["assistance"][-1].update(
                         classificationBasis="unclassified_tutor_text", guidedPolicy=None,
                         plannedAction=(after["dialogue"].get("teaching_plan") or {}).get("action"))

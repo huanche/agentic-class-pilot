@@ -25,7 +25,6 @@ def _check_platform_service_key(value: str | None) -> None:
 
 class PublishedLessonKnowledgeRequest(BaseModel):
     courseId: str = Field(min_length=1, max_length=128)
-    courseName: str = Field(default="", max_length=255)
     lessonId: str = Field(min_length=1, max_length=128)
     videoRevision: str = Field(pattern=r"^[0-9a-f]{64}$")
     classroomId: str = Field(min_length=1, max_length=128)
@@ -42,18 +41,11 @@ def enqueue_published_lesson_knowledge(
         with _db() as connection:
             connection.execute(
                 "INSERT INTO student.published_lesson_knowledge "
-                "(course_id, lesson_id, video_revision, classroom_id, scenes, coverage) "
-                "VALUES (%s,%s,%s,%s,%s,%s) "
-                "ON CONFLICT (course_id, lesson_id, video_revision) DO UPDATE SET "
-                "coverage=(COALESCE(student.published_lesson_knowledge.coverage,'{}'::jsonb) "
-                "- 'extractionFailure') || EXCLUDED.coverage, "
-                "status=CASE WHEN student.published_lesson_knowledge.status='failed' THEN 'pending' "
-                "ELSE student.published_lesson_knowledge.status END,next_retry_at=now() "
-                "WHERE NOT (COALESCE(student.published_lesson_knowledge.coverage,'{}'::jsonb) ? 'courseName') "
-                "AND EXCLUDED.coverage ? 'courseName' ",
+                "(course_id, lesson_id, video_revision, classroom_id, scenes) "
+                "VALUES (%s,%s,%s,%s,%s) "
+                "ON CONFLICT (course_id, lesson_id, video_revision) DO NOTHING",
                 (body.courseId, body.lessonId, body.videoRevision,
-                 body.classroomId, Jsonb(body.scenes),
-                 Jsonb({"courseName": body.courseName.strip()} if body.courseName.strip() else {})),
+                 body.classroomId, Jsonb(body.scenes)),
             )
     except Exception as error:
         log.exception("Student knowledge queue storage failed")
@@ -64,66 +56,6 @@ def enqueue_published_lesson_knowledge(
 
 class LearningDataRequest(BaseModel):
     userIds: list[str] = Field(max_length=10000)
-
-
-class RosterRequest(BaseModel):
-    userIds: list[str] = Field(max_length=10000)
-    lessonRevisions: dict[str, str]
-    activeSessionKeys: list[str] = Field(max_length=10000)
-    detailUserId: str | None = None
-
-
-@router.post("/api/internal/platform/courses/{course_id}/roster-progress")
-def roster_progress(
-    course_id: str, body: RosterRequest,
-    x_student_service_key: str | None = Header(default=None),
-) -> dict[str, Any]:
-    _check_platform_service_key(x_student_service_key)
-    # 分母来自当前发布课件的知识点清单，分子只计入同一课件版本的真实评估。
-    revisions = body.lessonRevisions
-    with _db() as connection:
-        prepared = connection.execute(
-            "SELECT lesson_id, points FROM student.published_lesson_knowledge "
-            "WHERE course_id=%s AND status='ready' AND (lesson_id, video_revision) IN "
-            "(SELECT * FROM unnest(%s::text[], %s::text[]))",
-            (course_id, list(revisions), list(revisions.values())),
-        ).fetchall()
-        assessed = connection.execute(
-            "SELECT DISTINCT ON (m.user_id, s.snapshot->>'lessonId', m.knowledge_point_id) "
-            "m.user_id, s.snapshot->>'lessonId', m.knowledge_point_id, m.status, m.stars, "
-            "CASE WHEN m.user_id=%s THEN m.evidence END "
-            "FROM student.knowledge_mastery m JOIN student.student_sessions s ON s.session_key=m.session_key "
-            "WHERE m.course_id=%s AND m.user_id=ANY(%s) AND s.user_id=m.user_id AND s.course_id=m.course_id "
-            "AND (s.snapshot->>'lessonId', s.snapshot->>'videoRevision') IN "
-            "(SELECT * FROM unnest(%s::text[], %s::text[])) "
-            "ORDER BY m.user_id, s.snapshot->>'lessonId', m.knowledge_point_id, m.updated_at DESC, m.id DESC",
-            (body.detailUserId, course_id, body.userIds, list(revisions), list(revisions.values())),
-        ).fetchall()
-        active = connection.execute(
-            "SELECT session_key, user_id, classroom_id FROM student.student_sessions "
-            "WHERE course_id=%s AND user_id=ANY(%s) AND session_key=ANY(%s) AND revoked_at IS NULL "
-            "AND (snapshot->>'lessonId', snapshot->>'videoRevision') IN "
-            "(SELECT * FROM unnest(%s::text[], %s::text[]))",
-            (course_id, body.userIds, body.activeSessionKeys, list(revisions), list(revisions.values())),
-        ).fetchall()
-    points = {lesson: {p["id"]: p.get("title") or p["id"] for p in rows or []}
-              for lesson, rows in prepared}
-    mastered = {}
-    assessments = []
-    for user, lesson, point, status, stars, evidence in assessed:
-        if point not in points.get(lesson, {}):
-            continue
-        if status in {"掌握", "mastered"}:
-            mastered.setdefault(user, {}).setdefault(lesson, set()).add(point)
-        if user == body.detailUserId:
-            assessments.append({"lessonId": lesson, "pointId": point, "title": points[lesson][point],
-                                "status": status, "stars": stars, "evidence": evidence})
-    return {"totals": {lesson: len(items) for lesson, items in points.items()},
-            "mastered": {user: {lesson: len(items) for lesson, items in lessons.items()}
-                         for user, lessons in mastered.items()},
-            "active": [{"sessionId": key, "studentId": user, "classroomId": classroom}
-                       for key, user, classroom in active],
-            "assessments": assessments}
 
 
 @router.post("/api/internal/platform/courses/{course_id}/learning-data")

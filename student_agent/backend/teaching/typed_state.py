@@ -13,8 +13,8 @@ def active(dialogue):
     return bool(dialogue and dialogue.get("flow_version") == VERSION)
 
 
-def initial(points, *, explanation=False):
-    state = {"flow_version": VERSION, "mastery_version": 1, "reply_version": 1, "stage": "recall", "recall_round_limit": 5,
+def initial(points):
+    return {"flow_version": VERSION, "mastery_version": 1, "reply_version": 1, "stage": "recall", "recall_round_limit": 5,
             "reinforce_round_limit": 8, "transition": "continue", "strategy": "ask",
             "messages": [], "student_text": "", "evaluation": {}, "reply": "",
             "last_point_id": None, "current_task": None,
@@ -22,21 +22,8 @@ def initial(points, *, explanation=False):
                 recall_attempts=0, reinforce_attempts=0, recall_done=False, reinforce_done=False,
                 reinforcement_required=False, excluded_from_discussion=False, mastered_in=None,
                 assessment_history=[], known_parts=[], gaps=[], next_step="", help_history=[],
-                task_question="", requirements=[] if explanation else requirements.initial(p), question_targets=[],
+                task_question="", requirements=requirements.initial(p), question_targets=[],
                 latest_question="", question_history=[]) for p in points]}
-    if explanation:
-        state.update(assessment_basis="explanation", mastery_version=0)
-        for point in state["points"]:
-            point.setdefault("title", point["name"])
-    return state
-
-
-def explanation_based(state):
-    return state.get("assessment_basis") == "explanation"
-
-
-def natural_reply(state):
-    return (scoped(state) or explanation_based(state)) and state.get("reply_version") == 1
 
 
 def scoped(state):
@@ -67,7 +54,7 @@ def teaching_plan(state, *, after_class=False):
     updates = (history[-1].get("answer_assessment") or {}).get("updates", []) if history else []
     unresolved_feedback = observation.get("teacher_feedback", "")
     for entry in reversed(history):
-        if unresolved_feedback or (entry.get("answer_assessment") if explanation_based(state) else (entry.get("answer_assessment") or {}).get("updates")):
+        if unresolved_feedback or (entry.get("answer_assessment") or {}).get("updates"):
             break
         unresolved_feedback = entry.get("teacher_feedback", "")
     failed_help = bool(unresolved_feedback and last_result != "misconception")
@@ -84,7 +71,7 @@ def teaching_plan(state, *, after_class=False):
             # No actual request or learner work: do not invent a help topic from
             # the coarse 'unanswered' label (e.g. punctuation-only input).
             action = "clarify"
-    if control != "none":
+    if control in {"pause", "revisit"}:
         # Preserve any real learning evidence, but do not ignore the coexisting
         # control request merely because mastery moved the program to a new point.
         action = "respond"
@@ -97,10 +84,8 @@ def teaching_plan(state, *, after_class=False):
             "answer_result": last_result if not changed else next(
                 (p["assessment_history"][-1]["result"] for p in state["points"]
                  if p["id"] == previous_id and p["assessment_history"]), None),
-            "control": {"request": control, "applied": bool(after_class and control == "skip" and state.get("transition") == "postclass_next")},
-            "solicitation": "none" if (action in {"respond", "concept_explain"} or (
-                explanation_based(state) and action == "explain" and point.get("question_history")
-                and point["question_history"][-1].get("planned_action") == "clarify")) else "one_task" if action == "concept_hint" else "none" if (not changed and action != "clarify" and (
+            "control": {"request": control, "applied": bool(after_class and changed and control == "skip")},
+            "solicitation": "none" if action in {"respond", "concept_explain"} else "one_task" if action == "concept_hint" else "none" if (not changed and action != "clarify" and (
                 observation.get("help_quote") or action == "correct"
                 or any(r["status"] == "needs_help" for r in pending))) else "one_task"}
 
@@ -193,13 +178,13 @@ def advance(state, intent, assessment, *, after_class=False, observation=None, c
         for key in ("help_quote", "continue_quote", "teacher_feedback", "control_quote"):
             quote = observation.get(key, "")
             if quote and (not quote.strip() or quote not in result["student_text"]):
-                raise InvalidObservation("observation 的非空引文必须逐字来自本轮 studentText。请重新选取对应诉求的最小连续原文；没有对应表达的字段留空，不改写或引用老师、历史发言。保留本轮实际作答评估后重新调用工具。")
+                raise InvalidObservation("本轮诉求依据必须逐字引用当前学生输入")
             # Punctuation/emoji alone conveys no specific request to explain a
             # topic; leave it for clarification rather than inventing a question.
             if quote and not any(char.isalnum() for char in quote):
                 observation[key] = ""
         if observation.get("control", "none") != "none" and not observation.get("control_quote"):
-            raise InvalidObservation("control 非 none 时必须用本轮学生原文填写 control_quote；没有明确导航请求则将 control 改为 none、control_quote 留空。仅表示继续用 continue_quote。修正后重新调用工具，不自行执行导航。")
+            raise InvalidObservation("控制请求必须包含本轮学生原文依据")
         help_quote = observation.get("help_quote", "")
         continue_quote = observation.get("continue_quote", "")
         if help_quote and continue_quote:
@@ -207,15 +192,10 @@ def advance(state, intent, assessment, *, after_class=False, observation=None, c
             disjoint = (text.find(help_quote) + len(help_quote) <= text.rfind(continue_quote)
                         or text.find(continue_quote) + len(continue_quote) <= text.rfind(help_quote))
             if not disjoint:
-                raise InvalidObservation("help_quote 与 continue_quote 的引文不能重叠，必须分别引用最小原文片段。具体求助、明确不会或要求讲解用 help_quote，确认或继续用 continue_quote；没有对应诉求则留空，不能把同一片段重复归类。请修正后重新调用工具。")
+                raise InvalidObservation("确认/继续与具体求助的原文片段不能重叠；请分别引用最小片段。没有具体内容疑问、明确不会或讲解请求时，help_quote留空。")
     submitted = deepcopy(assessment)
     if scoped(result):
         assessment = requirements.apply(point, assessment, result["student_text"])
-    if explanation_based(result) and assessment:
-        if not assessment["evidence"].strip():
-            raise InvalidObservation("非空 assessment 必须说明可核对的学生表现。请引用实际学生原话、步骤或正式题卡选择，区分本轮表现和累计覆盖；没有可评估表现时用 null，正式题卡提交除外。不要为填 evidence 编造表现，修正后重新调用工具。")
-        if assessment["result"] == "mastered" and (assessment["gaps"] or not assessment["known_parts"]):
-            raise InvalidObservation("mastered 要求 known_parts 有真实学生证据支持且 gaps 为空。请重新核对课程内容和累计学生表现；仍有未确认内容或需要帮助的缺口时使用相符的非 mastered 结果。不能通过删除真实缺口或编造已会内容来通过校验。修正后重新调用工具。")
     old_stage = result["stage"]
     result["last_point_id"] = point["id"]
     outcome = assessment["result"] if assessment else "unclear"
@@ -231,9 +211,9 @@ def advance(state, intent, assessment, *, after_class=False, observation=None, c
         "result": outcome, "evidence": evidence, "studentText": result["student_text"]})
     if observation and observation.get("teacher_feedback"):
         point["assessment_history"][-1]["teacher_feedback"] = observation["teacher_feedback"]
-    if scoped(result) or explanation_based(result):
+    if scoped(result):
         point["assessment_history"][-1].update(
-            result=(submitted["result"] if explanation_based(result) else submitted["answer_result"]) if submitted else "unclear", point_result=outcome,
+            result=submitted["answer_result"] if submitted else "unclear", point_result=outcome,
             answer_assessment=submitted, target_ids=deepcopy(point["question_targets"]),
             question=point["latest_question"])
     result["evaluation"] = {"intent": intent, "assessments": [
@@ -306,11 +286,11 @@ def feedback(session):
         entries.append({"id": point["id"], "title": point["title"], "category": category, "label": label,
             "status": point["status"], "knownParts": deepcopy(point["known_parts"]), "gaps": deepcopy(point["gaps"]),
             "evidence": point["evidence"], "suggestion": "" if category == "mastered" else point["next_step"] or
-                ("从这个知识点的当前任务开始；若尚无任务，再开始第一问。" if not attempted else "接着原任务，继续尚未完成或尚未确认的部分。")})
+                ("从这个知识点的第一问开始学习。" if not attempted else "接着原题，先说清还不确定的地方。")})
         if scoped(state):
             entries[-1]["requirements"] = requirements.public(point)
     counts = {k: sum(p["category"] == k for p in entries) for k in ("mastered", "needs_review", "not_assessed")}
     return {"schemaVersion": 4, "typedTeaching": True, "points": entries, "counts": counts,
             "endedEarly": state.get("completion_reason") == "student_ended_early",
-            "summary": f"本课共 {len(entries)} 个知识点：{counts['mastered']} 个已掌握，"
-                       f"{counts['needs_review']} 个待巩固或尚未确认，{counts['not_assessed']} 个尚未学习／评估。"}
+            "summary": f"本课 {len(entries)} 个知识点：{counts['mastered']} 个已掌握，"
+                       f"{counts['needs_review']} 个待巩固，{counts['not_assessed']} 个尚未学习／评估。"}

@@ -6,7 +6,7 @@ import pytest
 from langchain_core.messages import AIMessage, HumanMessage
 
 from backend.content.knowledge import compile_points
-from backend.content.knowledge_schema import LegacyKnowledgePoints as submit_knowledge_points
+from backend.content.knowledge_schema import submit_knowledge_points
 from backend.evidence import records
 from backend.infrastructure import model
 from backend.teaching import service, typed_state, typed_teaching
@@ -73,13 +73,12 @@ def test_control_request_plan_reports_actual_progress(monkeypatch, after_class):
                  "observation": {"control": "skip", "control_quote": "这题先跳过吧"}}}])
     client = scripted(monkeypatch, packet, AIMessage(content="目前按知识点顺序继续；可以先讲清卡住的一步。"))
     result = typed_teaching.run(state, after_class=after_class)
-    plan = result["teaching_plan"]
-    assert len(client.seen) == 1  # Program confirmation replaces tutor generation.
-    assert plan["action"] == "respond"
+    context = json.loads(client.seen[-1][0].content.splitlines()[-1])
+    plan = context["teaching_plan"]
+    assert plan["action"] == ("ask" if after_class else "respond")
     assert plan["control"] == {"request": "skip", "applied": after_class}
     assert plan["point_changed"] is after_class
-    assert typed_state.current(result, after_class=after_class)["id"] == state["points"][1 if after_class else 0]["id"]
-    assert ("已切换" if after_class else "未执行") in result["reply"]
+    assert context["focus"]["id"] == state["points"][1 if after_class else 0]["id"]
     assert all(r["status"] == "unconfirmed" for r in result["points"][0]["requirements"])
 
 
@@ -126,7 +125,7 @@ def test_request_quotes_from_teacher_cannot_be_used_as_current_student_request(m
     result = typed_teaching.run(state)
     assert result["points"][0]["attempts"] == 1
     assert len(result["points"][0]["assessment_history"]) == 1
-    assert len(client.seen) == 2  # Invalid quote repaired, then program confirms.
+    assert len(client.seen) == 3
     assert state == original
     assert result["teaching_plan"]["control"] == {"request": "skip", "applied": False}
 
@@ -217,7 +216,7 @@ def test_partial_progress_does_not_override_explicit_feedback_to_stop_replaying_
 def test_same_request_span_cannot_be_both_confirmation_and_content_help():
     from teaching_behavior_cases import CASES, build_case
     state = build_case(next(c for c in CASES if c["id"] == "06"))
-    with pytest.raises(typed_state.InvalidObservation, match="重叠"):
+    with pytest.raises(typed_state.InvalidObservation, match="不能重叠"):
         typed_state.advance(state, "unclear", None, observation={
             "help_quote": "然后呢", "continue_quote": "好，然后呢"})
     assert state["points"][0]["attempts"] == 4
@@ -415,7 +414,7 @@ def test_agent_tool_updates_real_state_and_changes_type_before_final_reply(monke
     assert len(client.seen) == 2
     assert client.settings[0]["tool_choice"]["function"]["name"] == "submit_current_assessment"
     assert client.settings[1]["tool_choice"] == "none"
-    assert "当前内容策略：" + typed_teaching.TYPE_PROMPTS["design"] in client.seen[1][0].content
+    assert "当前类型策略：按 capability" in client.seen[1][0].content
     first, second = after["dialogue"]["points"]
     assert first["status"] == "mastered" and first["recall_attempts"] == 1
     assert second["recall_attempts"] == 0 and second["task_question"] == "构造一个累加程序？"
@@ -678,5 +677,5 @@ def test_real_chat_adapter_uses_updated_type_without_replaying_old_tool_argument
     assert requests[0]["tool_choice"]["function"]["name"] == "submit_current_assessment"
     assert requests[1]["tool_choice"] == "none"
     assert not any(m["role"] == "tool" or m.get("tool_calls") for m in requests[1]["messages"])
-    assert "当前内容策略：" + typed_teaching.TYPE_PROMPTS["design"] in requests[1]["messages"][0]["content"]
+    assert "当前类型策略：按 capability" in requests[1]["messages"][0]["content"]
     assert result["points"][0]["status"] == "mastered" and result["points"][1]["recall_attempts"] == 0

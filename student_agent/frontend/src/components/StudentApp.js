@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 import { platformPlayerAdapter } from "../integration/platform-player-adapter";
 import { createLearningSession } from "../integration/learning-session.mjs";
-import { requestSession } from "../integration/session-http.mjs";
 import LessonFeedback from "./LessonFeedback";
 import QuestionGroup from "./QuestionGroup";
 import LessonProgress, { STAGE_TITLES } from "./LessonProgress";
@@ -82,27 +81,6 @@ export default function StudentApp() {
   const [showEarlyEndWarning, setShowEarlyEndWarning] = useState(false);
   const [showVideoAdvanceConfirm, setShowVideoAdvanceConfirm] = useState(false);
   const viewingVideo = phase === "video" || phase === "replay";
-  const activeSessionId = ["video", "discussion", "replay"].includes(phase) ? learning.sessionId : null;
-  const signedIn = Boolean(learning.userId) && phase !== "auth";
-  useEffect(() => {
-    if (!signedIn) return;
-    const abort = new AbortController();
-    const report = () => {
-      if (document.hidden) return;
-      requestSession("/session/presence", "POST", { sessionId: activeSessionId ?? null },
-        { signal: abort.signal }).catch(error => {
-        if (error.name !== "AbortError") console.warn("学生在线状态上报失败", error);
-      });
-    };
-    report();
-    const timer = window.setInterval(report, 20000);
-    document.addEventListener("visibilitychange", report);
-    return () => {
-      abort.abort();
-      window.clearInterval(timer);
-      document.removeEventListener("visibilitychange", report);
-    };
-  }, [signedIn, learning.userId, activeSessionId]);
   const [learningProgressOpen, setLearningProgressOpen] = useState(true);
   const [videoProgressOpen, setVideoProgressOpen] = useState(false);
   const progressOpen = viewingVideo ? videoProgressOpen : learningProgressOpen;
@@ -322,10 +300,10 @@ export default function StudentApp() {
           <div className="conversation-resize-handle conversation-resize-handle--right" role="separator" aria-label="拖动调整对话框右边缘" aria-orientation="vertical" onPointerDown={(event) => startConversationResize(event, "right")} onPointerMove={moveConversationResize} onPointerUp={() => { conversationResize.current = null; }} onPointerCancel={() => { conversationResize.current = null; }} />
           <div className="conversation-heading">
             <h3 className="new-stage-title">{phase === "postclass"
-              ? typedFlow ? "课后续学" : dynamicFlow ? "课后继续交流" : postclassStage === "remediation" ? "继续未完成的学习" : "全部完成 · 自由提问"
+              ? typedFlow ? "继续巩固" : dynamicFlow ? "课后继续交流" : postclassStage === "remediation" ? "继续未完成的学习" : "全部完成 · 自由提问"
               : typedFlow ? "知识点学习" : "复述与讨论"}</h3>
             <div className="conversation-point-row"><p className="conversation-stage" role="status">{phase === "postclass"
-              ? typedFlow ? "课堂已结束。接着未完成的内容学习，学习反馈会随进展更新。" : "本次课堂已经结束，课后对话会更新你的学习反馈。"
+              ? "本次课堂已经结束，课后对话会更新你的学习反馈。"
               : `${stageTitle(agentStage) || "初始复述"}${learningProgress?.currentPoint ? ` · 当前知识点：${learningProgress.currentPoint}` : ""}`}</p>
               {typedFlow && <div className="conversation-point-nav" aria-label="知识点切换">
                 <button type="button" title="上一个知识点" aria-label="上一个知识点" disabled={busy || !learning.canGoPreviousPoint}
@@ -349,7 +327,7 @@ export default function StudentApp() {
             {replyPending && <div className="msg msg--ai" role="status" aria-label="AI 正在回复"><div className="msg__avatar" aria-hidden="true">AI</div><div className="msg__bubble typing" aria-hidden="true"><span /><span /><span /></div></div>}
           </div>
           {((phase === "discussion" || (dynamicFlow && phase === "postclass")) && agentStage === "wrapup" && !reviewingCard) || (typedFlow && phase === "postclass" && postclassStage !== "remediation")
-            ? <div className="conversation-complete" role="status"><strong>{typedFlow ? phase === "postclass" ? "本次课后学习已告一段落" : "本次课堂学习已告一段落" : "课堂对话已完成"}</strong><p>{typedFlow ? phase === "postclass" ? "请查看更新后的学习反馈，后续可按记录继续学习或回看视频。" : "请查看学习反馈，了解已掌握和仍待继续的内容。" : "点击下方按钮查看本课反馈。还想继续学习，可以在课后回看视频或与 AI 对话。"}</p></div>
+            ? <div className="conversation-complete" role="status"><strong>课堂对话已完成</strong><p>{typedFlow ? "点击下方按钮查看反馈，再选择回看或继续巩固。" : "点击下方按钮查看本课反馈。还想继续学习，可以在课后回看视频或与 AI 对话。"}</p></div>
             : <form className="composer" onSubmit={event => send(event)}>
               <textarea className="composer__input" ref={composerInput} rows={1} disabled={dynamicFlow && (paused || !can(phase === "postclass" ? "postclass_answer" : "submit_answer"))} value={input} onChange={(event) => editInput(event.target.value)} onKeyDown={handleComposerKeyDown} placeholder={phase === "postclass" && postclassStage === "open" ? "自由向 AI 提问…" : "说说你的理解，或提出问题…"} aria-label="输入复述或讨论" />
               <button className="composer__send" type="submit" disabled={busy || !input.trim() || (dynamicFlow && !can(phase === "postclass" ? "postclass_answer" : "submit_answer"))} aria-label="发送">↑</button>
