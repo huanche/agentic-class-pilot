@@ -1,4 +1,4 @@
-"""Typed extraction and structural repair within one create_agent invocation."""
+"""Core knowledge extraction and structural repair within one agent invocation."""
 from __future__ import annotations
 
 import hashlib
@@ -14,13 +14,13 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from pydantic import ValidationError
 
 from backend.infrastructure import model
-from backend.content.knowledge_schema import compatibility_text, submit_knowledge_points
+from backend.content.knowledge_schema import LegacyKnowledgePoints, compatibility_text, submit_knowledge_points
 from backend.content.prompts import KNOWLEDGE_EXTRACTION_PROMPT
 
 # Teaching/session compatibility is independent of the extraction compiler version.
 # Do not upgrade existing students' curricula just because extraction changed.
 CURRICULUM_VERSION = 10
-EXTRACTION_VERSION = 2
+EXTRACTION_VERSION = 3
 MAX_MODEL_CALLS = 3
 TOTAL_TIMEOUT_SECONDS = 180
 MODEL_TIMEOUT_SECONDS = 120
@@ -101,7 +101,7 @@ def _canonical(value):
     return value
 
 
-def compile_points(submission: submit_knowledge_points, *, scope: tuple[str, str] | None = None) -> list[dict]:
+def compile_points(submission: submit_knowledge_points | LegacyKnowledgePoints, *, scope: tuple[str, str] | None = None) -> list[dict]:
     """Merge exact duplicates and derive legacy text before assigning identities."""
     points, seen = [], set()
     for candidate in submission.points:
@@ -113,11 +113,13 @@ def compile_points(submission: submit_knowledge_points, *, scope: tuple[str, str
         text = compatibility_text(data)
         identity = json.dumps([scope, data], ensure_ascii=False, sort_keys=True)
         points.append({"id": "knowledge:" + hashlib.sha256(identity.encode()).hexdigest()[:20],
-                       **data, "content": text, "description": text})
+                       **data, **({"title": data["name"]} if "name" in data else {}),
+                       "content": text, "description": text})
     return points
 
 
-def learning_points(materials: list[dict], course_id: str | None = None, lesson_id: str | None = None) -> KnowledgeResult:
+def learning_points(materials: list[dict], course_id: str | None = None, lesson_id: str | None = None,
+                    *, course_name: str = "") -> KnowledgeResult:
     if (course_id is None) != (lesson_id is None) or (course_id is not None and (
             not str(course_id).strip() or not str(lesson_id).strip())):
         raise KnowledgePreparationError("configuration", stage="binding")
@@ -126,6 +128,8 @@ def learning_points(materials: list[dict], course_id: str | None = None, lesson_
               and str(item.get("content") or "").strip()]
     if not scenes:
         raise KnowledgePreparationError("no_content")
+    if not isinstance(course_name, str) or not course_name.strip():
+        raise KnowledgePreparationError("configuration", stage="course_name")
     deadline = monotonic() + TOTAL_TIMEOUT_SECONDS
     calls, draft, issues = 0, None, []
 
@@ -188,7 +192,7 @@ def learning_points(materials: list[dict], course_id: str | None = None, lesson_
         agent = create_agent(model.extraction_model(max_output_tokens=MAX_OUTPUT_TOKENS), system_prompt=KNOWLEDGE_EXTRACTION_PROMPT,
                              response_format=ToolStrategy(submit_knowledge_points, handle_errors=structure_feedback),
                              middleware=[bounded_call, require_submission])
-        state = agent.invoke({"messages": [HumanMessage(content=json.dumps({"materials": scenes}, ensure_ascii=False))]},
+        state = agent.invoke({"messages": [HumanMessage(content=json.dumps({"course_name": course_name.strip(), "materials": scenes}, ensure_ascii=False))]},
                              config={"recursion_limit": 30})
         submitted = state.get("structured_response")
         if not isinstance(submitted, submit_knowledge_points):

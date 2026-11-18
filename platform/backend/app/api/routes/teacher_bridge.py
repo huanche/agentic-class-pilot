@@ -4,6 +4,7 @@ The teacher service asks this endpoint to validate each request. User supplied
 teacher IDs are never used as an authorization decision.
 """
 import hmac
+import logging
 import uuid
 from urllib.parse import parse_qs, unquote, urlsplit
 
@@ -28,6 +29,7 @@ from app.services.teacher_course_client import (
 )
 
 router = APIRouter(tags=["teacher-bridge"])
+logger = logging.getLogger(__name__)
 
 
 class PublishedLessonPreparation(BaseModel):
@@ -556,6 +558,7 @@ def teacher_roster_progress(
             response.raise_for_status()
             data = response.json()
     except (httpx.HTTPError, ValueError) as error:
+        logger.exception("Student roster dependency failed for course %s", course_uuid)
         raise HTTPException(503, "学生学情服务暂不可用") from error
     active_pairs = {(user, key) for user, key in online if key}
     online_ids = {user for user, _ in online}

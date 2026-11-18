@@ -24,8 +24,29 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       signal: AbortSignal.timeout(10000),
     });
     if (!response.ok) {
-      return NextResponse.json({ error: response.status === 404 ? '课程或学生不存在' : '学生学情读取失败' },
-        { status: response.status });
+      const body = await response.text();
+      let detail: unknown;
+      try {
+        detail = JSON.parse(body).detail;
+      } catch {
+        // 网关的空白或 HTML 错误响应不代表课程、学生被删除。
+        detail = undefined;
+      }
+      const missingCourse = response.status === 404 &&
+        ['Course not found', '课程不存在', '课程映射不存在'].includes(String(detail));
+      const missingStudent = response.status === 404 && detail === '该学生未加入本课程';
+      const status = missingCourse || missingStudent ? 404 :
+        [401, 403].includes(response.status) ? response.status : 503;
+      const code = missingCourse ? 'COURSE_NOT_FOUND' : missingStudent ? 'STUDENT_NOT_ENROLLED' :
+        status === 401 ? 'AUTH_REQUIRED' : status === 403 ? 'ACCESS_DENIED' : 'LEARNING_SERVICE_UNAVAILABLE';
+      const error = missingCourse ? '课程不存在，请返回课程列表确认' :
+        missingStudent ? '该学生未加入本课程' : status === 401 ? '登录已失效，请重新登录' :
+        status === 403 ? '无权读取该课程的学生学情' : '学生学情服务暂不可用，请稍后重试或联系管理员';
+      console.error('读取班级学情失败', {
+        courseId, upstreamStatus: response.status, code,
+        requestId: response.headers.get('x-request-id'),
+      });
+      return NextResponse.json({ error, code }, { status, headers: { 'Cache-Control': 'no-store' } });
     }
     return NextResponse.json(await response.json(), { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {

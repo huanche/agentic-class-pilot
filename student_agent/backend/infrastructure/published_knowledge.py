@@ -42,7 +42,55 @@ def _archive(connection, row):
         # Retry diagnostics describe a job attempt, not the old immutable content.
         frozen_coverage = {k: v for k, v in (coverage or {}).items() if k != "extractionFailure"}
         body = _compiled(course, lesson, revision, compiler, scenes, points, frozen_coverage)
-        content_store.store(body, connection=connection)
+        _store_archive(connection, body)
+
+
+def _store_archive(connection, body):
+    # Keep the generic store strict, including the insert race. Both candidates
+    # are validated before comparison; return the original fingerprint unchanged.
+    from backend.content import lesson_content
+    lesson_content.validate(body)
+    try:
+        return content_store.store(body, connection=connection)
+    except content_store.ContentVersionConflict:
+        saved = content_store.find(body["courseId"], body["lessonId"], body["sourceRevision"],
+                                   body["compilerVersion"], body["sourceManifestHash"], connection=connection)
+        def metadata_only(left, right):
+            if set(left) != set(right):
+                return False
+            # Both full fingerprints were validated above. Only their derived
+            # digest may differ when the exact coverage whitelist differs.
+            for key in left:
+                if key == "contentId":
+                    continue
+                if key == "coverage":
+                    a, b = left[key], right[key]
+                    if any(value is not None and not isinstance(value, str)
+                           for value in (a.get("courseName"), b.get("courseName"))):
+                        return False
+                    for field in (set(a) | set(b)) - {"courseName"}:
+                        if field not in a or field not in b or a[field] != b[field]:
+                            return False
+                elif left[key] != right[key]:
+                    return False
+            return True
+        if saved is not None and metadata_only(saved, body):
+            return saved
+        raise
+
+
+def _conflict_result():
+    return {"status": "failed", "points": None, "coverage": None,
+            "error": "published_content_conflict"}
+
+
+def _fail_archive(connection, key):
+    connection.execute("UPDATE student.published_lesson_knowledge SET status='failed',"
+                       "last_error='published_content_conflict',claim_token=NULL,lease_until=NULL,"
+                       "coverage=COALESCE(coverage,'{}'::jsonb)||%s::jsonb WHERE course_id=%s "
+                       "AND lesson_id=%s AND video_revision=%s",
+                       (json.dumps({"extractionFailure": {"code": "published_content_conflict",
+                                                          "manualRetryRequired": True}}), *key))
 
 
 def _existing(connection, course, lesson, revision, scenes):
@@ -61,7 +109,10 @@ def read(course_id: str, lesson_id: str, video_revision: str) -> dict | None:
         if not row:
             return None
         scenes, points, coverage, compiler, status, error = row
-        _archive(connection, (course_id, lesson_id, video_revision, scenes, points, coverage, compiler))
+        try:
+            _archive(connection, (course_id, lesson_id, video_revision, scenes, points, coverage, compiler))
+        except content_store.ContentVersionConflict:
+            return _conflict_result()
         body = _existing(connection, course_id, lesson_id, video_revision, scenes)
         if body:
             return {"status": "ready", "points": body["points"], "coverage": body["coverage"],
@@ -96,7 +147,11 @@ def process_next() -> bool:
             "AND v.lesson_id=j.lesson_id AND v.video_revision=j.video_revision AND v.compiler_version=%s) "
             "ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1", (EXTRACTOR_HASH, _compiler(EXTRACTOR_HASH))).fetchone()
         if old:
-            _archive(connection, old)
+            try:
+                _archive(connection, old)
+            except content_store.ContentVersionConflict:
+                _fail_archive(connection, tuple(old[:3]))
+                return True
             connection.execute("UPDATE student.published_lesson_knowledge SET status='pending',next_retry_at=now() "
                                "WHERE course_id=%s AND lesson_id=%s AND video_revision=%s", tuple(old[:3]))
         job = connection.execute(
@@ -108,7 +163,11 @@ def process_next() -> bool:
         if not job:
             return False
         key, scenes = tuple(job[:3]), job[3]
-        _archive(connection, (*key, scenes, job[5], job[6], job[7]))
+        try:
+            _archive(connection, (*key, scenes, job[5], job[6], job[7]))
+        except content_store.ContentVersionConflict:
+            _fail_archive(connection, key)
+            return True
         ready = _existing(connection, *key, scenes)
         if ready:
             connection.execute("UPDATE student.published_lesson_knowledge SET status='ready',extractor_hash=%s,"
@@ -123,8 +182,9 @@ def process_next() -> bool:
                            "lease_until=now()+interval '10 minutes',attempts=attempts+1,claim_token=%s,updated_at=now() "
                            "WHERE course_id=%s AND lesson_id=%s AND video_revision=%s", (claim_token, *key))
     try:
-        result = learning_points(classroom_materials(scenes), *key[:2])
-        coverage = {"partial": result.partial, "acceptedCount": len(result.points),
+        course_name = (job[6] or {}).get("courseName") or ""
+        result = learning_points(classroom_materials(scenes), *key[:2], course_name=course_name)
+        coverage = {"courseName": course_name, "partial": result.partial, "acceptedCount": len(result.points),
                     "rejectedCount": result.rejected_count, "candidateCount": result.candidate_count,
                     "repairAttempted": result.repair_attempted, "modelCalls": result.model_calls,
                     "duplicateCount": result.duplicate_count}
@@ -138,7 +198,7 @@ def process_next() -> bool:
                 "AND lease_until>clock_timestamp() RETURNING 1",
                 (compiler, Jsonb(result.points), Jsonb(coverage), *key, claim_token)).fetchone()
             if accepted:
-                content_store.store(body, connection=connection)
+                _store_archive(connection, body)
     except Exception as error:
         log.exception("Published lesson knowledge extraction failed: lesson=%s", key[1])
         delay = min(300, 10 * 2 ** min(job[4], 5))

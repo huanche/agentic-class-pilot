@@ -5,7 +5,7 @@ import json
 import pytest
 
 from backend.content import knowledge, lesson_content
-from backend.content.knowledge_schema import submit_knowledge_points
+from backend.content.knowledge_schema import LegacyKnowledgePoints as submit_knowledge_points
 from backend.infrastructure import content_store, persistence, published_knowledge
 from backend.teaching import service as teaching
 
@@ -142,7 +142,7 @@ def register_job(pg):
 
 def test_publication_worker_saves_typed_schema_and_server_bound_lesson(pg, monkeypatch):
     register_job(pg)
-    monkeypatch.setattr(published_knowledge, "learning_points", lambda *args:
+    monkeypatch.setattr(published_knowledge, "learning_points", lambda *args, **kwargs:
         knowledge.KnowledgeResult(points(), candidate_count=4, duplicate_count=1, model_calls=2, repair_attempted=True))
     assert published_knowledge.process_next()
     result = published_knowledge.read("course", "lesson", "rev")
@@ -154,26 +154,28 @@ def test_publication_worker_saves_typed_schema_and_server_bound_lesson(pg, monke
 
 
 def test_real_agent_repair_to_postgres_publication_and_student_binding(pg, monkeypatch):
-    from test_typed_knowledge import run, submission, MEMORY, CONCEPT, DESIGN
+    from test_typed_knowledge import run, submission, CORE
+    from backend.content.knowledge_schema import submit_knowledge_points as CoreSubmission
     register_job(pg)
-    client = run(monkeypatch, submission({**MEMORY, "details": {}}), submission(MEMORY, CONCEPT, DESIGN))
+    with pg() as connection:
+        connection.execute("UPDATE student.published_lesson_knowledge SET coverage=%s", (json.dumps({"courseName": "程序设计基础"}),))
+    client = run(monkeypatch, submission({**CORE, "explanation": ""}), submission(CORE))
     assert published_knowledge.process_next()
     published = published_knowledge.read("course", "lesson", "rev")
     body = published["contentModel"]
-    expected = knowledge.compile_points(submit_knowledge_points(points=[MEMORY, CONCEPT, DESIGN]),
-                                        scope=("course", "lesson"))
+    expected = knowledge.compile_points(CoreSubmission(points=[CORE]), scope=("course", "lesson"))
     assert body["points"] == published["points"] == expected
-    assert body["schemaVersion"] == 2 and body["lessonId"] == "lesson"
+    assert body["schemaVersion"] == 3 and body["lessonId"] == "lesson"
     assert len(client.seen) == published["coverage"]["modelCalls"] == 2
     state = session(body)
     persistence.save(state, 0)
     restored = persistence.restore(state["id"])
-    assert [p["details"] for p in restored["dialogue"]["points"]] == [p["details"] for p in expected]
+    assert restored["dialogue"]["points"][0]["explanation"] == CORE["explanation"]
 
 
 def test_failed_agent_keeps_draft_without_publishing_partial_points(pg, monkeypatch):
     register_job(pg)
-    def fail(*args):
+    def fail(*args, **kwargs):
         raise knowledge.KnowledgePreparationError("format", model_calls=3, draft={"points": ["invalid"]},
             issues=[knowledge.ValidationIssue(-1, "format", "missing_field")])
     monkeypatch.setattr(published_knowledge, "learning_points", fail)
@@ -190,20 +192,20 @@ def test_failed_agent_keeps_draft_without_publishing_partial_points(pg, monkeypa
         connection.execute("UPDATE student.published_lesson_knowledge SET next_retry_at=now()")
     assert not published_knowledge.process_next()
     assert published_knowledge.retry("course", "lesson", "rev")
-    monkeypatch.setattr(published_knowledge, "learning_points", lambda *args: knowledge.KnowledgeResult(points()))
+    monkeypatch.setattr(published_knowledge, "learning_points", lambda *args, **kwargs: knowledge.KnowledgeResult(points()))
     assert published_knowledge.process_next()
     assert published_knowledge.read("course", "lesson", "rev")["status"] == "ready"
 
 
 def test_failed_upgrade_retains_existing_v2_content_and_records_failure(pg, monkeypatch):
     register_job(pg)
-    monkeypatch.setattr(published_knowledge, "learning_points", lambda *args:
+    monkeypatch.setattr(published_knowledge, "learning_points", lambda *args, **kwargs:
         knowledge.KnowledgeResult(points(), candidate_count=3, model_calls=1))
     published_knowledge.process_next()
     original = published_knowledge.read("course", "lesson", "rev")["contentModel"]
     monkeypatch.setattr(published_knowledge, "EXTRACTOR_HASH", "next-version")
     assert published_knowledge.read("course", "lesson", "rev")["status"] == "pending"
-    def fail(*args):
+    def fail(*args, **kwargs):
         raise knowledge.KnowledgePreparationError("format", model_calls=3, draft="failed-upgrade")
     monkeypatch.setattr(published_knowledge, "learning_points", fail)
     published_knowledge.process_next()

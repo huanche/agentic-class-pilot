@@ -56,7 +56,8 @@ def test_published_c_course_extraction_dialogue_and_resume(pg, monkeypatch):
         extracted = KnowledgeResult(points=previous['points'])
         report['extractionReusedFrom'] = str(cached)
     else:
-        extracted = learning_points(materials, 'release-course', 'release-lesson')
+        extracted = learning_points(materials, 'release-course', 'release-lesson',
+                                    course_name=source.get('courseTitle') or os.environ['STUDENT_RELEASE_COURSE_NAME'])
     report.update(points=extracted.points, coverage={'partial': extracted.partial,
         'accepted': len(extracted.points), 'rejected': extracted.rejected_count,
         'calls': extracted.model_calls}, materials=materials)
@@ -120,7 +121,7 @@ def test_published_c_course_extraction_dialogue_and_resume(pg, monkeypatch):
         assert restored['messages'] == saved['messages']
         assert restored['stateVersion'] == saved['stateVersion']
         done = send('finish')
-        assert done['feedback']['typedTeaching']
+        assert done['feedback'] and done['phase'] == 'done'
         send('continue_after_class')
         send('finish')
         report.update(passed=True, restrictedRole=True, persistedFlowVersion=persistence.restore(sid)['dialogue']['flow_version'])

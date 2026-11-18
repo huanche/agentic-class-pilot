@@ -5,9 +5,9 @@ from copy import deepcopy
 import hashlib
 import json
 
-from backend.content.knowledge_schema import SCHEMA_VERSION, compatibility_text, submit_knowledge_points
+from backend.content.knowledge_schema import SCHEMA_VERSION, SIMPLE_SCHEMA_VERSION, compatibility_text, LegacyKnowledgePoints, submit_knowledge_points
 
-POINT_FIELDS = ("id", "title", "content", "description", "source", "sourceIds", "type", "details")
+POINT_FIELDS = ("id", "title", "content", "description", "source", "sourceIds", "type", "details", "name", "explanation")
 
 
 def point_payload(point):
@@ -16,7 +16,7 @@ def point_payload(point):
 
 
 def _validate_typed(points):
-    submitted = submit_knowledge_points.model_validate({"points": [
+    submitted = LegacyKnowledgePoints.model_validate({"points": [
         {key: p[key] for key in ("title", "type", "details") if key in p} for p in points]})
     for saved, candidate in zip(points, submitted.points):
         canonical = candidate.model_dump()
@@ -27,12 +27,32 @@ def _validate_typed(points):
             raise ValueError("Compatibility text differs from typed knowledge")
 
 
+def _validate_simple(points):
+    submitted = submit_knowledge_points.model_validate({"points": [
+        {key: p[key] for key in ("name", "explanation") if key in p} for p in points]})
+    for saved, candidate in zip(points, submitted.points):
+        data = candidate.model_dump()
+        if any(saved.get(key) != value for key, value in data.items()):
+            raise ValueError("Core knowledge must be normalized")
+        if any(key in saved and saved[key] != data["explanation"] for key in ("content", "description")):
+            raise ValueError("Compatibility text differs from core knowledge")
+        if "title" in saved and saved["title"] != data["name"]:
+            raise ValueError("Compatibility title differs from core knowledge")
+        if "type" in saved or "details" in saved:
+            raise ValueError("Core knowledge cannot contain legacy type/details")
+
+
 def digest(value):
     return hashlib.sha256(json.dumps(value, ensure_ascii=False, sort_keys=True,
                                     separators=(",", ":")).encode()).hexdigest()
 
 
 def build(course_id, lesson_id, revision, compiler_version, points, materials, *, scenes=None, coverage=None):
+    simple = any("name" in p or "explanation" in p for p in points)
+    if simple:
+        _validate_simple(points)
+        if not str(course_id or "").strip() or not str(lesson_id or "").strip():
+            raise ValueError("Core knowledge requires course and lesson IDs")
     typed = any("type" in point or "details" in point for point in points)
     if typed:
         _validate_typed(points)
@@ -52,11 +72,13 @@ def build(course_id, lesson_id, revision, compiler_version, points, materials, *
                 if source["sourceId"] in (point.get("sourceIds") or []) and quote in source["text"]:
                     refs.append({"sourceId": source["sourceId"], "quote": quote,
                                  "quoteHash": digest(quote)})
-        if not refs and not typed:
+        if not refs and not typed and not simple:
             gaps.append({"code": "topic_source_unknown", "topicId": point["id"]})
         topic = {"topicId": point["id"], "title": point.get("title", ""), "sourceRefs": refs}
         if typed:
             topic.update(type=point["type"], details=deepcopy(point["details"]))
+        if simple:
+            topic.update(name=point["name"], explanation=point["explanation"])
         topics.append(topic)
     if not sources:
         gaps.append({"code": "source_material_unavailable"})
@@ -68,11 +90,11 @@ def build(course_id, lesson_id, revision, compiler_version, points, materials, *
         gaps.append({"code": "visual_content_not_interpreted"})
     clean_points = [point_payload(point) for point in points]
     manifest = [{key: source[key] for key in ("sourceId", "kind", "locator", "textHash")} for source in sources]
-    body = {"schemaVersion": SCHEMA_VERSION if typed else 1, "courseId": str(course_id), "lessonId": str(lesson_id),
+    body = {"schemaVersion": SIMPLE_SCHEMA_VERSION if simple else SCHEMA_VERSION if typed else 1, "courseId": str(course_id), "lessonId": str(lesson_id),
             "sourceRevision": str(revision), "compilerVersion": str(compiler_version),
             "sourceManifestHash": digest(manifest), "sourceManifest": manifest, "sources": sources,
             "topics": topics, "points": clean_points, "coverage": coverage or {}, "coverageGaps": gaps,
-            "validationStatus": "structure_checked" if typed else "limited" if gaps else "source_checked",
+            "validationStatus": "structure_checked" if typed or simple else "limited" if gaps else "source_checked",
             "inputCapabilities": {"classroomText": bool(sources), "originalPpt": False,
                                   "visualSemantics": False}}
     body["contentId"] = "content:" + digest(body)
@@ -87,7 +109,14 @@ def validate(body):
     unhashed = {key: value for key, value in body.items() if key != "contentId"}
     if body.get("contentId") != "content:" + digest(unhashed):
         raise ValueError("Lesson content fingerprint is invalid")
-    if body.get("schemaVersion") == SCHEMA_VERSION:
+    if body.get("schemaVersion") == SIMPLE_SCHEMA_VERSION:
+        _validate_simple(body["points"])
+        if not body.get("courseId") or not body.get("lessonId"):
+            raise ValueError("Core knowledge requires course and lesson IDs")
+        for topic, point in zip(body["topics"], body["points"]):
+            if any(topic.get(key) != point[key] for key in ("name", "explanation")):
+                raise ValueError("Topic differs from core knowledge")
+    elif body.get("schemaVersion") == SCHEMA_VERSION:
         _validate_typed(body["points"])
         if not body.get("courseId") or not body.get("lessonId"):
             raise ValueError("Typed content requires course and lesson IDs")

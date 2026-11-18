@@ -58,6 +58,12 @@ def load_functions(path, names, namespace):
 
 
 class ContractGateTests(unittest.TestCase):
+    def test_typed_dictionary_values_are_checked(self):
+        self.assertEqual(gate.type_schema(ast.parse("dict[str, str]", mode="eval").body),
+                         {"type": "object", "additionalProperties": {"type": "string"}})
+        with self.assertRaises(ValueError):
+            gate.type_schema(ast.parse("dict[int, str]", mode="eval").body)
+
     def test_repository_contracts_match_current_provider_declarations(self):
         self.assertEqual(gate.check(ROOT), [])
 

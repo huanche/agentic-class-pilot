@@ -6,6 +6,62 @@ info:
 servers:
   - url: http://127.0.0.1:8001
 paths:
+  /api/internal/platform/courses/{course_id}/roster-progress:
+    post:
+      operationId: getStudentCourseRosterProgress
+      summary: Current published revision mastery and active sessions for platform-authorized students
+      security: [{ studentServiceKey: [] }]
+      parameters:
+        - { name: course_id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [userIds, lessonRevisions, activeSessionKeys]
+              properties:
+                userIds: { type: array, maxItems: 10000, items: { type: string } }
+                lessonRevisions: { type: object, additionalProperties: { type: string } }
+                activeSessionKeys: { type: array, maxItems: 10000, items: { type: string } }
+                detailUserId: { type: [string, 'null'] }
+      responses:
+        '200':
+          description: Prepared knowledge totals, mastery counts, active sessions and optional evidence
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [totals, mastered, active, assessments]
+                properties:
+                  totals: { type: object, additionalProperties: { type: integer } }
+                  mastered:
+                    type: object
+                    additionalProperties: { type: object, additionalProperties: { type: integer } }
+                  active:
+                    type: array
+                    items:
+                      type: object
+                      required: [sessionId, studentId, classroomId]
+                      properties:
+                        sessionId: { type: string }
+                        studentId: { type: string }
+                        classroomId: { type: string }
+                  assessments:
+                    type: array
+                    items:
+                      type: object
+                      required: [lessonId, pointId, title, status, stars, evidence]
+                      properties:
+                        lessonId: { type: string }
+                        pointId: { type: string }
+                        title: { type: string }
+                        status: { type: string }
+                        stars: { type: integer }
+                        evidence: { type: [string, 'null'] }
+        '403': { description: Invalid service credentials }
+        '422': { description: Invalid roster request }
+        '503': { description: Student data unavailable }
   /api/internal/platform/courses/{course_id}/learning-data:
     post:
       operationId: getStudentCourseLearningData
@@ -78,6 +134,7 @@ paths:
               required: [courseId, lessonId, videoRevision, classroomId, scenes]
               properties:
                 courseId: { type: string, minLength: 1, maxLength: 128 }
+                courseName: { type: string, maxLength: 255, default: "" }
                 lessonId: { type: string, minLength: 1, maxLength: 128 }
                 videoRevision: { type: string, pattern: '^[0-9a-f]{64}$' }
                 classroomId: { type: string, minLength: 1, maxLength: 128 }

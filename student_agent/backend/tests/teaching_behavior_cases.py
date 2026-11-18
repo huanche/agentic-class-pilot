@@ -2,7 +2,7 @@
 from copy import deepcopy
 
 from backend.content.knowledge import compile_points
-from backend.content.knowledge_schema import submit_knowledge_points
+from backend.content.knowledge_schema import LegacyKnowledgePoints as submit_knowledge_points
 from backend.teaching import typed_state
 
 MEMORY = {"title": "一维数组定义", "type": "memory", "details": {

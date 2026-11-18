@@ -16,6 +16,11 @@ async function setup(page, failure) {
   });
   await page.route("**/api/session/**", async route => {
     const path = new URL(route.request().url()).pathname;
+    if (path === "/api/session/presence") {
+      expect(route.request().method()).toBe("POST");
+      expect(route.request().headers()["x-csrf-token"]).toBeTruthy();
+      return route.fulfill({ status: 204 });
+    }
     if (path.endsWith("/identity")) return route.fulfill({json:{userId:"u",csrfToken:"test-csrf"}});
     if (path.endsWith("/platform-entry")) return route.fulfill({ json: { platformUrl: "http://platform.example" } });
     if (path === "/api/session/start") return route.fulfill({ json: {

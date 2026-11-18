@@ -277,3 +277,16 @@ test("revocation during refresh returns to authenticated entry and stops polling
   assert.equal(f.timers.size, 0);
   assert.equal(f.calls.filter(c => c.path === "/session/start").length, starts);
 });
+
+test('preparation failure is distinct from network retry and can recover', async t => {
+  const f = fixture(t, { state: { phase: 'video', preparation: 'pending' } });
+  await f.start();
+  f.set({ preparation: 'error', preparationError: 'Preparation failed; retry', preparationErrorCode: 'published_content_conflict' });
+  await f.controller.refresh();
+  assert.equal(f.controller.getView().preparation, 'error');
+  assert.equal(f.controller.getView().preparationErrorCode, 'published_content_conflict');
+  assert.equal(f.controller.getView().connectionError, '');
+  f.set({ preparation: 'ready', preparationError: '', preparationErrorCode: '', stateVersion: 6 });
+  await f.controller.refresh();
+  assert.equal(f.controller.getView().preparation, 'ready');
+});

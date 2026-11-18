@@ -45,13 +45,8 @@ def test_student_analytics_matches_persisted_rows(monkeypatch):
     assert data["eventSummary"] == {"lesson_started": 1}
 
 
-def test_roster_uses_current_revision_and_enrolled_student_scope(monkeypatch):
-    url = os.environ.get("DECOUPLING_TEST_DATABASE_URL")
-    if not url:
-        pytest.skip("DECOUPLING_TEST_DATABASE_URL not configured")
-    parsed = urlparse(url)
-    assert (parsed.path, parsed.port, parsed.username) == ("/app_test", 55433, "student")
-    monkeypatch.setenv("STUDENT_DATABASE_URL", url)
+def test_roster_uses_current_revision_and_enrolled_student_scope(monkeypatch, pg):
+    # 与发布流水线共用一次性数据库，避免学情回归因专用连接未配置而被跳过。
     monkeypatch.setenv("STUDENT_SERVICE_KEY", "integration-test-key")
     course, user, other = (str(uuid.uuid4()) for _ in range(3))
     revision, old_revision = "a" * 64, "b" * 64
