@@ -33,7 +33,9 @@ assert normalized == before
 if should_continue == 'yes':
     point = typed_state.current(before)
     updates = [{'requirement_id': r['id'], 'status': 'demonstrated',
-                'evidence': '学生准确说明数组名和元素个数', 'gap': ''}
+                'evidence': '学生准确说明数组名和元素个数', 'gap': '',
+                'sources': [{'turn': len(point['assessment_history']) + 1,
+                             'quote': 'a是数组名，5表示元素个数。'}]}
                for r in point['requirements'] if r['status'] != 'demonstrated']
     packet = AIMessage(content='', tool_calls=[{'name': 'submit_current_assessment', 'id': 'resume',
         'args': {'intent': 'answer', 'assessment': {'answer_result': 'correct',

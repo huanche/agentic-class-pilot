@@ -38,7 +38,7 @@ def test_card_chat_persists_report_with_session_without_exposing_it(monkeypatch)
     dialogue["question_groups"] = [group]
     session = {"dialogue": dialogue, "phase": "discussion", "messages": []}
     before = deepcopy(session)
-    monkeypatch.setattr(card_teaching.model, "complete", lambda *args: "已收到你的反馈。")
+    monkeypatch.setattr(card_teaching.model, "complete", lambda *args: json.dumps({"reply": "已收到你的反馈。", "assisted_question_ids": []}, ensure_ascii=False))
     changed = service.classroom_turn(session, "这题太简单")
     assert session == before
     restored = json.loads(json.dumps(dict(session, **changed)))
