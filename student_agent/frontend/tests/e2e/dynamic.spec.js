@@ -53,6 +53,8 @@ test("pilot uses server tasks, evidence feedback and the original conversation s
   await expect(page.getByLabel("课堂阶段进度")).toContainText("独立尝试");
   await expect(page.getByLabel("课堂阶段进度")).toContainText("已有表达的主题 1 / 2");
   await page.getByRole("button", { name: "结束本课并查看反馈", exact: true }).click();
+  await expect(page.locator("details.knowledge-feedback > summary")).toBeVisible();
+  if (await page.locator("details.knowledge-feedback").getAttribute("open") === null) await page.locator("details.knowledge-feedback > summary").click();
   await expect(page.getByRole("heading", { name: "本次交流记录" })).toBeVisible();
   await expect(page.getByText("尚需说明适用条件", { exact: true })).toBeVisible();
   await expect(page.getByText(/首轮复述 0 次/)).toHaveCount(0);

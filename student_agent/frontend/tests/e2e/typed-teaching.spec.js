@@ -125,6 +125,8 @@ test("typed feedback shows abilities, gaps and next steps without rounds; comple
   const commands = await setup(page);
   await expect(page.getByLabel("课堂阶段进度")).not.toContainText("深入讨论");
   await finishClass(page);
+  await expect(page.locator("details.knowledge-feedback > summary")).toBeVisible();
+  if (await page.locator("details.knowledge-feedback").getAttribute("open") === null) await page.locator("details.knowledge-feedback > summary").click();
   const feedback = page.getByRole("region", { name: "本课学习反馈" });
   await expect(feedback).toContainText("能说明 Push 和 Pop 的作用");
   await expect(feedback).toContainText("某一步取走了非栈顶元素");
@@ -151,6 +153,8 @@ test("exit remains available while a postclass answer is processing and returns 
   const exit = page.getByRole("button", { name: "退出巩固并保留进度", exact: true });
   await expect(exit).toBeEnabled();
   await exit.click();
+  await expect(page.locator("details.knowledge-feedback > summary")).toBeVisible();
+  if (await page.locator("details.knowledge-feedback").getAttribute("open") === null) await page.locator("details.knowledge-feedback > summary").click();
   await expect(page.getByRole("heading", { name: "本课学习反馈" })).toBeVisible();
   expect(commands.at(-1).type).toBe("finish");
   await expect(page.getByText("本课知识点已全部掌握。", { exact: true })).toHaveCount(0);
@@ -165,6 +169,8 @@ test("student can exit even when the answer acceptance acknowledgement has not a
     await page.getByRole("button", { name: "发送", exact: true }).click();
     await expect.poll(() => commands.some(command => command.type === "postclass_answer")).toBeTruthy();
     await page.getByRole("button", { name: "退出巩固并保留进度", exact: true }).click();
+    await expect(page.locator("details.knowledge-feedback > summary")).toBeVisible();
+  if (await page.locator("details.knowledge-feedback").getAttribute("open") === null) await page.locator("details.knowledge-feedback > summary").click();
     await expect(page.getByRole("heading", { name: "本课学习反馈" })).toBeVisible();
     await expect(page.getByText("学习状态已更新，请刷新后重试", { exact: true })).toHaveCount(0);
     await expect(page.getByText("本课知识点已全部掌握。", { exact: true })).toHaveCount(0);

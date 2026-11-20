@@ -41,5 +41,6 @@ test("expired login preserves a draft for its owner and another account cannot l
   expect(writes).toHaveLength(0);
   userId="u";
   await page.reload();
+  await page.getByRole("button",{name:/会话测试课时/}).click();
   await expect(page.getByRole("textbox")).toHaveValue("只属于原账号的未提交草稿");
 });

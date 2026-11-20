@@ -66,6 +66,8 @@ async function boot(page, { entry = "catalog", missingUrl = false, completed = t
 
 async function enterCompleted(page) {
   await page.getByRole("button", { name: /分组交换与帧中继基础/ }).click();
+  await expect(page.locator("details.knowledge-feedback > summary")).toBeVisible();
+  if (await page.locator("details.knowledge-feedback").getAttribute("open") === null) await page.locator("details.knowledge-feedback > summary").click();
   await expect(page.getByText(feedback.summary)).toBeVisible();
 }
 
@@ -119,6 +121,8 @@ test("reenter completed lesson from catalog and retain feedback and conversation
   await page.getByRole("button", { name: "回看视频" }).click();
   await expectReplay(page);
   await page.getByRole("button", { name: "返回学习反馈" }).click();
+  await expect(page.locator("details.knowledge-feedback > summary")).toBeVisible();
+  if (await page.locator("details.knowledge-feedback").getAttribute("open") === null) await page.locator("details.knowledge-feedback > summary").click();
   await expect(page.getByText(feedback.summary)).toBeVisible();
   await page.getByRole("button", { name: "与 AI 自由提问" }).click();
   await expect(page.getByText(postclassMessages[0].text)).toBeVisible();
@@ -166,6 +170,8 @@ test("failed playback lookup stays on feedback and can be retried", async ({ pag
   await enterCompleted(page);
   await page.getByRole("button", { name: "回看视频" }).click();
   await expect(page.getByRole("main").getByRole("alert")).toContainText("平台服务暂不可用");
+  await expect(page.locator("details.knowledge-feedback > summary")).toBeVisible();
+  if (await page.locator("details.knowledge-feedback").getAttribute("open") === null) await page.locator("details.knowledge-feedback > summary").click();
   await expect(page.getByText(feedback.summary)).toBeVisible();
   await expect(page.getByLabel("课后视频播放器")).toHaveCount(0);
   await page.getByRole("button", { name: "重试回看" }).click();
@@ -177,6 +183,8 @@ test("playback response from another course is rejected", async ({ page }) => {
   await enterCompleted(page);
   await page.getByRole("button", { name: "回看视频" }).click();
   await expect(page.getByRole("main").getByRole("alert")).toContainText("播放信息与当前课时不匹配");
+  await expect(page.locator("details.knowledge-feedback > summary")).toBeVisible();
+  if (await page.locator("details.knowledge-feedback").getAttribute("open") === null) await page.locator("details.knowledge-feedback > summary").click();
   await expect(page.getByText(feedback.summary)).toBeVisible();
   await expect(page.getByLabel("课后视频播放器")).toHaveCount(0);
 });
@@ -190,6 +198,8 @@ test("player error returns to feedback with a retry action", async ({ page }) =>
     parent.postMessage({ type: "PLAYER_ERROR", message: "课堂播放器暂不可用" }, location.origin);
   });
   await expect(page.getByRole("main").getByRole("alert")).toContainText("课堂播放器暂不可用");
+  await expect(page.locator("details.knowledge-feedback > summary")).toBeVisible();
+  if (await page.locator("details.knowledge-feedback").getAttribute("open") === null) await page.locator("details.knowledge-feedback > summary").click();
   await expect(page.getByText(feedback.summary)).toBeVisible();
   await page.getByRole("button", { name: "重试回看" }).click();
   await expectReplay(page);
