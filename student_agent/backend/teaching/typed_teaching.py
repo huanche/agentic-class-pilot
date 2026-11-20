@@ -216,12 +216,11 @@ def run(dialogue, *, opening=False, after_class=False):
         teaching_context = context(state, assessed=assessed)
         system = (SCOPED_PROMPT if scoped else PROMPT) + "\n当前类型策略：" + policy + "\n程序提供的最新教学数据：\n" + json.dumps(teaching_context, ensure_ascii=False)
         if natural:
-            system = REPLY_PROMPT + "\n当前类型策略：" + policy + "\n程序提供的最新教学数据：\n" + json.dumps(teaching_context, ensure_ascii=False)
             if assessed:
-                action = typed_state.teaching_plan(state, after_class=after_class)["action"]
+                action = teaching_context["teaching_plan"]["action"]
                 instruction = action_instruction(action, focus, state, teaching_context)
-                system = system.replace("\n程序提供的最新教学数据：\n",
-                    "\n本轮生成动作约束：" + instruction + "\n程序提供的最新教学数据：\n", 1)
+                system = (REPLY_PROMPT.format(action_rules=instruction) + "\n当前类型策略：" + policy
+                          + "\n程序提供的最新教学数据：\n" + json.dumps(teaching_context, ensure_ascii=False))
             else:
                 # Assessment and tutoring have different jobs. Give the assessor
                 # the original contract and raw learner work, not earlier model
@@ -306,12 +305,12 @@ def run(dialogue, *, opening=False, after_class=False):
         valid_targets = (isinstance(reply.get("target_ids"), list) and bool(reply["target_ids"]) and
                          all(isinstance(key, str) and key in {r["id"] for r in focus["requirements"]} for key in reply["target_ids"])) if scoped else True
         if (not focus["task_question"] and (not isinstance(question, str) or not question.strip())) or not valid_targets:
-            instruction = ("请提供当前点有效的target_ids；新点question非空，已有原题则为空。" if scoped else
-                           "请按当前点生成包含非空 question 的回复 JSON；")
+            instruction = ("提供当前点有效的 target_ids。新点 question 非空，已有原题则为空。" if scoped else
+                           "按当前点生成包含非空 question 的回复 JSON。")
             return {"messages": [HumanMessage(content=
-                f"新任务缺少实际题目。程序当前选定「{focus['title']}」（{focus['type']}）。"
-                + instruction + "上一点只简短反馈，不再追问，"
-                "无需再次提交评估工具。")], "jump_to": "model"}
+                "1. 补正回复格式\n"
+                f"   （1）新任务缺少实际题目。程序选定「{focus['title']}」（{focus['type']}）。{instruction}\n"
+                "   （2）上一点只简短反馈，不再追问。无需再次提交评估工具。")], "jump_to": "model"}
         return None
 
     agent = create_agent(model.teaching_model(), tools=[submit_current_assessment],

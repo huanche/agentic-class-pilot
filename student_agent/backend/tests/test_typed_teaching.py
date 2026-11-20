@@ -275,7 +275,10 @@ def test_pure_question_requests_explanation_without_creating_learning_evidence(m
         "args": {"intent": "question", "assessment": None}}])
     client = scripted(monkeypatch, packet, AIMessage(content="条件判断决定是否进入下一次循环。"))
     result = typed_teaching.run(state)
-    context = json.loads(client.seen[-1][0].content.splitlines()[-1])
+    system = client.seen[-1][0].content
+    assert "（6）直接讲清学生请求帮助的具体一步" in system
+    assert "本轮生成动作约束：" not in system
+    context = json.loads(system.splitlines()[-1])
     assert context["teaching_plan"]["action"] == "explain"
     assert "next_step" not in context["focus"]
     assert all(r["status"] == "unconfirmed" and not r["evidence"] for r in result["points"][0]["requirements"])
@@ -421,7 +424,7 @@ def test_agent_tool_updates_real_state_and_changes_type_before_final_reply(monke
     assert len(client.seen) == 2
     assert client.settings[0]["tool_choice"]["function"]["name"] == "submit_current_assessment"
     assert client.settings[1]["tool_choice"] == "none"
-    assert "当前类型策略：按 capability" in client.seen[1][0].content
+    assert "当前类型策略：1. 构造\n   （1）按 capability" in client.seen[1][0].content
     first, second = after["dialogue"]["points"]
     assert first["status"] == "mastered" and first["recall_attempts"] == 1
     assert second["recall_attempts"] == 0 and second["task_question"] == "构造一个累加程序？"
@@ -684,7 +687,7 @@ def test_real_chat_adapter_uses_updated_type_without_replaying_old_tool_argument
     assert requests[0]["tool_choice"]["function"]["name"] == "submit_current_assessment"
     assert requests[1]["tool_choice"] == "none"
     assert not any(m["role"] == "tool" or m.get("tool_calls") for m in requests[1]["messages"])
-    assert "当前类型策略：按 capability" in requests[1]["messages"][0]["content"]
+    assert "当前类型策略：1. 构造\n   （1）按 capability" in requests[1]["messages"][0]["content"]
     assert result["points"][0]["status"] == "mastered" and result["points"][1]["recall_attempts"] == 0
 
 def test_evidence_must_come_from_cited_turn_and_survives_help():
