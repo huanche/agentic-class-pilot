@@ -31,6 +31,11 @@ def reply(question="当前问题？", assistance="none"):
         "question": question, "assistance": assistance}, ensure_ascii=False))
 
 
+def current_source(state):
+    point = typed_state.current(state)
+    return [{"turn": len(point["assessment_history"]) + 1, "quote": state["student_text"]}]
+
+
 def assessment(result="partial", *, tool_id="assess"):
     return AIMessage(content="", tool_calls=[{"name": "submit_current_assessment", "id": tool_id,
         "args": {"intent": "answer", "assessment": {"result": result, "evidence": "学生自己的表达",
@@ -50,7 +55,7 @@ def test_assessment_preserves_teacher_and_student_as_native_message_roles(monkey
     items = state["points"][0]["requirements"]
     packet = AIMessage(content="", tool_calls=[{"name": "submit_current_assessment", "id": "assessment",
         "args": {"intent": "answer", "assessment": {"answer_result": "correct", "evidence": "学生纠正老师并说明三项",
-            "updates": [{"requirement_id": r["id"], "status": "demonstrated", "evidence": state["student_text"], "gap": ""} for r in items],
+            "updates": [{"requirement_id": r["id"], "sources": current_source(state), "status": "demonstrated", "evidence": state["student_text"], "gap": ""} for r in items],
             "next_step": "继续"}}}])
     client = scripted(monkeypatch, packet, AIMessage(content="你纠正得对，下面看连续存放。"))
     result = typed_teaching.run(state)
@@ -88,7 +93,7 @@ def test_mixed_answer_and_question_updates_evidence_and_selects_explanation(monk
     packet = AIMessage(content="", tool_calls=[{"name": "submit_current_assessment", "id": "assessment",
         "args": {"intent": "answer", "observation": {"help_quote": "但为什么a[5]不能访问？"},
             "assessment": {"answer_result": "partial", "evidence": state["student_text"], "updates": [
-                {"requirement_id": r["id"], "status": "demonstrated", "evidence": "下标从0开始，所以合法范围是0到4", "gap": ""}
+                {"requirement_id": r["id"], "sources": current_source(state), "status": "demonstrated", "evidence": "下标从0开始，所以合法范围是0到4", "gap": ""}
                 for r in state["points"][0]["requirements"][:2]], "next_step": "回答疑问"}}}])
     client = scripted(monkeypatch, packet, AIMessage(content="因为a[5]是第6个位置，超出五个元素的范围。"))
     result = typed_teaching.run(state)
@@ -144,7 +149,7 @@ def test_correct_work_is_recorded_even_when_pause_request_coexists(monkeypatch):
     packet = AIMessage(content="", tool_calls=[{"name": "submit_current_assessment", "id": "assessment",
         "args": {"intent": "answer", "observation": {"control": "pause", "control_quote": "我先暂停。"},
             "assessment": {"answer_result": "correct", "evidence": state["student_text"], "updates": [
-                {"requirement_id": r["id"], "status": "demonstrated", "evidence": state["student_text"], "gap": ""}
+                {"requirement_id": r["id"], "sources": current_source(state), "status": "demonstrated", "evidence": state["student_text"], "gap": ""}
                 for r in state["points"][0]["requirements"]], "next_step": "继续"}}}])
     scripted(monkeypatch, packet, AIMessage(content="这部分回答已记录；你休息好后可以继续。"))
     result = typed_teaching.run(state)
@@ -176,11 +181,12 @@ def test_assessor_rechecks_original_contract_without_inheriting_old_invented_gap
     from teaching_behavior_cases import CASES, build_case
     state = build_case(next(c for c in CASES if c["id"] == "18"))
     point = state["points"][0]
+    point["question_targets"] = [point["requirements"][0]["id"]]
     point.update(gaps=["历史老师误加的打印要求"], evidence="必须输出才能掌握", status="partial")
     point["requirements"][0].update(status="needs_help", gap="历史老师误加的打印要求", evidence="老师要求输出")
     packet = AIMessage(content="", tool_calls=[{"name": "submit_current_assessment", "id": "assessment",
         "args": {"intent": "answer", "assessment": {"answer_result": "correct", "evidence": state["student_text"], "updates": [
-                {"requirement_id": r["id"], "status": "demonstrated", "evidence": state["student_text"], "gap": ""}
+                {"requirement_id": r["id"], "sources": current_source(state), "status": "demonstrated", "evidence": state["student_text"], "gap": ""}
                 for r in point["requirements"]], "next_step": "继续"}}}])
     client = scripted(monkeypatch, packet, AIMessage(content="求和代码已经正确。"))
     result = typed_teaching.run(state)
@@ -189,6 +195,7 @@ def test_assessor_rechecks_original_contract_without_inheriting_old_invented_gap
     assert "gap" not in context["focus"]["requirements"][0]
     assert "currentTask" not in context
     assert context["teacherQuestionForInterpretation"] == point["latest_question"]
+    assert context["teacherQuestionTargetIds"] == point["question_targets"]
     assert "历史老师误加的打印要求" not in client.seen[0][0].content
     assert result["points"][0]["status"] == "mastered"
 
@@ -207,7 +214,7 @@ def test_partial_progress_does_not_override_explicit_feedback_to_stop_replaying_
     item = state["points"][0]["requirements"][0]
     result = typed_state.advance(state, "answer", {
         "answer_result": "partial", "evidence": "学生说明从0开始", "updates": [{
-            "requirement_id": item["id"], "status": "demonstrated", "evidence": "我知道下标从0开始", "gap": ""}],
+            "requirement_id": item["id"], "sources": current_source(state), "status": "demonstrated", "evidence": "我知道下标从0开始", "gap": ""}],
         "next_step": ""}, observation={"help_quote": "其他还没想清楚", "teacher_feedback": "别再重复这段解释了"})
     assert result["points"][0]["requirements"][0]["status"] == "demonstrated"
     assert typed_state.teaching_plan(result)["action"] == "clarify"
@@ -247,7 +254,7 @@ def test_followup_covers_only_remaining_requirements_and_does_not_explain_unaske
     items = state["points"][0]["requirements"]
     packet = AIMessage(content="", tool_calls=[{"name": "submit_current_assessment", "id": "assessment",
         "args": {"intent": "answer", "assessment": {"answer_result": "partial", "evidence": "学生说明初始化和更新",
-            "updates": [{"requirement_id": items[i]["id"], "status": "demonstrated", "evidence": "学生自己说明", "gap": ""}
+            "updates": [{"requirement_id": items[i]["id"], "sources": current_source(state), "status": "demonstrated", "evidence": "学生自己说明", "gap": ""}
                         for i in [0, 2]], "next_step": "先讲完所有答案，再要求学生重复已会的初始化和更新"}}}])
     client = scripted(monkeypatch, packet, AIMessage(content="中间如何判断是否继续循环？"))
     result = typed_teaching.run(state)
@@ -310,7 +317,7 @@ def test_natural_reply_does_not_receive_previous_points_conversation(monkeypatch
     scripted(monkeypatch, AIMessage(content="上一点的独有题目？"))
     state = typed_teaching.run(state, opening=True)
     state["student_text"] = "上一点的独有回答"
-    updates = [{"requirement_id": r["id"], "status": "demonstrated", "evidence": "学生已说明", "gap": ""}
+    updates = [{"requirement_id": r["id"], "sources": current_source(state), "status": "demonstrated", "evidence": "学生已说明", "gap": ""}
                for r in state["points"][0]["requirements"]]
     packet = AIMessage(content="", tool_calls=[{"name": "submit_current_assessment", "id": "assessment",
         "args": {"intent": "answer", "assessment": {"answer_result": "correct", "evidence": "学生已说明",
@@ -679,3 +686,35 @@ def test_real_chat_adapter_uses_updated_type_without_replaying_old_tool_argument
     assert not any(m["role"] == "tool" or m.get("tool_calls") for m in requests[1]["messages"])
     assert "当前类型策略：按 capability" in requests[1]["messages"][0]["content"]
     assert result["points"][0]["status"] == "mastered" and result["points"][1]["recall_attempts"] == 0
+
+def test_evidence_must_come_from_cited_turn_and_survives_help():
+    state = service.new_dialogue(compile_points(submit_knowledge_points(points=[MEMORY])))
+    point = state["points"][0]
+    state["student_text"] = "先初始化"
+    update = {"requirement_id": point["requirements"][0]["id"], "status": "demonstrated",
+              "sources": [{"turn": 1, "quote": "先初始化"}], "evidence": "说明初始化", "gap": ""}
+    packet = {"answer_result": "partial", "updates": [update], "evidence": "说明初始化", "next_step": "继续"}
+    state = typed_state.advance(state, "answer", packet)
+    state["student_text"] = "给个提示"
+    helped = typed_state.advance(state, "question", None, observation={"help_quote": "给个提示"}, count_attempt=False)
+    assert helped["points"][0]["evidence"] == "说明初始化"
+    assert helped["points"][0]["assessment_history"][-1]["answer_assessment"] is None
+    update["sources"] = [{"turn": 2, "quote": "先初始化"}]
+    with pytest.raises(ValueError, match="逐字"):
+        typed_state.advance(helped, "answer", packet)
+
+def test_model_retries_wrong_source_before_committing(monkeypatch):
+    state = service.new_dialogue(compile_points(submit_knowledge_points(points=[CONCEPT])))
+    state["student_text"] = "每次只取当前栈顶"
+    rid = state["points"][0]["requirements"][0]["id"]
+    def packet(call_id, quote):
+        return AIMessage(content="", tool_calls=[{"name": "submit_current_assessment", "id": call_id,
+            "args": {"intent": "answer", "assessment": {"answer_result": "partial",
+                "evidence": "说明取出位置", "next_step": "检查剩余要求", "updates": [{
+                    "requirement_id": rid, "sources": [{"turn": 1, "quote": quote}],
+                    "status": "demonstrated", "evidence": "说明取出位置", "gap": ""}]}}}])
+    scripted(monkeypatch, packet("invalid", "老师说的话"), packet("fixed", "只取当前栈顶"),
+             AIMessage(content="已经说明取出位置。"))
+    updated = typed_teaching.run(state)["points"][0]
+    assert len(updated["assessment_history"]) == 1
+    assert updated["requirements"][0]["sources"] == [{"turn": 1, "quote": "只取当前栈顶"}]

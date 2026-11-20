@@ -31,6 +31,18 @@ def conversation(pg, monkeypatch, request):
             "text": "接着原题，说明 Push 和 Pop 的作用？", "question": "说明 Push 和 Pop 的作用？", "assistance": "none"}
         message = ({"role": "assistant", "content": response} if isinstance(response, str) else
                    response if "tool_calls" in response else {"role": "assistant", "content": json.dumps(response, ensure_ascii=False)})
+        from copy import deepcopy
+        message = deepcopy(message)
+        for call in message.get("tool_calls", []):
+            args = json.loads(call["function"]["arguments"])
+            updates = (args.get("assessment") or {}).get("updates", [])
+            if updates:
+                system = json.loads(request.content)["messages"][0]["content"]
+                context = json.loads(system.splitlines()[-1])
+                turns = context.get("learnerEvidence") or context["focus"]["learnerEvidence"]
+                for update in updates:
+                    update.setdefault("sources", [{"turn": len(turns), "quote": turns[-1]}])
+                call["function"]["arguments"] = json.dumps(args, ensure_ascii=False)
         transport = import_module(type(request).__module__.split(".")[0])
         return transport.Response(200, request=request, json={"id": "offline", "object": "chat.completion", "created": 0,
             "model": "offline-model", "choices": [{"index": 0, "finish_reason": "tool_calls" if "tool_calls" in message else "stop",

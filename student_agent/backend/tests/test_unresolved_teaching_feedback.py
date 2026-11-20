@@ -29,5 +29,6 @@ def test_new_learner_evidence_releases_the_earlier_feedback_constraint():
     state = typed_state.advance(state, 'answer', {'answer_result': 'partial',
         'evidence': '学生说明下标起点', 'next_step': '', 'updates': [
             {'requirement_id': state['points'][0]['requirements'][0]['id'], 'status': 'demonstrated',
+             'sources': [{'turn': len(state['points'][0]['assessment_history']) + 1, 'quote': '下标从0开始'}],
              'evidence': '下标从0开始', 'gap': ''}]})
     assert typed_state.teaching_plan(state)['unresolved_teacher_feedback'] == ''

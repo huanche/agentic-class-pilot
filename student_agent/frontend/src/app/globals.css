@@ -896,6 +896,8 @@ body::before {
 .conversation-history > summary { padding: 16px; cursor: pointer; font-weight: 600; }
 .conversation-history .conversation-log { max-height: 420px; padding: 16px; }
 .lesson-feedback { width: 100%; text-align: left; margin-top: 28px; }
+.knowledge-feedback__content { max-height: 420px; overflow-y: auto; scrollbar-gutter: stable; padding: 0 16px 16px; overscroll-behavior-y: contain; }
+.knowledge-feedback__content .lesson-feedback { margin-top: 0; }
 .lesson-feedback h4 { margin: 0 0 12px; font-size: 21px; }
 .lesson-feedback__summary { color: var(--text-2); line-height: 1.8; }
 .lesson-feedback__list { display: grid; gap: 16px; margin-top: 22px; }

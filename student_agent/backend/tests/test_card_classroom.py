@@ -48,7 +48,7 @@ def test_group_partial_submission_restore_and_completion(monkeypatch):
     assert final["messages"] == opened["messages"]
     assert service.describe_session(json.loads(json.dumps(final)))["questionGroups"][0]["results"]["q2"]["explanation"] == "解析2"
     validate(final, "submit_answer", {"text": "为什么是这个答案？", "taskId": final["currentTaskId"]})
-    monkeypatch.setattr(card_teaching.model, "complete", lambda *args: "因为题目中的条件如此。")
+    monkeypatch.setattr(card_teaching.model, "complete", lambda *args: json.dumps({"reply":"因为题目中的条件如此。","assisted_question_ids":[]}))
     helped = service.classroom_turn(final, "为什么是这个答案？")
     assert helped["messages"][-1]["text"] == "因为题目中的条件如此。"
     assert helped["dialogue"]["review_point_id"] == "p"
@@ -107,7 +107,7 @@ def test_card_help_receives_submitted_choices_after_restore(monkeypatch, complet
     captured = []
     def complete(system, user):
         captured.append(json.loads(user))
-        return "你选择了 B：错。"
+        return json.dumps({"reply": "你选择了 B：错。", "assisted_question_ids": []})
     monkeypatch.setattr(card_teaching.model, "complete", complete)
     service.classroom_turn(restored, "我的作答是什么？")
     assert captured[0]["questionGroups"][0]["results"]["q1"]["choice"] == 1
@@ -138,3 +138,49 @@ def test_postclass_resumes_same_partial_card_and_accepts_remaining_answer(monkey
     newer["id"] = "newer-group"
     resumed["dialogue"]["question_groups"].append(newer)
     assert [g["id"] for g in service.describe_session(resumed)["questionGroups"] if g["active"]] == ["newer-group"]
+
+@pytest.mark.parametrize("hints, expected", [([], ["demonstrated", "demonstrated"]),
+    (["q1"], ["unconfirmed", "demonstrated"]), (["q1", "q2"], ["unconfirmed", "unconfirmed"])])
+def test_help_only_affects_hinted_questions(monkeypatch, hints, expected):
+    point = {"id": "p", "title": "定义", "type": "memory", "details": {
+        "statement": "两个事实", "requiredElements": ["事实一", "事实二"]}}
+    base = {"phase": "video", "messages": [], "dialogue": service.new_dialogue([point])}
+    raw = {"questions": [{"prompt": f"问题{i}", "options": ["对", "错"], "answer": 0,
+                         "explanation": f"解析{i}", "target_ids": [f"requiredElements:{i}"]} for i in (1, 2)]}
+    monkeypatch.setattr(card_teaching.model, "complete", lambda *args: json.dumps(raw))
+    opened = dict(base, **service.start_discussion(base))
+    monkeypatch.setattr(card_teaching.model, "complete", lambda *args: json.dumps(
+        {"reply": "课堂答复", "assisted_question_ids": hints}))
+    helped = dict(opened, **service.classroom_turn(opened, "请帮忙"))
+    group = helped["dialogue"]["question_groups"][0]
+    result = service.card_turn(helped, group["id"], {"q1": 0, "q2": 0})
+    focus = result["dialogue"]["points"][0]
+    assert [r["status"] for r in focus["requirements"]] == expected
+    assert focus["assessment_history"][-1]["result"] == ("assisted_correct" if hints else "correct")
+
+
+@pytest.mark.parametrize("first_choice", [0, 1])
+def test_shared_requirement_cites_same_answers_after_split_submission(monkeypatch, first_choice):
+    point = {"id": "p", "title": "定义", "type": "memory", "details": {
+        "statement": "一个事实", "requiredElements": ["事实一"]}}
+    base = {"phase": "video", "messages": [], "dialogue": service.new_dialogue([point])}
+    raw = {"questions": [{"prompt": f"问题{i}", "options": ["对", "错"], "answer": 0,
+                         "explanation": f"解析{i}", "target_ids": ["requiredElements:1"]} for i in (1, 2)]}
+    monkeypatch.setattr(card_teaching.model, "complete", lambda *args: json.dumps(raw))
+    opened = dict(base, **service.start_discussion(base))
+    group_id = opened["dialogue"]["question_groups"][0]["id"]
+    together = service.card_turn(opened, group_id, {"q1": first_choice, "q2": 0})
+    first = dict(opened, **service.card_turn(opened, group_id, {"q1": first_choice}))
+    split = service.card_turn(json.loads(json.dumps(first)), group_id, {"q2": 0})
+    combined_point = together["dialogue"]["points"][0]
+    split_point = split["dialogue"]["points"][0]
+    combined_req = combined_point["requirements"][0]
+    split_req = split_point["requirements"][0]
+    assert split_req["status"] == combined_req["status"] == ("needs_help" if first_choice else "demonstrated")
+    assert [source["quote"] for source in split_req["sources"]] == [
+        source["quote"] for source in combined_req["sources"]]
+    assert [source["turn"] for source in split_req["sources"]] == ([1] if first_choice else [1, 2])
+    if first_choice:
+        assert combined_point["assessment_history"][-1]["result"] == "partial"
+        assert split_point["assessment_history"][0]["result"] == "incorrect"
+        assert "问题1" in split_req["gap"]

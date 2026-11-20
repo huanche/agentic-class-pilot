@@ -169,11 +169,13 @@ def task(state, *, after_class=False):
 
 
 def advance(state, intent, assessment, *, after_class=False, observation=None, count_attempt=True):
+    # 在副本上完成整轮校验和推进，任何异常都不会污染调用方的原始状态。
     result = deepcopy(state)
     point = current(result, after_class=after_class)
     if not point:
         raise ValueError("当前没有待评估的知识点")
     if observation is not None:
+        # 求助、继续、纠错和控制请求必须引用本轮学生原文，避免模型编造学生诉求。
         observation = deepcopy(observation)
         for key in ("help_quote", "continue_quote", "teacher_feedback", "control_quote"):
             quote = observation.get(key, "")
@@ -194,6 +196,7 @@ def advance(state, intent, assessment, *, after_class=False, observation=None, c
             if not disjoint:
                 raise InvalidObservation("确认/继续与具体求助的原文片段不能重叠；请分别引用最小片段。没有具体内容疑问、明确不会或讲解请求时，help_quote留空。")
     submitted = deepcopy(assessment)
+    # 保留模型原始提交供历史审阅，再用程序汇总逐项要求得到整点结果。
     if scoped(result):
         assessment = requirements.apply(point, assessment, result["student_text"])
     old_stage = result["stage"]
@@ -206,6 +209,7 @@ def advance(state, intent, assessment, *, after_class=False, observation=None, c
         counter = "recall_attempts" if old_stage == "recall" else "reinforce_attempts"
         stage = old_stage
     point[counter] = point.get(counter, 0) + int(count_attempt)
+    # 是否计次由调用方决定，例如尚未完成的题组可以分次提交而不重复消耗轮数。
     point["attempts"] = point["recall_attempts"] + point["reinforce_attempts"]
     point["assessment_history"].append({"stage": stage, "round": point[counter],
         "result": outcome, "evidence": evidence, "studentText": result["student_text"]})
@@ -220,20 +224,23 @@ def advance(state, intent, assessment, *, after_class=False, observation=None, c
         {"id": point["id"], **deepcopy(assessment)}] if assessment else []}
     if observation is not None:
         result["evaluation"]["observation"] = deepcopy(observation)
-    if assessment:
+    # 只有真实评估才覆盖证据摘要。纯求助仍写入历史，但保留上次有效的学习证据。
+    if submitted:
         point.update(status=outcome, evidence=evidence, known_parts=assessment["known_parts"],
                      gaps=assessment["gaps"], next_step=assessment["next_step"])
-    elif point["status"] == "unseen":
+    elif not scoped(result) and point["status"] == "unseen":
         point["status"] = "unclear"
     result["strategy"] = ("answer_question" if intent == "question" else "correct" if outcome == "misconception"
                           else "clarify" if outcome == "unclear" else "hint")
     result["transition"] = "continue"
     if outcome == "mastered":
+        # 先检查掌握，再检查轮数，确保最后一次允许的回答仍可正常过关。
         result["selected_point_id"] = None
         point.update(recall_done=True, reinforce_done=True, reinforcement_required=False,
                      mastered_in=stage, gaps=[])
         result["transition"] = "mastered_next"
     elif not after_class:
+        # 达到课堂限额只结束该点本阶段的教学，保留缺口供补强或课后继续。
         limit = result["recall_round_limit" if old_stage == "recall" else "reinforce_round_limit"]
         if point[counter] >= limit:
             point["recall_done" if old_stage == "recall" else "reinforce_done"] = True

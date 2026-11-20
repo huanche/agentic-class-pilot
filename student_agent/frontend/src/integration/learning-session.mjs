@@ -113,6 +113,8 @@ export function createLearningSession({ request = requestSession, storage = () =
       if (!valid(t)) return;
       platformUrl = platform.platformUrl || ""; demo = Boolean(platform.demoEnabled);
       if (!courseId && !demo) { screen = "auth"; emit(); return; }
+      // 从课程入口进入时先显示课时列表，选择课时后再恢复该课的学习进度。
+      if (entry.fresh) return api(t, "/session/start", "POST", { course_id: courseId });
       const saved = await restoreStudentSession({
         api: (p, m, b) => api(t, p, m, b), courseId, lessonId: entry.lessonId,
         snapshot: entry.snapshot, sessionId: entry.sessionId, demo });
