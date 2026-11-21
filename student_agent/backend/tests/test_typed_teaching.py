@@ -276,7 +276,7 @@ def test_pure_question_requests_explanation_without_creating_learning_evidence(m
     client = scripted(monkeypatch, packet, AIMessage(content="条件判断决定是否进入下一次循环。"))
     result = typed_teaching.run(state)
     system = client.seen[-1][0].content
-    assert "（6）直接讲清学生请求帮助的具体一步" in system
+    assert "程序已选定本轮动作，按以下要求生成回复。\n      直接讲清学生请求帮助的具体一步" in system
     assert "本轮生成动作约束：" not in system
     context = json.loads(system.splitlines()[-1])
     assert context["teaching_plan"]["action"] == "explain"
