@@ -6,6 +6,7 @@ Graph state, normalization and message-stage bookkeeping stay private here.
 from __future__ import annotations
 
 import logging
+import re
 from copy import deepcopy
 
 from backend.teaching.graph import dialogue_graph
@@ -27,6 +28,17 @@ from backend.teaching import typed_state, typed_teaching
 from backend.teaching import question_cards, card_teaching, learner_feedback
 
 logger = logging.getLogger(__name__)
+
+# Match the whole message so mentions, quotations and negations stay in chat.
+_NEXT_POINT_REQUEST = re.compile(
+    r"(?:(?:老师|好的?|行|可以|(?:我)?(?:懂|明白|知道)了|ok)[，,。\s]+){0,2}"
+    r"(?:请|麻烦|我想|我要|可不可以|可以|能不能|能|我们)?\s*"
+    r"(?:(?:继续|直接)?(?:进入|跳到|切到|切换到|换到|去|看|学|讲|到)?"
+    r"下(?:一(?:个)?|个)(?:知识点|点)|换(?:一)?个知识点|"
+    r"(?:先)?跳过(?:当前|这个|这一个)知识点)"
+    r"(?:吧|好吗|可以吗|行吗|谢谢)?[。！!？?\s]*",
+    re.IGNORECASE,
+)
 
 
 def _model_messages(messages):
@@ -232,15 +244,21 @@ def _typed_turn(session, text, *, after_class=False):
     student = {"role": "student", "text": text.strip(),
                "phase": "postclass-remediation" if after_class else dialogue["stage"]}
     dialogue["student_text"] = student["text"]
-    dialogue["messages"] = _model_messages(session["messages"] + [student])
-    learner_feedback.record(dialogue, after_class=after_class)
-    if not card_teaching.answer_help(dialogue, after_class=after_class):
-        dialogue = _typed_run(dialogue, after_class=after_class)
+    messages = session["messages"] + [student]
+    dialogue["messages"] = _model_messages(messages)
+    if _NEXT_POINT_REQUEST.fullmatch(student["text"]):
+        if typed_state.next_point(dialogue, after_class=after_class) is not None:
+            return navigate_point_turn(dict(session, dialogue=dialogue, messages=messages))
+        dialogue["reply"] = "本课没有下一个知识点了。"
+    else:
+        learner_feedback.record(dialogue, after_class=after_class)
+        if not card_teaching.answer_help(dialogue, after_class=after_class):
+            dialogue = _typed_run(dialogue, after_class=after_class)
     complete = after_class and all(p["status"] == "mastered" for p in dialogue["points"])
     assistant = _typed_assistant(dialogue,
                  "postclass-completed" if complete else "postclass-remediation" if after_class else dialogue["stage"],
                  after_class=after_class)
-    changed = {"dialogue": dialogue, "messages": session["messages"] + [student, assistant]}
+    changed = {"dialogue": dialogue, "messages": messages + [assistant]}
     if after_class:
         changed.update(postclassStage="completed" if complete and not dialogue.get("review_point_id") else "remediation",
                        feedback=typed_state.feedback(dict(session, dialogue=dialogue)))

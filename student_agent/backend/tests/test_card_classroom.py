@@ -54,6 +54,66 @@ def test_group_partial_submission_restore_and_completion(monkeypatch):
     assert helped["dialogue"]["review_point_id"] == "p"
 
 
+@pytest.mark.parametrize(("after_class", "request_text"), [
+    (False, "下一个知识点"),
+    (False, "老师，我懂了，去下个知识点吧"),
+    (True, "能不能换个知识点？"),
+])
+def test_chat_navigation_reuses_button_with_pending_card(monkeypatch, after_class, request_text):
+    points = [{"id": key, "title": key, "type": "memory",
+               "details": {"statement": key, "requiredElements": [key]}}
+              for key in ("first", "second")]
+    base = {"id": "chat-navigation", "phase": "video", "lessonId": "lesson",
+            "videoRevision": "r", "messages": [], "dialogue": service.new_dialogue(points)}
+    raw = {"questions": [{"prompt": "当前题目？", "options": ["对", "错"], "answer": 0,
+                         "explanation": "解析", "target_ids": ["requiredElements:1"]}]}
+    monkeypatch.setattr(card_teaching.model, "complete", lambda *args: json.dumps(raw))
+    opened = dict(base, **service.start_discussion(base))
+    if after_class:
+        opened = dict(opened, **service.finish(opened))
+        opened = dict(opened, **service.start_postclass(opened))
+    opened = records.normalize(opened)
+    turn = service.postclass_turn if after_class else service.classroom_turn
+
+    original = deepcopy(opened)
+    button = service.navigate_point_turn(opened)
+    changed = turn(opened, request_text)
+    moved = records.transition(opened, dict(opened, **changed))
+    assert opened == original
+    assert moved["dialogue"]["current_task"]["pointId"] == "second"
+    assert moved["dialogue"]["points"] == button["dialogue"]["points"]
+    public_groups = service.describe_session(moved)["questionGroups"]
+    assert [(g["point_id"], g["active"]) for g in public_groups] == [("first", False), ("second", True)]
+    assert moved["messages"][-2]["text"] == request_text
+    assert moved["messages"][-2]["role"] == "student"
+    assert moved["messages"][-1]["cardId"] == public_groups[1]["id"]
+    assert moved["dialogue"]["points"][0]["assessment_history"] == []
+    assert moved["dialogue"]["points"][0]["status"] != "mastered"
+
+    monkeypatch.setattr(card_teaching.model, "complete", lambda *args: pytest.fail("No next point to generate"))
+    stayed = turn(moved, "请进入下一个知识点")
+    assert stayed["messages"][-1]["text"] == "本课没有下一个知识点了。"
+    assert stayed["dialogue"]["current_task"] == moved["dialogue"]["current_task"]
+    assert stayed["dialogue"]["points"] == moved["dialogue"]["points"]
+
+
+@pytest.mark.parametrize("text", ["继续", "别去下一个知识点", "你说的「下一点」是什么意思？"])
+def test_chat_navigation_requires_an_explicit_request(monkeypatch, text):
+    points = [{"id": key, "title": key, "type": "memory",
+               "details": {"statement": key, "requiredElements": [key]}}
+              for key in ("first", "second")]
+    base = {"phase": "video", "messages": [], "dialogue": service.new_dialogue(points)}
+    raw = {"questions": [{"prompt": "当前题目？", "options": ["对", "错"], "answer": 0,
+                         "explanation": "解析", "target_ids": ["requiredElements:1"]}]}
+    monkeypatch.setattr(card_teaching.model, "complete", lambda *args: json.dumps(raw))
+    opened = dict(base, **service.start_discussion(base))
+    monkeypatch.setattr(card_teaching.model, "complete", lambda *args: json.dumps(
+        {"reply": "接着当前题卡。", "assisted_question_ids": []}))
+    stayed = service.classroom_turn(opened, text)
+    assert stayed["dialogue"]["current_task"] == opened["dialogue"]["current_task"]
+    assert stayed["messages"][-1]["text"] == "接着当前题卡。"
+
+
 def test_formal_command_submits_card_without_student_chat_bubble(pg, monkeypatch):
     monkeypatch.setenv("PLATFORM_TO_STUDENT_KEY", "card-test-key")
     raw = {"questions": [{"prompt": "Push 的作用？", "options": ["插入", "删除"],
