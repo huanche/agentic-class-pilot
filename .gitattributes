@@ -1,2 +1,8 @@
 scripts/mainland/* text eol=lf
 .github/workflows/mainland*.yml text eol=lf
+
+# Generators write LF bytes; keep runtime mirrors consistent on Windows too.
+platform/backend/app/generated/** text eol=lf
+student_agent/generated/** text eol=lf
+teacher_agent/generated/** text eol=lf
+platform/frontend/src/routeTree.gen.ts text eol=lf

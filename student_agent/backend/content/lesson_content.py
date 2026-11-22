@@ -5,7 +5,7 @@ from copy import deepcopy
 import hashlib
 import json
 
-from backend.content.knowledge_schema import SCHEMA_VERSION, compatibility_text, submit_knowledge_points
+from backend.content.knowledge_schema import SCHEMA_VERSION, compatibility_text, StoredKnowledgePoints
 
 POINT_FIELDS = ("id", "title", "content", "description", "source", "sourceIds", "type", "details")
 
@@ -16,7 +16,7 @@ def point_payload(point):
 
 
 def _validate_typed(points):
-    submitted = submit_knowledge_points.model_validate({"points": [
+    submitted = StoredKnowledgePoints.model_validate({"points": [
         {key: p[key] for key in ("title", "type", "details") if key in p} for p in points]})
     for saved, candidate in zip(points, submitted.points):
         canonical = candidate.model_dump()
@@ -116,34 +116,6 @@ def validate(body):
 
 
 def bind(session, result=None):
-    """Pure binding, including a frozen legacy capture with explicit unknown sources."""
-    bound = dict(session)
-    points = (session.get("dialogue") or {}).get("points") or []
-    if result:
-        body = result.get("contentModel")
-        points = result.get("points") or points
-    else:
-        body = session.get("lessonContent")
-    if body is None and session.get("contentRef"):
-        # The persisted reference will be hydrated at the storage seam, never silently rebuilt.
-        return bound
-    if body is None and points and session.get("lessonId"):
-        clean = [point_payload(p) for p in points]
-        body = build((session.get("context") or {}).get("courseId", "demo"), session["lessonId"],
-                     session.get("videoRevision") or "legacy-unversioned", "legacy-frozen:" + digest(clean),
-                     clean, session.get("preparationMaterials") or [], coverage=session.get("preparationCoverage"))
-    if body is not None:
-        validate(body)
-        if (body["courseId"] != str((session.get("context") or {}).get("courseId", "demo"))
-                or body["lessonId"] != str(session.get("lessonId"))
-                or (body["sourceRevision"] != str(session.get("videoRevision") or "legacy-unversioned")
-                    and not (body["sourceRevision"] == "legacy-unversioned"
-                             and body["compilerVersion"].startswith("legacy-frozen:")))):
-            raise ValueError("Content belongs to a different lesson revision")
-        if session.get("contentRef") and reference(body) != session["contentRef"]:
-            raise ValueError("Pinned content reference changed")
-        point_content = [point_payload(p) for p in points]
-        if points and body["points"] != point_content:
-            raise ValueError("Teaching points differ from pinned content")
-        bound.update(contentRef=reference(body), lessonContent=deepcopy(body))
-    return bound
+    """Compatibility entry point; session content binding belongs to learning access."""
+    from backend.session.content_binding import bind as bind_content
+    return bind_content(session, result)

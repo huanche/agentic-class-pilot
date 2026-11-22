@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "d9a7c3a6-4347-4bcf-98a0-b484abde435a",
+  "status": "current",
+  "command": "deliver",
+  "type": "workflow",
+  "input": "E:\\LMS系统参考\\项目\\agentic-class-pilot-running\\.archify\\workflow-student-after-video-20261118-160000\\candidate.json",
+  "output": "E:\\LMS系统参考\\项目\\agentic-class-pilot-running\\.archify\\workflow-student-after-video-20261118-160000\\student-after-video.html",
+  "specification": {
+    "sha256": "7795905e9257113793d7ee6b4cf1da3bee529a1195a0933357ad9f57a69db79c",
+    "bytes": 6713
+  },
+  "artifact": {
+    "sha256": "c3461cb200acbdd60dccb3d1914f69c74057cbd3149349822672df068b448462",
+    "bytes": 846706
+  }
+}

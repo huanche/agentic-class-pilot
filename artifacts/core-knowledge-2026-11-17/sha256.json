@@ -1,0 +1,20 @@
+{
+  "backend-database-test.log": "2f400394598adc4a63baf25ebb3d7224fcee29590ab66124f58083421105560b",
+  "changes.patch": "a6cccc51a58f65d7a74a38bc207d0b26b8271afd06e2fae2c7525f2a80162ec8",
+  "extraction-report.json": "5412621aeb14fd76229ce05758ac7ffeecb3976b4aca7587bbefc65b1f1186bd",
+  "feedback.json": "bc8449b359ac14d09661581ee6c353781ac6e429c7468e435ad7464567cdc657",
+  "implementation-plan.md": "0c5cbaf376e3c4160ae9c9f2823c4d605d84ac3a1510268853d20c30c0c201f6",
+  "input.json": "d1add39dcae416c35f065b2d506c434b723abfe05adc6550bb39dc9f67b4e61f",
+  "knowledge-points.json": "c6adcf351c339c67f8b206949cb098cc160ba2e73c520e07b604507f9db75fc0",
+  "lesson-content.json": "09eb383eb79c5ddbc169afea4ab347ad8073bfc4dd380f27f344e47ad28da4a0",
+  "prompt.txt": "21b1b736f2ee15eeb851c2bce96578f01f34425af854402c8986206dc0b62241",
+  "README.md": "3f7c50eb84de450c05daebd8d888d2d7416c07175b11a2d551225eb3af2a8570",
+  "server-startup.log": "9d240f123127dfa88998a583a622f15a0f4aafab01b7dc39a1cd0d06529f81c8",
+  "startup-smoke.json": "a69f092fdd28625188d778e8425fa4165581baa5d30b3f53647050a72f4e791a",
+  "teaching-smoke.json": "ed31e1b23cbbfc82496d4c2b586c6867edf119ebe7b92709d2f182f144bf8ebf",
+  "tool-schema.json": "5b458e54da439aa33a3a6f72af1538a502f822b11d8b57ff4b24dd0ffe297904",
+  "validation-summary.json": "3a4b7b0d7e47f5be78f69166a84141f6b0c6ca17c9a120b6b27ec963bbb23909",
+  "知识点结果.md": "6a5a907295a0727ca458f36ed164907e6a856dfbc78879a593af564c3ce765f7",
+  "source/student_agent/scripts/verify_core_extraction.py": "2600e7637b7b972c037ddc4b580b6edcd4c32b4ef81a7dc67c2be8a93855d2ec",
+  "source/student_agent/backend/tests/test_core_knowledge.py": "0b156aab9c99c34d8eb0db2e230620bd24b7a4110a78df1dc89490afb95e4f04"
+}

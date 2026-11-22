@@ -1,0 +1,45 @@
+{
+  "$defs": {
+    "CoreKnowledgePoint": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "maxLength": 6000,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "explanation": {
+          "maxLength": 6000,
+          "minLength": 1,
+          "title": "Explanation",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "explanation"
+      ],
+      "title": "CoreKnowledgePoint",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Submit one to three core points using only name and explanation.",
+  "properties": {
+    "points": {
+      "items": {
+        "$ref": "#/$defs/CoreKnowledgePoint"
+      },
+      "maxItems": 3,
+      "minItems": 1,
+      "title": "Points",
+      "type": "array"
+    }
+  },
+  "required": [
+    "points"
+  ],
+  "title": "submit_knowledge_points",
+  "type": "object"
+}

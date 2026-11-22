@@ -1,4 +1,6 @@
-# 课时知识点提取
+# 课时知识点提取改造记录
+
+这里保存早期三类型改造的设计和验证。现行结构、3–8 项的新提取约束及共享内容版本请查[学生端知识点提取](../../../docs/knowledge-extraction/README.md)。
 
 本目录集中保存本次 `memory / concept / design` 结构化知识点提取改造的设计、历史调研、实施记录和验证产物。工作树为 `typed-knowledge-extraction`，分支为 `lzm2`；未部署。
 
@@ -8,7 +10,7 @@
 
 | 分类 | 文档 | 用途 |
 | --- | --- | --- |
-| 设计 | [当前方案](design/plan.md) | 数据协议、反馈修正闭环、职责边界与验收标准 |
+| 设计 | [早期方案](design/plan.md) | 数据协议、反馈修正闭环、职责边界与验收标准 |
 | 实施 | [代码改动与测试](implementation/changes-and-tests.md) | 已实现行为、兼容处理、测试结果和限制 |
 | 实测 | [2026-11-05 真实课时与模型试验](validation/2026-11-05-live-model/README.md) | 三种知识点样例、真实反馈修正和质量观察 |
 | 实测 | [2026-11-10 要求拆分提示词验证](../../../docs/knowledge-extraction/validation/2026-11-10-requirement-splitting/README.md) | 公开提取入口前后对照；真实课时仍未拆开，保留失败 |

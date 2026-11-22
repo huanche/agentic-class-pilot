@@ -1,0 +1,14 @@
+{
+  "health": {
+    "status": 200,
+    "body": {
+      "ok": true
+    }
+  },
+  "frontend": {
+    "status": 200,
+    "htmlLength": 5726
+  },
+  "isolatedDatabase": true,
+  "platformAuthenticationTested": false
+}

@@ -3,42 +3,34 @@ from __future__ import annotations
 
 from backend.infrastructure import content_store
 
-import hashlib
 import json
 import logging
 import secrets
 import threading
 from datetime import datetime, timedelta, timezone
 
-from backend.content.context import classroom_materials
+from backend.content.preparation import (
+    EXTRACTOR_HASH,
+    build_content as _compiled,
+    compiler_version as _compiler,
+    prepare_content,
+)
 from backend.infrastructure.database import _db
-from backend.content.knowledge import EXTRACTION_VERSION, KnowledgePreparationError
-from backend.content.knowledge_schema import submit_knowledge_points
+from backend.content.knowledge import KnowledgePreparationError
 from backend.content.knowledge import learning_points
-from backend.content.prompts import KNOWLEDGE_EXTRACTION_PROMPT
 
 log = logging.getLogger(__name__)
-EXTRACTOR_HASH = hashlib.sha256(
-    json.dumps([EXTRACTION_VERSION, KNOWLEDGE_EXTRACTION_PROMPT,
-                submit_knowledge_points.model_json_schema()], sort_keys=True).encode()
-).hexdigest()
 _stop = threading.Event()
 
 
-def _compiler(extractor):
-    return "lesson-content-v1:" + extractor
-
-
-def _compiled(course, lesson, revision, compiler, scenes, points, coverage):
-    from backend.content import lesson_content
-    return lesson_content.build(course, lesson, revision, _compiler(compiler), points,
-                                classroom_materials(scenes), scenes=scenes, coverage=coverage)
-
-
 def _archive(connection, row):
-    from backend.content import lesson_content
     course, lesson, revision, scenes, points, coverage, compiler = row
     if points and compiler:
+        if compiler != EXTRACTOR_HASH and any("name" in point or "explanation" in point for point in points):
+            # The newer, simplified format was archived by its own extractor.
+            # Rebuilding it here would assign a different fingerprint to that
+            # same version. Only the current extractor can supply new sessions.
+            return
         # Retry diagnostics describe a job attempt, not the old immutable content.
         frozen_coverage = {k: v for k, v in (coverage or {}).items() if k != "extractionFailure"}
         body = _compiled(course, lesson, revision, compiler, scenes, points, frozen_coverage)
@@ -51,28 +43,40 @@ def _existing(connection, course, lesson, revision, scenes):
     return content_store.find(course, lesson, revision, _compiler(EXTRACTOR_HASH), manifest, connection=connection)
 
 
-def read(course_id: str, lesson_id: str, video_revision: str) -> dict | None:
+def _maintain_current_content(connection, key, row):
+    """Archive old results and resolve current content in the caller's transaction."""
+    scenes, points, coverage, compiler, status, error = row
+    _archive(connection, (*key, scenes, points, coverage, compiler))
+    body = _existing(connection, *key, scenes)
+    if not body and status == "ready" and compiler != EXTRACTOR_HASH:
+        connection.execute("UPDATE student.published_lesson_knowledge SET status='pending',"
+                           "next_retry_at=now() WHERE course_id=%s AND lesson_id=%s AND video_revision=%s "
+                           "AND status='ready' AND extractor_hash=%s",
+                           (*key, compiler))
+        status = "pending"
+    return body, status, error
+
+
+def _preparation_view(body, status, error):
     from backend.content import lesson_content
+    if body:
+        return {"status": "ready", "points": body["points"], "coverage": body["coverage"],
+                "error": None, "contentRef": lesson_content.reference(body), "contentModel": body}
+    return {"status": status, "points": None, "coverage": None, "error": error}
+
+
+def read(course_id: str, lesson_id: str, video_revision: str) -> dict | None:
+    """Read preparation while preserving archival and compiler-upgrade maintenance."""
+    key = (course_id, lesson_id, video_revision)
     with _db() as connection:
         row = connection.execute(
             "SELECT scenes,points,coverage,extractor_hash,status,last_error FROM "
             "student.published_lesson_knowledge WHERE course_id=%s AND lesson_id=%s AND video_revision=%s",
-            (course_id, lesson_id, video_revision)).fetchone()
+            key).fetchone()
         if not row:
             return None
-        scenes, points, coverage, compiler, status, error = row
-        _archive(connection, (course_id, lesson_id, video_revision, scenes, points, coverage, compiler))
-        body = _existing(connection, course_id, lesson_id, video_revision, scenes)
-        if body:
-            return {"status": "ready", "points": body["points"], "coverage": body["coverage"],
-                    "error": None, "contentRef": lesson_content.reference(body), "contentModel": body}
-        if status == "ready" and compiler != EXTRACTOR_HASH:
-            connection.execute("UPDATE student.published_lesson_knowledge SET status='pending',"
-                               "next_retry_at=now() WHERE course_id=%s AND lesson_id=%s AND video_revision=%s "
-                               "AND status='ready' AND extractor_hash=%s",
-                               (course_id, lesson_id, video_revision, compiler))
-            status = "pending"
-        return {"status": status, "points": None, "coverage": None, "error": error}
+        body, status, error = _maintain_current_content(connection, key, row)
+        return _preparation_view(body, status, error)
 
 
 def retry(course_id: str, lesson_id: str, video_revision: str) -> bool:
@@ -123,12 +127,7 @@ def process_next() -> bool:
                            "lease_until=now()+interval '10 minutes',attempts=attempts+1,claim_token=%s,updated_at=now() "
                            "WHERE course_id=%s AND lesson_id=%s AND video_revision=%s", (claim_token, *key))
     try:
-        result = learning_points(classroom_materials(scenes), *key[:2])
-        coverage = {"partial": result.partial, "acceptedCount": len(result.points),
-                    "rejectedCount": result.rejected_count, "candidateCount": result.candidate_count,
-                    "repairAttempted": result.repair_attempted, "modelCalls": result.model_calls,
-                    "duplicateCount": result.duplicate_count}
-        body = _compiled(*key, compiler, scenes, result.points, coverage)
+        prepared = prepare_content(*key, compiler, scenes, extract=learning_points)
         from psycopg.types.json import Jsonb
         with _db() as connection:
             accepted = connection.execute(
@@ -136,9 +135,9 @@ def process_next() -> bool:
                 "lease_until=NULL,last_error=NULL,claim_token=NULL,updated_at=now() WHERE course_id=%s "
                 "AND lesson_id=%s AND video_revision=%s AND status='running' AND claim_token=%s "
                 "AND lease_until>clock_timestamp() RETURNING 1",
-                (compiler, Jsonb(result.points), Jsonb(coverage), *key, claim_token)).fetchone()
+                (compiler, Jsonb(prepared.points), Jsonb(prepared.coverage), *key, claim_token)).fetchone()
             if accepted:
-                content_store.store(body, connection=connection)
+                content_store.store(prepared.body, connection=connection)
     except Exception as error:
         log.exception("Published lesson knowledge extraction failed: lesson=%s", key[1])
         delay = min(300, 10 * 2 ** min(job[4], 5))

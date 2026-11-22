@@ -1,8 +1,8 @@
-"""PostgreSQL Adapter for immutable content and pinned-version hydration."""
+"""PostgreSQL Adapter for immutable lesson content."""
 from __future__ import annotations
 import json
 from contextlib import nullcontext
-from backend.content.lesson_content import validate, bind
+from backend.content.lesson_content import validate
 from backend.infrastructure import database
 
 def store(body, *, connection=None):
@@ -30,16 +30,17 @@ def find(course_id, lesson_id, revision, compiler_version, manifest_hash, *, con
         return row[0] if row else None
 
 
+def get_by_id(content_id, *, connection=None):
+    """Read a raw payload or raise if missing; session binding validates it later."""
+    with (database._db() if connection is None else nullcontext(connection)) as connection:
+        row = connection.execute("SELECT payload FROM student.lesson_content_versions WHERE content_id=%s",
+                                 (content_id,)).fetchone()
+    if not row:
+        raise ValueError("Pinned lesson content is unavailable")
+    return row[0]
+
+
 def hydrate(session, *, connection=None):
-    if not session.get("contentRef"):
-        return bind(session)
-    body = session.get("lessonContent")
-    if body is None:
-        with (database._db() if connection is None else nullcontext(connection)) as connection:
-            row = connection.execute("SELECT payload FROM student.lesson_content_versions WHERE content_id=%s",
-                                     (session["contentRef"]["contentId"],)).fetchone()
-        if not row:
-            raise ValueError("Pinned lesson content is unavailable")
-        body = row[0]
-    result = dict(session, lessonContent=body)
-    return bind(result)
+    """Compatibility entry point for learning-session content restoration."""
+    from backend.session.content_binding import hydrate as hydrate_content
+    return hydrate_content(session, connection=connection)
