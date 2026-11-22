@@ -1,5 +1,7 @@
 # 学生 Agent 正式接入审计与实施清单（student-agent-integration）
 
+本文保留 2026-09-23 接入任务的历史审计。现行 Cookie BFF、课时恢复及学生服务部署入口见[学生端当前架构](../../student_agent/docs/architecture/student-architecture-current.md)。
+
 任务来源：2026-09-23 学生 Agent 正式接入任务书。本文是第一节"先审计"的交付物，
 全部结论来自对三个仓库的实际代码阅读与运行验证，不基于假设。
 

@@ -1,6 +1,6 @@
 # 学生端目录与依赖说明
 
-目录核对更新：2026-11-16。原迁移与验收记录日期：2026-11-02。对应 P1–P5 已实现的 Module，完成源码物理归位和导入修正。本次不新增教学功能、不变更流程或数据库结构。现行目录以本文和 [README](../../README.md) 为准；[模块架构设计](../archive/design/student-module-architecture-design.md)中的现状分析和历史实施记录保留当时背景。
+目录按 2026-11-22 本地源码核对。P1–P5 的架构设计和 2026-11-02 的迁移验收作为历史记录保留。 [学生端入口](../../README.md) · [历史模块设计](../archive/design/student-module-architecture-design.md)
 
 ## 1. 目录与职责
 
@@ -9,15 +9,20 @@ student_agent/
 ├─ backend/
 │  ├─ __init__.py
 │  ├─ main.py                      HTTP、应用生命周期和静态资源入口
+│  ├─ internal_platform.py         平台准备入队、名册、学习数据及对话记录接口
 │  ├─ contracts.py                 共享异常、稳定身份算法和流程名称
 │  ├─ requirements.txt
 │  ├─ session/
 │  │  ├─ service.py                进入、恢复、换版、课堂/课后用例与统一提交
+│  │  ├─ content_binding.py        校验和恢复会话固定绑定的内容
 │  │  └─ command_runtime.py        命令执行、租约心跳、恢复及进度同步调度
 │  ├─ teaching/
 │  │  ├─ service.py                会话调用的教学 Interface，选择实际流程 Adapter
 │  │  ├─ typed_state.py            三类型教学纯状态与5/8轮推进
 │  │  ├─ typed_teaching.py         三类型教学执行
+│  │  ├─ card_teaching.py          题卡生成调度、分次作答、答疑与复习
+│  │  ├─ question_cards.py         出题提示词、题卡校验和判分
+│  │  ├─ concept_guidance.py       概念类启发与讲解选择
 │  │  ├─ graph.py                  原课堂 LangGraph
 │  │  ├─ postclass.py              原课后 LangGraph
 │  │  ├─ dynamic_teaching.py       P4 受限动态执行器
@@ -30,14 +35,16 @@ student_agent/
 │  │  └─ feedback.py               legacy 与动态反馈的纯计算
 │  ├─ content/
 │  │  ├─ context.py                课堂场景和旁白整理
-│  │  ├─ knowledge.py              内容提取与来源校验
-│  │  ├─ lesson_content.py         不可变版本内容的纯定义、构建、验证与绑定
+│  │  ├─ knowledge.py              结构化内容提取、有限修复和去重
+│  │  ├─ knowledge_schema.py       提取工具和存量内容 schema
+│  │  ├─ lesson_content.py         不可变内容包的定义、构建、验证和兼容入口
+│  │  ├─ preparation.py            提取编排、覆盖信息及编译器标识
 │  │  └─ prompts.py                内容提取提示词
 │  ├─ infrastructure/
 │  │  ├─ database.py               PostgreSQL 连接和基础记录写入
 │  │  ├─ persistence.py            权威快照、统一事务、恢复与清理 Adapter
 │  │  ├─ commands.py               命令日志、CAS、租约和完成事务 Adapter
-│  │  ├─ content_store.py          内容版本读写与固定版本 hydration
+│  │  ├─ content_store.py          内容版本读写与恢复兼容入口
 │  │  ├─ published_knowledge.py    共享内容准备任务、SQL 租约及 worker
 │  │  ├─ model.py                 模型调用 Adapter
 │  │  └─ platform_access.py       平台上下文、授权和学情同步 Adapter
@@ -74,18 +81,18 @@ student_agent/
 
 `infrastructure` 内有两类 Adapter：model/database/platform_access 是外部访问叶节点；persistence/commands/content_store/准备 worker 是用到内容及证据定义的具体 Adapter。这里并不承诺“所有包只能单向导入 infrastructure”这种与现有实现不符的层级。实际规则是计算侧和执行侧分别限制其依赖，避免为了目录整齐再引入一层无实际差异的转发。
 
-## 3. 已落实的依赖规则
+## 3. 模块依赖与兼容入口
 
 - `backend.main` 负责 HTTP、请求模型、异常转换、生命周期和静态文件。业务模块不导入 main，不依赖 FastAPI。
 - session 通过教学 Interface 和基础设施 Adapter 编排用例。会话状态、提交和模型执行规则继续沿用 P1/P2 的责任分工。
 - 教学执行器和内容提取可使用 `infrastructure.model`；SQL、平台 HTTP 和持久化不进入教学节点或纯内容定义。
-- evidence 的完整依赖闭包只包含纯内容定义、共享契约、纯课堂/课后/动态状态及纯反馈，不再为了生成稳定身份反向加载动态执行器。
-- content.lesson_content 不导入数据库；store/find/hydrate 全部移动到 infrastructure.content_store，继续接受调用者连接，保持同一事务。
-- 内容提取提示词归 content.prompts，教学提示词归 teaching.prompts；已有六项可字面求值的提示词/字典与原跟踪源码逐项比较一致。提取器版本、模型输入和整理结果缓存不会因移动文件而变化。
+- `evidence` 主要使用内容定义、共享契约及课堂/课后状态来生成证据和反馈。
+- `content.lesson_content.bind` 和 `infrastructure.content_store.hydrate` 是保留的兼容入口，延迟委托给 `session.content_binding`。恢复按内容 ID 读取，并可沿用调用方的数据库连接。
+- `content.preparation` 管理提取器指纹和内容包构建，`infrastructure.published_knowledge` 管理共享任务与事务。 [知识点提取与准备](../knowledge-extraction/README.md)
 - 共享 identity 仍使用原 UUID5 与原 JSON 编码，不改变已有任务、消息或活动身份。共享流程名称和状态异常保持相同语义。
 - eager 模块导入图无环。session.service 与 command_runtime 仍保留原会话 Module 内部用于缓存投影/错误映射的延迟调用关系，未在此次整理中重写缓存协议；没有新增跨职责的延迟环。
 
-结构验证见 [test_module_layout.py](../../backend/tests/test_module_layout.py)。它验证旧导入及子进程片段已迁移、纯模块的完整依赖闭包、eager 图无环及 HTTP 依赖隔离，并通过独立进程检查真实入口。
+结构测试覆盖旧导入、依赖图、HTTP 隔离和冷启动。2026-11-22 本地运行中，纯模块依赖闭包断言检测到 `lesson_content.bind` 的延迟兼容导入并失败。 [结构测试](../../backend/tests/test_module_layout.py)
 
 ## 4. 关键迁移映射
 
@@ -108,7 +115,7 @@ student_agent/
 
 旧内部 Python 导入路径不提供转发兼容层；项目源码、测试、子进程恢复脚本与文档引用均直接迁移。HTTP Interface 和已有部署入口继续兼容。历史文档中的旧目录树是当时分析快照，代码链接已更新，不应将历史树当作现行结构。
 
-## 5. 启动、存储与发布兼容
+## 5. 历史兼容记录（2026-11-02）
 
 以下位置保持不变：
 
