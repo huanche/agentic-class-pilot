@@ -14,7 +14,7 @@ student_agent/
 │  ├─ requirements.txt
 │  ├─ session/
 │  │  ├─ service.py                进入、恢复、换版、课堂/课后用例与统一提交
-│  │  ├─ content_binding.py        校验和恢复会话固定绑定的内容
+│  │  ├─ content_binding.py        恢复会话固定绑定的内容
 │  │  └─ command_runtime.py        命令执行、租约心跳、恢复及进度同步调度
 │  ├─ teaching/
 │  │  ├─ service.py                会话调用的教学 Interface，选择实际流程 Adapter
@@ -37,7 +37,7 @@ student_agent/
 │  │  ├─ context.py                课堂场景和旁白整理
 │  │  ├─ knowledge.py              结构化内容提取、有限修复和去重
 │  │  ├─ knowledge_schema.py       提取工具和存量内容 schema
-│  │  ├─ lesson_content.py         不可变内容包的定义、构建、验证和兼容入口
+│  │  ├─ lesson_content.py         不可变内容包的定义、构建、验证和纯绑定
 │  │  ├─ preparation.py            提取编排、覆盖信息及编译器标识
 │  │  └─ prompts.py                内容提取提示词
 │  ├─ infrastructure/
@@ -87,12 +87,12 @@ student_agent/
 - session 通过教学 Interface 和基础设施 Adapter 编排用例。会话状态、提交和模型执行规则继续沿用 P1/P2 的责任分工。
 - 教学执行器和内容提取可使用 `infrastructure.model`；SQL、平台 HTTP 和持久化不进入教学节点或纯内容定义。
 - `evidence` 主要使用内容定义、共享契约及课堂/课后状态来生成证据和反馈。
-- `content.lesson_content.bind` 和 `infrastructure.content_store.hydrate` 是保留的兼容入口，延迟委托给 `session.content_binding`。恢复按内容 ID 读取，并可沿用调用方的数据库连接。
+- `content.lesson_content.bind` 根据已有内容计算会话绑定，保持纯计算。`session.content_binding.hydrate` 按内容 ID 读取并校验持久化内容，可沿用调用方的数据库连接。`infrastructure.content_store.hydrate` 保留为兼容入口。
 - `content.preparation` 管理提取器指纹和内容包构建，`infrastructure.published_knowledge` 管理共享任务与事务。 [知识点提取与准备](../knowledge-extraction/README.md)
 - 共享 identity 仍使用原 UUID5 与原 JSON 编码，不改变已有任务、消息或活动身份。共享流程名称和状态异常保持相同语义。
 - eager 模块导入图无环。session.service 与 command_runtime 仍保留原会话 Module 内部用于缓存投影/错误映射的延迟调用关系，未在此次整理中重写缓存协议；没有新增跨职责的延迟环。
 
-结构测试覆盖旧导入、依赖图、HTTP 隔离和冷启动。2026-11-22 本地运行中，纯模块依赖闭包断言检测到 `lesson_content.bind` 的延迟兼容导入并失败。 [结构测试](../../backend/tests/test_module_layout.py)
+结构测试覆盖旧导入、纯模块依赖闭包、HTTP 隔离和冷启动。 [结构测试](../../backend/tests/test_module_layout.py)
 
 ## 4. 关键迁移映射
 
