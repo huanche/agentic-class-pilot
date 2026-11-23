@@ -94,5 +94,6 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|logos/).*)'],
+  // Export runtimes/fonts are committed public assets, also used by the scoped video renderer.
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|logos/|vendor/).*)'],
 };
