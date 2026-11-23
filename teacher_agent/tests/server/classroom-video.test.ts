@@ -56,6 +56,29 @@ async function audio() {
     );
 }
 describe('teacher video snapshots', () => {
+  it('uses the timeline renderer only for AI trials and invalidates old recorder caches', async () => {
+    const classroom = lesson();
+    await audio();
+    const { prepareClassroomVideo } = await import('@/lib/server/classroom-video');
+    const recorded = await prepareClassroomVideo('lesson', 'teacher', 'https://example.com');
+    classroom.stage.coursewareTrial = { mode: 'learning-skills-enhanced', overview: '测试' };
+    vi.mocked(fetch).mockImplementation(
+      async (url) =>
+        new Response(
+          JSON.stringify(
+            String(url).endsWith('/health') ? { renderers: ['openmaic-timeline-v1'] } : {},
+          ),
+          { status: 200 },
+        ),
+    );
+    const timeline = await prepareClassroomVideo('lesson', 'teacher', 'https://example.com');
+    expect(timeline.renderer).toBe('openmaic-timeline-v1');
+    expect(timeline.version).not.toBe(recorded.version);
+    expect(timeline.clips[0].key).not.toBe(recorded.clips[0].key);
+    classroom.stage.coursewareTrial.mode = 'faithful';
+    const faithful = await prepareClassroomVideo('lesson', 'teacher', 'https://example.com');
+    expect(faithful.renderer).toBeUndefined();
+  });
   it('reports loading, recording and encoding without allowing publication before every clip is ready', async () => {
     lesson();
     await audio();

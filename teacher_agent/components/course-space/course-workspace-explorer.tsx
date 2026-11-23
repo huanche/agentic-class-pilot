@@ -1687,7 +1687,7 @@ export function CourseWorkspaceExplorer({
                     );
                 }}
               />
-              {selectedFile?.artifact?.type === 'lesson-courseware' && !selectedFile.artifact.coursewareTrial &&
+              {selectedFile?.artifact?.type === 'lesson-courseware' &&
                 (course.status === 'active' &&
                 selectedFile.artifact.classPublicationId &&
                 selectedFile.artifact.publicationPlacement ? (
@@ -1764,7 +1764,7 @@ export function CourseWorkspaceExplorer({
                     finally { setOpeningVideo(false); }
                   })();
                 }}>
-                  {openingVideo ? '正在保存…' : selectedFile.artifact.coursewareTrial ? '试用预览' : '全屏打开'}
+                  {openingVideo ? '正在保存…' : '全屏打开'}
                   <ExternalLink className="ml-1 size-3.5" />
                 </Button>
               )}

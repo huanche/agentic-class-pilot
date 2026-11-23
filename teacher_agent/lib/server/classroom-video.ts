@@ -17,6 +17,7 @@ import {
 import { internalPlatformHeaders } from './platform-auth';
 import { nativePptxPage } from '@/lib/onlyoffice/native-player';
 import { captionsForClip, type ClipTiming } from '@/lib/classroom-video/captions';
+import { usesTimelineVideo, TIMELINE_VIDEO_RENDERER } from '@/lib/classroom-video/renderer';
 
 export const CLASSROOM_VIDEOS_DIR = path.resolve(
   process.env.CLASSROOM_VIDEOS_DIR || path.join(process.cwd(), 'data/classroom-videos'),
@@ -160,6 +161,19 @@ async function prepare(
   if (classroom.stage.generationPlan && !classroom.stage.generationPlan.complete)
     throw new Error('请先完成课件生成');
   const scenes = [...classroom.scenes].sort((a, b) => a.order - b.order);
+  const renderer = usesTimelineVideo(classroom.stage) ? TIMELINE_VIDEO_RENDERER : 1;
+  if (renderer === TIMELINE_VIDEO_RENDERER) {
+    const response = await fetch(
+      `${process.env.CLASSROOM_VIDEO_WORKER_URL!.replace(/\/$/, '')}/health`,
+      {
+        signal: AbortSignal.timeout(10_000),
+        cache: 'no-store',
+      },
+    );
+    const health = response.ok ? await response.json() : null;
+    if (!health?.renderers?.includes(TIMELINE_VIDEO_RENDERER))
+      throw new Error('动画视频服务尚未更新，请稍后重试');
+  }
   const clips: VideoClipPlan[] = [];
   for (const scene of scenes.filter((s) => s.type === 'slide')) {
     const audio: VideoClipPlan['audio'] = {};
@@ -205,7 +219,7 @@ async function prepare(
     });
     const key = digestVideo(
       canonicalVideo({
-        renderer: 1,
+        renderer,
         sceneId: scene.id,
         actions,
         audio,
@@ -227,7 +241,7 @@ async function prepare(
   }
   const version = digestVideo(
     canonicalVideo({
-      renderer: 1,
+      renderer,
       title: classroom.stage.name,
       scenes: scenes.map((s) =>
         s.type === 'slide'
@@ -240,6 +254,7 @@ async function prepare(
     throw new Error('找不到要重试的视频页面');
   const plan: ClassroomVideoPlan = {
     schema: 1,
+    ...(renderer === TIMELINE_VIDEO_RENDERER ? { renderer } : {}),
     id,
     version,
     ownerId,

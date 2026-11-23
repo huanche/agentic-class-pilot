@@ -8,6 +8,7 @@ export interface VideoClipPlan {
 }
 export interface ClassroomVideoPlan {
   schema: 1;
+  renderer?: 'openmaic-timeline-v1';
   id: string;
   version: string;
   ownerId: string;
@@ -16,7 +17,7 @@ export interface ClassroomVideoPlan {
   scenes: Scene[];
   clips: VideoClipPlan[];
 }
-export type ClassroomVideoPhase = 'loading' | 'recording' | 'encoding';
+export type ClassroomVideoPhase = 'loading' | 'recording' | 'encoding' | 'compiling' | 'rendering';
 
 export interface ClassroomVideoStatus {
   version: string;

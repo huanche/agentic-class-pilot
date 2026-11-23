@@ -8,6 +8,7 @@ import { nativePptxPage } from '@/lib/onlyoffice/native-player';
 import { useCanvasStore } from '@/lib/store/canvas';
 import { WhiteboardCanvas } from '@/components/whiteboard/whiteboard-canvas';
 import type { ClassroomVideoPlan } from '@/lib/classroom-video/types';
+import type { TimelineProjectResult } from '@/lib/classroom-video/timeline-project';
 import {
   createCaptureReadinessGate,
   CAPTURE_SOURCE_LOAD_TIMEOUT_MS,
@@ -24,6 +25,13 @@ declare global {
       run(durations: Record<string, number>): Promise<CaptureResult>;
     };
     classroomCaptureError?: string;
+    classroomTimeline?: {
+      build(
+        sceneId: string,
+        durations: Record<string, number>,
+        audio: Record<string, string>,
+      ): Promise<TimelineProjectResult>;
+    };
   }
 }
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -58,6 +66,12 @@ export function ClassroomCaptureSurface({ id, version }: { id: string; version: 
           generationComplete: true,
         });
         setPlan(snapshot);
+        window.classroomTimeline = {
+          async build(sceneId, durations, audio) {
+            const { buildTimelineProject } = await import('@/lib/classroom-video/timeline-project');
+            return buildTimelineProject(snapshot, sceneId, durations, audio);
+          },
+        };
         window.classroomCapture = {
           async ready(sceneId) {
             await readiness.prepare(sceneId, async () => {
@@ -125,6 +139,7 @@ export function ClassroomCaptureSurface({ id, version }: { id: string; version: 
       disposed = true;
       readiness.invalidate();
       delete window.classroomCapture;
+      delete window.classroomTimeline;
       engine.clearEffects();
     };
   }, [id, version]);

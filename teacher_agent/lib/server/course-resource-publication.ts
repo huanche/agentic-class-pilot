@@ -93,7 +93,6 @@ export async function publishCourseResource(
             .find((item) => item.id === id);
   if (!resource || (artifact && artifact.courseId !== course.id))
     throw new Error('待发布文件不属于当前课程');
-  if (artifact?.coursewareTrial) throw new Error('试用课件仅供教师预览');
   if (artifact?.type === 'lesson-courseware' && input.resourceType !== 'courseware')
     throw new Error('课件必须以课件类型发布');
   if (artifact?.type === 'lesson-courseware') {

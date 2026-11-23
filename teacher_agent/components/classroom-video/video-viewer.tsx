@@ -270,13 +270,17 @@ export function ClassroomVideoViewer({
           <h2 className="text-xl font-semibold">
             {manifest?.status.state === 'failed'
               ? '视频转换中断'
-              : loadingSource
-                ? '正在加载原稿'
-                : preparationPhase === 'recording'
-                  ? '正在录制课件'
-                  : preparationPhase === 'encoding'
-                    ? '正在合成 MP4'
-                    : '正在准备视频'}
+              : preparationPhase === 'compiling'
+                ? '正在准备动画时间轴'
+                : preparationPhase === 'rendering'
+                  ? '正在渲染动画视频'
+                  : loadingSource
+                    ? '正在加载原稿'
+                    : preparationPhase === 'recording'
+                      ? '正在录制课件'
+                      : preparationPhase === 'encoding'
+                        ? '正在合成 MP4'
+                        : '正在准备视频'}
           </h2>
           <p className="mt-3 text-slate-600">
             {loadingSource
@@ -386,13 +390,17 @@ export function ClassroomVideoViewer({
                   <p className="font-semibold">
                     {pageFailure
                       ? '本页视频转换失败'
-                      : pagePhase === 'loading'
-                        ? '正在加载本页原稿'
-                        : pagePhase === 'encoding'
-                          ? '正在合成本页 MP4'
-                          : pagePhase === 'recording'
-                            ? '正在录制本页'
-                            : '本页视频待转换'}
+                      : pagePhase === 'compiling'
+                        ? '正在准备本页动画时间轴'
+                        : pagePhase === 'rendering'
+                          ? '正在渲染本页动画视频'
+                          : pagePhase === 'loading'
+                            ? '正在加载本页原稿'
+                            : pagePhase === 'encoding'
+                              ? '正在合成本页 MP4'
+                              : pagePhase === 'recording'
+                                ? '正在录制本页'
+                                : '本页视频待转换'}
                   </p>
                   {pageFailure && <p className="max-w-lg text-sm text-red-700">{pageFailure}</p>}
                   {draft && (pageFailure || workspace.status.state === 'failed') && (

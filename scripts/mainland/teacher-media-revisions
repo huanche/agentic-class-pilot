@@ -13,7 +13,11 @@ printf 'video=%s\n' "$(revision \
   teacher_agent/services/classroom-video/server.mjs \
   teacher_agent/services/classroom-video/readiness.mjs \
   teacher_agent/services/classroom-video/jobs.mjs \
+  teacher_agent/services/classroom-video/timeline.mjs \
   teacher_agent/components/classroom-video/capture-surface.tsx \
+  teacher_agent/lib/classroom-video/renderer.ts \
+  teacher_agent/lib/classroom-video/timeline-project.ts \
+  teacher_agent/lib/video-export \
   teacher_agent/lib/playback/engine.ts \
   teacher_agent/lib/classroom-video/types.ts \
   teacher_agent/lib/server/classroom-video.ts)"

@@ -7,6 +7,8 @@
     "test": "node --test *.test.mjs"
   },
   "dependencies": {
+    "@hyperframes/producer": "0.7.107",
+    "fflate": "0.8.2",
     "playwright-core": "1.58.2"
   }
 }

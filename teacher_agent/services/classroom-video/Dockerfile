@@ -6,12 +6,13 @@ RUN sed -i "s|http://deb.debian.org|${DEBIAN_MIRROR}|g" /etc/apt/sources.list.d/
  && apt-get update && apt-get install -y --no-install-recommends chromium ffmpeg ca-certificates fonts-noto-cjk fonts-liberation \
  && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
+ENV PUPPETEER_SKIP_DOWNLOAD=true
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --registry=${NPM_REGISTRY} --no-audit --no-fund
-COPY server.mjs readiness.mjs jobs.mjs ./
+COPY server.mjs readiness.mjs jobs.mjs timeline.mjs ./
 RUN groupadd --gid 1001 renderer && useradd --uid 1001 --gid 1001 --create-home renderer \
  && mkdir -p /videos && chown renderer:renderer /videos
 USER renderer
-ENV NODE_ENV=production CHROMIUM_PATH=/usr/bin/chromium
+ENV NODE_ENV=production CHROMIUM_PATH=/usr/bin/chromium HYPERFRAMES_BROWSER_PATH=/usr/bin/chromium PRODUCER_FORCE_SCREENSHOT=true PRODUCER_BROWSER_GPU_MODE=software
 EXPOSE 9010
 CMD ["node", "server.mjs"]

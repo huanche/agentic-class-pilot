@@ -139,6 +139,16 @@ type VideoExportLabelOverrides = Partial<Omit<VideoExportLabels, 'interactive'>>
 };
 
 export interface EmitHyperframesOptions {
+  /** Transparent slide-sized layers for app-owned deterministic reveal actions. */
+  revealLayers?: readonly {
+    sceneId: string;
+    assetPath: string;
+    startMs: number;
+    durationMs: number;
+    effect: 'scale' | 'fade' | 'fade-up';
+    originX?: number;
+    originY?: number;
+  }[];
   /** Render width in px. Default 1920. Height is derived from the IR's 16:9 aspect. */
   width?: number;
   /** Render height in px. Default derived from `width` at 16:9. */
@@ -1266,6 +1276,22 @@ export function emitHyperframes(
   for (const scene of ir.scenes) {
     sceneHtml.push(`<!-- scene ${scene.index + 1}: ${escapeHtml(scene.title)} -->`);
     sceneHtml.push(renderBase(scene, labels));
+    for (const [index, layer] of (options.revealLayers ?? []).entries()) {
+      if (layer.sceneId !== scene.id) continue;
+      if (!/^reveals\/[A-Za-z0-9_-]+\.png$/.test(layer.assetPath))
+        throw new Error('Invalid reveal layer path');
+      const id = `reveal-${scene.index}-${index}`;
+      sceneHtml.push(
+        `<img id="${id}" src="${escapeHtml(assetUrl(layer.assetPath))}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;visibility:hidden;pointer-events:none;transform-origin:${layer.originX ?? 50}% ${layer.originY ?? 50}%" />`,
+      );
+      const start = sec(layer.startMs);
+      const duration = sec(layer.durationMs);
+      statements.push(
+        `tl.set("#${id}", {autoAlpha:0,y:0,scale:1}, 0);`,
+        `tl.fromTo("#${id}", {autoAlpha:0,y:${layer.effect === 'fade-up' ? 18 : 0},scale:${layer.effect === 'scale' ? 0.9 : 1}}, {autoAlpha:1,y:0,scale:1,duration:${duration},ease:"power2.out",immediateRender:false}, ${start});`,
+        `tl.set("#${id}", {autoAlpha:0}, ${sec(scene.startMs + scene.durationMs)});`,
+      );
+    }
     statements.push(...interactiveBaseVisibilityStatements(scene));
     const visuals = renderVisuals(
       scene,

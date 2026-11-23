@@ -7,6 +7,7 @@ import { timingSafeEqual, randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import { chromium } from 'playwright-core';
 import { prepareRecordingWithRetry } from './readiness.mjs';
+import { renderTimelineProject } from './timeline.mjs';
 import {
   createBrowserSession,
   forwardTeacherCaptureRequest,
@@ -179,6 +180,52 @@ async function capture(session, job, plan, clip, onPhase) {
       waitUntil: 'domcontentloaded',
     });
     await page.waitForFunction(() => window.classroomCapture || window.classroomCaptureError);
+    if (plan.renderer === 'openmaic-timeline-v1') {
+      await onPhase('compiling');
+      const audio = {};
+      for (const [id, asset] of Object.entries(clip.audio))
+        audio[id] = (await fs.readFile(path.join(root, plan.id, 'assets', asset.file))).toString(
+          'base64',
+        );
+      const project = await bounded(
+        page.evaluate(
+          ({ sceneId, durations, audio }) =>
+            window.classroomTimeline.build(sceneId, durations, audio),
+          { sceneId: clip.sceneId, durations, audio },
+        ),
+        210_000,
+        '动画项目编译超时，请重试本页',
+      );
+      await context.close();
+      context = undefined;
+      const output = path.join(temp, 'output.mp4');
+      const metrics = await renderTimelineProject(
+        project,
+        path.join(temp, 'project'),
+        output,
+        onPhase,
+      );
+      const info = await probe(output);
+      if (
+        !info.streams.some((s) => s.codec_type === 'video' && s.codec_name === 'h264') ||
+        !info.streams.some((s) => s.codec_type === 'audio' && s.codec_name === 'aac') ||
+        Math.abs(Number(info.format.duration) - project.duration) > 0.5
+      )
+        throw new Error('动画视频音画校验未通过');
+      const dest = path.join(root, plan.id, 'clips', `${clip.key}.mp4`);
+      await fs.mkdir(path.dirname(dest), { recursive: true });
+      staging = `${dest}.${randomUUID()}.tmp`;
+      await fs.copyFile(output, staging);
+      await atomic(`${dest}.json`, {
+        duration: Number(info.format.duration),
+        speech: project.speech,
+        ...metrics,
+        createdAt: Date.now(),
+      });
+      await fs.rename(staging, dest);
+      staging = undefined;
+      return;
+    }
     await prepareRecordingWithRetry(page, clip.sceneId, onPhase);
     const cdp = await context.newCDPSession(page);
     const frames = [];
@@ -426,6 +473,7 @@ http
         queued: queue.length,
         submissions,
         draining: draining(),
+        renderers: ['capture', 'openmaic-timeline-v1'],
       });
     if (!equal(req.headers['x-video-worker-key'])) return reply(res, 403, { error: 'Forbidden' });
     if (req.url === '/drain' && ['POST', 'DELETE'].includes(req.method)) {

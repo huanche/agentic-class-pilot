@@ -51,6 +51,13 @@ const placement = (lessonId: string, week: number) => ({
   resourceType: 'courseware' as const,
 });
 describe('explicit course publication binding', () => {
+  it('allows teacher-confirmed trial courseware to use the same student publication boundary', async () => {
+    db.artifacts.a1.coursewareTrial = true;
+    const item = await publishCourseResource('c', 'artifact', 'a1', placement('l1', 1));
+    expect(item.classPublicationId).toBeTruthy();
+    expect(item.publicationPlacement?.lessonId).toBe('l1');
+    expect(db.artifacts.a1.coursewareTrial).toBe(true);
+  });
   afterEach(() => {
     vi.unstubAllEnvs();
     vi.unstubAllGlobals();
@@ -142,14 +149,20 @@ describe('explicit course publication binding', () => {
     vi.stubEnv('PLATFORM_AUTH_ENABLED', 'true');
     vi.stubEnv('PLATFORM_AUTH_URL', 'http://platform.test');
     vi.stubEnv('PLATFORM_SERVICE_KEY', 'test-key');
-    const fetchMock = vi.fn().mockResolvedValue(new Response(
-      JSON.stringify({ lessonId: 'l1', videoRevision: 'v1' }),
-      { status: 200, headers: { 'content-type': 'application/json' } },
-    ));
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(JSON.stringify({ lessonId: 'l1', videoRevision: 'v1' }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      );
     vi.stubGlobal('fetch', fetchMock);
     await publishCourseResource('c', 'artifact', 'a1', placement('l1', 1));
     const request = fetchMock.mock.calls[0][0] as Request;
-    expect(request.url).toBe('http://platform.test/api/v1/internal/teacher/published-lesson-knowledge');
+    expect(request.url).toBe(
+      'http://platform.test/api/v1/internal/teacher/published-lesson-knowledge',
+    );
     expect(request.headers.get('X-Teacher-Service-Key')).toBe('test-key');
     await expect(request.json()).resolves.toEqual({ course_id: 'c', artifact_id: 'a1' });
   });
