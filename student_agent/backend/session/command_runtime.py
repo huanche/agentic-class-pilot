@@ -54,12 +54,16 @@ def validate(base, kind, payload):
                                           and base.get("preparation") in {"ready", "partial"})
     elif kind == "submit_answer":
         valid = phase == "discussion" and (teaching.describe(base.get("dialogue"))["agentStage"] != "wrapup"
+                or teaching.is_continuous(base)
                 or (teaching.is_typed(base) and bool(base["dialogue"].get("review_point_id"))))
     elif kind in {"next_point", "previous_point"}:
         valid = teaching.is_typed(base) and (phase == "discussion" or
-                (phase == "done" and base.get("postclassStage") == "remediation"))
+                (phase == "done" and (base.get("postclassStage") == "remediation"
+                 or (teaching.is_continuous(base) and base.get("postclassStage") == "open"))))
     elif kind in {"finish", "continue_after_class"}:
         valid = phase in ({"discussion", "done"} if kind == "finish" else {"done"})
+        if kind == "finish" and phase == "video" and teaching.is_continuous(base):
+            valid = base.get("preparation") in {"ready", "partial"}
     elif kind == "postclass_answer":
         valid = phase == "done" and base.get("postclassStage") in {"remediation", "open"}
     elif kind == "reset_lesson":
@@ -113,7 +117,7 @@ def _changes(base, kind, payload):
         result = published_knowledge.read(str(context["courseId"]), str(base["lessonId"]), base["videoRevision"])
         if not result or result["status"] != "ready":
             raise SessionError(409, "本课知识点正在整理，请稍后重试", code="CONTENT_NOT_READY")
-        prepared = {"dialogue": teaching.new_dialogue(result["points"]), "preparation": "ready",
+        prepared = {"dialogue": teaching.new_dialogue(result["points"], continuous=True), "preparation": "ready",
                     "preparationCoverage": result["coverage"]}
         base = dict(base, **prepared)
     if kind == "start_discussion":
@@ -154,7 +158,8 @@ def process(sid, command_id):
                      "phase": "idle", "lessonId": None, "messages": [], "dialogue": None}
             commands.complete_reset(sid, command_id, token, fresh)
         else:
-            changed = _changes(claimed["base"], claimed["type"], claimed["payload"])
+            base = dict(claimed["base"], _studentMessageId=claimed["studentMessageId"])
+            changed = _changes(base, claimed["type"], claimed["payload"])
             commands.complete(sid, command_id, token, changed)
     except Exception as error:
         code = getattr(error, "code", None) or ("MODEL_UNAVAILABLE" if isinstance(error, SessionError)
