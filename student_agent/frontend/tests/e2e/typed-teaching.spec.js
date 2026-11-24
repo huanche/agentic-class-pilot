@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 
-async function setup(page, pendingAnswer = false, delayAcknowledgement = false, topicDirectory = false) {
+async function setup(page, pendingAnswer = false, delayAcknowledgement = false, topicDirectory = false, continuous = false) {
   const courses = [{ id: "c", title: "课程", lessons: [{ id: "lesson", title: "三类型课时", week: 1 }] }];
   const feedback = mastered => ({ typedTeaching: true, schemaVersion: 4,
     summary: mastered ? "本课 2 个知识点：2 个已掌握，0 个待巩固。" : "本课 2 个知识点：1 个已掌握，1 个待巩固。",
@@ -12,6 +12,7 @@ async function setup(page, pendingAnswer = false, delayAcknowledgement = false, 
     currentTaskPublic: { taskId: "task-1" }, preparation: "ready", postclassMessages: [],
     messages: [{ role: "assistant", text: "请构造操作序列。", phase: "recall" }],
     learningProgress: { total: 2, recallCompleted: 1, currentPoint: "设计操作序列" } };
+  if (continuous) Object.assign(current, { continuousDialogue: true, canGoNextPoint: true, canSkipLastPoint: true });
   if (topicDirectory) Object.assign(current, {
     topicTitles: { m: "栈的基本操作", d: "设计操作序列" },
     taskTopics: { "task-1": "d", "task-first": "m", "task-reinforce": "d" },
@@ -60,8 +61,12 @@ async function setup(page, pendingAnswer = false, delayAcknowledgement = false, 
           { role: "assistant", text: "补强阶段的开场", phase: "reinforce", taskId: "task-reinforce", messageId: "reinforce" }] };
       else if (body.type === "submit_answer") current = { ...current, agentStage: "wrapup",
         messages: [...current.messages, { role: "student", text: body.payload.text }, { role: "assistant", text: "本次学习已结束，仍有需要巩固的步骤。" }] };
+      else if (body.type === "next_point" && continuous) current = { ...current, agentStage: "wrapup",
+        canGoNextPoint: false, canGoPreviousPoint: true, canSkipLastPoint: false, currentTaskPublic: null,
+        messages: [...current.messages, { role: "assistant", phase: "wrapup", text: "先跳过，课后可以从卡住的步骤继续。" }] };
       else if (body.type === "finish") current = { ...current, phase: "done", feedback: feedback(false), pendingSubmission: null,
-        ...(current.postclassStage ? { postclassStage: "paused" } : {}) };
+        ...(current.postclassStage ? { postclassStage: "paused" } : {}),
+        ...(continuous ? { classroomFeedback: feedback(false), feedback: current.afterClassComplete ? feedback(true) : feedback(false) } : {}) };
       else if (body.type === "continue_after_class") current = { ...current, phase: "done", postclassStage: current.afterClassComplete ? "completed" : "remediation",
         currentTaskPublic: { taskId: "task-2" },
         postclassMessages: [{ role: "assistant", text: "接着原题，先标出出错一步的栈顶。", phase: "postclass-remediation" }] };
@@ -73,7 +78,7 @@ async function setup(page, pendingAnswer = false, delayAcknowledgement = false, 
           return route.fulfill({ json: { commandId: body.commandId, status: "processing", sessionView: accepted } }).catch(() => {});
         }
         if (pendingAnswer) return route.fulfill({ json: { commandId: body.commandId, status: "processing", sessionView: current } });
-        current = { ...current, afterClassComplete: true, postclassStage: "completed", feedback: feedback(true) };
+        current = { ...current, afterClassComplete: true, postclassStage: continuous ? "open" : "completed", feedback: feedback(true) };
       } else throw new Error(`Unexpected command: ${body.type}`);
       return route.fulfill({ json: { commandId: body.commandId, status: "completed", sessionView: current } });
     }
@@ -177,4 +182,28 @@ test("student can exit even when the answer acceptance acknowledgement has not a
   } finally {
     commands.releaseAcknowledgement();
   }
+});
+
+
+test("continuous dialogue keeps navigation and chat available when the last point is skipped or mastered", async ({ page }) => {
+  const commands = await setup(page, false, false, false, true);
+  await page.getByRole("button", { name: "先跳过此知识点" }).click();
+  expect(commands.at(-1)).toMatchObject({ type: "next_point", payload: { taskId: "task-1" } });
+  await expect(page.getByRole("log")).toContainText("先跳过，课后可以从卡住的步骤继续。");
+  await expect(page.getByRole("textbox")).toBeEnabled();
+  await page.getByRole("button", { name: "结束本课并查看反馈", exact: true }).click();
+  await page.getByRole("button", { name: "继续巩固", exact: true }).click();
+  await expect(page.getByRole("log")).toContainText("先标出出错一步的栈顶");
+  await page.getByRole("textbox").fill("修正后我只取出栈顶。");
+  await page.getByRole("button", { name: "发送", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "自由提问" })).toBeVisible();
+  await expect(page.getByRole("textbox")).toBeEnabled();
+  expect(commands.map(command => command.type)).toEqual([
+    "next_point", "finish", "continue_after_class", "postclass_answer",
+  ]);
+  await page.getByRole("button", { name: "退出巩固并保留进度" }).click();
+  await page.getByText("查看本课知识点情况", { exact: false }).click();
+  await expect(page.getByRole("region", { name: "本课学习反馈" })).toContainText("2 个已掌握");
+  await page.getByText("查看下课时的反馈", { exact: true }).click();
+  await expect(page.getByRole("region", { name: "下课时的学习反馈" })).toContainText("1 个待巩固");
 });

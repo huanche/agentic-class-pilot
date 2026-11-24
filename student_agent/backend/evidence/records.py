@@ -157,7 +157,9 @@ def normalize(session):
 
 def input_task(session, kind, command_id):
     session = normalize(session)
-    if kind == "postclass_answer" and session.get("postclassStage") == "open":
+    if ((kind == "postclass_answer" and session.get("postclassStage") == "open")
+            or (kind == "submit_answer" and typed_state.continuous(session.get("dialogue"))
+                and not session.get("currentTaskId"))):
         return identity("task", session["id"], session.get("contentGeneration", 0), "open_question", command_id)
     return session.get("currentTaskId")
 
@@ -211,13 +213,15 @@ def transition(before, candidate, *, command_id=None):
     student = next((m for m in new_messages if m["role"] == "student"), None)
     dynamic = is_dynamic_flow(after)
     turn = after.get("dynamicTurn") or {}
-    if student and before.get("postclassStage") == "open" and after.get("phase") == "done" and not dynamic:
+    continuous = typed_state.continuous(after.get("dialogue")) and not dynamic
+    if student and ((continuous and not old_task_id) or (
+            before.get("postclassStage") == "open" and after.get("phase") == "done" and not dynamic)):
         old_task_id = identity("task", after["id"], after.get("contentGeneration", 0), "open_question",
                                command_id or student["messageId"])
         if not _by_task(records, old_task_id):
-            records["tasks"].append({"taskId": old_task_id, "episodeId": _episode(after, "after_class"),
+            records["tasks"].append({"taskId": old_task_id, "episodeId": student["episodeId"],
                 "type": "open_question", "topicId": None, "contentId": (after.get("contentRef") or {}).get("contentId"),
-                "purpose": "课后自由答疑", "sourceRefs": [], "questionMessageId": student["messageId"],
+                "purpose": "自由答疑" if continuous else "课后自由答疑", "sourceRefs": [], "questionMessageId": student["messageId"],
                 "question": student["text"], "promptMessageIds": [], "criteriaStatus": "not_an_assessment",
                 "status": "completed"})
     old_task = _by_task(records, old_task_id)
@@ -259,12 +263,19 @@ def transition(before, candidate, *, command_id=None):
         if message["role"] != "assistant":
             continue
         task_id = next_task_id or old_task_id
+        if continuous:
+            if message.get("pointId") == (_by_task(records, next_task_id) or {}).get("topicId") and next_task_id:
+                task_id = next_task_id
+            elif message.get("pointId") == (old_task or {}).get("topicId"):
+                task_id = old_task_id
+            else:
+                task_id = None
         task = _by_task(records, task_id)
         message["taskId"] = task_id
         message["relatedTaskIds"] = list(dict.fromkeys(t for t in (old_task_id, next_task_id) if t))
         if task:
             message["episodeId"] = task["episodeId"]
-            if next_task_id:
+            if next_task_id == task_id:
                 if message["messageId"] not in task["promptMessageIds"]:
                     task["promptMessageIds"].append(message["messageId"])
                 if task["questionMessageId"] is None and task_id not in {t["taskId"] for t in before["learningRecords"]["tasks"]}:

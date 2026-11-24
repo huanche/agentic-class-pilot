@@ -16,13 +16,14 @@ def initial(point):
     return result
 
 
-def apply(point, assessment, student_text):
+def apply(point, assessment, student_text, *, turns=None):
     """Apply scoped observations, then derive the entire point's verdict."""
     # assessment=None 表示本轮没有学习作答，仍按已有逐项记录计算状态。
     updates = assessment["updates"] if assessment else []
     by_id = {item["id"]: item for item in point["requirements"]}
-    # 引用序号只在当前知识点内有效，最后一条是尚未写入历史的本轮学生输入。
-    turns = [entry["studentText"] for entry in point["assessment_history"]] + [student_text]
+    # 默认使用知识点内的作答序号。连续课堂可传入同一会话的消息序号。
+    if turns is None:
+        turns = [entry["studentText"] for entry in point["assessment_history"]] + [student_text]
     seen = set()
     for update in updates:
         key = update["requirement_id"]

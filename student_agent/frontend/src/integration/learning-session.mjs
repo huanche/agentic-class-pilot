@@ -177,7 +177,7 @@ export function createLearningSession({ request = requestSession, storage = () =
     let target;
     if (type === "continue_after_class") target = "postclass";
     if (type === "exit_after_class") target = "done";
-    if (["postclass_answer", "request_help", "ask_question", "pause", "resume_activity"].includes(type)
+    if (["postclass_answer", "request_help", "ask_question", "pause", "resume_activity", "next_point", "previous_point"].includes(type)
         && screen === "postclass") target = "postclass";
     const exitScope = { lessonId: session.lessonId, generation: session.contentGeneration || 0 };
     return operate(async t => {
@@ -203,7 +203,7 @@ export function createLearningSession({ request = requestSession, storage = () =
       }
       let result;
       if (["next_point", "previous_point"].includes(type)) result = await client.dispatch(
-        sid, type, { taskId: session.currentTaskPublic?.taskId }, { signal: t.signal });
+        sid, type, { taskId: session.currentTaskPublic?.taskId ?? null }, { signal: t.signal });
       else if (type === "exit_after_class") {
         try { result = await api(t, `/session/${sid}/end`, "POST"); }
         catch (failure) {
