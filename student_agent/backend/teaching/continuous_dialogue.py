@@ -124,11 +124,12 @@ def _read_evidence(dialogue, proposal, messages, event):
             student_work.append(message["text"])
         updates[pair[0]].append({"requirement_id": pair[1], "status": "demonstrated",
             "evidence": "\n".join(ref["quote"] for ref in refs), "gap": "", "evidenceRefs": refs,
-            "sourceText": "\n".join(dict.fromkeys(student_work))})
+            "sourceText": "\n".join(dict.fromkeys(student_work)),
+            "sources": [{"turn": source.message, "quote": source.quote} for source in confirmation.sources]})
     return updates
 
 
-def _update_point(point, updates, *, after_class, student_text="", message_id=None, attempted=False):
+def _update_point(point, updates, *, after_class, student_text="", message_id=None, attempted=False, turns=None):
     already = {item["id"] for item in point["requirements"] if item["status"] == "demonstrated"}
     updates = [update for update in updates if update["requirement_id"] not in already]
     if not updates and not attempted:
@@ -137,7 +138,7 @@ def _update_point(point, updates, *, after_class, student_text="", message_id=No
     evidence = "\n".join(dict.fromkeys(update["evidence"] for update in updates))
     outcome = requirements.apply(point, {"updates": updates, "evidence": evidence,
         "answer_result": "misconception" if any(u["status"] == "needs_help" for u in updates) else "unclear",
-        "next_step": (point.get("open_issue") or {}).get("text", "")}, student_text)
+        "next_step": (point.get("open_issue") or {}).get("text", "")}, student_text, turns=turns)
     for item in point["requirements"]:
         update = next((u for u in updates if u["requirement_id"] == item["id"]), None)
         if update:
@@ -256,10 +257,11 @@ def run(session, event, *, text=None, direction=None, group_id=None, answers=Non
         previous=previous["id"] if previous else None,
         can_skip=_can_skip(dialogue, after_class=after_class))
     if event == "chat":
+        turns = [message["text"] if message["role"] == "student" else "" for message in messages]
         for point in dialogue["points"]:
             _update_point(point, updates.get(point["id"], []), after_class=after_class,
                           student_text=text.strip(), message_id=messages[-1]["messageId"],
-                          attempted=point is focus and not was_mastered)
+                          attempted=point is focus and not was_mastered, turns=turns)
     elif event == "card":
         accepted = [update for update in card_updates
                     if update["status"] != "demonstrated" or update["requirement_id"] in proposal.card_confirmations]
