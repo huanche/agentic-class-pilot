@@ -19,22 +19,25 @@ class StrictModel(BaseModel):
 class MemoryDetails(StrictModel):
     statement: Text
     requiredElements: Elements = Field(description=
-        "每项只记录一个可独立确认的事实；多个独立事实分别放在列表元素中。同一事实的等价表述去重，一次回答可以覆盖多项。")
+        "每项记录一个判断该知识点是否掌握时必须确认的事实。"
+        "术语的等价表述和同一事实的例子不另设条目。")
 
 
 class ConceptDetails(StrictModel):
     explanation: Text
     understandingPoints: Elements = Field(description=
-        "每项是一个可分别确认的理解目标，完整因果关系保留一项，独立事实必须分项。"
-        "如‘入队把新结点接在rear之后’与‘链队列无固定容量的队满限制’必须是两个元素，不能用‘因此’或‘同时’合并。"
-        "不要另加综合对比条目重新捆绑这些事实，不靠常识新增未教内容。")
+        "每项记录一个必须能说明的关系、原因或过程。"
+        "保留完整因果和条件关系；独立的必要目标分别记录；等价结论和样例应用不另设条目。")
 
 
 class DesignDetails(StrictModel):
-    capability: Text
-    constraints: Annotated[list[Text], Field(max_length=40)]
+    capability: Text = Field(description=
+        "用一句话概括需要构造的产出和体现的可复用能力。无需复述约束或逐项列出完成标准。")
+    constraints: Annotated[list[Text], Field(max_length=40)] = Field(description=
+        "只列材料明确规定且适用于该任务的条件与限制。示范做法只有在材料明确指定时才成为约束。")
     successCriteria: Elements = Field(description=
-        "每项记录一个不重复的可检验结果或过程标准；独立结果分项，同一作品可以同时体现多项，不要求拆成多道题。")
+        "每项记录一个从学生产出或操作过程可直接检查的必要完成条件。"
+        "独立结果分别记录，不重复登记约束、任务概述或示范细节。")
 
 
 class MemoryPoint(StrictModel):
