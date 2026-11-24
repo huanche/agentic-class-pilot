@@ -1,0 +1,15 @@
+[Unit]
+Description=Qwen OCR TLS egress for the isolated teacher network
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/libexec/agentic-qwen-egress
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

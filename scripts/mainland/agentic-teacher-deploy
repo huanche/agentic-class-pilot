@@ -317,6 +317,10 @@ docker stop -t 30 "$NAME" >/dev/null
 docker rename "$NAME" "$BACK"
 
 echo "启动新容器"
+OCR_HOST_ARGS=()
+if systemctl is-active --quiet agentic-qwen-egress.service; then
+  OCR_HOST_ARGS=(--add-host 'dashscope.aliyuncs.com:172.19.255.254')
+fi
 docker run -d \
   --name "$NAME" \
   --pull never \
@@ -324,6 +328,7 @@ docker run -d \
   --restart no \
   --network "$NET" \
   --add-host "$AI_HOST:172.19.0.1" \
+  "${OCR_HOST_ARGS[@]}" \
   --env-file "$ENVFILE" \
   --mount "type=bind,source=$DATA,target=/app/data" \
   --mount "type=bind,source=$CONFIG,target=/app/server-providers.yml,readonly" \

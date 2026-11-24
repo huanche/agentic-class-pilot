@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+[[ $EUID -eq 0 ]] || { echo 'Run as root' >&2; exit 1; }
+command -v socat >/dev/null
+command -v ip >/dev/null
+TASK_SOURCE=$(cd -- "$(dirname -- "$0")" && pwd)
+install -m 755 "$TASK_SOURCE/agentic-qwen-egress" /usr/local/libexec/agentic-qwen-egress
+install -m 644 "$TASK_SOURCE/agentic-qwen-egress.service" /etc/systemd/system/agentic-qwen-egress.service
+systemctl daemon-reload
+systemctl enable --now agentic-qwen-egress.service
+systemctl is-active --quiet agentic-qwen-egress.service
+# Repair the running container too, without restarting a class or generation job.
+# Future containers receive the same mapping from agentic-teacher-deploy.
+docker exec -u 0 -i agentic-teacher-prod node - <<'JS'
+const fs = require('node:fs');
+const hostname = 'dashscope.aliyuncs.com';
+const hosts = fs.readFileSync('/etc/hosts', 'utf8');
+const mappings = hosts.split('\n').filter(line => line.split('#')[0].split(/\s+/).includes(hostname));
+if (mappings.length && !mappings.every(line => line.trim().startsWith('172.19.255.254 ')))
+  throw Error('Existing OCR host mapping conflicts; inspect before changing it');
+if (!mappings.length) fs.appendFileSync('/etc/hosts', '\n172.19.255.254 ' + hostname + '\n');
+JS
+echo 'QWEN_EGRESS_INSTALLED: TLS passthrough and current teacher DNS mapping ready'

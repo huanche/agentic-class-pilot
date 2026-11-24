@@ -1,0 +1,34 @@
+#!/usr/bin/python3
+"""Fixed-destination TLS passthrough for Qwen OCR on the private teacher bridge."""
+import ipaddress
+import json
+import os
+import re
+import subprocess
+
+NETWORK = 'agentic-migration-internal'
+ADDRESS = '172.19.255.254'
+HOST = 'dashscope.aliyuncs.com'
+
+
+def main():
+    network = json.loads(subprocess.check_output(
+        ['/usr/bin/docker', 'network', 'inspect', NETWORK], text=True))[0]
+    if not network['Internal'] or network['IPAM']['Config'][0]['Gateway'] != '172.19.0.1':
+        raise RuntimeError('Unexpected teacher network')
+    for container in network.get('Containers', {}).values():
+        if str(ipaddress.ip_interface(container['IPv4Address']).ip) == ADDRESS:
+            raise RuntimeError('OCR egress address is already allocated')
+    bridge = network.get('Options', {}).get('com.docker.network.bridge.name') or 'br-' + network['Id'][:12]
+    if not re.fullmatch(r'[a-zA-Z0-9_.-]{1,15}', bridge):
+        raise RuntimeError('Invalid bridge name')
+    subprocess.run(['/usr/sbin/ip', 'address', 'replace', ADDRESS + '/32', 'dev', bridge], check=True)
+    # Forward encrypted bytes only. The application still verifies the upstream
+    # DashScope certificate; this process never reads HTTP headers or API keys.
+    os.execv('/usr/bin/socat', ['socat',
+        f'TCP4-LISTEN:443,bind={ADDRESS},reuseaddr,fork,range=172.19.0.0/16',
+        f'TCP4:{HOST}:443'])
+
+
+if __name__ == '__main__':
+    main()
