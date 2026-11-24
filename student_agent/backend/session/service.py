@@ -301,6 +301,8 @@ def state(session: dict) -> dict:
             "videoUpdated": session.get("videoUpdated", False),
             "postclassMessages": [item for item in session["messages"]
                                   if str(item.get("phase") or "").startswith("postclass-")]}
+    if teaching_view.get("continuousDialogue"):
+        result["classroomFeedback"] = session.get("classroomFeedback")
     if persistence.fresh_session_mode():
         context = session.get("context") or {}
         course_key = f"{context.get('userId')}:{context.get('courseId')}" if context else "demo"
@@ -423,7 +425,7 @@ def sync_published_preparation(session: dict, *, persist: bool = True) -> None:
     result = published_knowledge.read(str(context["courseId"]), str(lesson_id), revision)
     if result and result["status"] == "ready" and result["points"]:
         binding = lesson_content.bind(session, result)
-        changed = {"dialogue": teaching.new_dialogue(result["points"]),
+        changed = {"dialogue": teaching.new_dialogue(result["points"], continuous=True),
                    "contentRef": binding["contentRef"], "lessonContent": binding["lessonContent"],
                    "preparation": "ready", "preparationCoverage": result["coverage"],
                    "preparationError": "", "preparationErrorCode": ""}
@@ -451,7 +453,7 @@ def upgrade_curriculum(session: dict) -> None:
                                           str(session["lessonId"]), str(session["videoRevision"]))
         if not result or result["status"] != "ready":
             raise SessionError(409, "本课知识点正在整理，请稍后重试")
-        dialogue = teaching.new_dialogue(result["points"])
+        dialogue = teaching.new_dialogue(result["points"], continuous=True)
         commit(session, {"dialogue": dialogue, "preparation": "ready",
                          "preparationCoverage": result["coverage"]})
         return

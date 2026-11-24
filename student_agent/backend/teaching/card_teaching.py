@@ -9,19 +9,23 @@ from backend.infrastructure import model
 from backend.teaching import question_cards, typed_state
 
 
-def ensure_card(dialogue, after_class=False):
+def pending_card(dialogue, focus):
+    return next((group for group in reversed(dialogue.get("question_groups", []))
+                 if group["point_id"] == focus["id"] and len(group["results"]) < len(group["questions"])), None)
+
+
+def ensure_card(dialogue, after_class=False, *, complete=None):
     if dialogue.get("cards_version") != 1:
         return
     focus = typed_state.current(dialogue, after_class=after_class)
     if not focus or focus["type"] != "memory":
         return
     groups = dialogue.setdefault("question_groups", [])
-    pending = next((g for g in groups if g["point_id"] == focus["id"]
-                    and len(g["results"]) < len(g["questions"])), None)
+    pending = pending_card(dialogue, focus)
     if pending:
         dialogue["reply"] = f"继续完成「{focus['title']}」的原题卡，选择选项后点击“提交已完成的题目”。"
         return
-    group = question_cards.generate(focus, model.complete)
+    group = question_cards.generate(focus, complete or model.complete)
     group["phase"] = "postclass" if after_class else "discussion"
     groups.append(group)
     text = f"一起检查「{focus['title']}」的相关内容。可以分次提交，也可以随时提问。"
@@ -32,10 +36,7 @@ def ensure_card(dialogue, after_class=False):
     dialogue["current_task"] = typed_state.task(dialogue, after_class=after_class)
 
 
-def submit(session, group_id, answers):
-    after_class = session["phase"] == "done"
-    dialogue = deepcopy(session["dialogue"])
-    focus = typed_state.current(dialogue, after_class=after_class)
+def grade_submission(dialogue, focus, group_id, answers):
     group = next((g for g in dialogue.get("question_groups", []) if g["id"] == group_id), None)
     if not focus or not group or group["point_id"] != focus["id"]:
         raise SessionError(409, "题目已变化，请刷新后重试", code="TASK_CHANGED")
@@ -70,12 +71,24 @@ def submit(session, group_id, answers):
         elif group.get("assisted"):
             # Receiving help is not evidence of failure or independent mastery.
             updates.pop(rid)
+    for rid, update in updates.items():
+        update["evidenceRefs"] = [{"cardId": group_id, "questionId": q["id"]}
+                                  for q in group["questions"]
+                                  if rid in q["target_ids"] and q["id"] in group["results"]]
+    return group, list(updates.values()), text
+
+
+def submit(session, group_id, answers):
+    after_class = session["phase"] == "done"
+    dialogue = deepcopy(session["dialogue"])
+    focus = typed_state.current(dialogue, after_class=after_class)
+    group, updates, text = grade_submission(dialogue, focus, group_id, answers)
     dialogue["student_text"] = text
     # Partial groups must retain their unanswered children even at a round boundary.
     incomplete = len(group["results"]) < len(group["questions"])
     dialogue = typed_state.advance(dialogue, "answer", {
         "answer_result": "correct" if all(group["results"][key]["correct"] for key in answers) else "misconception",
-        "evidence": text, "updates": list(updates.values()), "next_step": "查看解析后继续未完成的内容。"},
+        "evidence": text, "updates": updates, "next_step": "查看解析后继续未完成的内容。"},
         after_class=after_class, count_attempt=not incomplete)
     if not incomplete:
         dialogue["review_point_id"] = focus["id"]

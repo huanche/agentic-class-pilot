@@ -13,6 +13,10 @@ def active(dialogue):
     return bool(dialogue and dialogue.get("flow_version") == VERSION)
 
 
+def continuous(dialogue):
+    return active(dialogue) and dialogue.get("dialogue_version") == 1
+
+
 def initial(points):
     return {"flow_version": VERSION, "mastery_version": 1, "reply_version": 1, "stage": "recall", "recall_round_limit": 5,
             "reinforce_round_limit": 8, "transition": "continue", "strategy": "ask",
@@ -91,6 +95,9 @@ def teaching_plan(state, *, after_class=False):
 
 
 def current(state, *, after_class=False):
+    if continuous(state):
+        selected = state.get("focus_id", state["points"][0]["id"] if state["points"] else None)
+        return next((point for point in state["points"] if point["id"] == selected), None)
     review_id = state.get("review_point_id")
     if review_id:
         review = next((p for p in state["points"] if p["id"] == review_id), None)
@@ -123,10 +130,15 @@ def next_point(state, *, after_class=False):
     return state["points"][index + 1] if index + 1 < len(state["points"]) else None
 
 
+def can_skip_last(state, *, after_class=False):
+    focus = current(state, after_class=after_class)
+    return bool(focus and focus["status"] != "mastered" and not next_point(state, after_class=after_class))
+
+
 def previous_point(state, *, after_class=False):
     focus = current(state, after_class=after_class)
     if not focus:
-        return None
+        return state["points"][-1] if continuous(state) and state["points"] else None
     index = state["points"].index(focus)
     return state["points"][index - 1] if index else None
 
@@ -289,6 +301,10 @@ def feedback(session):
                 ("从这个知识点的第一问开始学习。" if not attempted else "接着原题，先说清还不确定的地方。")})
         if scoped(state):
             entries[-1]["requirements"] = requirements.public(point)
+        if continuous(state):
+            entries[-1]["skipped"] = bool(point.get("skipped"))
+            if point.get("open_issue") and category != "mastered":
+                entries[-1]["suggestion"] = point["open_issue"]["text"]
     counts = {k: sum(p["category"] == k for p in entries) for k in ("mastered", "needs_review", "not_assessed")}
     return {"schemaVersion": 4, "typedTeaching": True, "points": entries, "counts": counts,
             "endedEarly": state.get("completion_reason") == "student_ended_early",

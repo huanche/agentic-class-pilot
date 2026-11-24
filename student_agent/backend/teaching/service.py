@@ -24,7 +24,7 @@ from backend.teaching.postclass import opening_task
 from backend.contracts import SessionError
 from backend.teaching import dynamic_teaching
 from backend.teaching import typed_state, typed_teaching
-from backend.teaching import question_cards, card_teaching, learner_feedback
+from backend.teaching import question_cards, card_teaching, learner_feedback, continuous_dialogue
 
 logger = logging.getLogger(__name__)
 
@@ -34,8 +34,11 @@ def _model_messages(messages):
     return [{key: message[key] for key in ("role", "text", "phase") if key in message} for message in messages]
 
 
-def new_dialogue(points: list[dict]) -> dict:
-    return dict(initial_state(points), curriculum_version=CURRICULUM_VERSION, cards_version=1)
+def new_dialogue(points: list[dict], *, continuous=False) -> dict:
+    dialogue = dict(initial_state(points), curriculum_version=CURRICULUM_VERSION, cards_version=1)
+    if continuous and typed_state.active(dialogue):
+        dialogue["dialogue_version"] = 1
+    return dialogue
 
 
 def describe(dialogue: dict | None) -> dict:
@@ -56,7 +59,7 @@ def prepare(materials: list[dict], course_id: str | None = None, lesson_id: str 
                 "candidateCount": result.candidate_count,
                 "repairAttempted": result.repair_attempted, "modelCalls": result.model_calls,
                 "duplicateCount": result.duplicate_count}
-    return new_dialogue(result.points), coverage
+    return new_dialogue(result.points, continuous=True), coverage
 
 
 def current_feedback(session: dict) -> dict | None:
@@ -167,7 +170,23 @@ def _typed_run(dialogue, **kwargs):
         raise SessionError(503, "课堂导师暂不可用，进度未改变，请重试", code="MODEL_UNAVAILABLE") from error
 
 
+def is_continuous(session):
+    return is_typed(session) and typed_state.continuous(session.get("dialogue"))
+
+
+def _continuous_run(session, event, **kwargs):
+    try:
+        return continuous_dialogue.run(session, event, **kwargs)
+    except SessionError:
+        raise
+    except Exception as error:
+        logger.exception("连续教学对话生成失败")
+        raise SessionError(503, "课堂导师暂不可用，进度未改变，请重试", code="MODEL_UNAVAILABLE") from error
+
+
 def card_turn(session, group_id, answers):
+    if is_continuous(session):
+        return _continuous_run(session, "card", group_id=group_id, answers=answers)
     return card_teaching.submit(session, group_id, answers)
 
 
@@ -187,6 +206,8 @@ def _typed_assistant(dialogue, phase, *, after_class=False):
 def navigate_point_turn(session, direction="next"):
     if not is_typed(session):
         raise SessionError(409, "当前学习流程不支持切换知识点")
+    if is_continuous(session):
+        return _continuous_run(session, "navigate", direction=direction)
     after_class = session["phase"] == "done"
     try:
         dialogue = (typed_state.skip_to_next(session["dialogue"], after_class=after_class)
@@ -271,6 +292,8 @@ def _dynamic_call(function, *args, **kwargs):
 def describe_session(session):
     if is_typed(session):
         view = describe(session["dialogue"])
+        if is_continuous(session):
+            view["continuousDialogue"] = True
         view["questionGroups"] = [question_cards.public_group(g) for g in session["dialogue"].get("question_groups", [])]
         current = typed_state.current(session["dialogue"], after_class=session.get("phase") == "done")
         active_group = next((group for group in reversed(view["questionGroups"])
@@ -280,6 +303,9 @@ def describe_session(session):
         view["afterClassComplete"] = all(p["status"] == "mastered" for p in session["dialogue"]["points"])
         view["reviewingCard"] = bool(session["dialogue"].get("review_point_id"))
         view["canGoNextPoint"] = typed_state.next_point(session["dialogue"], after_class=session.get("phase") == "done") is not None
+        if is_continuous(session):
+            view["canSkipLastPoint"] = typed_state.can_skip_last(session["dialogue"], after_class=session.get("phase") == "done")
+            view["canGoNextPoint"] |= view["canSkipLastPoint"]
         view["canGoPreviousPoint"] = typed_state.previous_point(session["dialogue"], after_class=session.get("phase") == "done") is not None
         return view
     return _dynamic_call(dynamic_teaching.describe, session) if is_dynamic(session) else describe(session.get("dialogue"))
@@ -288,6 +314,8 @@ def describe_session(session):
 def start_discussion(session):
     if session["phase"] == "discussion":
         return {}
+    if is_continuous(session):
+        return _continuous_run(session, "opening")
     if is_typed(session):
         return _typed_open(session)
     if is_dynamic(session):
@@ -297,6 +325,8 @@ def start_discussion(session):
 
 
 def classroom_turn(session, text):
+    if is_continuous(session) and session["phase"] == "discussion":
+        return _continuous_run(session, "chat", text=text)
     if is_typed(session):
         return _typed_turn(session, text)
     return (_dynamic_call(dynamic_teaching.turn, session, text) if is_dynamic(session)
@@ -306,12 +336,18 @@ def classroom_turn(session, text):
 def finish(session):
     if is_typed(session):
         if session["phase"] == "done":
+            if is_continuous(session):
+                return {"postclassStage": "paused"}
             return {"postclassStage": "paused" if typed_state.current(session["dialogue"], after_class=True) else "completed",
                     "feedback": typed_state.feedback(session)}
-        if session["phase"] != "discussion":
+        if session["phase"] != "discussion" and not (
+                is_continuous(session) and session["phase"] == "video"
+                and session.get("preparation") in {"ready", "partial"}):
             raise SessionError(409, "请先进入知识点学习")
         dialogue = deepcopy(session["dialogue"])
-        if dialogue["stage"] != "wrapup":
+        early = (any(point["status"] != "mastered" for point in dialogue["points"])
+                 if is_continuous(session) else dialogue["stage"] != "wrapup")
+        if early:
             dialogue["completion_reason"] = "student_ended_early"
         feedback = typed_state.feedback(dict(session, dialogue=dialogue))
         return {"phase": "done", "dialogue": dialogue, "feedback": feedback,
@@ -321,6 +357,10 @@ def finish(session):
 
 
 def start_postclass(session):
+    if is_continuous(session) and session["phase"] == "done":
+        if session.get("postclassStage") in {"remediation", "open"}:
+            return {}
+        return _continuous_run(session, "resume")
     if is_typed(session):
         if session["phase"] != "done":
             raise SessionError(409, "请先结束本节课")
@@ -334,6 +374,8 @@ def start_postclass(session):
 
 
 def postclass_turn(session, text):
+    if is_continuous(session) and session["phase"] == "done" and session.get("postclassStage") in {"remediation", "open"}:
+        return _continuous_run(session, "chat", text=text)
     if is_typed(session):
         return _typed_turn(session, text, after_class=True)
     return (_dynamic_call(dynamic_teaching.turn, session, text) if is_dynamic(session)

@@ -1,13 +1,13 @@
-export default function LessonFeedback({ feedback }) {
+export default function LessonFeedback({ feedback, title = "本课学习反馈", headingId = "lesson-feedback-title" }) {
   if (!feedback) return <p className="done__sub">本次课堂已结束，暂无知识点反馈。</p>;
-  if (feedback.typedTeaching) return <section className="lesson-feedback" aria-labelledby="lesson-feedback-title">
-    <h4 id="lesson-feedback-title">本课学习反馈</h4>
+  if (feedback.typedTeaching) return <section className="lesson-feedback" aria-labelledby={headingId}>
+    <h4 id={headingId}>{title}</h4>
     <p className="lesson-feedback__summary">{feedback.summary}</p>
     {[["mastered", "已掌握"], ["needs_review", "待巩固"], ["not_assessed", "尚未学习／评估"]].map(([category, label]) => {
       const points = feedback.points.filter(point => point.category === category);
       return points.length > 0 && <div key={category}><h5>{label}</h5>
         {points.map(point => <article key={point.id} className={`lesson-feedback__item lesson-feedback__item--${category}`}>
-          <h5>{point.title} · {point.label}</h5>
+          <h5>{point.title} · {point.label}{point.skipped && point.category !== "mastered" ? " · 已跳过" : ""}</h5>
           {point.knownParts?.length > 0 && <p><strong>你已经能：</strong>{point.knownParts.join("；")}</p>}
           {point.gaps?.length > 0 && <p><strong>还需巩固：</strong>{point.gaps.join("；")}</p>}
           {point.suggestion && <p><strong>下一步：</strong>{point.suggestion}</p>}

@@ -62,6 +62,7 @@ export default function StudentApp() {
   const busy = learning.busy;
   const dynamicFlow = flowVersion === "dynamic_dialogue_v1";
   const typedFlow = Boolean(learning.typedTeaching);
+  const continuousDialogue = Boolean(learning.continuousDialogue);
   const reviewingCard = typedFlow && Boolean(learning.reviewingCard);
   const stageTitle = stage => typedFlow
     ? ({ recall: "逐点学习", reinforce: "补强未掌握点", wrapup: "总结反馈" }[stage] || "知识点学习")
@@ -72,7 +73,7 @@ export default function StudentApp() {
   const extra = optimistic && optimistic.sessionId === learning.sessionId && optimistic.screen === phase ? optimistic : null;
   const messages = [...learning.messages, ...(extra && phase === "discussion" && learning.messages.length <= extra.count ? [extra] : [])];
   const postclassMessages = [...learning.postclassMessages, ...(extra && phase === "postclass" && learning.postclassMessages.length <= extra.count ? [extra] : [])];
-  const showTopics = phase === "discussion" || (phase === "postclass" && postclassStage === "remediation");
+  const showTopics = phase === "discussion" || (phase === "postclass" && (postclassStage === "remediation" || continuousDialogue));
   const allGroups = typedFlow ? learning.questionGroups || [] : [];
   const postclassGroupIds = new Set(postclassMessages.map(message => message.cardId));
   const afterGroups = allGroups.filter(group => group.phase === "postclass" || group.active || postclassGroupIds.has(group.id));
@@ -301,7 +302,7 @@ export default function StudentApp() {
 
   async function send(event, type = phase === "postclass" ? "postclass_answer" : "submit_answer") {
     event?.preventDefault();
-    if (!input.trim() || busy || (dynamicFlow && !can(type)) || (phase === "discussion" && agentStage === "wrapup" && !reviewingCard)) return;
+    if (!input.trim() || busy || (dynamicFlow && !can(type)) || (phase === "discussion" && agentStage === "wrapup" && !reviewingCard && !continuousDialogue)) return;
     const text = input.trim();
     setInput(""); setReplyPending(true); setError("");
     setOptimistic({ role: "student", text, screen: phase, sessionId: learning.sessionId,
@@ -383,7 +384,8 @@ export default function StudentApp() {
             title="上一个知识点" aria-label="上一个知识点" disabled={busy || !learning.canGoPreviousPoint}
             onClick={() => navigatePoint("previous_point")}>←</button>
           <button className="classroom-tools__button" type="button"
-            title="下一个知识点" aria-label="下一个知识点" disabled={busy || !learning.canGoNextPoint}
+            title={learning.canSkipLastPoint ? "先跳过此知识点" : "下一个知识点"}
+            aria-label={learning.canSkipLastPoint ? "先跳过此知识点" : "下一个知识点"} disabled={busy || !learning.canGoNextPoint}
             onClick={() => navigatePoint("next_point")}>→</button>
         </div>}
         <div className="conversation-topics__list">
@@ -401,7 +403,7 @@ export default function StudentApp() {
         </div>
       </nav>}
       <div className="view__body classroom-content">
-      {phase === "video" && <div className="stage stage--video"><div className="video"><div className="video-player-slot" ref={playerSlot} aria-label="视频播放器挂载区域" /><div className="video-player-actions"><p className="video-player-status">{videoEnded ? "视频播放完毕，可以进入复述与讨论。" : "视频尚未播放完，提前进入下一阶段时会再次确认。"}</p><button className="btn btn--primary" type="button" disabled={busy || preparation === "pending"} onClick={preparation === "error" ? retryPreparation : requestDiscussion}>{preparation === "pending" ? "复述与讨论准备中…" : preparation === "error" ? "重试准备复述与讨论" : "进入复述与讨论 →"}</button>{preparation === "error" && preparationError && <p role="alert">{preparationError}{preparationRequestId && `（问题编号：${preparationRequestId}）`}</p>}</div>{showVideoAdvanceConfirm && !videoEnded && <div className="video-advance-confirm" role="alert"><strong>视频还没有播放完</strong><p>现在进入复述与讨论会跳过剩余的视频内容，是否确定进入下一阶段？</p><div className="video-advance-confirm__actions"><button className="btn btn--ghost" type="button" disabled={busy} onClick={() => setShowVideoAdvanceConfirm(false)}>继续观看视频</button><button className="btn btn--primary" type="button" disabled={busy} onClick={goDiscussion}>{busy ? "正在进入…" : "确定进入复述与讨论"}</button></div></div>}</div></div>}
+      {phase === "video" && <div className="stage stage--video"><div className="video"><div className="video-player-slot" ref={playerSlot} aria-label="视频播放器挂载区域" /><div className="video-player-actions"><p className="video-player-status">{videoEnded ? "视频播放完毕，可以进入复述与讨论。" : "视频尚未播放完，提前进入下一阶段时会再次确认。"}</p><button className="btn btn--primary" type="button" disabled={busy || preparation === "pending"} onClick={preparation === "error" ? retryPreparation : requestDiscussion}>{preparation === "pending" ? "复述与讨论准备中…" : preparation === "error" ? "重试准备复述与讨论" : "进入复述与讨论 →"}</button>{continuousDialogue && ["ready", "partial"].includes(preparation) && <button className="btn btn--ghost" type="button" disabled={busy} onClick={end}>结束本课并查看反馈</button>}{preparation === "error" && preparationError && <p role="alert">{preparationError}{preparationRequestId && `（问题编号：${preparationRequestId}）`}</p>}</div>{showVideoAdvanceConfirm && !videoEnded && <div className="video-advance-confirm" role="alert"><strong>视频还没有播放完</strong><p>现在进入复述与讨论会跳过剩余的视频内容，是否确定进入下一阶段？</p><div className="video-advance-confirm__actions"><button className="btn btn--ghost" type="button" disabled={busy} onClick={() => setShowVideoAdvanceConfirm(false)}>继续观看视频</button><button className="btn btn--primary" type="button" disabled={busy} onClick={goDiscussion}>{busy ? "正在进入…" : "确定进入复述与讨论"}</button></div></div>}</div></div>}
       {phase === "replay" && <div className="stage stage--video"><div className="video"><div className="video-player-slot" ref={playerSlot} aria-label="课后视频播放器" /><div className="video-player-actions"><p className="video-player-status">可以按自己的节奏回看本节课。</p><button className="btn btn--primary" type="button" onClick={() => controller.dispatch({ type: "back_feedback" })}>返回学习反馈</button></div></div></div>}
       {(phase === "discussion" || phase === "postclass") && <div className="stage stage--summary" ref={conversationStage}>
         <div className="conversation-panel" style={conversationSize ? { width: conversationSize.width, marginLeft: conversationSize.left, marginRight: 0 } : undefined}>
@@ -409,7 +411,7 @@ export default function StudentApp() {
           <div className="conversation-resize-handle conversation-resize-handle--right" role="separator" aria-label="拖动调整对话框右边缘" aria-orientation="vertical" onPointerDown={(event) => startConversationResize(event, "right")} onPointerMove={moveConversationResize} onPointerUp={() => { conversationResize.current = null; }} onPointerCancel={() => { conversationResize.current = null; }} />
           {(!typedFlow || phase === "postclass") && <div className="conversation-heading">
             <h3 className="new-stage-title">{phase === "postclass"
-              ? typedFlow ? "继续巩固" : dynamicFlow ? "课后继续交流" : postclassStage === "remediation" ? "继续未完成的学习" : "全部完成 · 自由提问"
+              ? continuousDialogue && postclassStage === "open" ? "自由提问" : typedFlow ? "继续巩固" : dynamicFlow ? "课后继续交流" : postclassStage === "remediation" ? "继续未完成的学习" : "全部完成 · 自由提问"
               : "复述与讨论"}</h3>
             <p className="conversation-stage" role="status">{phase === "postclass"
               ? "本次课堂已经结束，课后对话会更新你的学习反馈。"
@@ -430,7 +432,7 @@ export default function StudentApp() {
             </div>)}
             {replyPending && <div className="msg msg--ai" role="status" aria-label="AI 正在回复"><div className="msg__avatar" aria-hidden="true">AI</div><div className="msg__bubble typing" aria-hidden="true"><span /><span /><span /></div></div>}
           </div>
-          {((phase === "discussion" || (dynamicFlow && phase === "postclass")) && agentStage === "wrapup" && !reviewingCard) || (typedFlow && phase === "postclass" && postclassStage !== "remediation")
+          {!continuousDialogue && (((phase === "discussion" || (dynamicFlow && phase === "postclass")) && agentStage === "wrapup" && !reviewingCard) || (typedFlow && phase === "postclass" && postclassStage !== "remediation"))
             ? <div className="conversation-complete" role="status"><strong>课堂对话已完成</strong><p>{typedFlow ? "点击下方按钮查看反馈，再选择回看或继续巩固。" : "点击下方按钮查看本课反馈。还想继续学习，可以在课后回看视频或与 AI 对话。"}</p></div>
             : <form className="composer" onSubmit={event => send(event)}>
               <textarea className="composer__input" ref={composerInput} rows={1} disabled={dynamicFlow && (paused || !can(phase === "postclass" ? "postclass_answer" : "submit_answer"))} value={input} onChange={(event) => editInput(event.target.value)} onKeyDown={handleComposerKeyDown} placeholder={phase === "postclass" && postclassStage === "open" ? "自由向 AI 提问…" : "说说你的理解，或提出问题…"} aria-label="输入复述或讨论" />
@@ -450,7 +452,11 @@ export default function StudentApp() {
           {phase === "discussion" && agentStage !== "wrapup" && showEarlyEndWarning && <div className="early-end-warning" role="alert"><strong>提前结束仅限测试使用</strong><p>学生请勿使用此按钮。确认后将跳过正常学习阶段，直接结束本课；尚未完成的复述和讨论会记录为未完成。</p><div className="early-end-warning__actions"><button className="btn btn--ghost" type="button" disabled={busy} onClick={() => setShowEarlyEndWarning(false)}>取消，继续学习</button><button className="btn btn--reset-confirm" type="button" disabled={busy} onClick={end}>{busy ? "正在结束…" : "确认提前结束（仅测试）"}</button></div></div>}
         </div>
       </div>}
-      {phase === "done" && <div className="stage stage--done"><div className="done done--feedback"><span className="done__check" aria-hidden="true">✓</span><p>第 {lesson?.week} 周 · 第 {lesson?.lessonNumber} 次课</p><h3 className="done__title">本节课结束</h3><LessonFeedback feedback={feedback} />{typedFlow && postclassStage === "completed" && <p role="status">本课知识点已全部掌握。</p>}
+      {phase === "done" && <div className="stage stage--done"><div className="done done--feedback"><span className="done__check" aria-hidden="true">✓</span><p>第 {lesson?.week} 周 · 第 {lesson?.lessonNumber} 次课</p><h3 className="done__title">本节课结束</h3><LessonFeedback feedback={feedback} />
+        {learning.classroomFeedback && postclassMessages.length > 0 && <details>
+          <summary>查看下课时的反馈</summary>
+          <LessonFeedback feedback={learning.classroomFeedback} title="下课时的学习反馈" headingId="classroom-feedback-title" />
+        </details>}{typedFlow && (postclassStage === "completed" || (continuousDialogue && learning.afterClassComplete)) && <p role="status">本课知识点已全部掌握。</p>}
         {historyItems.length > 0 && <details className="conversation-history">
           <summary>查看历史会话与题卡（{historyItems.length} 项）</summary>
           <div className="chat conversation-log" role="log" aria-label="历史课堂与课后对话">
@@ -462,7 +468,7 @@ export default function StudentApp() {
               <div className="msg__bubble question-group__bubble"><QuestionGroup group={item.group} busy onSubmit={() => {}} /></div>
             </div>)}
           </div>
-        </details>}{replayError && <p className="replay-error" role="alert">暂时无法回看：{replayError}</p>}<div className="postclass-actions"><button className="btn btn--primary" type="button" disabled={busy} onClick={() => openReplay(Boolean(replayError))}>{replayLoading ? "正在获取播放信息…" : replayError ? "重试回看" : "回看视频"}</button><button className="btn btn--primary" type="button" disabled={busy} onClick={openPostclass}>{typedFlow ? "继续巩固" : postclassStage === "open" ? "与 AI 自由提问" : "继续未完成的学习"}</button><button className="btn btn--ghost" type="button" disabled={busy} onClick={() => controller.dispatch({ type: "catalog" })}>返回课时列表</button><a className="btn btn--ghost" href={`${platformUrl || "http://localhost:8088"}/student`}>返回首页</a></div><div className="lesson-reset"><button className="btn btn--reset" type="button" disabled={busy} onClick={() => setShowResetConfirm(true)}>重置本课学习进度</button>{showResetConfirm && <div className="lesson-reset__confirm" role="group" aria-label="确认重置本课学习进度"><p>确定重新学习「{lesson?.title}」吗？本课的对话、知识点掌握情况和反馈将被删除，其他课时不受影响。此操作无法撤销。</p><div><button className="btn btn--ghost" type="button" disabled={busy} onClick={() => setShowResetConfirm(false)}>取消</button><button className="btn btn--reset-confirm" type="button" disabled={busy} onClick={resetLesson}>{busy ? "正在重置…" : "确认重置本课"}</button></div></div>}</div></div></div>}
+        </details>}{replayError && <p className="replay-error" role="alert">暂时无法回看：{replayError}</p>}<div className="postclass-actions"><button className="btn btn--primary" type="button" disabled={busy} onClick={() => openReplay(Boolean(replayError))}>{replayLoading ? "正在获取播放信息…" : replayError ? "重试回看" : "回看视频"}</button><button className="btn btn--primary" type="button" disabled={busy} onClick={openPostclass}>{continuousDialogue && learning.afterClassComplete ? "与 AI 自由提问" : typedFlow ? "继续巩固" : postclassStage === "open" ? "与 AI 自由提问" : "继续未完成的学习"}</button><button className="btn btn--ghost" type="button" disabled={busy} onClick={() => controller.dispatch({ type: "catalog" })}>返回课时列表</button><a className="btn btn--ghost" href={`${platformUrl || "http://localhost:8088"}/student`}>返回首页</a></div><div className="lesson-reset"><button className="btn btn--reset" type="button" disabled={busy} onClick={() => setShowResetConfirm(true)}>重置本课学习进度</button>{showResetConfirm && <div className="lesson-reset__confirm" role="group" aria-label="确认重置本课学习进度"><p>确定重新学习「{lesson?.title}」吗？本课的对话、知识点掌握情况和反馈将被删除，其他课时不受影响。此操作无法撤销。</p><div><button className="btn btn--ghost" type="button" disabled={busy} onClick={() => setShowResetConfirm(false)}>取消</button><button className="btn btn--reset-confirm" type="button" disabled={busy} onClick={resetLesson}>{busy ? "正在重置…" : "确认重置本课"}</button></div></div>}</div></div></div>}
     </div></div></section>}
     {learning.connectionError && !error && <p role="status">连接暂时中断，正在重试同步学习状态。</p>}
     {error && !replayError && phase !== "error" && <p className="new-error" role="alert">{error}</p>}
