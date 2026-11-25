@@ -4,7 +4,7 @@ import type { GeneratedSceneContent } from '@openmaic/generation';
 import type { BackgroundCoursewareInput } from '@/lib/generation/background-courseware';
 import type { SceneOutline } from '@/lib/types/generation';
 
-const mocks = vi.hoisted(() => ({ content: vi.fn(), actions: vi.fn() }));
+const mocks = vi.hoisted(() => ({ content: vi.fn(), actions: vi.fn(), llm: vi.fn() }));
 vi.mock('@openmaic/generation', async (original) => ({
   ...(await original<typeof import('@openmaic/generation')>()),
   generateSceneContent: mocks.content,
@@ -13,6 +13,7 @@ vi.mock('@openmaic/generation', async (original) => ({
 vi.mock('@/lib/server/resolve-model', () => ({
   resolveModel: async () => ({ model: {}, modelInfo: { capabilities: {} } }),
 }));
+vi.mock('@/lib/ai/llm', () => ({ callLLM: mocks.llm }));
 vi.mock('@/lib/pbl/v2/agents/planner', () => ({ generatePBLV2Project: vi.fn() }));
 
 import { createOpenmaicCoursewareSteps } from '@/lib/server/openmaic-courseware-steps';
@@ -168,5 +169,60 @@ describe('high-fidelity mixed scene generation', () => {
       '现在看正文',
     ]);
     expect(mocks.actions.mock.calls.at(-1)?.[0].description).toContain('本小节学习要求：掌握');
+  });
+
+  it.each(['learning-skills-enhanced', 'faithful'] as const)(
+    'uses the OpenMAIC actions template to generate final spoken words in %s trial mode',
+    async (mode) => {
+      const { generateSceneActions } =
+        await vi.importActual<typeof import('@openmaic/generation')>('@openmaic/generation');
+      const selected = input('slide');
+      selected.stage.coursewareTrial = { mode, overview: '理解数组下标与返回值' };
+      selected.stage.languageDirective = '使用中文授课。';
+      const outline = selected.outlines[0];
+      outline.description = '结合最终画面解释 return a[i]';
+      const spoken = '看这一行。函数返回数组 a 中下标为 i 的那个元素。';
+      mocks.actions.mockImplementationOnce(generateSceneActions);
+      mocks.llm.mockResolvedValueOnce({
+        text: JSON.stringify([{ type: 'text', content: spoken }]),
+      });
+
+      const steps = createOpenmaicCoursewareSteps(selected, undefined, {});
+      const signal = new AbortController().signal;
+      const content = await steps.content(outline, signal);
+      const scene = await steps.actions(outline, content, undefined, signal);
+
+      expect(mocks.llm).toHaveBeenCalledOnce();
+      expect(mocks.llm).toHaveBeenCalledWith(
+        expect.objectContaining({
+          system: expect.stringContaining(
+            'The same words will be used for voice synthesis and captions.',
+          ),
+          prompt: expect.stringContaining('结合最终画面解释 return a[i]'),
+        }),
+        'scene-actions',
+        undefined,
+        undefined,
+      );
+      expect(scene.actions).toEqual([expect.objectContaining({ type: 'speech', text: spoken })]);
+    },
+  );
+
+  it('retries a trial slide with empty model actions instead of reading the outline aloud', async () => {
+    const { generateSceneActions } =
+      await vi.importActual<typeof import('@openmaic/generation')>('@openmaic/generation');
+    const selected = input('slide');
+    selected.stage.coursewareTrial = { mode: 'learning-skills-enhanced', overview: '理解函数' };
+    const [outline] = selected.outlines;
+    mocks.actions.mockImplementationOnce(generateSceneActions);
+    mocks.llm.mockResolvedValueOnce({ text: '[]' }).mockResolvedValueOnce({ text: '[]' });
+    const steps = createOpenmaicCoursewareSteps(selected, undefined, {});
+    const signal = new AbortController().signal;
+    const content = await steps.content(outline, signal);
+
+    await expect(steps.actions(outline, content, undefined, signal)).rejects.toThrow(
+      'The slide needs spoken narration',
+    );
+    expect(mocks.llm).toHaveBeenCalledTimes(2);
   });
 });

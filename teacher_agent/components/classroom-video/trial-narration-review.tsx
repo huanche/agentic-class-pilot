@@ -224,7 +224,7 @@ export function TrialNarrationReview({
               ))}
               <div className="flex flex-wrap items-center gap-2">
                 <Button type="button" disabled={busy || !speech.length} onClick={() => void save()}>
-                  {busy ? '更新中…' : hasEdits ? '保存并更新本页配音' : '用优化读法重新配音'}
+                  {busy ? '更新中…' : hasEdits ? '保存并更新本页配音' : '按当前讲稿重新配音'}
                 </Button>
                 <Button
                   type="button"

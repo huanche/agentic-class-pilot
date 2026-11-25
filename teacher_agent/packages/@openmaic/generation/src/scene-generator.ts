@@ -123,6 +123,8 @@ export interface SceneActionsOptions {
   agents?: AgentInfo[];
   userProfile?: string;
   languageDirective?: string;
+  /** For slide narration that must come from the model instead of reading the outline. */
+  requireModelSpeech?: boolean;
   logger?: GenerationLogger;
 }
 
@@ -1609,6 +1611,7 @@ async function generateValidatedActions(
   sceneType: string,
   log: GenerationLogger,
   allowedActions?: string[],
+  requireModelSpeech = false,
 ): Promise<Action[]> {
   let feedback = '';
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -1616,6 +1619,12 @@ async function generateValidatedActions(
     const response = await aiCall(prompts.system, prompts.user + feedback);
     try {
       const actions = parseActionsFromStructuredOutput(response, sceneType, allowedActions, log);
+      if (
+        requireModelSpeech &&
+        !actions.some((action) => action.type === 'speech' && action.text.trim())
+      ) {
+        throw new ActionOutputFormatError('The slide needs spoken narration in a text object');
+      }
       if (attempt > 0 && actions.length === 0) {
         throw new ActionOutputFormatError('Format correction returned an empty action array');
       }
@@ -1680,10 +1689,18 @@ export async function generateSceneActions(
     });
 
     if (!prompts) {
+      if (options.requireModelSpeech) throw new Error('Slide narration template is missing');
       return generateDefaultSlideActions(outline, content.elements);
     }
 
-    const actions = await generateValidatedActions(aiCall, prompts, outline.type, log);
+    const actions = await generateValidatedActions(
+      aiCall,
+      prompts,
+      outline.type,
+      log,
+      undefined,
+      options.requireModelSpeech,
+    );
 
     if (actions.length > 0) {
       // Validate and fill in Action IDs

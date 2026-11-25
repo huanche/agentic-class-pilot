@@ -122,7 +122,6 @@ export async function reviseTrialNarration(
         failFast: true,
         voiceSelection: trial.voice,
         cacheScope: teacherId,
-        trialNarration: true,
         languageDirective: classroom.stage.languageDirective,
       });
       if (!result.generated || result.failed) throw new Error('配音未完成，请检查语音服务后重试');

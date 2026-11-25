@@ -32,6 +32,15 @@ import {
 export type OpenmaicContent = GeneratedSceneContent | SlideContent;
 const log = createLogger('OpenMAIC courseware');
 
+const TRIAL_SPOKEN_NARRATION = [
+  '### Final spoken narration for this lesson',
+  'Write each text object as the final words the teacher will say aloud, in the course language. The same words will be used for voice synthesis and captions. Keep one continuous teacher voice, with short, natural sentences and punctuation for pauses.',
+  'Treat the slide, code, notes and formulas as references. Explain what they mean as you point at them. Do not read raw code, LaTeX, markup, stage directions or speaker labels. Preserve the actual facts, values, conditions and order of operations.',
+  'Keep a keyword or identifier when students need it to find the matching line, then explain what it does. Read ambiguous symbols from context, abbreviations as full terms or separate letters, and numbers and units as they should be said aloud. Do not put phonetic markup or alternate readings in the speech.',
+  '中文示例（只示范读法，别把例子带进不相关的课）：int a[20] → 这里声明了数组 a，里面有二十个整型元素。return a[i] → 返回数组 a 中下标为 i 的元素。x * y → x 乘以 y；*p（解引用）→ 取出指针 p 指向的值。40 B（存储大小）→ 四十个字节。',
+  'Keep the required JSON action format and the timing of visual cues. If the original PPT click contract requires a bracketed step index, keep that index only as the required structural prefix.',
+].join('\n');
+
 export function createOpenmaicCoursewareSteps(
   input: BackgroundCoursewareInput,
   config: PlatformUserModelConfig | null | undefined,
@@ -188,7 +197,7 @@ export function createOpenmaicCoursewareSteps(
             '本节课概述：' + trial.overview,
             '本小节学习要求：' + level.label + '。' + level.instruction,
             next ? '下一小节：' + next.title + '。这里仅留自然过渡。' : '这是最后一节，简要总结。',
-            '用自然口语解释代码、公式和图表。说明代码符号在这行的含义，例如星号在乘法和指针解引用里读法不同。把公式、单位和运算符说成完整句子，保留原来的数值和逻辑。随堂题仅在答题后显示解析，课件讲稿不要念题或预告答案。',
+            '随堂题仅在答题后显示解析，课件讲稿不要念题或预告答案。',
             imported
               ? '原稿讲者备注：' + (imported.canvas.script || '无')
               : '先聚焦最终画面真实元素，再讲对应内容。',
@@ -204,10 +213,18 @@ export function createOpenmaicCoursewareSteps(
       const actions = await generateSceneActions(
         actionOutline,
         generated,
-        trial && nativeClicks?.length
+        trial
           ? (system, prompt, images) =>
               call(
-                `${system}\n\nFor this native PPTX page, the supplied click count overrides the default object count. Return exactly one text object for each click. Start its text with [1], [2], etc., in strict order. Return only text objects. Begin each segment after its click takes effect.`,
+                [
+                  system,
+                  TRIAL_SPOKEN_NARRATION,
+                  nativeClicks?.length
+                    ? 'For this native PPTX page, the supplied click count overrides the default object count. Return exactly one text object for each click. Start its text with [1], [2], etc., in strict order. Return only text objects. Begin each segment after its click takes effect.'
+                    : '',
+                ]
+                  .filter(Boolean)
+                  .join('\n\n'),
                 prompt,
                 images,
               )
@@ -226,6 +243,7 @@ export function createOpenmaicCoursewareSteps(
           languageDirective: input.stage.languageDirective,
           logger: log,
           userProfile: input.requirements.userBio,
+          requireModelSpeech: Boolean(trial),
         },
       );
       if (trial && nativeClicks?.length) {
