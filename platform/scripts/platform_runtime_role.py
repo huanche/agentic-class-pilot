@@ -72,15 +72,27 @@ def main() -> int:
 
     with psycopg.connect(runtime_url(admin_url.replace("+psycopg", ""), password), connect_timeout=5) as conn:
         with conn.cursor() as cur:
+            cur.execute("SELECT rolsuper, rolcreatedb, rolcreaterole FROM pg_roles WHERE rolname = current_user")
+            if cur.fetchone() != (False, False, False):
+                raise RuntimeError(f"{ROLE} must not be a privileged database role")
             cur.execute("SELECT 1 FROM public.course LIMIT 1")
-            for schema, table in (("teacher", "mentra_courses"), ("student", "student_sessions")):
-                try:
-                    cur.execute(sql.SQL("SELECT 1 FROM {}.{} LIMIT 1").format(
-                        sql.Identifier(schema), sql.Identifier(table)))
-                except psycopg.errors.InsufficientPrivilege:
-                    conn.rollback()
-                else:
-                    raise RuntimeError(f"{ROLE} can read {schema}.{table}; refusing to pass")
+            cur.execute("""
+                SELECT n.nspname, c.relname
+                FROM pg_class c
+                JOIN pg_namespace n ON n.oid = c.relnamespace
+                WHERE n.nspname IN ('teacher', 'student')
+                  AND c.relkind IN ('r', 'p', 'v', 'm', 'f')
+                  AND (
+                    has_table_privilege(c.oid, 'SELECT')
+                    OR has_table_privilege(c.oid, 'INSERT')
+                    OR has_table_privilege(c.oid, 'UPDATE')
+                    OR has_table_privilege(c.oid, 'DELETE')
+                  )
+                LIMIT 1
+            """)
+            accessible = cur.fetchone()
+            if accessible:
+                raise RuntimeError(f"{ROLE} can access {accessible[0]}.{accessible[1]}; refusing to pass")
     print(f"role {ROLE} can read public and cannot read teacher/student in {args.database_name}")
     return 0
 
