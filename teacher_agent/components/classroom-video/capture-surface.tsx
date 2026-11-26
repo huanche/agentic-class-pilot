@@ -25,6 +25,7 @@ declare global {
       run(durations: Record<string, number>): Promise<CaptureResult>;
     };
     classroomCaptureError?: string;
+    classroomCaptureSettledFrame?: () => Promise<void>;
     classroomTimeline?: {
       build(
         sceneId: string,
@@ -107,10 +108,22 @@ export function ClassroomCaptureSurface({ id, version }: { id: string; version: 
             if (!target) throw new Error('课件页面尚未加载');
             readiness.assertReady(target.id);
             const speech: CaptureResult['speech'] = [];
+            const nativePage = nativePptxPage(state.stage, target);
+            let nativeFramePending = false;
+            const settleNativeFrame = async () => {
+              if (!nativeFramePending) return;
+              if (!window.classroomCaptureSettledFrame)
+                throw new Error('原稿动画录制服务尚未更新');
+              await frame();
+              await frame();
+              await window.classroomCaptureSettledFrame();
+              nativeFramePending = false;
+            };
             for (const action of target.actions || []) {
               if (action.type === 'speech') {
                 const duration = durations[action.id];
                 if (!(duration > 0)) throw new Error(`配音时长无效: ${action.id}`);
+                await settleNativeFrame();
                 speech.push({
                   actionId: action.id,
                   epoch: performance.timeOrigin + performance.now(),
@@ -124,8 +137,11 @@ export function ClassroomCaptureSurface({ id, version }: { id: string; version: 
                 )
                   throw new Error(`此页包含尚不支持转视频的动作: ${action.type}`);
                 await engine.execute(action, { persistEffects: true });
+                if (nativePage && action.type === 'reveal' && action.pptxStep)
+                  nativeFramePending = true;
               }
             }
+            await settleNativeFrame();
             await sleep(300);
             engine.clearEffects();
             return { speech, endEpoch: performance.timeOrigin + performance.now() };

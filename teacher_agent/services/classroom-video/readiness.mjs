@@ -1,5 +1,31 @@
+import { setTimeout as delay } from 'node:timers/promises';
+import { performance } from 'node:perf_hooks';
+
 /** Capture's longer native-loading budget plus time for fonts and decoded images. */
 export const CAPTURE_READY_TIMEOUT_MS = 210_000;
+
+/** After the native click's scheduled end, verify that Chromium has painted
+ * the final state. Screencast frames alone can lag behind the slide canvas. */
+export async function waitForSettledFrame(
+  capture,
+  { intervalMs = 80, stableMs = 160, timeoutMs = 8_000 } = {},
+) {
+  const deadline = performance.now() + timeoutMs;
+  let previous;
+  let unchangedSince = performance.now();
+  do {
+    const frame = await capture();
+    const now = performance.now();
+    if (frame !== previous) {
+      previous = frame;
+      unchangedSince = now;
+    } else if (now - unchangedSince >= stableMs) {
+      return frame;
+    }
+    await delay(intervalMs);
+  } while (performance.now() < deadline);
+  throw new Error('原稿动画画面尚未稳定，请重试本页');
+}
 
 export async function prepareRecording(
   page,

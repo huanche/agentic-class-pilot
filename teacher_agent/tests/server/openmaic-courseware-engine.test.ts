@@ -49,11 +49,12 @@ function setup() {
     discard: vi.fn(async () => {}),
     phase: vi.fn(async () => {}),
   };
-  const run = () =>
+  const run = (overlapNarration = false) =>
     generateOpenmaicCourseware({
       outlines,
       completed: saved,
       concurrency: 2,
+      overlapNarration,
       signal: controller.signal,
       services,
     });
@@ -97,6 +98,85 @@ describe('OpenMAIC server generation ordering', () => {
     expect(s.services.save).not.toHaveBeenCalled();
     expect(s.services.discard).toHaveBeenCalledOnce();
     expect(s.services.content).toHaveBeenCalledOnce();
+  });
+  it('generates the next script during narration, preserving context and page order', async () => {
+    const s = setup();
+    const finishFirstAudio = Promise.withResolvers<void>();
+    const secondScriptStarted = Promise.withResolvers<void>();
+    vi.mocked(s.services.narrate).mockImplementation(async (scene) => {
+      if (scene.order === 1) {
+        // TTS may replace the speech list when a provider splits long segments.
+        scene.actions = [{ id: 'split', type: 'speech', text: 'TTS speech fragment' }];
+        await finishFirstAudio.promise;
+      }
+    });
+    vi.mocked(s.services.actions).mockImplementation(async (outline) => {
+      s.events.push(`script${outline.order}`);
+      if (outline.order === 2) secondScriptStarted.resolve();
+      return page(outline.order);
+    });
+
+    const job = s.run(true);
+    await secondScriptStarted.promise;
+    expect(s.events.indexOf('script1')).toBeLessThan(s.events.indexOf('content2'));
+    expect(s.saved).toHaveLength(0);
+    expect(vi.mocked(s.services.actions).mock.calls[1][2]?.actions?.[0]).toMatchObject({
+      text: 'Speech 1',
+    });
+    expect(vi.mocked(s.services.narrate).mock.calls.map(([scene]) => scene.order)).toEqual([1]);
+    finishFirstAudio.resolve();
+    await job;
+    expect(s.saved.map((scene) => scene.order)).toEqual([1, 2, 3, 4, 5]);
+  });
+
+  it('keeps the preceding page when the overlapping script fails', async () => {
+    const s = setup();
+    const finishSecondAudio = Promise.withResolvers<void>();
+    const thirdScriptStarted = Promise.withResolvers<void>();
+    vi.mocked(s.services.narrate).mockImplementation(async (scene) => {
+      if (scene.order === 2) await finishSecondAudio.promise;
+    });
+    vi.mocked(s.services.actions).mockImplementation(async (outline) => {
+      if (outline.order === 3) {
+        thirdScriptStarted.resolve();
+        throw new Error('model unavailable');
+      }
+      return page(outline.order);
+    });
+    const failure = expect(s.run(true)).rejects.toThrow('model unavailable');
+    await thirdScriptStarted.promise;
+    finishSecondAudio.resolve();
+    await failure;
+    expect(s.saved.map((scene) => scene.order)).toEqual([1, 2]);
+    expect(s.checkpoints.get(3)?.scene).toBeUndefined();
+  });
+
+  it('cancels the overlapping script when the preceding narration fails', async () => {
+    const s = setup();
+    const thirdScriptStarted = Promise.withResolvers<void>();
+    const error = new Error('voice unavailable');
+    vi.mocked(s.services.narrate).mockImplementation(async (scene) => {
+      if (scene.order === 2) {
+        await thirdScriptStarted.promise;
+        throw error;
+      }
+    });
+    vi.mocked(s.services.actions).mockImplementation(
+      async (outline, _content, _previous, signal) => {
+        if (outline.order === 3) {
+          thirdScriptStarted.resolve();
+          await new Promise<void>((_resolve, reject) => {
+            signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+          });
+        }
+        return page(outline.order);
+      },
+    );
+    await expect(s.run(true)).rejects.toBe(error);
+    expect(s.saved.map((scene) => scene.order)).toEqual([1]);
+    expect(s.checkpoints.get(2)?.scene?.id).toBe('s2');
+    expect(s.checkpoints.get(3)?.scene).toBeUndefined();
+    expect(s.services.discard).toHaveBeenCalledOnce();
   });
   it('skips existing complete pages on retry', async () => {
     const s = setup();

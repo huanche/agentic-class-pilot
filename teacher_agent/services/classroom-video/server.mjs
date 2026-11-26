@@ -6,7 +6,7 @@ import { spawn } from 'node:child_process';
 import { timingSafeEqual, randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import { chromium } from 'playwright-core';
-import { prepareRecordingWithRetry } from './readiness.mjs';
+import { prepareRecordingWithRetry, waitForSettledFrame } from './readiness.mjs';
 import { renderTimelineProject } from './timeline.mjs';
 import {
   createBrowserSession,
@@ -239,19 +239,46 @@ async function capture(session, job, plan, clip, onPhase) {
     const first = new Promise((resolve) => {
       firstResolve = resolve;
     });
-    cdp.on('Page.screencastFrame', (event) => {
+    const saveFrame = (data, epoch) => {
+      if (!Number.isFinite(epoch)) {
+        rejectCapture(new Error('无效的视频时间轴'));
+        return;
+      }
+      if (frames.length && epoch <= frames.at(-1).epoch) return;
       const n = frames.length;
-      void cdp.send('Page.screencastFrameAck', { sessionId: event.sessionId }).catch(() => {});
-      const bytes = Buffer.from(event.data, 'base64');
+      const bytes = Buffer.from(data, 'base64');
       byteCount += bytes.length;
       if (n > 30_000 || byteCount > 800 * 1024 * 1024) {
         rejectCapture(new Error('单页动画过大，请拆分页面后重试'));
         return;
       }
       const file = `frame-${String(n).padStart(6, '0')}.jpg`;
-      frames.push({ file, epoch: event.metadata.timestamp * 1000 });
+      frames.push({ file, epoch });
       writes.push(fs.writeFile(path.join(temp, file), bytes).catch(rejectCapture));
       firstResolve();
+    };
+    cdp.on('Page.screencastFrame', (event) => {
+      void cdp.send('Page.screencastFrameAck', { sessionId: event.sessionId }).catch(() => {});
+      saveFrame(event.data, event.metadata.timestamp * 1000);
+    });
+    await page.exposeBinding('classroomCaptureSettledFrame', async ({ frame }) => {
+      if (frame !== page.mainFrame()) throw new Error('无效的录制页面');
+      const finalFrame = await bounded(
+        waitForSettledFrame(async () => {
+          const { data } = await cdp.send('Page.captureScreenshot', {
+            format: 'jpeg',
+            quality: 92,
+            fromSurface: true,
+            captureBeyondViewport: false,
+          });
+          return data;
+        }),
+        10_000,
+        '原稿动画画面确认超时，请重试本页',
+      );
+      // Anchor the full frame before the browser records the narration cue.
+      const epoch = Math.max(Date.now(), frames.at(-1).epoch + 1);
+      saveFrame(finalFrame, epoch);
     });
     await cdp.send('Page.startScreencast', {
       format: 'jpeg',
@@ -382,6 +409,7 @@ async function launchBrowser() {
     '--disable-dev-shm-usage',
     '--no-sandbox',
     '--autoplay-policy=no-user-gesture-required',
+    '--mute-audio',
   ];
   if (process.env.VIDEO_ORIGIN_IP)
     args.push(

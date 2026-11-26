@@ -21,7 +21,7 @@ import { createCoursewarePerformance } from './courseware-performance';
 import { createOpenmaicCoursewareSteps, type OpenmaicContent } from './openmaic-courseware-steps';
 import { generateOpenmaicCourseware, type OpenmaicCheckpoint } from './openmaic-courseware-engine';
 import { getParallelTtsConcurrency } from './provider-config';
-import { prequeueClassroomVideo } from './classroom-video';
+import { prequeueClassroomPageVideo, prequeueClassroomVideo } from './classroom-video';
 import {
   generateTTSForClassroom,
   finalizeClassroomTtsAudio,
@@ -40,6 +40,8 @@ export async function executeOpenmaicCourseware(
   const { input, teacherId, baseUrl } = stored;
   const { stage, outlines } = input;
   const signal = controller.signal;
+  const hasDeferredMedia =
+    input.enableMedia && outlines.some((outline) => outline.mediaGenerations?.length);
   const concurrency = Math.max(
     1,
     Math.min(4, Number(process.env.COURSEWARE_CONTENT_PREFETCH) || 2),
@@ -51,6 +53,7 @@ export async function executeOpenmaicCourseware(
   });
   let release: (() => void) | undefined;
   let heartbeat: ReturnType<typeof setInterval> | undefined;
+  let earlyVideoWork: Promise<void> | undefined;
   let scenes: Scene[] = [];
   const check = async () => {
     signal.throwIfAborted();
@@ -123,6 +126,7 @@ export async function executeOpenmaicCourseware(
       outlines,
       completed: scenes,
       concurrency,
+      overlapNarration: Boolean(stage.coursewareTrial && input.enableTTS),
       signal,
       services: {
         content: (outline, callSignal) =>
@@ -263,6 +267,23 @@ export async function executeOpenmaicCourseware(
             controller.abort();
             signal.throwIfAborted();
           }
+          if (
+            stage.coursewareTrial &&
+            input.enableTTS &&
+            !hasDeferredMedia &&
+            scene.type === 'slide' &&
+            scenes.length < outlines.length &&
+            !earlyVideoWork
+          ) {
+            earlyVideoWork = prequeueClassroomPageVideo(
+              stage.id,
+              teacherId,
+              baseUrl,
+              scene.id,
+            ).finally(() => {
+              earlyVideoWork = undefined;
+            });
+          }
         },
         discard: async (scene) => {
           // A snapshot may have committed even if writing its artifact failed.
@@ -272,8 +293,9 @@ export async function executeOpenmaicCourseware(
         },
       },
     });
+    await earlyVideoWork;
     await check();
-    if (input.enableMedia && outlines.some((outline) => outline.mediaGenerations?.length)) {
+    if (hasDeferredMedia) {
       const mediaOutlines = outlines.map((outline) => ({
         ...outline,
         mediaGenerations: outline.mediaGenerations?.filter((request) =>
@@ -346,6 +368,7 @@ export async function executeOpenmaicCourseware(
         : job,
     ).catch(() => undefined);
   } finally {
+    await earlyVideoWork;
     if (heartbeat) clearInterval(heartbeat);
     release?.();
     await mutateCourseJob(jobId, (job) =>

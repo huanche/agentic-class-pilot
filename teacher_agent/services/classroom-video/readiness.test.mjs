@@ -1,7 +1,35 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
-import { prepareRecording, prepareRecordingWithRetry, CAPTURE_READY_TIMEOUT_MS } from './readiness.mjs';
+import {
+  CAPTURE_READY_TIMEOUT_MS,
+  prepareRecording,
+  prepareRecordingWithRetry,
+  waitForSettledFrame,
+} from './readiness.mjs';
+
+test('the narration boundary takes the complete frame instead of an intermediate crop', async () => {
+  const captured = ['cropped-1', 'cropped-2', 'complete'];
+  let reads = 0;
+  const frame = await waitForSettledFrame(
+    async () => captured[reads++] ?? 'complete',
+    { intervalMs: 2, stableMs: 5, timeoutMs: 200 },
+  );
+  assert.equal(frame, 'complete');
+  assert.ok(reads > captured.length);
+});
+
+test('a moving native frame fails the capture instead of releasing the narration', async () => {
+  let frame = 0;
+  await assert.rejects(
+    waitForSettledFrame(async () => String(++frame), {
+      intervalMs: 2,
+      stableMs: 4,
+      timeoutMs: 16,
+    }),
+    /原稿动画画面尚未稳定/,
+  );
+});
 
 test('loading never transitions to recording before the real scene readiness resolves', async () => {
   let resolve;

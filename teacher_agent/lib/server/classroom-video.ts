@@ -128,20 +128,15 @@ export async function videoStatus(plan: ClassroomVideoPlan): Promise<ClassroomVi
     activePages,
   };
 }
-const preparing = new Map<string, Promise<ClassroomVideoPlan>>();
-export async function prepareClassroomVideo(
-  id: string,
-  ownerId: string,
-  origin: string,
-  retry?: true | string,
-) {
+const preparing = new Map<string, Promise<unknown>>();
+async function serializePreparation<T>(id: string, prepare: () => Promise<T>): Promise<T> {
   const active = preparing.get(id);
   // Serialize snapshot creation; a later request must still observe later edits.
   if (active) {
     await active.catch(() => {});
-    return prepareClassroomVideo(id, ownerId, origin, retry);
+    return serializePreparation(id, prepare);
   }
-  const promise = prepare(id, ownerId, origin, retry);
+  const promise = prepare();
   preparing.set(id, promise);
   try {
     return await promise;
@@ -149,28 +144,51 @@ export async function prepareClassroomVideo(
     if (preparing.get(id) === promise) preparing.delete(id);
   }
 }
-async function prepare(
+export function prepareClassroomVideo(
   id: string,
   ownerId: string,
   origin: string,
   retry?: true | string,
+) {
+  return serializePreparation(id, () => prepare(id, ownerId, origin, { retry }));
+}
+
+interface VideoWorkerHealth {
+  renderers?: string[];
+  active?: boolean;
+  queued?: number;
+  submissions?: number;
+  draining?: boolean;
+}
+async function videoWorkerHealth(timeoutMs = 10_000): Promise<VideoWorkerHealth | null> {
+  const response = await fetch(
+    `${process.env.CLASSROOM_VIDEO_WORKER_URL!.replace(/\/$/, '')}/health`,
+    { signal: AbortSignal.timeout(timeoutMs), cache: 'no-store' },
+  );
+  return response.ok ? response.json() : null;
+}
+
+async function prepare(
+  id: string,
+  ownerId: string,
+  origin: string,
+  {
+    retry,
+    early,
+  }: { retry?: true | string; early?: { sceneId: string; health: VideoWorkerHealth } },
 ): Promise<ClassroomVideoPlan> {
   if (!videoEnabled() || !videoSecret()) throw new Error('视频转换服务尚未启用');
   const classroom = await readClassroom(id);
   if (!classroom?.scenes.length) throw new Error('课件尚未生成');
-  if (classroom.stage.generationPlan && !classroom.stage.generationPlan.complete)
+  if (!early && classroom.stage.generationPlan && !classroom.stage.generationPlan.complete)
     throw new Error('请先完成课件生成');
-  const scenes = [...classroom.scenes].sort((a, b) => a.order - b.order);
+  const scenes = early
+    ? classroom.scenes.filter((scene) => scene.id === early.sceneId && scene.type === 'slide')
+    : [...classroom.scenes].sort((a, b) => a.order - b.order);
+  if (early && scenes.length !== 1) throw new Error('该页尚未生成');
   const renderer = usesTimelineVideo(classroom.stage) ? TIMELINE_VIDEO_RENDERER : 1;
   if (renderer === TIMELINE_VIDEO_RENDERER) {
-    const response = await fetch(
-      `${process.env.CLASSROOM_VIDEO_WORKER_URL!.replace(/\/$/, '')}/health`,
-      {
-        signal: AbortSignal.timeout(10_000),
-        cache: 'no-store',
-      },
-    );
-    const health = response.ok ? await response.json() : null;
+    const health = early?.health ?? (await videoWorkerHealth());
     if (!health?.renderers?.includes(TIMELINE_VIDEO_RENDERER))
       throw new Error('动画视频服务尚未更新，请稍后重试');
   }
@@ -233,6 +251,10 @@ async function prepare(
               source: classroom.stage.nativePptx?.sha256,
               revision: classroom.stage.nativePptx?.renderRevision,
               clicks: classroom.stage.nativePptx?.clicks?.[scene.outlineId || ''],
+              // Native clips recorded before the final-frame check must be rendered again.
+              captureRevision: actions.some((a) => a.type === 'reveal' && a.pptxStep)
+                ? 2
+                : undefined,
             }
           : undefined,
       }),
@@ -243,6 +265,9 @@ async function prepare(
     canonicalVideo({
       renderer,
       title: classroom.stage.name,
+      // Keep the one-page worker snapshot separate from the final draft, even
+      // when the course ultimately contains a single slide.
+      earlySceneId: early?.sceneId,
       scenes: scenes.map((s) =>
         s.type === 'slide'
           ? { id: s.id, title: s.title, key: clips.find((c) => c.sceneId === s.id)!.key }
@@ -265,7 +290,7 @@ async function prepare(
   };
   if (!(await readVideoPlan(id, version)))
     await writeJsonFileAtomic(videoPath(id, 'versions', `${version}.json`), plan);
-  await writeJsonFileAtomic(videoPath(id, 'draft.json'), { version });
+  if (!early) await writeJsonFileAtomic(videoPath(id, 'draft.json'), { version });
   const status = await videoStatus(plan);
   if (status.state !== 'ready' && (retry || status.state === 'queued')) {
     const grant = await signRenderGrant(
@@ -285,12 +310,44 @@ async function prepare(
         origin,
         ...(typeof retry === 'string' && { sceneId: retry }),
       }),
-      signal: AbortSignal.timeout(10_000),
+      signal: AbortSignal.timeout(early ? 3_000 : 10_000),
     });
     if (!response.ok) throw new Error('视频转换服务暂不可用，请重试');
   }
   return plan;
 }
+
+let submittingEarlyPage = false;
+export async function prequeueClassroomPageVideo(
+  id: string,
+  ownerId: string,
+  origin: string,
+  sceneId: string,
+) {
+  if (!videoEnabled() || !videoSecret() || submittingEarlyPage) return;
+  submittingEarlyPage = true;
+  try {
+    await serializePreparation(id, async () => {
+      const health = await videoWorkerHealth(2_000);
+      // Keep at most one preview submission waiting behind an active job.
+      // The full draft handles pages skipped while there is already a queue.
+      if (
+        !health ||
+        typeof health.active !== 'boolean' ||
+        health.queued !== 0 ||
+        health.submissions ||
+        health.draining
+      )
+        return;
+      await prepare(id, ownerId, origin, { early: { sceneId, health } });
+    });
+  } catch (error) {
+    createLogger('ClassroomVideo').warn('Early page video could not be queued', error);
+  } finally {
+    submittingEarlyPage = false;
+  }
+}
+
 export async function prequeueClassroomVideo(id: string, ownerId: string, origin: string) {
   if (!videoEnabled()) return;
   try {

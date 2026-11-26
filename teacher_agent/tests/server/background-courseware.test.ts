@@ -11,6 +11,7 @@ const state = vi.hoisted(() => ({
   snapshots: new Map<string, { stage: unknown; scenes: unknown[] }>(),
   artifacts: vi.fn(),
   audio: vi.fn(),
+  prequeuePageVideo: vi.fn(async () => {}),
   prequeueVideo: vi.fn(),
   dispose: vi.fn(),
   content: vi.fn(),
@@ -62,7 +63,10 @@ vi.mock('@/lib/server/classroom-media-generation', () => ({
   generateMediaForClassroom: vi.fn(async () => ({})),
   replaceMediaPlaceholders: vi.fn(),
 }));
-vi.mock('@/lib/server/classroom-video', () => ({ prequeueClassroomVideo: state.prequeueVideo }));
+vi.mock('@/lib/server/classroom-video', () => ({
+  prequeueClassroomPageVideo: state.prequeuePageVideo,
+  prequeueClassroomVideo: state.prequeueVideo,
+}));
 vi.mock('@/lib/server/platform-user-model-config', () => ({
   fetchPlatformUserModelConfig: vi.fn(),
 }));
@@ -133,6 +137,7 @@ beforeEach(() => {
   state.snapshots.clear();
   state.artifacts.mockReset();
   state.audio.mockReset();
+  state.prequeuePageVideo.mockReset();
   state.prequeueVideo.mockReset();
   state.dispose.mockReset();
   state.content.mockReset();
@@ -157,8 +162,12 @@ describe('server-owned courseware generation', () => {
     const job = await createBackgroundCoursewareJob(input('internal_origin'), context);
     const saved = JSON.parse(
       await fs.readFile(
-        path.join(process.cwd(), '.runtime', 'background-task-tests',
-          `${job.id}.courseware-input.json`),
+        path.join(
+          process.cwd(),
+          '.runtime',
+          'background-task-tests',
+          `${job.id}.courseware-input.json`,
+        ),
         'utf8',
       ),
     );
@@ -230,6 +239,51 @@ describe('server-owned courseware generation', () => {
     expect(state.content).toHaveBeenCalledTimes(2);
     expect(state.actions).toHaveBeenCalledTimes(2);
     expect(fetch).not.toHaveBeenCalled(); // Models are called in process, not through the public HTTP routes.
+  });
+  it('submits a saved trial page for video before narration of the remaining page is done', async () => {
+    const selected = input('early_trial_video');
+    selected.enableTTS = true;
+    selected.stage.coursewareTrial = { mode: 'learning-skills-enhanced', overview: '加法示例' };
+    state.content.mockResolvedValue({ elements: [] });
+    state.actions.mockImplementation(async (outline) => ({
+      id: `s${outline.order}`,
+      stageId: selected.stage.id,
+      type: 'slide',
+      order: outline.order,
+      title: outline.title,
+      content: { type: 'slide', canvas: { elements: [] } },
+      actions: [{ id: 'speech', type: 'speech', text: '这是一段已经生成的讲稿。' }],
+    }));
+    const submitted = Promise.withResolvers<void>();
+    let snapshotAtSubmission: unknown;
+    state.prequeuePageVideo.mockImplementation(async () => {
+      snapshotAtSubmission = state.snapshots.get(selected.stage.id);
+      submitted.resolve();
+    });
+    state.audio.mockImplementation(async ([scene]: Scene[]) => {
+      if (scene.order === 2) await submitted.promise;
+      return { generated: 1, failed: 0, skipped: 0 };
+    });
+
+    const job = await createBackgroundCoursewareJob(selected, context);
+    await runBackgroundCoursewareJob(job.id);
+
+    expect(snapshotAtSubmission).toMatchObject({
+      stage: { generationPlan: { complete: false } },
+      scenes: [{ id: 's1' }],
+    });
+    expect(state.prequeuePageVideo).toHaveBeenCalledExactlyOnceWith(
+      selected.stage.id,
+      context.teacherId,
+      context.baseUrl,
+      's1',
+    );
+    expect(state.prequeueVideo).toHaveBeenCalledExactlyOnceWith(
+      selected.stage.id,
+      context.teacherId,
+      context.baseUrl,
+    );
+    expect(state.jobs.get(job.id)?.status).toBe('review');
   });
   it('keeps committed OpenMAIC narration if cancellation wins after the first snapshot', async () => {
     vi.stubEnv('COURSEWARE_GENERATION_ENGINE', 'openmaic');

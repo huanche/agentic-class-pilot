@@ -56,6 +56,66 @@ async function audio() {
     );
 }
 describe('teacher video snapshots', () => {
+  it.each(['learning-skills-enhanced', 'faithful'] as const)(
+    'prepares a committed %s page during generation and reuses its MP4 in the completed draft',
+    async (mode) => {
+      const classroom = lesson();
+      const [first, second] = classroom.scenes;
+      classroom.scenes = [first];
+      classroom.stage.coursewareTrial = { mode, overview: '测试' };
+      classroom.stage.generationPlan = { version: 1, outlines: [], complete: false };
+      await audio();
+      vi.mocked(fetch).mockImplementation(async (url) =>
+        String(url).endsWith('/health')
+          ? Response.json({ renderers: ['openmaic-timeline-v1'], active: true, queued: 0 })
+          : Response.json({}, { status: 202 }),
+      );
+      const {
+        prequeueClassroomPageVideo,
+        prepareClassroomVideo,
+        preparedVideoForPublication,
+        readVideoPlan,
+        videoPath,
+        videoPointer,
+        videoStatus,
+      } = await import('@/lib/server/classroom-video');
+
+      await prequeueClassroomPageVideo('lesson', 'owner', 'https://example.com', 's1');
+      const request = vi.mocked(fetch).mock.calls.find(([url]) => String(url).endsWith('/jobs'));
+      const earlyVersion = JSON.parse(String(request?.[1]?.body)).version;
+      const earlyPlan = (await readVideoPlan('lesson', earlyVersion))!;
+      expect(earlyPlan.scenes.map((scene) => scene.id)).toEqual(['s1']);
+      expect(await videoPointer('lesson', 'draft')).toBeNull();
+      await expect(prepareClassroomVideo('lesson', 'owner', 'https://example.com')).rejects.toThrow(
+        '请先完成课件生成',
+      );
+      await expect(preparedVideoForPublication('lesson')).rejects.toThrow();
+      await fs.mkdir(videoPath('lesson', 'clips'), { recursive: true });
+      await fs.writeFile(videoPath('lesson', 'clips', earlyPlan.clips[0].key + '.mp4'), 'ready');
+
+      classroom.scenes.push(second);
+      classroom.stage.generationPlan.complete = true;
+      const finalPlan = await prepareClassroomVideo('lesson', 'owner', 'https://example.com');
+      expect(finalPlan.version).not.toBe(earlyVersion);
+      expect(finalPlan.clips[0].key).toBe(earlyPlan.clips[0].key);
+      expect(await videoStatus(finalPlan)).toMatchObject({
+        completed: 1,
+        readySceneIds: ['s1'],
+        total: 2,
+      });
+    },
+  );
+
+  it('leaves early pages to the full draft when the video worker already has a queued job', async () => {
+    lesson();
+    vi.mocked(fetch).mockResolvedValue(Response.json({ active: true, queued: 1 }));
+    const { prequeueClassroomPageVideo, videoPointer } =
+      await import('@/lib/server/classroom-video');
+    await prequeueClassroomPageVideo('lesson', 'owner', 'https://example.com', 's1');
+    expect(fetch).toHaveBeenCalledExactlyOnceWith('http://worker/health', expect.anything());
+    expect(await videoPointer('lesson', 'draft')).toBeNull();
+  });
+
   it('uses the timeline renderer only for AI trials and invalidates old recorder caches', async () => {
     const classroom = lesson();
     await audio();
