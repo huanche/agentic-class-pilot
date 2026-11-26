@@ -7,9 +7,7 @@ from pathlib import Path
 
 DOCUMENT_SERVER = Path('/var/www/onlyoffice/documentserver')
 COMPONENTS = DOCUMENT_SERVER / 'web-apps/apps/common/main/lib/component'
-EDITOR_API = DOCUMENT_SERVER / 'web-apps/apps/api/documents/api.js'
-NGINX_CACHE = Path('/etc/nginx/includes/ds-cache.conf')
-ORIGINAL_TAG = b'9dd56f3cd6a34c3086bce4a869f9c9c6'
+FLUSH_CACHE = Path('/usr/bin/documentserver-flush-cache')
 ORIGINAL_COMPONENTS = {
     'ColorPaletteExt.js': '9d92f386284e2f226e9e24455eb70b7020edac0aec5c175a8d4e92633dc0145c',
     'HSBColorPicker.js': '9025828cef1c1603073203d981e7b1a3883d990af11122d13d67b8d0d37dff2f',
@@ -41,20 +39,14 @@ def main():
             path,
         )
 
-    # Both the embed API and nginx mint asset URLs. Keep them in the same
-    # namespace so clients with immutable cached assets fetch the patched JS.
-    cache_tag = hashlib.sha256(ORIGINAL_TAG + b''.join(scripts.values())).hexdigest()[:32]
-    scripts[EDITOR_API] = replace_once(
-        read_pinned(EDITOR_API, 'f877f2acde3f6c25d65788b671c413fcdb65a6bd425cb54f8833ec2266271ea6'),
-        ORIGINAL_TAG,
-        cache_tag.encode('ascii'),
-        EDITOR_API,
-    )
-    cache_config = replace_once(
-        read_pinned(NGINX_CACHE, '574a1a54b06c86fa2bfd717bd028587ca6d7d381929d5402208f5241e947fcca'),
-        ORIGINAL_TAG,
-        cache_tag.encode('ascii'),
-        NGINX_CACHE,
+    # ONLYOFFICE generates api.js and the nginx cache tag at startup and after
+    # font updates. Include the patched asset data in that shared tag.
+    cache_seed = hashlib.sha256(b''.join(scripts.values())).hexdigest().encode('ascii')
+    flush_script = replace_once(
+        read_pinned(FLUSH_CACHE, '287358871abd69c288e36fe9944aa60977f5b0dd74d1e54d612a1c5550d48d52'),
+        b"date +'%Y.%m.%d-%H%M' | openssl md5",
+        b"printf '%s\\n' '" + cache_seed + b"' \"$(date +'%Y.%m.%d-%H%M')\" | openssl md5",
+        FLUSH_CACHE,
     )
 
     for path, content in scripts.items():
@@ -63,8 +55,8 @@ def main():
             raise ValueError(f'Precompressed script differs from source: {compressed}')
         path.write_bytes(content)
         compressed.write_bytes(gzip.compress(content, compresslevel=9, mtime=0))
-    NGINX_CACHE.write_bytes(cache_config)
-    print(f'Document Server assets use cache tag {cache_tag}')
+    FLUSH_CACHE.write_bytes(flush_script)
+    print(f'Document Server assets use cache seed {cache_seed.decode("ascii")}')
 
 
 if __name__ == '__main__':
