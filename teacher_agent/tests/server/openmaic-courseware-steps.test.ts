@@ -110,6 +110,73 @@ describe('high-fidelity mixed scene generation', () => {
     },
   );
 
+  it('rejects a trial checkpoint with no matching answer before it is saved', async () => {
+    const selected = input('quiz');
+    const outline = { ...selected.outlines[0], checkpointFor: 'previous' };
+    const question = {
+      id: 'q1',
+      type: 'single',
+      question: '形参是否可以在 C 函数的定义里指定默认值？',
+      options: [
+        { value: 'A', label: '可以' },
+        { value: 'B', label: '不可以' },
+      ],
+      answer: ['C'],
+      analysis: 'C 函数不支持默认参数。',
+    };
+    mocks.content.mockResolvedValue({ questions: [question] });
+    const steps = createOpenmaicCoursewareSteps(selected, undefined, {});
+
+    await expect(steps.content(outline, new AbortController().signal)).rejects.toMatchObject({
+      isRetryable: true,
+    });
+  });
+
+  it('keeps one complete question when the model supplies extra trial checkpoint questions', async () => {
+    const selected = input('quiz');
+    const outline = { ...selected.outlines[0], checkpointFor: 'previous' };
+    const question = {
+      id: 'q1',
+      type: 'single',
+      question: 'C 函数支持默认参数吗？',
+      options: [
+        { value: 'A', label: '支持' },
+        { value: 'B', label: '不支持' },
+      ],
+      answer: ['B'],
+      analysis: 'C 不支持默认参数。',
+    };
+    mocks.content.mockResolvedValue({
+      questions: [
+        { ...question, id: 'invalid', answer: ['C'] },
+        question,
+        { ...question, id: 'q2' },
+      ],
+    });
+    const steps = createOpenmaicCoursewareSteps(selected, undefined, {});
+    await expect(steps.content(outline, new AbortController().signal)).resolves.toEqual({
+      questions: [question],
+    });
+  });
+
+  it.each(['invalid-model-output', 'prompt-unavailable'])(
+    'classifies a missing page generated with %s',
+    async (code) => {
+      const selected = input('interactive');
+      mocks.content.mockImplementationOnce(async (_outline, _call, options) => {
+        options.onFailure({ code });
+        return null;
+      });
+      const steps = createOpenmaicCoursewareSteps(selected, undefined, {});
+      const work = steps.content(selected.outlines[0], new AbortController().signal);
+      if (code === 'invalid-model-output') {
+        await expect(work).rejects.toMatchObject({ isRetryable: true });
+      } else {
+        await expect(work).rejects.toThrow('未生成页面内容');
+      }
+    },
+  );
+
   it('routes a PBL page through content generation rather than the source canvas', async () => {
     const selected = input('pbl');
     const generated = { projectV2: { title: '函数练习' } };

@@ -7,6 +7,7 @@ import {
   generateSceneContent,
   type AICallFn,
   type GeneratedSceneContent,
+  type SceneContentFailureCode,
 } from '@openmaic/generation';
 import { validateScene } from '@openmaic/dsl';
 import { callLLM } from '@/lib/ai/llm';
@@ -21,7 +22,11 @@ import { resolveVocationalActive } from '@/lib/config/feature-flags';
 import { generatePBLV2Project } from '@/lib/pbl/v2/agents/planner';
 import { sanitizeEnhancedGeneratedContent } from '@/lib/learning-skills/enhanced-courseware-quality';
 import { alignActionsToPptNarration } from '@/lib/import/ppt-narration';
-import { LESSON_REQUIREMENTS, trialLearningRequirement } from '@/lib/generation/courseware-trial';
+import {
+  LESSON_REQUIREMENTS,
+  normalizeTrialCheckpointQuiz,
+  trialLearningRequirement,
+} from '@/lib/generation/courseware-trial';
 import { withSceneContentDuration } from '@/lib/generation/course-duration';
 import { bindNativePptxActions, nativePptxNarrationContract } from '@/lib/onlyoffice/narration';
 import {
@@ -31,6 +36,7 @@ import {
 
 export type OpenmaicContent = GeneratedSceneContent | SlideContent;
 const log = createLogger('OpenMAIC courseware');
+const INVALID_TRIAL_CHECKPOINT = '随堂题需要恰好一道单选题、匹配选项的答案和解析';
 
 const TRIAL_SPOKEN_NARRATION = [
   '### Final spoken narration for this lesson',
@@ -100,9 +106,19 @@ export function createOpenmaicCoursewareSteps(
         allowProceduralSkill: vocational,
       });
       const ids = new Set(outline.suggestedImageIds ?? []);
+      const call = aiFor(resolved, 'scene-content', signal);
+      let failureCode: SceneContentFailureCode | undefined;
       const content = await generateSceneContent(
         effective,
-        aiFor(resolved, 'scene-content', signal),
+        outline.checkpointFor
+          ? (system, prompt, images) =>
+              call(
+                system,
+                prompt +
+                  '\nReturn exactly one question object in the array, with type "single", one answer containing an option value, and a non-empty analysis. Use two options for true/false. Cover one point, even if the source lists several.',
+                images,
+              )
+          : call,
         {
           assignedImages: sortDocumentImagesForVision(
             (input.pdfImages ?? []).filter((image) => ids.has(image.id)),
@@ -114,6 +130,9 @@ export function createOpenmaicCoursewareSteps(
           userRequirements: input.requirements,
           allowProceduralSkill: vocational,
           logger: log,
+          onFailure: ({ code }) => {
+            failureCode = code;
+          },
           ...(effective.type === 'pbl'
             ? {
                 pblLoopFallback: (plannerInput) =>
@@ -128,7 +147,16 @@ export function createOpenmaicCoursewareSteps(
             : {}),
         },
       );
-      if (!content) throw new Error(`未生成页面内容：${outline.title}`);
+      if (outline.checkpointFor && failureCode !== 'prompt-unavailable') {
+        const quiz = normalizeTrialCheckpointQuiz(content);
+        if (!quiz) throw Object.assign(new Error(INVALID_TRIAL_CHECKPOINT), { isRetryable: true });
+        return quiz;
+      }
+      if (!content) {
+        const error = new Error(`未生成页面内容：${outline.title}`);
+        if (failureCode === 'invalid-model-output') Object.assign(error, { isRetryable: true });
+        throw error;
+      }
       return sanitizeEnhancedGeneratedContent(effective, content) as GeneratedSceneContent;
     },
     async actions(
@@ -138,23 +166,10 @@ export function createOpenmaicCoursewareSteps(
       signal: AbortSignal,
     ): Promise<Scene> {
       if (outline.checkpointFor) {
-        const built = buildCompleteScene(
-          outline,
-          content as GeneratedSceneContent,
-          [],
-          input.stage.id,
-        );
-        const quiz = built?.content;
-        if (
-          !built ||
-          quiz?.type !== 'quiz' ||
-          quiz.questions.length !== 1 ||
-          !quiz.questions[0].analysis?.trim() ||
-          quiz.questions[0].answer?.length !== 1 ||
-          !validateScene(built).valid
-        ) {
-          throw new Error('随堂题需要一道题、有效答案和解析');
-        }
+        const quiz = normalizeTrialCheckpointQuiz(content);
+        if (!quiz) throw new Error(INVALID_TRIAL_CHECKPOINT);
+        const built = buildCompleteScene(outline, quiz, [], input.stage.id);
+        if (!built || !validateScene(built).valid) throw new Error(INVALID_TRIAL_CHECKPOINT);
         return built as Scene;
       }
       const resolved = await modelFor('scene-actions');

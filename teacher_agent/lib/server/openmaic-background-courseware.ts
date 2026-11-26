@@ -5,6 +5,8 @@ import type { BackgroundCoursewareInput } from '@/lib/generation/background-cour
 import { isActiveCourseJob } from '@/lib/generation/background-courseware';
 import type { CourseArtifactJob } from '@/lib/course-space/types';
 import type { Scene } from '@/lib/types/stage';
+import { normalizeTrialCheckpointQuiz } from '@/lib/generation/courseware-trial';
+import { createLogger } from '@/lib/logger';
 import {
   getOutlineDurationSeconds,
   QUIZ_SECONDS_PER_QUESTION,
@@ -29,6 +31,20 @@ import {
   generateMediaForClassroom,
   replaceMediaPlaceholders,
 } from './classroom-media-generation';
+
+const log = createLogger('OpenMAIC courseware job');
+
+type PageGenerationPhase = 'content' | 'actions';
+
+class PageGenerationError extends Error {
+  constructor(
+    readonly phase: PageGenerationPhase,
+    readonly order: number,
+    cause: unknown,
+  ) {
+    super(cause instanceof Error ? cause.message : String(cause), { cause });
+  }
+}
 
 export async function executeOpenmaicCourseware(
   jobId: string,
@@ -111,17 +127,35 @@ export async function executeOpenmaicCourseware(
         ? await fetchPlatformUserModelConfig(teacherId)
         : undefined;
     const steps = createOpenmaicCoursewareSteps(input, config, requestHeaders);
-    const retry = <T>(
-      phase: string,
+    const retry = async <T>(
+      phase: PageGenerationPhase,
       order: number,
       work: (callSignal: AbortSignal) => Promise<T>,
       callSignal: AbortSignal,
-    ) =>
-      withGenerationRetry(() => metrics.measure(phase, () => work(callSignal), order), {
-        maxRetries: 2,
-        label: `${jobId} ${phase} ${order}`,
-        signal: callSignal,
-      });
+    ) => {
+      try {
+        return await withGenerationRetry(
+          (attempt) => metrics.measure(phase, () => work(callSignal), order, attempt),
+          {
+            maxRetries: 2,
+            label: `${jobId} ${phase} ${order}`,
+            signal: callSignal,
+            onRetry: ({ attempt, maxAttempts, nextDelayMs }) =>
+              log.warn('Retrying page generation', {
+                jobId,
+                order,
+                phase,
+                attempt,
+                maxAttempts,
+                nextDelayMs,
+              }),
+          },
+        );
+      } catch (error) {
+        callSignal.throwIfAborted();
+        throw new PageGenerationError(phase, order, error);
+      }
+    };
     await generateOpenmaicCourseware({
       outlines,
       completed: scenes,
@@ -144,6 +178,11 @@ export async function executeOpenmaicCourseware(
               await fs.readFile(checkpointPath(order), 'utf8'),
             ) as OpenmaicCheckpoint<OpenmaicContent>;
             const outline = outlines.find((page) => page.order === order);
+            // Older builds could save model quiz output without checking it before assembly.
+            if (outline?.checkpointFor && !checkpoint.scene) {
+              const content = normalizeTrialCheckpointQuiz(checkpoint.content);
+              return content ? { content } : {};
+            }
             // Older high-fidelity runs cached a PPT canvas even for quiz/interactive/PBL
             // outlines. Rebuild only that unassembled content; keep saved pages and
             // valid content/actions checkpoints so retry does not repeat their work.
@@ -357,13 +396,31 @@ export async function executeOpenmaicCourseware(
         .catch(() => undefined);
     }
   } catch (error) {
+    const failure = error instanceof PageGenerationError ? error : undefined;
+    const message = error instanceof Error ? error.message : String(error);
+    if (failure)
+      log.warn('Page generation failed', { jobId, order: failure.order, phase: failure.phase });
     await mutateCourseJob(jobId, (job) =>
       isActiveCourseJob(job.status)
         ? {
             ...job,
             status: 'failed',
             message: '生成中断，已完成页面保留，可重试未完成步骤',
-            error: error instanceof Error ? error.message : String(error),
+            error: failure ? `第 ${failure.order} 页生成失败。 ${message}` : message,
+            ...(failure &&
+              job.backgroundGeneration && {
+                backgroundGeneration: {
+                  ...progress(job, failure.phase),
+                  failedPages: [
+                    {
+                      order: failure.order,
+                      title: outlines.find((page) => page.order === failure.order)?.title ?? '',
+                      message,
+                      issues: [message],
+                    },
+                  ],
+                },
+              }),
           }
         : job,
     ).catch(() => undefined);

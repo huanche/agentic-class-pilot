@@ -1,10 +1,46 @@
 import type { SpeechAction } from '@/lib/types/action';
-import type { SceneOutline } from '@/lib/types/generation';
+import type { GeneratedQuizContent, SceneOutline } from '@/lib/types/generation';
 
 export function trialSpeechAudio(speech: SpeechAction) {
   return speech.audioInvalidated
     ? undefined
     : (speech as SpeechAction & { audioUrl?: string }).audioUrl;
+}
+
+export function normalizeTrialCheckpointQuiz(
+  content: object | null | undefined,
+): GeneratedQuizContent | undefined {
+  if (!content || !('questions' in content) || !Array.isArray(content.questions)) return;
+  const questions = content.questions as GeneratedQuizContent['questions'];
+  const question = questions.find((item) => {
+    if (
+      item?.type !== 'single' ||
+      typeof item.question !== 'string' ||
+      !item.question.trim() ||
+      typeof item.analysis !== 'string' ||
+      !item.analysis.trim() ||
+      !Array.isArray(item.options) ||
+      item.options.length < 2 ||
+      !Array.isArray(item.answer) ||
+      item.answer.length !== 1
+    )
+      return false;
+    const [answer] = item.answer;
+    return (
+      typeof answer === 'string' &&
+      Boolean(answer.trim()) &&
+      item.options.every(
+        (option) =>
+          typeof option?.value === 'string' &&
+          option.value.trim() &&
+          typeof option.label === 'string' &&
+          option.label.trim(),
+      ) &&
+      new Set(item.options.map((option) => option.value)).size === item.options.length &&
+      item.options.some((option) => option.value === answer)
+    );
+  });
+  return question ? { questions: [question] } : undefined;
 }
 
 export type LearningRequirement = NonNullable<SceneOutline['learningRequirement']>;

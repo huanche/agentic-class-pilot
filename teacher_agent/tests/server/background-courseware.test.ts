@@ -240,6 +240,111 @@ describe('server-owned courseware generation', () => {
     expect(state.actions).toHaveBeenCalledTimes(2);
     expect(fetch).not.toHaveBeenCalled(); // Models are called in process, not through the public HTTP routes.
   });
+  it.each([true, false])(
+    'resumes an old cached trial quiz with usable question %s and preserves completed pages',
+    async (usable) => {
+      const selected = input('retry_trial_quiz');
+      selected.stage.coursewareTrial = { mode: 'learning-skills-enhanced', overview: '函数参数' };
+      selected.outlines[0].checkpoint = { instruction: '判断 C 函数是否支持默认参数' };
+      const job = await createBackgroundCoursewareJob(selected, context);
+      const previous = buildCompleteScene(
+        selected.outlines[0],
+        { elements: [] },
+        [],
+        selected.stage.id,
+        { sceneId: 'saved-slide' },
+      )!;
+      state.snapshots.set(selected.stage.id, { stage: selected.stage, scenes: [previous] });
+      const question = {
+        id: 'q1',
+        type: 'single',
+        question: 'C 函数支持默认参数吗？',
+        options: [
+          { value: 'A', label: '支持' },
+          { value: 'B', label: '不支持' },
+        ],
+        answer: ['B'],
+        analysis: 'C 不支持默认参数。',
+      };
+      await fs.writeFile(
+        path.join('.runtime', 'background-task-tests', `${job.id}.openmaic-page-2.json`),
+        JSON.stringify({
+          content: {
+            questions: [
+              usable ? question : { ...question, analysis: '' },
+              { ...question, id: 'q2', answer: ['C'] },
+            ],
+          },
+        }),
+      );
+      state.content.mockImplementation(async (outline) =>
+        outline.checkpointFor ? { questions: [question] } : { elements: [] },
+      );
+      state.actions.mockImplementation(async (outline, content) =>
+        buildCompleteScene(outline, content, [], selected.stage.id),
+      );
+
+      await runBackgroundCoursewareJob(job.id);
+
+      expect(state.content.mock.calls.map(([outline]) => outline.order)).toEqual(
+        usable ? [3] : [2, 3],
+      );
+      expect(state.jobs.get(job.id)?.status).toBe('review');
+      expect(state.snapshots.get(selected.stage.id)?.scenes).toMatchObject([
+        previous,
+        { order: 2, type: 'quiz', content: { questions: [question] } },
+        { order: 3, type: 'slide' },
+      ]);
+    },
+  );
+
+  it('persists attempts for a retryable model response', async () => {
+    vi.stubEnv('COURSEWARE_GENERATION_ENGINE', 'openmaic');
+    const selected = input('format_retry');
+    state.content
+      .mockRejectedValueOnce(
+        Object.assign(new Error('Invalid model output'), { isRetryable: true }),
+      )
+      .mockResolvedValue({ elements: [] });
+    state.actions.mockImplementation(async (outline, content) =>
+      buildCompleteScene(outline, content, [], selected.stage.id),
+    );
+    const job = await createBackgroundCoursewareJob(selected, context);
+    await runBackgroundCoursewareJob(job.id);
+    const result = state.jobs.get(job.id)!;
+    expect(result.status).toBe('review');
+    expect(
+      result.backgroundGeneration?.performance?.timings.filter(
+        (item) => item.pageOrder === 1 && item.phase === 'content',
+      ),
+    ).toMatchObject([
+      { attempt: 1, status: 'error' },
+      { attempt: 2, status: 'ok' },
+    ]);
+  });
+
+  it('identifies the page and step for a permanent generation failure', async () => {
+    vi.stubEnv('COURSEWARE_GENERATION_ENGINE', 'openmaic');
+    const selected = input('page_failure');
+    state.content
+      .mockResolvedValueOnce({ elements: [] })
+      .mockRejectedValueOnce(new Error('Model not configured'));
+    state.actions.mockImplementation(async (outline, content) =>
+      buildCompleteScene(outline, content, [], selected.stage.id),
+    );
+    const job = await createBackgroundCoursewareJob(selected, context);
+    await runBackgroundCoursewareJob(job.id);
+    expect(state.jobs.get(job.id)).toMatchObject({
+      status: 'failed',
+      backgroundGeneration: {
+        completedPages: 1,
+        phase: 'content',
+        failedPages: [{ order: 2, title: '第2页', issues: ['Model not configured'] }],
+      },
+    });
+    expect(state.content).toHaveBeenCalledTimes(2);
+  });
+
   it('submits a saved trial page for video before narration of the remaining page is done', async () => {
     const selected = input('early_trial_video');
     selected.enableTTS = true;
