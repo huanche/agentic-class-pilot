@@ -51,7 +51,7 @@ def main():
 
     for path, content in scripts.items():
         compressed = path.with_suffix('.js.gz')
-        if gzip.decompress(compressed.read_bytes()) != path.read_bytes():
+        if compressed.exists() and gzip.decompress(compressed.read_bytes()) != path.read_bytes():
             raise ValueError(f'Precompressed script differs from source: {compressed}')
         path.write_bytes(content)
         compressed.write_bytes(gzip.compress(content, compresslevel=9, mtime=0))
